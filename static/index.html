@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>算法错题本</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1>算法错题本</h1>
+        <p class="muted">记录错误，按时复习，用新题检查自己是否真的理解。</p>
+      </div>
+      <div>
+        <p id="user-info" class="muted"></p>
+        <button id="logout" type="button" hidden>退出登录</button>
+      </div>
+    </header>
+
+    <p id="notice" role="status" aria-live="polite"></p>
+
+    <section id="auth" class="auth-grid">
+      <form id="login-form" class="panel">
+        <h2>登录</h2>
+        <label>
+          用户名
+          <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
+                 autocomplete="username">
+        </label>
+        <label>
+          密码
+          <input name="password" type="password" required minlength="10"
+                 maxlength="128" autocomplete="current-password">
+        </label>
+        <button type="submit" class="primary">登录</button>
+      </form>
+
+      <form id="register-form" class="panel">
+        <h2>内测注册</h2>
+        <label>
+          用户名：3–32 位字母、数字或下划线
+          <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
+                 autocomplete="username">
+        </label>
+        <label>
+          密码：至少 10 个字符
+          <input name="password" type="password" required minlength="10"
+                 maxlength="128" autocomplete="new-password">
+        </label>
+        <label>
+          邀请码
+          <input name="invite_code" required maxlength="256"
+                 autocomplete="off">
+        </label>
+        <label>
+          复习时区
+          <input name="timezone" id="timezone" required maxlength="64"
+                 value="Asia/Shanghai">
+        </label>
+        <p class="muted">
+          已自动填写浏览器时区。每日复习以此为准，注册后暂不支持修改。
+        </p>
+        <button type="submit" class="primary">注册并登录</button>
+      </form>
+    </section>
+
+    <main id="app" hidden>
+      <nav class="tabs" aria-label="页面">
+        <button type="button" data-view="today">今日复习</button>
+        <button type="button" data-view="all">全部记录</button>
+        <button type="button" data-view="new">新增记录</button>
+        <button type="button" id="refresh">刷新</button>
+      </nav>
+
+      <section id="list-page">
+        <h2 id="list-title">今日复习</h2>
+        <p id="list-summary" class="muted"></p>
+        <div class="workspace">
+          <aside id="cards" aria-label="易错点列表"></aside>
+          <section id="detail" class="panel">
+            选择一条易错点开始复习。
+          </section>
+        </div>
+      </section>
+
+      <section id="new-page" class="panel" hidden>
+        <h2>新增题目记录</h2>
+        <form id="problem-form">
+          <label>
+            题目名
+            <input name="title" required maxlength="200">
+          </label>
+          <label>
+            编程语言
+            <input name="language" required maxlength="40" value="Python">
+          </label>
+          <label>
+            当时的代码
+            <textarea name="code" required maxlength="40000" rows="12"
+                      spellcheck="false" class="code"></textarea>
+          </label>
+          <label>
+            当时的思路
+            <textarea name="thinking" required maxlength="8000"
+                      rows="4"></textarea>
+          </label>
+
+          <h3>易错点</h3>
+          <p class="muted">
+            每条只写一个具体问题，例如“二分查找中，右边界更新漏掉了等号”。
+            每条易错点会独立安排复习，最多添加 10 条。
+          </p>
+          <div id="mistake-inputs"></div>
+          <div class="actions">
+            <button id="add-mistake" type="button">再加一个易错点</button>
+            <button type="submit" class="primary">保存记录</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
