@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>算法错题本</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/intro.css">
+  <script defer src="/static/intro.js"></script>
   <script defer src="/static/app.js"></script>
 </head>
 <body>
@@ -19,6 +21,43 @@
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
     </header>
+
+    <section id="intro" class="intro" aria-labelledby="intro-title">
+      <p class="eyebrow">算法错题本 · 邀请内测</p>
+      <h2 id="intro-title">记录你的算法错题，到期自动提醒复习，还能让 AI 针对你的薄弱点出新题练习。</h2>
+      <p class="lead">适合正在自学算法、准备编程面试的人。把“这次为什么错”留下来，下次复习时检查自己是否真的理解。</p>
+
+      <div class="steps">
+        <article class="step">
+          <h3>1. 留下真实错因</h3>
+          <p>保存题目、自己的代码和当时的思路，把每个易错点单独记下来。</p>
+        </article>
+        <article class="step">
+          <h3>2. 到期回来复习</h3>
+          <p>在“今日复习”查看到期记录，根据这次掌握程度安排下一次复习。</p>
+        </article>
+        <article class="step">
+          <h3>3. 换道题检查理解</h3>
+          <p>让 AI 围绕同一个薄弱点出一道变体题，自己解题，再记录练习结果。</p>
+        </article>
+      </div>
+
+      <h3>和普通 flashcard 工具有什么区别？</h3>
+      <p>这里以真实做题时的错误模式组织复习：不仅看知识结论，也保留出错的代码和当时的想法。新练习围绕你选中的易错点生成，不是从随机题库里抽一道题。</p>
+
+      <div class="example">
+        <strong>比如：总是忽略整数溢出</strong>
+        <p>记下当时没检查数据范围的原因；复习后，再练一道需要判断数值范围的新题，看看自己是否还会漏掉这一步。</p>
+        <p class="muted">这是介绍示例，不会写入你的错题本。系统保存代码，但不运行代码、不自动判题。当前提醒显示在“今日复习”页面。</p>
+      </div>
+
+      <div class="links">
+        <a class="cta" href="#register-form">我有邀请码，开始试用</a>
+        <a href="#login-form">已有账号，登录</a>
+      </div>
+      <p class="invitation">内测邀请制，想试用联系我。</p>
+      <p class="muted">联系方式：[填写联系方式]</p>
+    </section>
 
     <p id="notice" role="status" aria-live="polite"></p>
 
