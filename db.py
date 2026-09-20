@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     timezone TEXT NOT NULL,
     created_at TEXT NOT NULL
+    -- email、last_reminder_sent 由 init_db() 里的迁移逻辑补上，
+    -- 兼容在这两列加入前就已存在的旧数据库文件。
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -90,7 +92,24 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     attempts INTEGER NOT NULL CHECK(attempts >= 0),
     PRIMARY KEY(user_id, day)
 );
+
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_user
+ON password_resets(user_id);
 """
+
+# 早于 email / last_reminder_sent 两列创建的旧数据库需要手动加列；
+# ALTER TABLE ADD COLUMN 在 SQLite 里不能写进上面的 CREATE TABLE 语句，
+# 只能在这里按需追加，且不能直接加 UNIQUE 约束，改用唯一索引代替。
+USER_COLUMN_MIGRATIONS = (
+    ("email", "ALTER TABLE users ADD COLUMN email TEXT"),
+    ("last_reminder_sent", "ALTER TABLE users ADD COLUMN last_reminder_sent TEXT"),
+)
 
 
 @contextmanager
@@ -121,3 +140,14 @@ def init_db():
     with connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        for column, statement in USER_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        # 多个账号都没填邮箱时 email 是 NULL，SQLite 的唯一索引允许
+        # 多个 NULL 并存，所以旧账号不会因为这条索引互相冲突。
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
+        )

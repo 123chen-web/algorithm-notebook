@@ -26,6 +26,7 @@ h3 { margin-top: 26px; }
 }
 
 .auth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+#email-prompt { margin-top: 20px; }
 .workspace { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; }
 .tabs, .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
 
@@ -41,6 +42,8 @@ button {
 
 button:hover { background: #edf2ff; }
 button.primary, .tabs .active { background: #315ce8; color: white; border-color: #315ce8; }
+button.danger { color: #a51d32; border-color: #e7a6b3; }
+button.danger:hover { background: #fff0f2; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 3px solid #96b0ff;
@@ -87,6 +90,16 @@ details { margin: 20px 0; }
 summary { cursor: pointer; font-weight: 600; }
 .variant { padding: 18px; border: 1px solid #dfe5ef; border-radius: 10px; }
 .mistake-row { border-top: 1px solid #e5eaf2; padding: 16px 0; }
+.mistake-text { margin: 12px 0; }
+.mistake-text > button { margin-top: 4px; }
+.danger-zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0;
+  padding-top: 16px;
+  border-top: 1px solid #e5eaf2;
+}
 #notice:not(:empty) { padding: 12px 16px; background: #eaf3ff; border-radius: 8px; }
 #notice.error { color: #a51d32; background: #fff0f2; }
 

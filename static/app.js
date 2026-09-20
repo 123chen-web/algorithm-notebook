@@ -38,12 +38,22 @@ function setBusy(value) {
   });
 }
 
+const AUTH_PANELS = ["login-form", "register-form", "forgot-form", "reset-form"];
+
+function showAuthPanels(visibleIds) {
+  for (const id of AUTH_PANELS) {
+    $(`#${id}`).hidden = !visibleIds.includes(id);
+  }
+}
+
 function signedOut() {
   user = null;
   $("#auth").hidden = false;
   $("#app").hidden = true;
   $("#logout").hidden = true;
   $("#user-info").textContent = "";
+  $("#email-prompt").hidden = true;
+  showAuthPanels(["login-form", "register-form"]);
   $("#cards").replaceChildren();
   $("#detail").replaceChildren();
   $("#problem-form").reset();
@@ -137,6 +147,7 @@ function timestamp(value) {
 function updateUserInfo() {
   $("#user-info").textContent =
     `${user.username} · ${user.timezone} · ${user.today}`;
+  $("#email-prompt").hidden = Boolean(user.email);
 }
 
 async function enterApp() {
@@ -278,6 +289,123 @@ function renderVariant(variant) {
   return box;
 }
 
+function renderMistakeText(item) {
+  const wrap = element("div", "", "mistake-text");
+
+  function readOnly() {
+    const editBtn = element("button", "编辑易错点描述");
+    editBtn.type = "button";
+    editBtn.addEventListener("click", editForm);
+    wrap.replaceChildren(element("p", item.description, "multiline"), editBtn);
+  }
+
+  function editForm() {
+    const input = textarea(item.description, 2000, 4);
+    const save = element("button", "保存修改", "primary");
+    save.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(field("易错点 / 为什么错", input), save, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        const updated = await api(`/api/mistakes/${item.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            description: input.value,
+            version: item.version,
+          }),
+        });
+        message("易错点描述已更新。");
+        await openMistake(updated.id);
+      });
+    });
+
+    wrap.replaceChildren(form);
+  }
+
+  readOnly();
+  return wrap;
+}
+
+function renderProblemEditor(item) {
+  const wrap = element("div");
+
+  function readOnly() {
+    const editBtn = element("button", "编辑题目信息（标题 / 语言 / 代码 / 思路）");
+    editBtn.type = "button";
+    editBtn.addEventListener("click", editForm);
+    wrap.replaceChildren(
+      element("h4", "当时的思路"),
+      element("p", item.thinking, "multiline"),
+      element("h4", "当时的代码"),
+      element("pre", item.code, "code"),
+      editBtn
+    );
+  }
+
+  function editForm() {
+    const title = document.createElement("input");
+    title.value = item.title;
+    title.maxLength = 200;
+    title.required = true;
+
+    const language = document.createElement("input");
+    language.value = item.language;
+    language.maxLength = 40;
+    language.required = true;
+
+    const code = textarea(item.code, 40000, 10, true);
+    const thinking = textarea(item.thinking, 8000, 4);
+
+    const save = element("button", "保存题目信息", "primary");
+    save.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(
+      field("标题", title),
+      field("编程语言", language),
+      field("代码", code),
+      field("思路", thinking),
+      save,
+      cancel
+    );
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        await api(`/api/problems/${item.problem_id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            title: title.value,
+            language: language.value,
+            code: code.value,
+            thinking: thinking.value,
+          }),
+        });
+        message("题目信息已更新。");
+        await openMistake(item.id);
+      });
+    });
+
+    wrap.replaceChildren(form);
+  }
+
+  readOnly();
+  return wrap;
+}
+
+function clearDetail() {
+  $("#detail").replaceChildren(
+    element("p", "选择一条易错点查看详情。", "muted")
+  );
+}
+
 function renderDetail(item) {
   const root = $("#detail");
   root.replaceChildren();
@@ -286,7 +414,7 @@ function renderDetail(item) {
     element("h2", item.title),
     element("p", `语言：${item.language}`, "muted"),
     element("h3", "这条易错点"),
-    element("p", item.description, "multiline"),
+    renderMistakeText(item),
     element(
       "p",
       `下次复习：${item.due_date} · 连续成功：${item.repetitions} 次`,
@@ -302,12 +430,41 @@ function renderDetail(item) {
   const original = document.createElement("details");
   original.append(
     element("summary", "查看当时的思路和代码"),
-    element("h4", "当时的思路"),
-    element("p", item.thinking, "multiline"),
-    element("h4", "当时的代码"),
-    element("pre", item.code, "code")
+    renderProblemEditor(item)
   );
   root.append(original);
+
+  const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
+  deleteMistakeBtn.type = "button";
+  deleteMistakeBtn.addEventListener("click", () => run(async () => {
+    if (!confirm("确定删除这条易错点？不会影响同一道题的其他易错点。")) {
+      return;
+    }
+    await api(`/api/mistakes/${item.id}`, { method: "DELETE" });
+    clearDetail();
+    await loadList();
+    message("已删除这条易错点。");
+  }));
+
+  const deleteProblemBtn = element(
+    "button", "删除整道题（含全部易错点）", "danger"
+  );
+  deleteProblemBtn.type = "button";
+  deleteProblemBtn.addEventListener("click", () => run(async () => {
+    if (!confirm(
+      "确定删除整道题？这道题下的所有易错点、复习记录和变体题都会一起删除，且无法恢复。"
+    )) {
+      return;
+    }
+    await api(`/api/problems/${item.problem_id}`, { method: "DELETE" });
+    clearDetail();
+    await loadList();
+    message("已删除整道题。");
+  }));
+
+  const dangerZone = element("div", "", "danger-zone");
+  dangerZone.append(deleteMistakeBtn, deleteProblemBtn);
+  root.append(dangerZone);
 
   const reviewButtons = element("div", "", "actions");
   const due = item.due_date <= item.today;
@@ -449,6 +606,75 @@ $("#register-form").addEventListener("submit", (event) => {
   });
 });
 
+$("#forgot-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  message();
+  showAuthPanels(["forgot-form"]);
+});
+
+$("#back-to-login-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  message();
+  showAuthPanels(["login-form", "register-form"]);
+});
+
+$("#forgot-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    await api("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email: form.email.value }),
+    });
+    form.reset();
+    showAuthPanels(["login-form", "register-form"]);
+    message("如果这个邮箱注册过账号，重置邮件已经发出，请查收（包括垃圾邮件文件夹）。");
+  });
+});
+
+$("#reset-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    try {
+      await api("/api/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({
+          token: resetToken || "",
+          password: form.password.value,
+        }),
+      });
+    } catch (error) {
+      if (error.status === 400) {
+        history.replaceState(null, "", location.pathname);
+        showAuthPanels(["forgot-form"]);
+        message("重置链接无效或已过期，请重新申请。", true);
+        return;
+      }
+      throw error;
+    }
+    form.reset();
+    history.replaceState(null, "", location.pathname);
+    showAuthPanels(["login-form", "register-form"]);
+    message("密码已重置，请用新密码登录。");
+  });
+});
+
+$("#email-prompt").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    const updated = await api("/api/me/email", {
+      method: "PUT",
+      body: JSON.stringify({ email: form.email.value }),
+    });
+    user.email = updated.email;
+    $("#email-prompt").hidden = true;
+    form.reset();
+    message("邮箱绑定成功。");
+  });
+});
+
 $("#logout").addEventListener("click", () => run(async () => {
   await api("/api/auth/logout", { method: "POST" });
   signedOut();
@@ -500,11 +726,18 @@ $("#timezone").value =
 
 addMistakeInput();
 
-run(async () => {
-  try {
-    await enterApp();
-  } catch (error) {
-    if (error.status !== 401) throw error;
-    message("请登录，或使用邀请码注册。");
-  }
-});
+const resetToken = new URLSearchParams(location.search).get("reset_token");
+
+if (resetToken) {
+  // 从密码重置邮件点进来的，不管当前是否登录，先处理重置。
+  showAuthPanels(["reset-form"]);
+} else {
+  run(async () => {
+    try {
+      await enterApp();
+    } catch (error) {
+      if (error.status !== 401) throw error;
+      message("请登录，或使用邀请码注册。");
+    }
+  });
+}

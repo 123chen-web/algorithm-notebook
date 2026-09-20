@@ -1,8 +1,12 @@
 import hashlib
+import logging
 import os
+import re
 import secrets
 import sqlite3
+import threading
 import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Literal
@@ -20,8 +24,11 @@ from pydantic import (
 )
 
 import ai
+import mailer
 from db import ROOT, connect, init_db
 from scheduler import schedule, today_in_timezone
+
+logger = logging.getLogger("algorithm_notebook")
 
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PASSWORD_ITERATIONS = 600_000
@@ -37,6 +44,10 @@ ThinkingText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
 ]
 
+# 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
+# 而不是注册时的格式检查，所以没有引入额外的邮箱校验依赖。
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 
 class InputModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -49,7 +60,13 @@ class Credentials(InputModel):
 
 class Registration(Credentials):
     invite_code: str = Field(min_length=1, max_length=256)
+    email: str = Field(min_length=3, max_length=254)
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=64)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value):
+        return normalize_email(value)
 
     @field_validator("timezone")
     @classmethod
@@ -61,14 +78,43 @@ class Registration(Credentials):
         return value
 
 
-class NewProblem(InputModel):
+def normalize_email(value):
+    value = value.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(value):
+        raise ValueError("请填写有效的邮箱地址")
+    return value
+
+
+class ForgotPassword(InputModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value):
+        return normalize_email(value)
+
+
+class ResetPassword(InputModel):
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class EmailUpdate(InputModel):
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value):
+        return normalize_email(value)
+
+
+class ProblemFields(InputModel):
     title: Title
     language: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
     ]
     code: str = Field(min_length=1, max_length=40000)
     thinking: ThinkingText
-    mistakes: list[MistakeText] = Field(min_length=1, max_length=10)
 
     @field_validator("code")
     @classmethod
@@ -77,6 +123,19 @@ class NewProblem(InputModel):
             raise ValueError("代码不能为空")
         # 保留原始缩进。
         return value
+
+
+class NewProblem(ProblemFields):
+    mistakes: list[MistakeText] = Field(min_length=1, max_length=10)
+
+
+class ProblemEdit(ProblemFields):
+    pass
+
+
+class MistakeEdit(InputModel):
+    description: MistakeText
+    version: int = Field(strict=True, ge=0)
 
 
 class ReviewInput(InputModel):
@@ -100,6 +159,12 @@ def today_for(user):
 
 def ai_limit():
     return max(1, int(os.getenv("AI_DAILY_LIMIT", "10")))
+
+
+def public_base_url():
+    # 拼重置密码链接用；本地开发默认指向 uvicorn 监听的地址，
+    # 部署上线后要在 .env 里改成真实域名，否则邮件里的链接打不开。
+    return os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
 def token_hash(token):
@@ -155,7 +220,7 @@ def current_user(request: Request):
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT u.id, u.username, u.timezone
+            SELECT u.id, u.username, u.email, u.timezone
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -183,6 +248,53 @@ def owned_mistake(conn, mistake_id, user_id):
     if row is None:
         raise HTTPException(404, "记录不存在")
     return dict(row)
+
+
+def owned_problem(conn, problem_id, user_id):
+    row = conn.execute(
+        "SELECT * FROM problems WHERE id = ? AND user_id = ?",
+        (problem_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "题目不存在")
+    return dict(row)
+
+
+# 单实例的简单防刷：按客户端 IP 计数，进程重启即清零。
+# 部署到多实例或反向代理之后，需要改用共享存储并校验可信的转发头。
+REGISTER_LIMIT = 5
+REGISTER_WINDOW_SECONDS = 15 * 60
+LOGIN_LIMIT = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+FORGOT_PASSWORD_LIMIT = 5
+FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
+RESET_PASSWORD_LIMIT = 10
+RESET_PASSWORD_WINDOW_SECONDS = 15 * 60
+RESET_TOKEN_SECONDS = 30 * 60
+
+_rate_lock = threading.Lock()
+_rate_buckets = defaultdict(deque)
+
+
+def rate_limited(key, limit, window_seconds):
+    now = time.time()
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        while bucket and now - bucket[0] > window_seconds:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            return True
+        bucket.append(now)
+        return False
+
+
+def reset_rate_limits():
+    with _rate_lock:
+        _rate_buckets.clear()
+
+
+def client_ip(request: Request):
+    return request.client.host if request.client else "unknown"
 
 
 @asynccontextmanager
@@ -232,7 +344,12 @@ def home():
 
 
 @app.post("/api/auth/register", status_code=201)
-def register(data: Registration, response: Response):
+def register(data: Registration, request: Request, response: Response):
+    if rate_limited(
+        f"register:{client_ip(request)}", REGISTER_LIMIT, REGISTER_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+
     expected = os.getenv("INVITE_CODE", "").strip()
     if not expected or expected == "change-me":
         raise HTTPException(503, "管理员尚未设置内测邀请码")
@@ -247,21 +364,26 @@ def register(data: Registration, response: Response):
         with connect(write=True) as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO users(username, password_hash, timezone, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO users(username, password_hash, email, timezone, created_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (data.username.lower(), hashed, data.timezone, utc_now()),
+                (data.username.lower(), hashed, data.email, data.timezone, utc_now()),
             )
             user_id = cursor.lastrowid
             set_session(conn, user_id, response)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "users.email" in str(exc):
+            raise HTTPException(409, "这个邮箱已经被使用") from None
         raise HTTPException(409, "用户名已被使用") from None
 
     return {"id": user_id, "username": data.username.lower()}
 
 
 @app.post("/api/auth/login")
-def login(data: Credentials, response: Response):
+def login(data: Credentials, request: Request, response: Response):
+    if rate_limited(f"login:{client_ip(request)}", LOGIN_LIMIT, LOGIN_WINDOW_SECONDS):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+
     with connect() as conn:
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?",
@@ -278,6 +400,88 @@ def login(data: Credentials, response: Response):
 
     with connect(write=True) as conn:
         set_session(conn, user["id"], response)
+    return {"ok": True}
+
+
+def send_password_reset_email(to_address, username, token):
+    link = f"{public_base_url()}/?reset_token={token}"
+    body = (
+        f"你好 {username}，\n\n"
+        "有人（希望是你）在算法错题本申请了重置密码。\n"
+        f"30 分钟内点击下面的链接设置新密码：\n{link}\n\n"
+        "如果这不是你本人操作，忽略这封邮件即可，密码不会被改动。"
+    )
+    try:
+        mailer.send_email(to_address, "算法错题本：重置密码", body)
+    except Exception:
+        # 发信失败不影响接口返回，避免把 SMTP 报错暴露给客户端；
+        # 服务端日志里留一条记录方便自己排查。
+        logger.exception("发送密码重置邮件失败：%s", to_address)
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(data: ForgotPassword, request: Request):
+    if rate_limited(
+        f"forgot:{client_ip(request)}",
+        FORGOT_PASSWORD_LIMIT,
+        FORGOT_PASSWORD_WINDOW_SECONDS,
+    ):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+
+    email = data.email.strip().lower()
+    with connect(write=True) as conn:
+        user = conn.execute(
+            "SELECT id, username FROM users WHERE email = ?", (email,)
+        ).fetchone()
+        if user is not None:
+            token = secrets.token_urlsafe(32)
+            conn.execute(
+                "DELETE FROM password_resets WHERE user_id = ?", (user["id"],)
+            )
+            conn.execute(
+                """
+                INSERT INTO password_resets(token_hash, user_id, expires_at)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    token_hash(token),
+                    user["id"],
+                    int(time.time()) + RESET_TOKEN_SECONDS,
+                ),
+            )
+            send_password_reset_email(email, user["username"], token)
+
+    # 不论邮箱是否存在都返回同样的结果，避免被用来探测已注册账号。
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(data: ResetPassword, request: Request):
+    if rate_limited(
+        f"reset:{client_ip(request)}",
+        RESET_PASSWORD_LIMIT,
+        RESET_PASSWORD_WINDOW_SECONDS,
+    ):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+
+    with connect(write=True) as conn:
+        row = conn.execute(
+            "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+            (token_hash(data.token),),
+        ).fetchone()
+        if row is None or row["expires_at"] < int(time.time()):
+            raise HTTPException(400, "重置链接无效或已过期，请重新申请")
+
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash(data.password), row["user_id"]),
+        )
+        conn.execute(
+            "DELETE FROM password_resets WHERE user_id = ?", (row["user_id"],)
+        )
+        # 重置后让所有已登录会话失效，防止旧会话（可能已被盗用）继续有效。
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (row["user_id"],))
+
     return {"ok": True}
 
 
@@ -302,6 +506,20 @@ def me(user=Depends(current_user)):
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
         "ai_daily_limit": ai_limit(),
     }
+
+
+@app.put("/api/me/email")
+def update_email(data: EmailUpdate, user=Depends(current_user)):
+    # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
+    # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
+    try:
+        with connect(write=True) as conn:
+            conn.execute(
+                "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
+            )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "这个邮箱已经被使用") from None
+    return {"ok": True, "email": data.email}
 
 
 @app.post("/api/problems", status_code=201)
@@ -332,6 +550,33 @@ def create_problem(data: NewProblem, user=Depends(current_user)):
             mistake_ids.append(cursor.lastrowid)
 
     return {"id": problem_id, "mistake_ids": mistake_ids}
+
+
+@app.put("/api/problems/{problem_id}")
+def edit_problem(problem_id: int, data: ProblemEdit, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        owned_problem(conn, problem_id, user["id"])
+        conn.execute(
+            """
+            UPDATE problems
+            SET title = ?, language = ?, code = ?, thinking = ?
+            WHERE id = ?
+            """,
+            (data.title, data.language, data.code, data.thinking, problem_id),
+        )
+        updated = conn.execute(
+            "SELECT * FROM problems WHERE id = ?", (problem_id,)
+        ).fetchone()
+    return dict(updated)
+
+
+@app.delete("/api/problems/{problem_id}")
+def delete_problem(problem_id: int, user=Depends(current_user)):
+    # 级联删除该题下的全部易错点、复习记录和变体题。
+    with connect(write=True) as conn:
+        owned_problem(conn, problem_id, user["id"])
+        conn.execute("DELETE FROM problems WHERE id = ?", (problem_id,))
+    return {"ok": True}
 
 
 @app.get("/api/mistakes")
@@ -369,6 +614,29 @@ def get_mistake(mistake_id: int, user=Depends(current_user)):
         ]
     item["today"] = today_for(user).isoformat()
     return item
+
+
+@app.put("/api/mistakes/{mistake_id}")
+def edit_mistake(mistake_id: int, data: MistakeEdit, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        item = owned_mistake(conn, mistake_id, user["id"])
+        if item["version"] != data.version:
+            raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+
+        conn.execute(
+            "UPDATE mistakes SET description = ?, version = version + 1 WHERE id = ?",
+            (data.description, mistake_id),
+        )
+    return {**item, "description": data.description, "version": item["version"] + 1}
+
+
+@app.delete("/api/mistakes/{mistake_id}")
+def delete_mistake(mistake_id: int, user=Depends(current_user)):
+    # 只删除这一条易错点；同一题下的其他易错点不受影响。
+    with connect(write=True) as conn:
+        owned_mistake(conn, mistake_id, user["id"])
+        conn.execute("DELETE FROM mistakes WHERE id = ?", (mistake_id,))
+    return {"ok": True}
 
 
 @app.post("/api/mistakes/{mistake_id}/review")
