@@ -435,20 +435,134 @@ def test_forgot_password_does_not_leak_account_existence(client, monkeypatch):
         mailer, "send_email", lambda to, subject, body: sent.append(to)
     )
 
-    response = client.post(
-        "/api/auth/forgot-password", json={"email": "nobody@example.com"}
-    )
+    # 其他请求持有写锁时，未知邮箱仍应能直接返回，不争抢写锁。
+    with connect(write=True):
+        response = client.post(
+            "/api/auth/forgot-password", json={"email": "nobody@example.com"}
+        )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert sent == []
 
 
-def test_reset_password_rejects_bad_token(client):
+@pytest.mark.parametrize("smtp_fails", [False, True])
+def test_reset_email_runs_after_token_commit(client, monkeypatch, smtp_fails):
+    register(client, "alice")
+    observed = []
+
+    def send_email(to, subject, body):
+        token = body.split("reset_token=")[1].split()[0]
+        # SMTP 执行期间，另一个连接应能取得写锁并看到已提交的 token。
+        with connect(write=True) as conn:
+            row = conn.execute(
+                "SELECT token_hash FROM password_resets WHERE token_hash = ?",
+                (main.token_hash(token),),
+            ).fetchone()
+            observed.append(row["token_hash"] if row else None)
+        if smtp_fails:
+            raise RuntimeError("模拟 SMTP 发送失败")
+
+    monkeypatch.setattr(mailer, "send_email", send_email)
+    response = client.post(
+        "/api/auth/forgot-password", json={"email": "alice@example.com"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert len(observed) == 1
+    assert observed[0] is not None
+    with connect() as conn:
+        rows = conn.execute("SELECT token_hash FROM password_resets").fetchall()
+        assert [row["token_hash"] for row in rows] == observed
+
+
+def test_forgot_password_rechecks_email_before_issuing_token(client, monkeypatch):
+    register(client, "alice")
+    original_token = main.secrets.token_urlsafe
+    sent = []
+
+    def change_email(size):
+        # 模拟查询邮箱与写入 token 之间，账号已更换邮箱。
+        with connect(write=True) as conn:
+            conn.execute(
+                "UPDATE users SET email = ? WHERE username = 'alice'",
+                ("new@example.com",),
+            )
+        return original_token(size)
+
+    monkeypatch.setattr(main.secrets, "token_urlsafe", change_email)
+    monkeypatch.setattr(mailer, "send_email", lambda *args: sent.append(args))
+    response = client.post(
+        "/api/auth/forgot-password", json={"email": "alice@example.com"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert sent == []
+    with connect() as conn:
+        assert conn.execute("SELECT count(*) FROM password_resets").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("expired", [False, True])
+def test_reset_password_rejects_bad_token(client, expired):
+    token = "not-a-real-token"
+    if expired:
+        register(client, "alice")
+        with connect(write=True) as conn:
+            user_id = conn.execute(
+                "SELECT id FROM users WHERE username = 'alice'"
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO password_resets(token_hash, user_id, expires_at) "
+                "VALUES (?, ?, ?)",
+                (main.token_hash(token), user_id, int(main.time.time()) - 1),
+            )
+    with connect(write=True):
+        response = client.post(
+            "/api/auth/reset-password",
+            json={"token": token, "password": "a-new-password-456"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("change", ["consumed", "expired"])
+def test_reset_rechecks_token_after_hashing(client, monkeypatch, change):
+    register(client, "alice")
+    token = "test-reset-token"
+    with connect(write=True) as conn:
+        user = conn.execute(
+            "SELECT id, password_hash FROM users WHERE username = 'alice'"
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO password_resets(token_hash, user_id, expires_at) "
+            "VALUES (?, ?, ?)",
+            (main.token_hash(token), user["id"], int(main.time.time()) + 300),
+        )
+    original_hash = main.password_hash
+
+    def hash_with_concurrent_change(password):
+        # 哈希期间不持有写锁；另一个请求可使刚校验过的 token 失效。
+        with connect(write=True) as conn:
+            if change == "consumed":
+                conn.execute("DELETE FROM password_resets WHERE user_id = ?",
+                             (user["id"],))
+            else:
+                conn.execute(
+                    "UPDATE password_resets SET expires_at = ? WHERE user_id = ?",
+                    (int(main.time.time()) - 1, user["id"]),
+                )
+        return original_hash(password)
+
+    monkeypatch.setattr(main, "password_hash", hash_with_concurrent_change)
     response = client.post(
         "/api/auth/reset-password",
-        json={"token": "not-a-real-token", "password": "a-new-password-456"},
+        json={"token": token, "password": "a-new-password-456"},
     )
     assert response.status_code == 400
+    with connect() as conn:
+        actual = conn.execute(
+            "SELECT password_hash FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()[0]
+        assert actual == user["password_hash"]
+    assert client.get("/api/me").status_code == 200
 
 
 def test_reset_invalidates_existing_sessions(client, monkeypatch):

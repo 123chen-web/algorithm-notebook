@@ -429,26 +429,36 @@ def forgot_password(data: ForgotPassword, request: Request):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
     email = data.email.strip().lower()
-    with connect(write=True) as conn:
+    with connect() as conn:
         user = conn.execute(
             "SELECT id, username FROM users WHERE email = ?", (email,)
         ).fetchone()
+
+    if user is not None:
+        token = secrets.token_urlsafe(32)
+        with connect(write=True) as conn:
+            # 邮箱可能在首次查询后被修改，写入前再次确认归属。
+            user = conn.execute(
+                "SELECT id, username FROM users WHERE id = ? AND email = ?",
+                (user["id"], email),
+            ).fetchone()
+            if user is not None:
+                conn.execute(
+                    "DELETE FROM password_resets WHERE user_id = ?", (user["id"],)
+                )
+                conn.execute(
+                    """
+                    INSERT INTO password_resets(token_hash, user_id, expires_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        token_hash(token),
+                        user["id"],
+                        int(time.time()) + RESET_TOKEN_SECONDS,
+                    ),
+                )
+        # token 已提交，SMTP 的耗时或失败都不会延长写锁或回滚 token。
         if user is not None:
-            token = secrets.token_urlsafe(32)
-            conn.execute(
-                "DELETE FROM password_resets WHERE user_id = ?", (user["id"],)
-            )
-            conn.execute(
-                """
-                INSERT INTO password_resets(token_hash, user_id, expires_at)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    token_hash(token),
-                    user["id"],
-                    int(time.time()) + RESET_TOKEN_SECONDS,
-                ),
-            )
             send_password_reset_email(email, user["username"], token)
 
     # 不论邮箱是否存在都返回同样的结果，避免被用来探测已注册账号。
@@ -464,17 +474,27 @@ def reset_password(data: ResetPassword, request: Request):
     ):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
-    with connect(write=True) as conn:
+    hashed_token = token_hash(data.token)
+    with connect() as conn:
         row = conn.execute(
             "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
-            (token_hash(data.token),),
+            (hashed_token,),
+        ).fetchone()
+    if row is None or row["expires_at"] < int(time.time()):
+        raise HTTPException(400, "重置链接无效或已过期，请重新申请")
+
+    hashed_password = password_hash(data.password)
+    with connect(write=True) as conn:
+        # 哈希计算期间 token 可能被使用、替换或过期，必须在写事务中复查。
+        row = conn.execute(
+            "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+            (hashed_token,),
         ).fetchone()
         if row is None or row["expires_at"] < int(time.time()):
             raise HTTPException(400, "重置链接无效或已过期，请重新申请")
-
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
-            (password_hash(data.password), row["user_id"]),
+            (hashed_password, row["user_id"]),
         )
         conn.execute(
             "DELETE FROM password_resets WHERE user_id = ?", (row["user_id"],)
