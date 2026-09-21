@@ -7,3 +7,5 @@ data/
 *.db
 *.db-wal
 *.db-shm
+.mcp.json
+.claude/
