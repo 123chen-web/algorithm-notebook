@@ -32,9 +32,13 @@ INSTRUCTIONS = """
 def generate(mistake: dict) -> dict:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
-        raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+        raise HTTPException(503, "服务端尚未配置 AI API Key")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    # 留空时请求真正的 OpenAI；填其他 OpenAI 兼容服务的地址即可切换服务商
+    # （比如 DeepSeek），同时把 OPENAI_MODEL 换成对应服务的模型名。
+    base_url = os.getenv("OPENAI_BASE_URL", "").strip() or None
+
     reference = {
         "original_title": mistake["title"],
         "language": mistake["language"],
@@ -45,17 +49,25 @@ def generate(mistake: dict) -> dict:
 
     try:
         # 禁止 SDK 自动重试，避免一次点击隐含多次生成请求。
+        # 使用 Chat Completions 接口而不是 OpenAI 较新的 Responses 接口，
+        # 因为前者是绝大多数“OpenAI 兼容”服务商（包括 DeepSeek）都支持的
+        # 最小公共接口；只对接官方 OpenAI 的话两者都可以。
         with OpenAI(
             api_key=api_key,
+            base_url=base_url,
             timeout=45.0,
             max_retries=0,
         ) as client:
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=model,
-                instructions=INSTRUCTIONS,
-                input=json.dumps(reference, ensure_ascii=False),
-                max_output_tokens=2200,
-                store=False,
+                messages=[
+                    {"role": "system", "content": INSTRUCTIONS},
+                    {
+                        "role": "user",
+                        "content": json.dumps(reference, ensure_ascii=False),
+                    },
+                ],
+                max_tokens=2200,
             )
     except APITimeoutError:
         raise HTTPException(504, "AI 生成超时，请稍后重试") from None
@@ -66,15 +78,13 @@ def generate(mistake: dict) -> dict:
     except APIStatusError:
         raise HTTPException(502, "AI 请求失败，请管理员检查模型和 API 配置") from None
 
-    text = (response.output_text or "").strip()
-    refused = any(
-        getattr(content, "type", "") == "refusal"
-        for item in response.output
-        if getattr(item, "type", "") == "message"
-        for content in item.content
-    )
+    choice = response.choices[0]
+    text = (choice.message.content or "").strip()
+    # finish_reason 不是 "stop"：要么被内容过滤拒绝（content_filter），
+    # 要么在说完整句话之前就被截断（length），都不算生成成功。
+    incomplete = choice.finish_reason != "stop"
 
-    if response.status != "completed" or refused or not text:
+    if incomplete or not text:
         raise HTTPException(502, "AI 未生成完整题目，请修改易错点描述后重试")
     if len(text) > 16000:
         raise HTTPException(502, "AI 返回的题目过长，请重试")

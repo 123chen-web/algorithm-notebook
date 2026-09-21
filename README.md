@@ -111,6 +111,11 @@ macOS / Linux：
 
 ## AI 行为
 
+默认对接官方 OpenAI；也可以通过 `OPENAI_BASE_URL` 换成 DeepSeek 等其他
+"OpenAI 兼容"服务商，同时把 `OPENAI_API_KEY`、`OPENAI_MODEL` 换成对应
+服务商的 Key 和模型名即可，代码不用改。具体模型名和价格以服务商官方
+文档为准。
+
 密钥仅存在服务端环境变量中。
 
 生成时会发送当前题目名、语言、代码、思路和选中的易错点。
