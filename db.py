@@ -9,15 +9,57 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
 SCHEMA = """
+-- 套餐周期或额度变更时新建记录，旧套餐通过 is_active 停用。
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    period_days INTEGER NOT NULL
+        CHECK(typeof(period_days) = 'integer' AND period_days > 0),
+    ai_daily_limit INTEGER NOT NULL
+        CHECK(typeof(ai_daily_limit) = 'integer' AND ai_daily_limit >= 0),
+    price_cents INTEGER NOT NULL
+        CHECK(typeof(price_cents) = 'integer' AND price_cents > 0),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     timezone TEXT NOT NULL,
     created_at TEXT NOT NULL
-    -- email、last_reminder_sent 由 init_db() 里的迁移逻辑补上，
-    -- 兼容在这两列加入前就已存在的旧数据库文件。
+    -- email、last_reminder_sent、is_trial 和订阅字段由 init_db() 迁移补上，
+    -- 兼容在这些列加入前就已存在的旧数据库文件。
 );
+
+CREATE TABLE IF NOT EXISTS orders (
+    -- 订单号由业务生成随机值；TEXT 主键需要显式禁止 NULL。
+    id TEXT NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE RESTRICT,
+    -- 保存下单时的金额快照，不随套餐价格变化。
+    amount_cents INTEGER NOT NULL
+        CHECK(typeof(amount_cents) = 'integer' AND amount_cents > 0),
+    channel TEXT NOT NULL CHECK(channel IN ('alipay', 'wechat')),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'paid', 'failed', 'closed', 'refunded')),
+    provider_trade_no TEXT,
+    -- 时间沿用 UTC ISO 8601 字符串，由业务写入。
+    created_at TEXT NOT NULL,
+    paid_at TEXT,
+    closed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_user
+ON orders(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_orders_plan
+ON orders(plan_id);
+
+-- 尚未取得第三方交易号时保留 NULL，同一渠道的非 NULL 交易号不能重复。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_trade
+ON orders(channel, provider_trade_no);
 
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -103,9 +145,8 @@ CREATE INDEX IF NOT EXISTS idx_password_resets_user
 ON password_resets(user_id);
 """
 
-# 早于 email / last_reminder_sent 两列创建的旧数据库需要手动加列；
-# ALTER TABLE ADD COLUMN 在 SQLite 里不能写进上面的 CREATE TABLE 语句，
-# 只能在这里按需追加，且不能直接加 UNIQUE 约束，改用唯一索引代替。
+# CREATE TABLE IF NOT EXISTS 不会给旧表补列，需要按需 ALTER TABLE ADD COLUMN；
+# SQLite 不能通过 ADD COLUMN 添加 UNIQUE 约束，改用唯一索引代替。
 USER_COLUMN_MIGRATIONS = (
     ("email", "ALTER TABLE users ADD COLUMN email TEXT"),
     ("last_reminder_sent", "ALTER TABLE users ADD COLUMN last_reminder_sent TEXT"),
@@ -113,6 +154,12 @@ USER_COLUMN_MIGRATIONS = (
         "is_trial",
         "ALTER TABLE users ADD COLUMN is_trial INTEGER NOT NULL DEFAULT 0",
     ),
+    (
+        "plan_id",
+        "ALTER TABLE users ADD COLUMN plan_id INTEGER REFERENCES plans(id) "
+        "ON DELETE RESTRICT",
+    ),
+    ("plan_expires_at", "ALTER TABLE users ADD COLUMN plan_expires_at TEXT"),
 )
 
 
@@ -154,4 +201,8 @@ def init_db():
         # 多个 NULL 并存，所以旧账号不会因为这条索引互相冲突。
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
+        )
+        # plan_id 由上面的迁移添加，旧库必须先补列再建索引。
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_plan ON users(plan_id)"
         )

@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import (
@@ -25,6 +26,7 @@ from pydantic import (
 
 import ai
 import mailer
+import payments
 from db import ROOT, connect, init_db
 from scheduler import schedule, today_in_timezone
 
@@ -160,6 +162,11 @@ class VariantResult(InputModel):
     result: Literal["unattempted", "solved", "partial", "failed"]
     answer_code: str = Field(default="", max_length=40000)
     notes: str = Field(default="", max_length=8000)
+
+
+class NewOrder(InputModel):
+    plan_id: int = Field(strict=True, gt=0)
+    channel: Literal["alipay", "wechat"]
 
 
 def utc_now():
@@ -597,6 +604,40 @@ def update_email(data: EmailUpdate, user=Depends(current_user)):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个邮箱已经被使用") from None
     return {"ok": True, "email": data.email}
+
+
+@app.get("/api/plans")
+def list_plans(user=Depends(current_user)):
+    return {"plans": payments.list_plans()}
+
+
+@app.post("/api/orders", status_code=201)
+def create_order(data: NewOrder, user=Depends(current_user)):
+    return payments.create_order(user["id"], data.plan_id, data.channel)
+
+
+@app.get("/api/orders/{order_id}")
+def get_order(order_id: str, user=Depends(current_user)):
+    return {"order": payments.get_order(user["id"], order_id)}
+
+
+@app.post("/api/payments/mock/{channel}/callback")
+async def mock_payment_callback(
+    channel: Literal["alipay", "wechat"],
+    request: Request,
+    user=Depends(current_user),
+):
+    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") != "1":
+        raise HTTPException(404, "接口不存在")
+    raw_body = await request.body()
+    order = await run_in_threadpool(
+        payments.handle_callback,
+        channel,
+        raw_body,
+        request.headers,
+        user_id=user["id"],
+    )
+    return {"ok": True, "order": order}
 
 
 @app.post("/api/problems", status_code=201)

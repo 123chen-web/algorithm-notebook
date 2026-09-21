@@ -100,7 +100,9 @@ macOS / Linux：
 ## 数据结构
 
 - users：账号、密码哈希、邮箱（可为空）、时区、上次提醒发送日期、
-  是否为体验账号（is_trial）。
+  是否为体验账号（is_trial）、付费套餐和套餐到期时间。
+- plans：套餐周期、每日 AI 额度、整数分价格及启用状态。
+- orders：订单金额快照、支付渠道、状态和第三方交易号。
 - sessions：会话令牌哈希、到期时间。
 - password_resets：密码重置令牌哈希、所属用户、过期时间，用后即删。
 - problems：题目名、代码、思路。
@@ -319,6 +321,63 @@ print(a + b)
 
 导入只保存记录，不执行笔记代码、不调用 AI。
 
+## 支付本地联调
+
+当前提供套餐列表、下单、订单查询及 Mock 回调，不连接真实支付平台。
+`alipay` 和 `wechat` 暂时都由 `MockChannel` 模拟；返回的 `mock://` 二维码
+地址仅占位，不能扫码付款。默认关闭 Mock；在本地 `.env` 设置：
+
+```dotenv
+PAYMENTS_MOCK_ENABLED=1
+PAYMENTS_MOCK_SECRET=填写独立随机密钥
+```
+
+可用 `python -c "import secrets; print(secrets.token_hex(32))"` 生成密钥。
+密钥只用于服务端和本地联调脚本，不发送给浏览器。正式部署保持 Mock 关闭。
+
+所有接口均需已有的 Session Cookie；POST 还需 `X-CSRF-Protection: 1`。
+
+| 接口 | 请求或返回 |
+| --- | --- |
+| `GET /api/plans` | `{"plans": [...]}`，只包含启用套餐 |
+| `POST /api/orders` | 请求 `{"plan_id": 1, "channel": "alipay"}`；返回 `order` 和 `payment` |
+| `GET /api/orders/{order_id}` | `{"order": {...}}`，只能查询自己的订单 |
+| `POST /api/payments/mock/{channel}/callback` | 原始 JSON 正文加 `X-Mock-Signature`；只能处理自己的订单 |
+
+套餐由管理员直接维护数据库；本阶段没有面向普通用户的套餐编辑接口。
+周期或额度变化时新建套餐、停用旧套餐，保留原记录。订单以落库时的价格
+作为金额快照，不接受前端自行指定金额，也不会因套餐停用而拒绝已有订单
+的有效支付回调。
+
+Mock 回调正文包含以下字段，`amount_cents` 必须与订单金额相同：
+
+```json
+{
+  "order_id": "下单接口返回的订单号",
+  "channel": "alipay",
+  "provider_trade_no": "本渠道内唯一的模拟交易号",
+  "amount_cents": 990,
+  "status": "paid"
+}
+```
+
+用 `MockChannel(channel, secret).sign_callback(raw_body)` 得到签名头，提交时
+必须使用签名时完全相同的原始字节。`verify_callback` 对签名、结构和金额
+类型做校验，业务层再核对订单渠道、金额、交易号和归属。下一阶段在
+`payment_channels.get_channel()` 中配置真实适配器，订单生命周期无需依赖 SDK。
+
+本阶段允许 `pending → paid / failed / closed`；同一终态的相同回调幂等，
+不允许终态之间互相转换。`refunded` 保留在 schema 中，尚未开放退款。
+只有首次转为 `paid` 时更新用户订阅，订单与订阅在同一事务提交：当前
+套餐未过期则从 `plan_expires_at` 顺延本次套餐的 `period_days`，允许
+提前续费不浪费剩余时长；无套餐或已过期则从支付时刻重新起算，不倒扣
+已经过去的时间。不同套餐之间切换按上述规则直接顺延或重新起算，V1
+不做按剩余天数折算价格的处理。
+渠道发起支付若报错，会返回包含 `order_id` 的 502；订单保留 `pending`，
+先轮询该订单，避免渠道实际已受理但客户端重复下单。
+
+套餐的 `ai_daily_limit` 暂未接入 AI 请求配额；现有 AI 配额规则保持原样。
+
 ## 部署说明
 
 这是面向少量邀请用户的 V1。
@@ -351,4 +410,4 @@ print(a + b)
 计数只存在单进程内存里，重启即清零；部署多实例或反向代理之后需要
 改成共享存储，并确认拿到的是真实客户端 IP。
 
-V1 暂不包含支付、多实例部署和正式的数据库版本迁移工具。
+V1 暂未接入真实支付平台，也不包含多实例部署和正式的数据库版本迁移工具。
