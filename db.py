@@ -109,6 +109,10 @@ ON password_resets(user_id);
 USER_COLUMN_MIGRATIONS = (
     ("email", "ALTER TABLE users ADD COLUMN email TEXT"),
     ("last_reminder_sent", "ALTER TABLE users ADD COLUMN last_reminder_sent TEXT"),
+    (
+        "is_trial",
+        "ALTER TABLE users ADD COLUMN is_trial INTEGER NOT NULL DEFAULT 0",
+    ),
 )
 
 

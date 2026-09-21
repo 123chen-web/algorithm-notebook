@@ -660,3 +660,49 @@ def test_reset_password_is_rate_limited(client):
         json={"token": "whatever", "password": "a-test-password-123"},
     )
     assert blocked.status_code == 429
+
+
+def test_trial_account_signs_in_without_invite_code(client):
+    response = client.post(
+        "/api/auth/trial", json={"timezone": "Asia/Shanghai"}
+    )
+    assert response.status_code == 201
+    username = response.json()["username"]
+    assert username.startswith("trial_")
+
+    me = client.get("/api/me")
+    assert me.status_code == 200
+    body = me.json()
+    assert body["username"] == username
+    assert body["is_trial"] is True
+    assert body["email"] is None
+
+
+def test_trial_account_is_rate_limited(client):
+    for _ in range(main.TRIAL_LIMIT):
+        client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
+
+    blocked = client.post(
+        "/api/auth/trial", json={"timezone": "Asia/Shanghai"}
+    )
+    assert blocked.status_code == 429
+
+
+def test_trial_account_uses_its_own_lower_ai_limit(client, monkeypatch):
+    # 正式账号的额度（client fixture 里设成 2）比体验账号（这里设成 1）
+    # 更宽松，确认体验账号用的是自己的更低上限，不是全局的 AI_DAILY_LIMIT。
+    monkeypatch.setenv("TRIAL_AI_DAILY_LIMIT", "1")
+    monkeypatch.setattr(
+        ai,
+        "generate",
+        lambda item: {"description": "新题目", "model": "mock-model"},
+    )
+
+    client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
+    mistake_id = new_problem(client)[0]
+
+    first = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert first.status_code == 201
+
+    second = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert second.status_code == 429

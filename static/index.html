@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>算法错题本</title>
+  <meta name="description" content="记录真实的算法错误，按时复习，让 AI 围绕薄弱点生成新的练习。算法错题本，邀请内测中。">
+  <title>算法错题本 · 把错误变成掌握</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/intro.css">
   <script defer src="/static/intro.js"></script>
@@ -12,137 +13,221 @@
 <body>
   <div class="container">
     <header class="header">
-      <div>
-        <h1>算法错题本</h1>
-        <p class="muted">记录错误，按时复习，用新题检查自己是否真的理解。</p>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">{ }</span>
+        <div class="brand-copy">
+          <h1>算法错题本</h1>
+          <p class="muted">记录 · 复习 · 真正掌握</p>
+        </div>
       </div>
-      <div>
+      <div class="user-meta">
         <p id="user-info" class="muted"></p>
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
     </header>
 
+    <p id="trial-banner" class="trial-banner" role="status" hidden>
+      这是体验账号，数据可能会被定期清理，注册正式账号才能长期保存。
+    </p>
+
     <form id="email-prompt" class="panel" hidden>
-      <p>还没绑定邮箱，绑定后可以用邮箱找回密码、接收复习提醒。</p>
+      <div class="form-heading">
+        <h2>给账号留一个找回方式</h2>
+        <p id="email-prompt-hint" class="muted">绑定邮箱后，可以找回密码、接收复习提醒。</p>
+      </div>
       <label>
         邮箱
         <input name="email" type="email" required maxlength="254"
-               autocomplete="email">
+               autocomplete="email" aria-describedby="email-prompt-hint"
+               placeholder="你常用的邮箱">
       </label>
       <button type="submit" class="primary">绑定邮箱</button>
     </form>
 
     <section id="intro" class="intro" aria-labelledby="intro-title">
-      <p class="eyebrow">算法错题本 · 邀请内测</p>
-      <h2 id="intro-title">记录你的算法错题，到期自动提醒复习，还能让 AI 针对你的薄弱点出新题练习。</h2>
-      <p class="lead">适合正在自学算法、准备编程面试的人。把“这次为什么错”留下来，下次复习时检查自己是否真的理解。</p>
+      <div class="intro-hero">
+        <div class="intro-copy">
+          <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>算法错题本 · 邀请内测</p>
+          <h2 id="intro-title">让做错的题，<br>成为下次的把握。</h2>
+          <p class="intro-lead">刷过的题会忘，犯过的错值得记住。<br>留下真实错因，按时回来复习，再用一道新题检查自己是否真的理解。</p>
+          <div class="intro-links">
+            <a class="intro-cta" href="#login-form">进入我的错题本 <span aria-hidden="true">↗</span></a>
+            <a class="intro-secondary" href="#register-form">我有邀请码，注册</a>
+            <button type="button" id="trial-start" class="intro-secondary intro-trial">
+              免注册体验
+            </button>
+          </div>
+          <p class="intro-audience">给正在自学算法、准备编程面试的你。</p>
+          <p class="intro-trial-note">
+            没有邀请码也能先试试：体验账号不用注册，数据可能会被定期清理，不建议长期依赖。
+          </p>
+        </div>
 
-      <div class="steps">
-        <article class="step">
-          <h3>1. 留下真实错因</h3>
-          <p>保存题目、自己的代码和当时的思路，把每个易错点单独记下来。</p>
+        <figure class="intro-example">
+          <div class="sample-note">
+            <div class="sample-topline">
+              <span>一条值得记住的错误</span>
+              <span class="sample-status">今日到期</span>
+            </div>
+            <p class="sample-subject">A + B / 数据范围</p>
+            <h3>两个 int 相加，<br>结果也一定放得下吗？</h3>
+            <pre class="sample-code"><code><span>int</span> sum = a + b;</code></pre>
+            <div class="sample-mistake">
+              <p class="sample-label">当时忽略了什么</p>
+              <p>只检查了 a 和 b 的范围，<br>没有检查相加后的结果。</p>
+            </div>
+            <div class="sample-next">
+              <span class="sample-check" aria-hidden="true">✓</span>
+              <span>先算结果范围，再选择数据类型。</span>
+            </div>
+            <div class="sample-bottomline">
+              <span>记录错因</span><span aria-hidden="true">→</span>
+              <span>到期复习</span><span aria-hidden="true">→</span>
+              <span>换题验证</span>
+            </div>
+          </div>
+          <figcaption>介绍示例，不会写入你的错题本。</figcaption>
+        </figure>
+      </div>
+
+      <div class="intro-steps" aria-label="如何使用算法错题本">
+        <article class="intro-step">
+          <span class="intro-step-number" aria-hidden="true">01 / 记录</span>
+          <h3>记下「为什么错」</h3>
+          <p>代码、当时的思路、具体的易错点放在一起。下次打开，还能想起自己卡在哪一步。</p>
         </article>
-        <article class="step">
-          <h3>2. 到期回来复习</h3>
-          <p>在“今日复习”查看到期记录，根据这次掌握程度安排下一次复习。</p>
+        <article class="intro-step">
+          <span class="intro-step-number" aria-hidden="true">02 / 复习</span>
+          <h3>今天该看什么，一目了然</h3>
+          <p>每条易错点独立安排复习。按这次的掌握程度评分，系统会计算下一次复习日期。</p>
         </article>
-        <article class="step">
-          <h3>3. 换道题检查理解</h3>
-          <p>让 AI 围绕同一个薄弱点出一道变体题，自己解题，再记录练习结果。</p>
+        <article class="intro-step">
+          <span class="intro-step-number" aria-hidden="true">03 / 练习</span>
+          <h3>换一道题，检查理解</h3>
+          <p>让 AI 围绕同一个薄弱点生成变体题。自己解题，再留下结果和新的发现。</p>
         </article>
       </div>
 
-      <h3>和普通 flashcard 工具有什么区别？</h3>
-      <p>这里以真实做题时的错误模式组织复习：不仅看知识结论，也保留出错的代码和当时的想法。新练习围绕你选中的易错点生成，不是从随机题库里抽一道题。</p>
-
-      <div class="example">
-        <strong>比如：总是忽略整数溢出</strong>
-        <p>记下当时没检查数据范围的原因；复习后，再练一道需要判断数值范围的新题，看看自己是否还会漏掉这一步。</p>
-        <p class="muted">这是介绍示例，不会写入你的错题本。系统保存代码，但不运行代码、不自动判题。当前提醒显示在“今日复习”页面。</p>
+      <div class="intro-difference">
+        <div>
+          <p class="eyebrow">从你真实的错误出发</p>
+          <h3>比记住答案，<br>多走一步。</h3>
+        </div>
+        <div class="intro-difference-copy">
+          <p>普通 flashcard 帮你回忆知识结论。这里还会保留你写错的代码和当时的想法，让复习围绕具体的错误模式展开。新练习也针对你选中的薄弱点生成，不从随机题库抽题。</p>
+          <p class="intro-small">代码仅用于记录，不运行、不自动判题。到期记录会显示在「今日复习」中。</p>
+        </div>
       </div>
-
-      <div class="links">
-        <a class="cta" href="#register-form">我有邀请码，开始试用</a>
-        <a href="#login-form">已有账号，登录</a>
-      </div>
-      <p class="invitation">目前处于内部测试阶段，暂不对外开放。</p>
+      <p class="intro-invitation"><span class="intro-dot" aria-hidden="true"></span>目前处于内部测试阶段，暂不对外开放。</p>
     </section>
 
     <p id="notice" role="status" aria-live="polite"></p>
 
-    <section id="auth" class="auth-grid">
+    <section id="auth" class="auth-grid" aria-label="账号登录与注册">
       <form id="login-form" class="panel">
-        <h2>登录</h2>
+        <div class="form-heading">
+          <p class="eyebrow">已有账号</p>
+          <h2>欢迎回来</h2>
+          <p class="muted">接着上次的记录，继续今天的复习。</p>
+        </div>
         <label>
           用户名
           <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
-                 autocomplete="username">
+                 autocomplete="username" aria-describedby="login-username-hint"
+                 placeholder="注册时使用的用户名">
         </label>
+        <p id="login-username-hint" class="field-hint">使用用户名登录，不是邮箱。</p>
         <label>
           密码
           <input name="password" type="password" required minlength="10"
-                 maxlength="128" autocomplete="current-password">
+                 maxlength="128" autocomplete="current-password"
+                 placeholder="输入你的密码">
         </label>
-        <button type="submit" class="primary">登录</button>
-        <p>
+        <div class="form-footer">
+          <button type="submit" class="primary">登录错题本</button>
           <a href="#forgot-form" id="forgot-link">忘记密码？</a>
-        </p>
+        </div>
       </form>
 
       <form id="register-form" class="panel">
-        <h2>内测注册</h2>
+        <div class="form-heading">
+          <p class="eyebrow">仅限受邀用户</p>
+          <h2>创建你的错题本</h2>
+          <p class="muted">用邀请码加入内测，从第一条错因开始。</p>
+        </div>
+        <div class="form-grid">
+          <div>
+            <label>
+              用户名
+              <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
+                     autocomplete="username" aria-describedby="register-username-hint">
+            </label>
+            <p id="register-username-hint" class="field-hint">3–32 位字母、数字或下划线。</p>
+          </div>
+          <div>
+            <label>
+              密码
+              <input name="password" type="password" required minlength="10"
+                     maxlength="128" autocomplete="new-password"
+                     aria-describedby="register-password-hint">
+            </label>
+            <p id="register-password-hint" class="field-hint">至少 10 个字符。</p>
+          </div>
+        </div>
         <label>
-          用户名：3–32 位字母、数字或下划线
-          <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
-                 autocomplete="username">
-        </label>
-        <label>
-          密码：至少 10 个字符
-          <input name="password" type="password" required minlength="10"
-                 maxlength="128" autocomplete="new-password">
-        </label>
-        <label>
-          邮箱：用于找回密码和复习提醒
+          邮箱
           <input name="email" type="email" required maxlength="254"
-                 autocomplete="email">
+                 autocomplete="email" aria-describedby="register-email-hint"
+                 placeholder="你常用的邮箱">
         </label>
-        <label>
-          邀请码
-          <input name="invite_code" required maxlength="256"
-                 autocomplete="off">
-        </label>
-        <label>
-          复习时区
-          <input name="timezone" id="timezone" required maxlength="64"
-                 value="Asia/Shanghai">
-        </label>
-        <p class="muted">
-          已自动填写浏览器时区。每日复习以此为准，注册后暂不支持修改。
-        </p>
+        <p id="register-email-hint" class="field-hint">用于找回密码和接收复习提醒。</p>
+        <div class="form-grid">
+          <label>
+            邀请码
+            <input name="invite_code" required maxlength="256"
+                   autocomplete="off" placeholder="输入收到的邀请码">
+          </label>
+          <label>
+            复习时区
+            <input name="timezone" id="timezone" required maxlength="64"
+                   value="Asia/Shanghai" aria-describedby="timezone-hint">
+          </label>
+        </div>
+        <p id="timezone-hint" class="field-hint">已自动填写浏览器时区，复习日期以此为准；注册后暂不支持修改。</p>
         <button type="submit" class="primary">注册并登录</button>
       </form>
 
       <form id="forgot-form" class="panel" hidden>
-        <h2>找回密码</h2>
+        <div class="form-heading">
+          <p class="eyebrow">账号帮助</p>
+          <h2>找回密码</h2>
+          <p class="muted">通过绑定的邮箱，重新回到你的错题本。</p>
+        </div>
         <label>
           注册时填写的邮箱
           <input name="email" type="email" required maxlength="254"
-                 autocomplete="email">
+                 autocomplete="email" aria-describedby="forgot-email-hint">
         </label>
-        <p class="muted">
-          如果这个邮箱注册过账号，会收到一封重置密码的邮件，30 分钟内有效。
-        </p>
-        <button type="submit" class="primary">发送重置邮件</button>
-        <p><a href="#login-form" id="back-to-login-link">返回登录</a></p>
+        <p id="forgot-email-hint" class="field-hint">如果这个邮箱注册过账号，会收到一封重置密码的邮件，30 分钟内有效。</p>
+        <div class="form-footer">
+          <button type="submit" class="primary">发送重置邮件</button>
+          <a href="#login-form" id="back-to-login-link">返回登录</a>
+        </div>
       </form>
 
       <form id="reset-form" class="panel" hidden>
-        <h2>设置新密码</h2>
+        <div class="form-heading">
+          <p class="eyebrow">账号帮助</p>
+          <h2>设置新密码</h2>
+          <p class="muted">设置后，就可以用新密码登录。</p>
+        </div>
         <label>
-          新密码：至少 10 个字符
+          新密码
           <input name="password" type="password" required minlength="10"
-                 maxlength="128" autocomplete="new-password">
+                 maxlength="128" autocomplete="new-password"
+                 aria-describedby="reset-password-hint">
         </label>
+        <p id="reset-password-hint" class="field-hint">至少 10 个字符。</p>
         <button type="submit" class="primary">保存新密码</button>
       </form>
     </section>
@@ -156,45 +241,68 @@
       </nav>
 
       <section id="list-page">
-        <h2 id="list-title">今日复习</h2>
-        <p id="list-summary" class="muted"></p>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">你的学习笔记</p>
+            <h2 id="list-title">今日复习</h2>
+            <p id="list-summary" class="muted"></p>
+          </div>
+        </div>
         <div class="workspace">
           <aside id="cards" aria-label="易错点列表"></aside>
-          <section id="detail" class="panel">
+          <section id="detail" class="panel" aria-label="易错点详情">
             选择一条易错点开始复习。
           </section>
         </div>
       </section>
 
       <section id="new-page" class="panel" hidden>
-        <h2>新增题目记录</h2>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">写下这一次，帮助下一次</p>
+            <h2>新增题目记录</h2>
+            <p class="muted">保留当时的想法，尤其是出错的那一步。</p>
+          </div>
+        </div>
         <form id="problem-form">
-          <label>
-            题目名
-            <input name="title" required maxlength="200">
-          </label>
-          <label>
-            编程语言
-            <input name="language" required maxlength="40" value="Python">
-          </label>
-          <label>
-            当时的代码
-            <textarea name="code" required maxlength="40000" rows="12"
-                      spellcheck="false" class="code"></textarea>
-          </label>
-          <label>
-            当时的思路
-            <textarea name="thinking" required maxlength="8000"
-                      rows="4"></textarea>
-          </label>
+          <section class="form-section" aria-labelledby="problem-basics-title">
+            <h3 id="problem-basics-title">01 · 题目和代码</h3>
+            <div class="form-grid">
+              <label>
+                题目名
+                <input name="title" required maxlength="200"
+                       placeholder="例如：A + B、迷宫可达性判断">
+              </label>
+              <label>
+                编程语言
+                <input name="language" required maxlength="40" value="Python">
+              </label>
+            </div>
+            <label>
+              当时的代码
+              <textarea name="code" required maxlength="40000" rows="12"
+                        spellcheck="false" class="code"
+                        aria-describedby="code-hint"
+                        placeholder="粘贴当时的代码，保留错误也没关系。"></textarea>
+            </label>
+            <p id="code-hint" class="field-hint">代码会保存在记录中，不会被运行。</p>
+          </section>
 
-          <h3>易错点</h3>
-          <p class="muted">
-            每条只写一个具体问题，例如“二分查找中，右边界更新漏掉了等号”。
-            每条易错点会独立安排复习，最多添加 10 条。
-          </p>
-          <div id="mistake-inputs"></div>
-          <div class="actions">
+          <section class="form-section" aria-labelledby="problem-thinking-title">
+            <h3 id="problem-thinking-title">02 · 回想当时的思路</h3>
+            <label>
+              当时的思路
+              <textarea name="thinking" required maxlength="8000" rows="4"
+                        placeholder="当时准备怎么做？在哪一步偏离了预期？"></textarea>
+            </label>
+          </section>
+
+          <section class="form-section" aria-labelledby="problem-mistakes-title">
+            <h3 id="problem-mistakes-title">03 · 拆出具体的易错点</h3>
+            <p id="mistake-hint" class="muted">每条只写一个问题，例如「二分查找中，右边界更新漏掉了等号」。每条会独立安排复习，最多添加 10 条。</p>
+            <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
+          </section>
+          <div class="actions form-footer">
             <button id="add-mistake" type="button">再加一个易错点</button>
             <button type="submit" class="primary">保存记录</button>
           </div>

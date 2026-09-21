@@ -58,6 +58,14 @@ class Credentials(InputModel):
     password: str = Field(min_length=10, max_length=128)
 
 
+def normalize_timezone(value):
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("请填写有效时区，例如 Asia/Shanghai") from None
+    return value
+
+
 class Registration(Credentials):
     invite_code: str = Field(min_length=1, max_length=256)
     email: str = Field(min_length=3, max_length=254)
@@ -71,11 +79,16 @@ class Registration(Credentials):
     @field_validator("timezone")
     @classmethod
     def valid_timezone(cls, value):
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError("请填写有效时区，例如 Asia/Shanghai") from None
-        return value
+        return normalize_timezone(value)
+
+
+class TrialSignup(InputModel):
+    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value):
+        return normalize_timezone(value)
 
 
 def normalize_email(value):
@@ -161,6 +174,12 @@ def ai_limit():
     return max(1, int(os.getenv("AI_DAILY_LIMIT", "10")))
 
 
+def trial_ai_limit():
+    # 体验账号任何人都能开，额度要远低于正式账号，否则等于把
+    # AI_DAILY_LIMIT 变成"任何人每天可用次数 × 无限个体验账号"。
+    return max(0, int(os.getenv("TRIAL_AI_DAILY_LIMIT", "2")))
+
+
 def public_base_url():
     # 拼重置密码链接用；本地开发默认指向 uvicorn 监听的地址，
     # 部署上线后要在 .env 里改成真实域名，否则邮件里的链接打不开。
@@ -220,7 +239,7 @@ def current_user(request: Request):
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT u.id, u.username, u.email, u.timezone
+            SELECT u.id, u.username, u.email, u.timezone, u.is_trial
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -230,7 +249,9 @@ def current_user(request: Request):
 
     if row is None:
         raise HTTPException(401, "登录已过期，请重新登录")
-    return dict(row)
+    user = dict(row)
+    user["is_trial"] = bool(user["is_trial"])
+    return user
 
 
 MISTAKE_SELECT = """
@@ -264,6 +285,8 @@ def owned_problem(conn, problem_id, user_id):
 # 部署到多实例或反向代理之后，需要改用共享存储并校验可信的转发头。
 REGISTER_LIMIT = 5
 REGISTER_WINDOW_SECONDS = 15 * 60
+TRIAL_LIMIT = 3
+TRIAL_WINDOW_SECONDS = 60 * 60
 LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 FORGOT_PASSWORD_LIMIT = 5
@@ -377,6 +400,40 @@ def register(data: Registration, request: Request, response: Response):
         raise HTTPException(409, "用户名已被使用") from None
 
     return {"id": user_id, "username": data.username.lower()}
+
+
+@app.post("/api/auth/trial", status_code=201)
+def create_trial_account(data: TrialSignup, request: Request, response: Response):
+    # 免邀请码的体验账号：任何人都能触发，靠 IP 限流控制建号速度，
+    # 靠 is_trial 标记单独限制 AI 调用额度（见 trial_ai_limit）。
+    if rate_limited(
+        f"trial:{client_ip(request)}", TRIAL_LIMIT, TRIAL_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "体验账号创建过于频繁，请稍后再试")
+
+    hashed = password_hash(secrets.token_urlsafe(24))
+    for _ in range(5):
+        username = f"trial_{secrets.token_hex(6)}"
+        try:
+            with connect(write=True) as conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO users(
+                        username, password_hash, email, timezone,
+                        created_at, is_trial
+                    ) VALUES (?, ?, NULL, ?, ?, 1)
+                    """,
+                    (username, hashed, data.timezone, utc_now()),
+                )
+                user_id = cursor.lastrowid
+                set_session(conn, user_id, response)
+            break
+        except sqlite3.IntegrityError:
+            continue
+    else:
+        raise HTTPException(503, "暂时无法创建体验账号，请稍后再试")
+
+    return {"id": user_id, "username": username}
 
 
 @app.post("/api/auth/login")
@@ -524,7 +581,7 @@ def me(user=Depends(current_user)):
         **user,
         "today": today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-        "ai_daily_limit": ai_limit(),
+        "ai_daily_limit": trial_ai_limit() if user["is_trial"] else ai_limit(),
     }
 
 
@@ -724,7 +781,11 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
             SET attempts = ai_usage.attempts + 1
             WHERE ai_usage.attempts < ?
             """,
-            (user["id"], today_for(user).isoformat(), ai_limit()),
+            (
+                user["id"],
+                today_for(user).isoformat(),
+                trial_ai_limit() if user["is_trial"] else ai_limit(),
+            ),
         )
         if cursor.rowcount != 1:
             raise HTTPException(429, "今天的 AI 生成次数已用完")

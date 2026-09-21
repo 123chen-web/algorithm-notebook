@@ -33,6 +33,9 @@ function message(text = "", error = false) {
 }
 
 function setBusy(value) {
+  $("#app").setAttribute("aria-busy", String(value));
+  $("#auth").setAttribute("aria-busy", String(value));
+  $("#notice").classList.toggle("pending", value);
   document.querySelectorAll("button").forEach((button) => {
     button.disabled = value || button.dataset.blocked === "1";
   });
@@ -53,6 +56,7 @@ function signedOut() {
   $("#logout").hidden = true;
   $("#user-info").textContent = "";
   $("#email-prompt").hidden = true;
+  $("#trial-banner").hidden = true;
   showAuthPanels(["login-form", "register-form"]);
   $("#cards").replaceChildren();
   $("#detail").replaceChildren();
@@ -147,7 +151,8 @@ function timestamp(value) {
 function updateUserInfo() {
   $("#user-info").textContent =
     `${user.username} · ${user.timezone} · ${user.today}`;
-  $("#email-prompt").hidden = Boolean(user.email);
+  $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
+  $("#trial-banner").hidden = !user.is_trial;
 }
 
 async function enterApp() {
@@ -166,6 +171,7 @@ async function showView(nextView) {
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
+    button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
   if (view !== "new") await loadList();
@@ -179,20 +185,24 @@ async function loadList() {
   $("#list-title").textContent =
     view === "today" ? "今日复习" : "全部记录";
   $("#list-summary").textContent = view === "today"
-    ? `${data.today} · ${data.items.length} 条到期易错点，包含逾期记录`
-    : `共 ${data.items.length} 条易错点`;
+    ? `${data.today} · 今天有 ${data.items.length} 条易错点待复习（含逾期）`
+    : `共 ${data.items.length} 条易错点 · 每一条，都有自己的复习节奏`;
 
   $("#cards").replaceChildren();
-  $("#detail").replaceChildren(
-    element("p", "选择一条易错点查看详情。", "muted")
-  );
+  clearDetail();
 
   if (!data.items.length) {
     $("#cards").append(element(
       "p",
-      view === "today" ? "今日复习已完成。" : "还没有记录，先添加一道题。",
-      "muted"
+      view === "today" ? "今天没有待复习的易错点。" : "你的第一条记录，会出现在这里。",
+      "muted empty-list"
     ));
+    clearDetail(
+      view === "today" ? "今天的复习，告一段落" : "从一道做错的题开始",
+      view === "today"
+        ? "可以去「全部记录」回看笔记，也可以在「新增记录」留下今天的新发现。"
+        : "点击「新增记录」，留下代码、思路和错因。每条易错点都会单独安排复习。"
+    );
     return;
   }
 
@@ -200,10 +210,11 @@ async function loadList() {
     const button = element("button", "", "record-button");
     button.type = "button";
     button.dataset.id = String(item.id);
+    button.setAttribute("aria-pressed", "false");
     button.append(
       element("strong", item.title),
       element("span", item.description, "record-description"),
-      element("small", `复习日期：${item.due_date}`, "muted")
+      element("small", `${item.due_date <= data.today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted")
     );
     button.addEventListener("click", () => run(() => openMistake(item.id)));
     $("#cards").append(button);
@@ -217,6 +228,7 @@ async function openMistake(id) {
 
   document.querySelectorAll(".record-button").forEach((button) => {
     button.classList.toggle("selected", Number(button.dataset.id) === id);
+    button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));
   });
 
   renderDetail(item);
@@ -235,7 +247,7 @@ function renderVariant(variant) {
     "p",
     variant.result_updated_at
       ? `结果保存于：${timestamp(variant.result_updated_at)}`
-      : "尚未记录练习结果",
+      : "做完后，在下面记下这次的结果。",
     "muted"
   );
 
@@ -256,8 +268,8 @@ function renderVariant(variant) {
 
   form.append(
     field("练习结果", result),
-    field("我的解答代码（仅保存，不运行）", code),
-    field("复盘：是否还犯了同样的错误？", notes),
+    field("我的解答代码 · 仅保存，不运行", code),
+    field("这次还犯了同样的错误吗？", notes),
     save
   );
 
@@ -276,7 +288,7 @@ function renderVariant(variant) {
         `变体 #${updated.id} · ${resultLabels[updated.result]}`;
       savedAt.textContent =
         `结果保存于：${timestamp(updated.result_updated_at)}`;
-      message("练习结果已保存。复习日期保持不变。");
+      message("练习结果已保存。这次练习不会改变复习日期。");
     });
   });
 
@@ -293,7 +305,7 @@ function renderMistakeText(item) {
   const wrap = element("div", "", "mistake-text");
 
   function readOnly() {
-    const editBtn = element("button", "编辑易错点描述");
+    const editBtn = element("button", "编辑这条错因");
     editBtn.type = "button";
     editBtn.addEventListener("click", editForm);
     wrap.replaceChildren(element("p", item.description, "multiline"), editBtn);
@@ -308,7 +320,7 @@ function renderMistakeText(item) {
     cancel.addEventListener("click", readOnly);
 
     const form = document.createElement("form");
-    form.append(field("易错点 / 为什么错", input), save, cancel);
+    form.append(field("哪里容易错，为什么会错？", input), save, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
@@ -332,10 +344,10 @@ function renderMistakeText(item) {
 }
 
 function renderProblemEditor(item) {
-  const wrap = element("div");
+  const wrap = element("div", "", "problem-editor");
 
   function readOnly() {
-    const editBtn = element("button", "编辑题目信息（标题 / 语言 / 代码 / 思路）");
+    const editBtn = element("button", "编辑题目、代码和思路");
     editBtn.type = "button";
     editBtn.addEventListener("click", editForm);
     wrap.replaceChildren(
@@ -400,34 +412,48 @@ function renderProblemEditor(item) {
   return wrap;
 }
 
-function clearDetail() {
-  $("#detail").replaceChildren(
-    element("p", "选择一条易错点查看详情。", "muted")
+function clearDetail(
+  title = "从一条易错点开始",
+  description = "选中列表中的一条记录，先回忆如何避免这个错误，再对照笔记，给这次掌握程度打个分。"
+) {
+  const empty = element("div", "", "empty-state");
+  const symbol = element("span", "≡", "empty-symbol");
+  symbol.setAttribute("aria-hidden", "true");
+  empty.append(
+    symbol,
+    element("h3", title),
+    element("p", description, "muted")
   );
+  $("#detail").replaceChildren(empty);
 }
 
 function renderDetail(item) {
   const root = $("#detail");
   root.replaceChildren();
 
-  root.append(
+  const heading = element("div", "", "detail-heading");
+  heading.append(
     element("h2", item.title),
-    element("p", `语言：${item.language}`, "muted"),
-    element("h3", "这条易错点"),
+    element("p", item.language, "language-badge")
+  );
+  root.append(
+    heading,
+    element("h3", "这次需要记住的错因", "section-label"),
     renderMistakeText(item),
     element(
       "p",
       `下次复习：${item.due_date} · 连续成功：${item.repetitions} 次`,
-      "muted"
+      "muted review-meta"
     ),
     element(
       "p",
       `上次复习：${timestamp(item.last_reviewed_at)}`,
-      "muted"
+      "muted review-meta"
     )
   );
 
   const original = document.createElement("details");
+  original.className = "original-record";
   original.append(
     element("summary", "查看当时的思路和代码"),
     renderProblemEditor(item)
@@ -437,7 +463,7 @@ function renderDetail(item) {
   const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
   deleteMistakeBtn.type = "button";
   deleteMistakeBtn.addEventListener("click", () => run(async () => {
-    if (!confirm("确定删除这条易错点？不会影响同一道题的其他易错点。")) {
+    if (!confirm("删除这条易错点？它的复习记录和变体题也会一起删除，无法恢复。同一道题的其他易错点会保留。")) {
       return;
     }
     await api(`/api/mistakes/${item.id}`, { method: "DELETE" });
@@ -447,7 +473,7 @@ function renderDetail(item) {
   }));
 
   const deleteProblemBtn = element(
-    "button", "删除整道题（含全部易错点）", "danger"
+    "button", "删除整道题及全部记录", "danger"
   );
   deleteProblemBtn.type = "button";
   deleteProblemBtn.addEventListener("click", () => run(async () => {
@@ -463,18 +489,22 @@ function renderDetail(item) {
   }));
 
   const dangerZone = element("div", "", "danger-zone");
-  dangerZone.append(deleteMistakeBtn, deleteProblemBtn);
-  root.append(dangerZone);
+  dangerZone.append(
+    element("p", "删除后无法恢复，请确认这些记录不再需要。", "danger-hint"),
+    deleteMistakeBtn,
+    deleteProblemBtn
+  );
 
-  const reviewButtons = element("div", "", "actions");
+  const reviewSection = element("section", "", "review-section");
+  const reviewButtons = element("div", "", "actions review-actions");
   const due = item.due_date <= item.today;
-  root.append(
-    element("h3", "标记这条易错点的掌握程度"),
+  reviewSection.append(
+    element("h3", "这次，你掌握得怎么样？"),
     element(
       "p",
       due
-        ? "先尝试回忆如何避免这个错误，再对照记录评分。"
-        : "尚未到期。可以查看记录或练习变体题，到期后再评分。",
+        ? "先回忆，再对照。按真实感受评分，下次复习会据此安排。"
+        : "还没到复习日期。先回看笔记或练一道变体题，到期后就能评分。",
       "muted"
     )
   );
@@ -482,6 +512,7 @@ function renderDetail(item) {
   for (const [quality, label] of grades) {
     const button = element("button", label);
     button.type = "button";
+    button.dataset.quality = String(quality);
     button.dataset.blocked = due ? "0" : "1";
     button.disabled = !due;
     button.addEventListener("click", () => run(async () => {
@@ -490,14 +521,16 @@ function renderDetail(item) {
         body: JSON.stringify({ quality, version: item.version }),
       });
       await loadList();
-      message(`评分已保存，下次复习日期：${state.due_date}`);
+      message(`评分已保存。${state.due_date} 再来复习这条易错点。`);
     }));
     reviewButtons.append(button);
   }
-  root.append(reviewButtons);
+  reviewSection.append(reviewButtons);
+  root.append(reviewSection);
 
   if (item.reviews.length) {
     const history = document.createElement("details");
+    history.className = "review-history";
     history.append(element("summary", `复习历史（${item.reviews.length} 次）`));
     const list = document.createElement("ul");
     for (const review of item.reviews) {
@@ -511,7 +544,8 @@ function renderDetail(item) {
     root.append(history);
   }
 
-  root.append(
+  const aiSection = element("section", "", "ai-section");
+  aiSection.append(
     element("h3", "同一薄弱点，再练一道"),
     element(
       "p",
@@ -521,13 +555,13 @@ function renderDetail(item) {
     ),
     element(
       "p",
-      "生成内容供练习使用，题意可能需要核对；系统不会判题。",
+      "生成后请先核对题意，自己解答，再记录练习结果。这里不会运行代码或自动判题。",
       "muted"
     )
   );
 
   const variants = element("div");
-  const empty = element("p", "还没有生成变体题。", "muted");
+  const empty = element("p", "还没有变体题。换一道题，检查自己是否真的理解了。", "muted");
   if (!item.variants.length) variants.append(empty);
   for (const variant of item.variants) {
     variants.append(renderVariant(variant));
@@ -535,7 +569,7 @@ function renderDetail(item) {
 
   const generate = element(
     "button",
-    user.ai_enabled ? "生成一道变体题" : "AI 尚未配置",
+    user.ai_enabled ? "围绕这个错因，出一道新题" : "AI 尚未配置，暂时无法出题",
     "primary"
   );
   generate.type = "button";
@@ -543,7 +577,7 @@ function renderDetail(item) {
   generate.disabled = !user.ai_enabled;
 
   generate.addEventListener("click", () => run(async () => {
-    message("正在生成题目，请稍候……");
+    message("AI 正在围绕这条错因出题，可能需要一两分钟。请保持页面打开。");
     const variant = await api(`/api/mistakes/${item.id}/variants`, {
       method: "POST",
     });
@@ -552,7 +586,8 @@ function renderDetail(item) {
     message("变体题已生成并保存。");
   }));
 
-  root.append(generate, variants);
+  aiSection.append(generate, variants);
+  root.append(aiSection, dangerZone);
 }
 
 function addMistakeInput() {
@@ -566,15 +601,15 @@ function addMistakeInput() {
   const input = textarea("", 2000, 3);
   input.name = "mistake";
   input.required = true;
-  input.placeholder = "哪里容易错？当时为什么会错？应该如何避免？";
+  input.placeholder = "例如：忘了检查数据范围，用 int 存 10¹⁰ 导致溢出。下次先估算范围，再选类型。";
 
-  const remove = element("button", "移除");
+  const remove = element("button", "移除这条输入");
   remove.type = "button";
   remove.addEventListener("click", () => {
     if (container.children.length > 1) row.remove();
   });
 
-  row.append(field("易错点 / 为什么错", input), remove);
+  row.append(field("哪里容易错，为什么会错？", input), remove);
   container.append(row);
 }
 
@@ -588,7 +623,7 @@ $("#login-form").addEventListener("submit", (event) => {
     });
     form.reset();
     await enterApp();
-    message("登录成功。");
+    message("已登录，今天的复习已经准备好了。");
   });
 });
 
@@ -602,9 +637,20 @@ $("#register-form").addEventListener("submit", (event) => {
     });
     form.reset();
     await enterApp();
-    message("注册成功，可以开始记录题目了。");
+    message("账号已创建。去「新增记录」留下你的第一条错因吧。");
   });
 });
+
+$("#trial-start").addEventListener("click", () => run(async () => {
+  await api("/api/auth/trial", {
+    method: "POST",
+    body: JSON.stringify({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+    }),
+  });
+  await enterApp();
+  message("已进入体验账号，随便试试看吧——数据可能会被定期清理。");
+}));
 
 $("#forgot-link").addEventListener("click", (event) => {
   event.preventDefault();
@@ -737,7 +783,7 @@ if (resetToken) {
       await enterApp();
     } catch (error) {
       if (error.status !== 401) throw error;
-      message("请登录，或使用邀请码注册。");
+      message("已有账号可以直接登录；首次使用，请准备好邀请码。");
     }
   });
 }
