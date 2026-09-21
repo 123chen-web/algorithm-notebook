@@ -55,7 +55,9 @@ def generate(mistake: dict) -> dict:
         with OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=45.0,
+            # deepseek-flash 等带隐藏推理过程的模型经常要 40+ 秒才出正文，
+            # 留够余量避免刚好卡在超时边缘。
+            timeout=120.0,
             max_retries=0,
         ) as client:
             response = client.chat.completions.create(
@@ -67,7 +69,9 @@ def generate(mistake: dict) -> dict:
                         "content": json.dumps(reference, ensure_ascii=False),
                     },
                 ],
-                max_tokens=2200,
+                # deepseek-flash 等带隐藏推理过程的模型，推理 token 也算在
+                # max_tokens 里，需要比纯输出预留大得多的余量。
+                max_tokens=10000,
             )
     except APITimeoutError:
         raise HTTPException(504, "AI 生成超时，请稍后重试") from None
