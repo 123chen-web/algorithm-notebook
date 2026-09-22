@@ -3,6 +3,7 @@ uvicorn>=0.30,<1.0
 pydantic>=2.9,<3.0
 openai>=1.68,<3.0
 python-dotenv>=1.0,<2.0
+python-alipay-sdk==3.4.0
 tzdata>=2024.1
 httpx>=0.27,<1.0  # OpenAI SDK 的间接依赖（HTTP 层），显式约束其版本范围
 pytest>=8.0,<10.0

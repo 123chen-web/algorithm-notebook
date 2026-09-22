@@ -135,3 +135,20 @@ def test_generate_rejects_overlong_text(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         ai.generate(MISTAKE)
     assert exc.value.status_code == 502
+
+
+def test_generate_stops_when_model_flags_content_as_off_topic(monkeypatch):
+    # mistake 里的字段全部来自用户自己保存的数据，模型判定它们跟算法题
+    # 无关（比如被当成越权指令、无关问答）时按约定只输出这一行标记。
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    completions = FakeCompletions(FakeResponse(ai.REFUSAL_MARKER, "stop"))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    with pytest.raises(HTTPException) as exc:
+        ai.generate(MISTAKE)
+    assert exc.value.status_code == 422
+
+    # 标记本身长得像合法输出（较短、纯文本），确认它不会被超长/空文本
+    # 那两条检查提前拦下，而是真的走到了专门的判断分支。
+    assert len(ai.REFUSAL_MARKER) < 16000
+    assert ai.REFUSAL_MARKER.strip() == ai.REFUSAL_MARKER

@@ -321,11 +321,11 @@ print(a + b)
 
 导入只保存记录，不执行笔记代码、不调用 AI。
 
-## 支付本地联调
+## 支付与本地联调
 
-当前提供套餐列表、下单、订单查询及 Mock 回调，不连接真实支付平台。
-`alipay` 和 `wechat` 暂时都由 `MockChannel` 模拟；返回的 `mock://` 二维码
-地址仅占位，不能扫码付款。默认关闭 Mock；在本地 `.env` 设置：
+当前提供套餐列表、下单、订单查询、支付宝当面付及 Mock 回调。
+本地 Mock 模式下 `alipay` 和 `wechat` 都由 `MockChannel` 模拟；返回的
+`mock://` 二维码地址仅占位，不能扫码付款。默认关闭 Mock；在本地 `.env` 设置：
 
 ```dotenv
 PAYMENTS_MOCK_ENABLED=1
@@ -335,7 +335,8 @@ PAYMENTS_MOCK_SECRET=填写独立随机密钥
 可用 `python -c "import secrets; print(secrets.token_hex(32))"` 生成密钥。
 密钥只用于服务端和本地联调脚本，不发送给浏览器。正式部署保持 Mock 关闭。
 
-所有接口均需已有的 Session Cookie；POST 还需 `X-CSRF-Protection: 1`。
+以下浏览器及 Mock 接口均需已有的 Session Cookie；POST 还需
+`X-CSRF-Protection: 1`。真实支付宝通知入口见下一节。
 
 | 接口 | 请求或返回 |
 | --- | --- |
@@ -363,8 +364,7 @@ Mock 回调正文包含以下字段，`amount_cents` 必须与订单金额相同
 
 用 `MockChannel(channel, secret).sign_callback(raw_body)` 得到签名头，提交时
 必须使用签名时完全相同的原始字节。`verify_callback` 对签名、结构和金额
-类型做校验，业务层再核对订单渠道、金额、交易号和归属。下一阶段在
-`payment_channels.get_channel()` 中配置真实适配器，订单生命周期无需依赖 SDK。
+类型做校验，业务层再核对订单渠道、金额、交易号和归属。
 
 本阶段允许 `pending → paid / failed / closed`；同一终态的相同回调幂等，
 不允许终态之间互相转换。`refunded` 保留在 schema 中，尚未开放退款。
@@ -377,6 +377,46 @@ Mock 回调正文包含以下字段，`amount_cents` 必须与订单金额相同
 先轮询该订单，避免渠道实际已受理但客户端重复下单。
 
 套餐的 `ai_daily_limit` 暂未接入 AI 请求配额；现有 AI 配额规则保持原样。
+
+### 支付宝当面付
+
+使用第三方 [python-alipay-sdk](https://github.com/fzlee/alipay) 3.4.0，
+其 `api_alipay_trade_precreate` 支持生成二维码、请求 RSA2 签名和同步响应
+验签，`verify` 支持异步通知验签；这里固定已核对的版本。
+仅接入 RSA2 公钥模式，暂不接证书模式、微信真实支付、退款或主动查单补偿。
+
+安装 `requirements.txt` 后，关闭 Mock，并按 [.env.example](.env.example)
+填写 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`（应用私钥）、
+`ALIPAY_PUBLIC_KEY`（支付宝公钥）、`ALIPAY_SELLER_ID`（收款商户 PID）和
+`ALIPAY_NOTIFY_URL`。五项均必填；配置缺失或无效时下单返回 503。
+密钥支持完整多行 PEM 或单引号包裹的单行 PEM（用字面量 `\n` 表示换行）。
+`ALIPAY_SANDBOX=1` 使用支付宝沙箱，默认 `0` 使用正式网关；两套账户、
+APPID 和密钥不能混用。申请应用、签约当面付和取密钥的位置见配置文件注释。
+
+下单仍为 `POST /api/orders`，`channel` 填 `alipay`。服务端调用
+`alipay.trade.precreate`，返回：
+
+```json
+{"provider": "alipay", "qr_code_url": "https://qr.alipay.com/...", "redirect_url": null}
+```
+
+这里的 `qr_code_url` 是需要编码成二维码的内容，不是二维码图片。
+前端后续用它渲染二维码并轮询自己的订单；本轮提供后端接口，未新增购买页面。
+
+`ALIPAY_NOTIFY_URL` 指向公开的 `POST /api/payments/alipay/callback`，
+无需 Session Cookie 或 CSRF 头；仅此 POST 路径豁免浏览器 CSRF 检查。
+通知必须是 UTF-8 表单编码，适配器验 RSA2 签名、APPID、商户 PID，
+业务层继续核对订单金额、渠道和交易号。事务提交后返回纯文本 `success`；
+验签或业务处理失败返回非 2xx，不确认付款，以便支付宝重试。
+开启 Mock 时该公开通知入口关闭，Mock 回调仍需登录。
+
+`TRADE_SUCCESS` 和 `TRADE_FINISHED` 均视为 `paid`，重复通知不会再次续期；
+`TRADE_CLOSED` 映射 `closed`。已付款订单收到全额退款导致的 CLOSED 通知时，
+现有状态机会拒绝 `paid → closed`，不会自动撤销订阅；退款处理需后续接入。
+等待付款和未知状态不作为支付成功处理。
+
+本地测试用临时生成的两对 RSA 密钥模拟应用与支付宝，真实执行 SDK 验签；
+预下单网络请求被替换，不需要真实商户账号，也不访问支付宝服务器。
 
 ## 部署说明
 
@@ -410,4 +450,5 @@ Mock 回调正文包含以下字段，`amount_cents` 必须与订单金额相同
 计数只存在单进程内存里，重启即清零；部署多实例或反向代理之后需要
 改成共享存储，并确认拿到的是真实客户端 IP。
 
-V1 暂未接入真实支付平台，也不包含多实例部署和正式的数据库版本迁移工具。
+支付宝接口尚需商户账号开通后完成沙箱/实网联调；V1 不包含多实例部署和
+正式的数据库版本迁移工具。

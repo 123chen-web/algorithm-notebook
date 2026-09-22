@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import (
     BaseModel,
@@ -346,10 +346,16 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 async def request_protection(request, call_next):
     # 前端与 API 同源，且本应用不启用 CORS。
     # 跨站表单不能携带这个自定义请求头。
+    # 支付宝服务器的通知不携带浏览器请求头，由渠道的 RSA2 验签保护。
+    alipay_notification = (
+        request.method == "POST"
+        and request.url.path == "/api/payments/alipay/callback"
+    )
     if (
         request.url.path.startswith("/api/")
         and request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and request.headers.get("X-CSRF-Protection") != "1"
+        and not alipay_notification
     ):
         return JSONResponse(
             status_code=403,
@@ -638,6 +644,26 @@ async def mock_payment_callback(
         user_id=user["id"],
     )
     return {"ok": True, "order": order}
+
+
+@app.post("/api/payments/alipay/callback")
+async def alipay_payment_callback(request: Request):
+    # 公开通知入口绝不能在本地 mock 模式下接收 HMAC 回调。
+    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") == "1":
+        return PlainTextResponse("failure", status_code=404)
+    raw_body = await request.body()
+    try:
+        await run_in_threadpool(
+            payments.handle_callback,
+            "alipay",
+            raw_body,
+            request.headers,
+            user_id=None,
+        )
+    except HTTPException as exc:
+        return PlainTextResponse("failure", status_code=exc.status_code)
+    # 只有业务处理完成、事务提交后才确认；重复通知由业务层幂等处理。
+    return PlainTextResponse("success")
 
 
 @app.post("/api/problems", status_code=201)
