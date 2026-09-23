@@ -53,6 +53,8 @@ def create_order(user_id, plan_id, channel):
         ).fetchone()
         if user is None:
             raise HTTPException(404, "用户不存在")
+        if user["is_trial"]:
+            raise HTTPException(403, "体验账号不支持购买套餐")
         plan = conn.execute(
             "SELECT * FROM plans WHERE id = ? AND is_active = 1", (plan_id,)
         ).fetchone()

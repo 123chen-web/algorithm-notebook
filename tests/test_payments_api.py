@@ -168,6 +168,17 @@ def test_create_order_rejects_unavailable_plan(client, plan_id):
         assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
 
+def test_create_order_rejects_trial_account(client):
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_trial = 1 WHERE id = 1")
+    response = client.post(
+        "/api/orders", json={"plan_id": 1, "channel": "alipay"}
+    )
+    assert response.status_code == 403
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+
+
 @pytest.mark.parametrize(
     "payload",
     [

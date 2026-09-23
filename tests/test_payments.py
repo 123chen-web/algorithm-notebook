@@ -112,6 +112,15 @@ def test_business_layer_rejects_unknown_channel_and_user(database):
     assert error.value.status_code == 404
 
 
+def test_trial_accounts_cannot_place_orders(database):
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_trial = 1 WHERE id = 1")
+    with pytest.raises(HTTPException) as error:
+        payments.create_order(1, 1, "alipay")
+    assert error.value.status_code == 403
+    assert subscription()["plan_id"] is None
+
+
 @pytest.mark.parametrize("status", ["failed", "closed"])
 def test_failure_and_closure_are_idempotent_without_granting_subscription(
     database, status
