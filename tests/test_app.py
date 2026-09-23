@@ -706,3 +706,189 @@ def test_trial_account_uses_its_own_lower_ai_limit(client, monkeypatch):
 
     second = client.post(f"/api/mistakes/{mistake_id}/variants")
     assert second.status_code == 429
+
+
+AI_QUOTA_NOW = datetime(2026, 9, 22, 10, 0, 0, 500000, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def quota_environment(monkeypatch):
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return AI_QUOTA_NOW.replace(tzinfo=None)
+            return AI_QUOTA_NOW.astimezone(tz)
+
+    monkeypatch.setattr(main, "datetime", FrozenDatetime)
+    monkeypatch.setenv("TRIAL_AI_DAILY_LIMIT", "1")
+    calls = []
+
+    def generate(item):
+        calls.append(item["id"])
+        return {"description": "配额测试题目", "model": "mock-model"}
+
+    monkeypatch.setattr(ai, "generate", generate)
+    return calls
+
+
+def set_ai_subscription(user_id, limit, expires_at, *, is_active=1):
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "INSERT INTO plans(name,period_days,ai_daily_limit,price_cents,"
+            "is_active,created_at) VALUES ('配额测试套餐',30,?,990,?,?)",
+            (limit, is_active, AI_QUOTA_NOW.isoformat()),
+        )
+        conn.execute(
+            "UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
+            (cursor.lastrowid, expires_at, user_id),
+        )
+
+
+@pytest.mark.parametrize(
+    "is_trial,plan_limit,expires_at,is_active,expected_limit",
+    [
+        pytest.param(False, None, None, 1, 2, id="no-plan"),
+        pytest.param(
+            False, 4, "2026-09-23T10:00:00+00:00", 1, 4, id="valid-plan"
+        ),
+        pytest.param(
+            False, 1, "2026-09-23T10:00:00+00:00", 1, 1,
+            id="plan-below-default",
+        ),
+        pytest.param(
+            False, 4, "2026-09-21T10:00:00+00:00", 1, 2, id="expired-plan"
+        ),
+        pytest.param(False, 4, None, 1, 2, id="missing-expiry"),
+        pytest.param(
+            False, 4, "2026-09-22T10:00:00.500000+00:00", 1, 2,
+            id="expires-exactly-now",
+        ),
+        pytest.param(
+            False, 4, "2026-09-22T10:00:00.500001+00:00", 1, 4,
+            id="expires-one-microsecond-later",
+        ),
+        pytest.param(
+            False, 4, "2026-09-22T10:00:00.499999+00:00", 1, 2,
+            id="expired-one-microsecond-ago",
+        ),
+        pytest.param(
+            False, 4, "2026-09-22T18:00:00.499999+08:00", 1, 2,
+            id="expiry-offset-compared-in-utc",
+        ),
+        pytest.param(
+            False, 4, "2026-09-23T10:00:00+00:00", 0, 4,
+            id="inactive-plan-still-valid",
+        ),
+        pytest.param(True, None, None, 1, 1, id="trial-without-plan"),
+        pytest.param(
+            True, 4, "2026-09-23T10:00:00+00:00", 1, 1,
+            id="trial-ignores-paid-plan",
+        ),
+    ],
+)
+def test_ai_quota_uses_current_subscription(
+    client, quota_environment,
+    is_trial, plan_limit, expires_at, is_active, expected_limit,
+):
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client)[0]
+    if is_trial:
+        with connect(write=True) as conn:
+            conn.execute("UPDATE users SET is_trial = 1 WHERE id = ?", (user_id,))
+    if plan_limit is not None:
+        set_ai_subscription(user_id, plan_limit, expires_at, is_active=is_active)
+
+    assert client.get("/api/me").json()["ai_daily_limit"] == expected_limit
+    for _ in range(expected_limit):
+        assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
+    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 429
+    assert len(quota_environment) == expected_limit
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT day,attempts FROM ai_usage WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        # 额度使用请求时刻的 UTC；计数日期仍使用 client fixture 的用户当地日。
+        assert dict(row) == {"day": "2026-09-19", "attempts": expected_limit}
+        stored_expiry = conn.execute(
+            "SELECT plan_expires_at FROM users WHERE id = ?", (user_id,)
+        ).fetchone()["plan_expires_at"]
+        assert stored_expiry == expires_at
+
+
+@pytest.mark.parametrize("is_trial", [False, True], ids=["plan", "trial"])
+@pytest.mark.parametrize("existing_usage", [False, True], ids=["first-use", "usage-exists"])
+def test_zero_ai_quota_never_allows_generation(
+    client, monkeypatch, quota_environment, is_trial, existing_usage,
+):
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client)[0]
+    # 体验额度为 0 时，有付费套餐也不能绕过；正式账号使用套餐的 0 额度。
+    set_ai_subscription(
+        user_id, 4 if is_trial else 0, "2026-09-23T10:00:00+00:00"
+    )
+    if is_trial:
+        monkeypatch.setenv("TRIAL_AI_DAILY_LIMIT", "0")
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE users SET is_trial = ? WHERE id = ?", (int(is_trial), user_id)
+        )
+        if existing_usage:
+            conn.execute(
+                "INSERT INTO ai_usage(user_id,day,attempts) VALUES (?, ?, 0)",
+                (user_id, "2026-09-19"),
+            )
+
+    assert client.get("/api/me").json()["ai_daily_limit"] == 0
+    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 429
+    assert quota_environment == []
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        assert (row["attempts"] if row is not None else None) == (
+            0 if existing_usage else None
+        )
+
+
+@pytest.mark.parametrize(
+    "change,initial_used,expected_limit,additional_allowed",
+    [
+        pytest.param("upgrade", 2, 4, 2, id="upgrade-keeps-used-attempts"),
+        pytest.param("downgrade", 3, 1, 0, id="lower-plan-below-used-attempts"),
+        pytest.param("expire", 3, 2, 0, id="expiry-below-used-attempts"),
+    ],
+)
+def test_ai_quota_changes_do_not_reset_same_day_usage(
+    client, quota_environment, change, initial_used, expected_limit, additional_allowed,
+):
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client)[0]
+    if change != "upgrade":
+        set_ai_subscription(user_id, 4, "2026-09-23T10:00:00+00:00")
+    for _ in range(initial_used):
+        assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
+
+    if change == "expire":
+        with connect(write=True) as conn:
+            conn.execute(
+                "UPDATE users SET plan_expires_at = ? WHERE id = ?",
+                (AI_QUOTA_NOW.isoformat(), user_id),
+            )
+    else:
+        set_ai_subscription(user_id, expected_limit, "2026-09-23T10:00:00+00:00")
+
+    assert client.get("/api/me").json()["ai_daily_limit"] == expected_limit
+    for _ in range(additional_allowed):
+        assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
+    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 429
+    expected_used = initial_used + additional_allowed
+    assert len(quota_environment) == expected_used
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT day,attempts FROM ai_usage WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        assert [dict(row) for row in rows] == [
+            {"day": "2026-09-19", "attempts": expected_used}
+        ]

@@ -187,6 +187,50 @@ def trial_ai_limit():
     return max(0, int(os.getenv("TRIAL_AI_DAILY_LIMIT", "2")))
 
 
+def ai_quota(conn, user_id, day):
+    # 生成请求必须传入已取得写锁的连接，不能使用鉴权阶段读到的套餐快照。
+    # 单条查询也让 /api/me 的套餐信息和当天已用次数来自同一数据库快照。
+    row = conn.execute(
+        """
+        SELECT u.is_trial, u.plan_id, u.plan_expires_at,
+               p.name AS plan_name, p.ai_daily_limit AS plan_limit,
+               COALESCE(a.attempts, 0) AS ai_daily_used
+        FROM users u
+        LEFT JOIN plans p ON p.id = u.plan_id
+        LEFT JOIN ai_usage a ON a.user_id = u.id AND a.day = ?
+        WHERE u.id = ?
+        """,
+        (day, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+
+    # 到期时间按 UTC 时刻判断；用户时区只用于 day，不参与套餐有效期判断。
+    now = datetime.now(timezone.utc)
+    plan_active = bool(
+        not row["is_trial"]
+        and row["plan_id"] is not None
+        and row["plan_expires_at"]
+        and datetime.fromisoformat(row["plan_expires_at"]) > now
+    )
+    if row["is_trial"]:
+        limit = trial_ai_limit()
+    elif plan_active:
+        limit = row["plan_limit"]
+    else:
+        limit = ai_limit()
+    return {
+        "is_trial": bool(row["is_trial"]),
+        "plan_id": row["plan_id"],
+        "plan_name": row["plan_name"],
+        "plan_expires_at": row["plan_expires_at"],
+        "plan_active": plan_active,
+        "ai_daily_limit": limit,
+        "ai_daily_used": row["ai_daily_used"],
+        "ai_daily_remaining": max(0, limit - row["ai_daily_used"]),
+    }
+
+
 def public_base_url():
     # 拼重置密码链接用；本地开发默认指向 uvicorn 监听的地址，
     # 部署上线后要在 .env 里改成真实域名，否则邮件里的链接打不开。
@@ -246,7 +290,8 @@ def current_user(request: Request):
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT u.id, u.username, u.email, u.timezone, u.is_trial
+            SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
+                   u.plan_id, u.plan_expires_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -590,11 +635,13 @@ def logout(request: Request, response: Response):
 
 @app.get("/api/me")
 def me(user=Depends(current_user)):
+    with connect() as conn:
+        quota = ai_quota(conn, user["id"], today_for(user).isoformat())
     return {
         **user,
+        **quota,
         "today": today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-        "ai_daily_limit": trial_ai_limit() if user["is_trial"] else ai_limit(),
     }
 
 
@@ -834,24 +881,28 @@ def review_mistake(
 
 @app.post("/api/mistakes/{mistake_id}/variants", status_code=201)
 def create_variant(mistake_id: int, user=Depends(current_user)):
+    # BEGIN IMMEDIATE 后重读套餐并扣额，与支付回调等写入串行执行。
     # 配额在短事务内原子扣除，网络请求期间不持有数据库写锁。
     with connect(write=True) as conn:
         item = owned_mistake(conn, mistake_id, user["id"])
         if not os.getenv("OPENAI_API_KEY", "").strip():
             raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
 
+        day = today_for(user).isoformat()
+        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
         cursor = conn.execute(
             """
             INSERT INTO ai_usage(user_id, day, attempts)
-            VALUES (?, ?, 1)
+            SELECT ?, ?, 1 WHERE ? > 0
             ON CONFLICT(user_id, day) DO UPDATE
             SET attempts = ai_usage.attempts + 1
             WHERE ai_usage.attempts < ?
             """,
             (
                 user["id"],
-                today_for(user).isoformat(),
-                trial_ai_limit() if user["is_trial"] else ai_limit(),
+                day,
+                limit,
+                limit,
             ),
         )
         if cursor.rowcount != 1:

@@ -125,7 +125,9 @@ macOS / Linux：
 生成时会发送当前题目名、语言、代码、思路和选中的易错点。
 题目保存到 SQLite；输出只作为文本显示。
 
-每个用户默认每天最多尝试生成 10 次。
+每个用户默认每天最多尝试生成 10 次（`AI_DAILY_LIMIT`）；体验账号单独走
+`TRIAL_AI_DAILY_LIMIT`。已购买且未过期套餐的用户改用该套餐的
+`ai_daily_limit`，具体优先级见下方"套餐额度"一节。
 调用失败也消耗次数，服务端不自动重试。
 
 V1 没有后台生成队列。如果生成期间服务进程退出，可能需要重新生成，
@@ -376,7 +378,23 @@ Mock 回调正文包含以下字段，`amount_cents` 必须与订单金额相同
 渠道发起支付若报错，会返回包含 `order_id` 的 502；订单保留 `pending`，
 先轮询该订单，避免渠道实际已受理但客户端重复下单。
 
-套餐的 `ai_daily_limit` 暂未接入 AI 请求配额；现有 AI 配额规则保持原样。
+### 套餐额度
+
+`ai_daily_limit` 已接入 AI 生成配额，按以下优先级判断每日上限：
+
+1. 体验账号（`is_trial`）：始终用 `TRIAL_AI_DAILY_LIMIT`，跟套餐无关。
+2. 正式账号且 `plan_id` 非空、`plan_expires_at` 严格晚于当前 UTC 时刻：用对应
+   `plans.ai_daily_limit`。
+3. 其余情况（未购买套餐或套餐已过期）：退回 `AI_DAILY_LIMIT`。
+
+到期判断只看请求处理当下的 UTC 时间与 `plan_expires_at` 的大小关系，不依赖任何
+定时任务提前清空过期用户的 `plan_id`——过期套餐的记录留在 `users` 表里，只是
+不再生效。查询套餐与原子扣减配额在同一个 `BEGIN IMMEDIATE` 写事务内完成
+（`ai_quota()` 与 `ai_usage` 的 `INSERT ... ON CONFLICT ... WHERE` 共用一个连接），
+避免两步操作之间被并发请求或支付回调插队造成套餐信息和实际扣减不一致。
+
+`GET /api/me` 会返回 `plan_name`、`plan_active`、`ai_daily_limit`、
+`ai_daily_used`、`ai_daily_remaining` 等字段供前端展示，本阶段前端尚未接入。
 
 ### 支付宝当面付
 
