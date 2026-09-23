@@ -237,6 +237,7 @@
         <button type="button" data-view="today">今日复习</button>
         <button type="button" data-view="all">全部记录</button>
         <button type="button" data-view="new">新增记录</button>
+        <button type="button" data-view="plan">我的套餐</button>
         <button type="button" id="refresh">刷新</button>
       </nav>
 
@@ -307,6 +308,35 @@
             <button type="submit" class="primary">保存记录</button>
           </div>
         </form>
+      </section>
+
+      <section id="plan-page" aria-labelledby="plan-title" hidden>
+        <div class="page-heading">
+          <h2 id="plan-title">我的套餐</h2>
+          <p class="muted">查看订阅状态和今日 AI 额度，选择适合你的套餐。</p>
+        </div>
+
+        <section class="panel" aria-labelledby="plan-subscription-title">
+          <h3 id="plan-subscription-title">当前订阅</h3>
+          <div id="plan-subscription"></div>
+        </section>
+
+        <p id="plan-trial-note" class="muted" hidden>体验账号不支持购买套餐，注册正式账号后可以购买。</p>
+
+        <section id="plan-catalog" aria-labelledby="plan-catalog-title">
+          <h3 id="plan-catalog-title">可购买套餐</h3>
+          <div id="plan-list"></div>
+        </section>
+
+        <section id="plan-order" class="panel" aria-labelledby="plan-order-title" hidden>
+          <h3 id="plan-order-title">支付宝支付</h3>
+          <div id="plan-order-details"></div>
+          <div id="plan-payment"></div>
+          <p id="plan-order-status" role="status"></p>
+          <div class="actions">
+            <button id="plan-back" type="button">返回套餐列表</button>
+          </div>
+        </section>
       </section>
     </main>
   </div>

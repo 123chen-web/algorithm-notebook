@@ -19,6 +19,12 @@ const resultLabels = {
 let user = null;
 let view = "today";
 let busy = false;
+let planPurchase = null;
+let orderPollTimer = null;
+let orderPollGeneration = 0;
+
+const ORDER_POLL_INTERVAL = 3000;
+const ORDER_POLL_DURATION = 5 * 60 * 1000;
 
 function element(tag, text = "", className = "") {
   const node = document.createElement(tag);
@@ -50,6 +56,14 @@ function showAuthPanels(visibleIds) {
 }
 
 function signedOut() {
+  stopOrderPolling();
+  planPurchase = null;
+  $("#plan-subscription").replaceChildren();
+  $("#plan-list").replaceChildren();
+  $("#plan-payment").replaceChildren();
+  $("#plan-order-details").replaceChildren();
+  $("#plan-order-status").textContent = "";
+  $("#plan-order").hidden = true;
   user = null;
   $("#auth").hidden = false;
   $("#app").hidden = true;
@@ -104,7 +118,7 @@ async function run(action) {
   try {
     await action();
   } catch (error) {
-    if (error.status === 409 && user && view !== "new") {
+    if (error.status === 409 && user && (view === "today" || view === "all")) {
       try {
         await loadList();
       } catch {
@@ -165,16 +179,200 @@ async function enterApp() {
 }
 
 async function showView(nextView) {
+  stopOrderPolling();
   view = nextView;
   $("#new-page").hidden = view !== "new";
-  $("#list-page").hidden = view === "new";
+  $("#list-page").hidden = view !== "today" && view !== "all";
+  $("#plan-page").hidden = view !== "plan";
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  if (view !== "new") await loadList();
+  if (view === "plan") await loadPlanPage();
+  else if (view === "today" || view === "all") await loadList();
+}
+
+function yuan(cents) {
+  return `¥${(cents / 100).toFixed(2)}`;
+}
+
+function planFacts(entries) {
+  const facts = element("dl", "", "plan-facts");
+  for (const [label, value] of entries) {
+    facts.append(element("dt", label), element("dd", value));
+  }
+  return facts;
+}
+
+async function refreshPlanSubscription() {
+  user = await api("/api/me");
+  updateUserInfo();
+  const entries = [
+    ["套餐", user.plan_name || "当前使用免费额度"],
+    ["状态", user.plan_active ? "有效" : "无有效套餐，当前使用免费额度"],
+  ];
+  if (user.plan_expires_at) {
+    entries.push(["到期时间", timestamp(user.plan_expires_at)]);
+  }
+  entries.push(
+    ["今日 AI 用量", `${user.ai_daily_used} / ${user.ai_daily_limit} 次`],
+    ["今日剩余", `${user.ai_daily_remaining} 次`]
+  );
+  $("#plan-subscription").replaceChildren(planFacts(entries));
+  $("#plan-trial-note").hidden = !user.is_trial;
+}
+
+function renderPlans(plans) {
+  const list = $("#plan-list");
+  list.replaceChildren();
+  if (!plans.length) {
+    list.append(element("p", "暂无可购买的套餐。", "muted"));
+    return;
+  }
+  for (const plan of plans) {
+    const card = element("article", "", "plan-card panel");
+    card.append(
+      element("h4", plan.name),
+      element("p", yuan(plan.price_cents), "plan-price"),
+      element("p", `${plan.period_days} 天`, "muted"),
+      element("p", `每天 ${plan.ai_daily_limit} 次 AI 生成`)
+    );
+    if (!user.is_trial) {
+      const buy = element("button", "购买", "primary");
+      buy.type = "button";
+      buy.setAttribute("aria-label", `购买${plan.name}`);
+      buy.addEventListener("click", () => run(async () => {
+        if (user.is_trial) return;
+        message();
+        const purchase = await api("/api/orders", {
+          method: "POST",
+          body: JSON.stringify({ plan_id: plan.id, channel: "alipay" }),
+        });
+        stopOrderPolling();
+        planPurchase = purchase;
+        renderPlanOrder();
+        if (purchase.order.status === "pending") startOrderPolling();
+        else await finishPlanOrder();
+      }));
+      const actions = element("div", "", "actions");
+      actions.append(buy);
+      card.append(actions);
+    }
+    list.append(card);
+  }
+}
+
+function renderPlanOrder() {
+  $("#plan-catalog").hidden = Boolean(planPurchase);
+  $("#plan-order").hidden = !planPurchase;
+  if (!planPurchase) return;
+
+  const { order, payment } = planPurchase;
+  $("#plan-order-details").replaceChildren(planFacts([
+    ["订单号", order.id],
+    ["金额", yuan(order.amount_cents)],
+  ]));
+  const statuses = {
+    pending: "等待支付，每 3 秒自动查询一次，最多查询 5 分钟。",
+    paid: "支付成功。",
+    failed: "支付失败，可以返回套餐列表重新下单。",
+    closed: "订单已关闭，可以返回套餐列表重新下单。",
+    refunded: "订单已退款，可以返回套餐列表。",
+  };
+  $("#plan-order-status").textContent = statuses[order.status] || "未知订单状态，请稍后刷新。";
+  const paymentBox = $("#plan-payment");
+  paymentBox.replaceChildren();
+  if (order.status !== "pending") return;
+
+  const paymentText = payment.qr_code_url || "";
+  const isMock = payment.provider === "mock" || paymentText.startsWith("mock://");
+  // 支付内容来自接口，仅允许预期的链接协议；原文始终以文本节点展示。
+  if (/^(https?:\/\/|alipays?:\/\/|mock:\/\/)/i.test(paymentText)) {
+    const link = element("a", isMock ? "Mock 支付链接（仅占位）" : "打开支付宝完成支付", "plan-payment-link");
+    link.href = paymentText;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    paymentBox.append(link);
+  }
+  if (paymentText) {
+    paymentBox.append(element("pre", paymentText, "code plan-payment-text"));
+  }
+  paymentBox.append(element("p", isMock
+    ? "这是本地 Mock 支付占位内容，不能扫码或完成真实付款。"
+    : "手机上点击链接直接跳转支付宝完成支付；电脑上可先将上面的原始文本生成二维码，再用支付宝扫一扫。当前页面暂不提供图形二维码，不能直接扫描这段文字。",
+  "muted"));
+  if (!paymentText) {
+    paymentBox.append(element("p", "暂未取得支付链接，请稍后刷新查看订单状态。", "muted"));
+  }
+}
+
+function stopOrderPolling() {
+  clearInterval(orderPollTimer);
+  orderPollTimer = null;
+  // 使已经发出的旧查询失效，避免切换页面或账号后写回旧订单。
+  orderPollGeneration += 1;
+}
+
+async function finishPlanOrder() {
+  stopOrderPolling();
+  const status = planPurchase.order.status;
+  if (status === "paid") {
+    await refreshPlanSubscription();
+    message("购买成功，套餐已生效。");
+  } else {
+    message($("#plan-order-status").textContent, true);
+  }
+}
+
+async function checkPlanOrder(generation) {
+  const purchase = planPurchase;
+  const { order } = await api(`/api/orders/${encodeURIComponent(purchase.order.id)}`);
+  if (generation !== orderPollGeneration || planPurchase !== purchase || view !== "plan" || !user) return;
+  const statusChanged = purchase.order.status !== order.status;
+  purchase.order = order;
+  // pending 时保留支付文本的选区和链接焦点，方便复制或打开。
+  if (statusChanged) renderPlanOrder();
+  if (order.status !== "pending") await finishPlanOrder();
+}
+
+function startOrderPolling() {
+  stopOrderPolling();
+  const generation = orderPollGeneration;
+  const deadline = Date.now() + ORDER_POLL_DURATION;
+  orderPollTimer = setInterval(() => {
+    if (generation !== orderPollGeneration) return;
+    if (view !== "plan" || !user) {
+      stopOrderPolling();
+      return;
+    }
+    if (Date.now() >= deadline) {
+      stopOrderPolling();
+      const text = "暂未检测到支付结果，可以稍后刷新这个页面查看。";
+      $("#plan-order-status").textContent = text;
+      message(text);
+      return;
+    }
+    // run 会串行处理异步操作；其他操作进行中时跳过本次查询。
+    if (busy) return;
+    run(async () => {
+      await checkPlanOrder(generation);
+    });
+  }, ORDER_POLL_INTERVAL);
+}
+
+async function loadPlanPage() {
+  stopOrderPolling();
+  await refreshPlanSubscription();
+  if (user.is_trial) planPurchase = null;
+  const { plans } = await api("/api/plans");
+  renderPlans(plans);
+  renderPlanOrder();
+  if (planPurchase) {
+    if (planPurchase.order.status === "pending") startOrderPolling();
+    await checkPlanOrder(orderPollGeneration);
+  }
 }
 
 async function loadList() {
@@ -735,8 +933,20 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 });
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "plan") {
+    message();
+    await loadPlanPage();
+    return;
+  }
   if (view !== "new") await loadList();
   message(view === "new" ? "请先保存当前记录。" : "已刷新。");
+}));
+
+$("#plan-back").addEventListener("click", () => run(async () => {
+  stopOrderPolling();
+  planPurchase = null;
+  message();
+  await loadPlanPage();
 }));
 
 $("#add-mistake").addEventListener("click", addMistakeInput);

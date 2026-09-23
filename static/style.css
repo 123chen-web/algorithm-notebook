@@ -68,7 +68,7 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); border-co
 button:disabled { opacity: .5; cursor: not-allowed; }
 [aria-busy="true"] button:disabled:not([data-blocked="1"]) { cursor: wait; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
-.tabs { display: flex; align-items: center; gap: 8px; padding: 18px 0; margin-bottom: 22px; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 18px 0; margin-bottom: 22px; border-bottom: 1px solid var(--line); }
 .tabs button { border-color: transparent; background: transparent; padding: 10px 18px; }
 .tabs button.active { color: var(--accent); border-color: #ceddcb; background: var(--soft); font-weight: 700; }
 .tabs #refresh { margin-left: auto; color: var(--muted); }
@@ -129,6 +129,22 @@ details[open] > summary { margin-bottom: 12px; }
 button.danger { color: var(--danger); background: transparent; border-color: #e3c8c1; font-size: 12px; }
 button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border-color: #c49688; }
 #new-page { max-width: 860px; margin: 0 auto; }
+#plan-page { max-width: 960px; margin: 0 auto; }
+#plan-page > .panel > h3, .plan-card > h3, .plan-card > h4 { margin-top: 0; }
+#plan-trial-note { margin: 18px 0; }
+#plan-catalog, #plan-order { margin-top: 24px; }
+#plan-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 18px; }
+.plan-card { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.plan-card .actions { margin-top: auto; margin-bottom: 0; padding-top: 16px; }
+.plan-price { margin: 8px 0 14px; color: var(--accent); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.plan-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 16px 0 0; }
+.plan-facts dt { color: var(--muted); }
+.plan-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+#plan-order-details, #plan-order-status { overflow-wrap: anywhere; }
+#plan-payment { margin-top: 22px; }
+.plan-payment-link { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+pre.plan-payment-text.code { padding: 16px; color: var(--ink); background: var(--soft); border-color: var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+#plan-order > .actions { margin-bottom: 0; }
 .mistake-row { margin: 14px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #f7f8f1; }
 .mistake-row label { margin-bottom: 10px; }
 .mistake-row > button { padding: 5px 10px; min-height: 34px; color: var(--muted); font-size: 12px; }
