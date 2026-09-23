@@ -106,7 +106,9 @@ def subscription():
     [
         ("GET", "/api/plans", None),
         ("POST", "/api/orders", {"plan_id": 1, "channel": "alipay"}),
+        ("GET", "/api/orders", None),
         ("GET", "/api/orders/unknown", None),
+        ("POST", "/api/orders/unknown/refund", None),
         ("POST", "/api/payments/mock/alipay/callback", {}),
     ],
 )
@@ -120,6 +122,7 @@ def test_payment_routes_require_login(client, method, path, payload):
     "path,payload",
     [
         ("/api/orders", {"plan_id": 1, "channel": "alipay"}),
+        ("/api/orders/unknown/refund", None),
         ("/api/payments/mock/alipay/callback", {}),
     ],
 )
@@ -259,3 +262,81 @@ def test_mock_callback_rejects_signed_wrong_amount(client):
     assert response.status_code == 400
     assert stored_order(order["id"])["status"] == "pending"
     assert subscription() == {"plan_id": None, "plan_expires_at": None}
+
+
+def test_order_list_is_empty_before_purchase(client):
+    response = client.get("/api/orders")
+    assert response.status_code == 200
+    assert response.json() == {"orders": []}
+
+
+def test_order_list_is_private_newest_first_and_includes_inactive_plan(client):
+    older, first_tied, second_tied = [create_order(client) for _ in range(3)]
+    assert send_callback(client, first_tied).status_code == 200
+    client.cookies.set("session", "payment-session-bob")
+    bobs_order = create_order(client)
+    client.cookies.set("session", "payment-session-alice")
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE orders SET created_at = '2026-09-20T00:00:00+00:00' WHERE id = ?",
+            (older["id"],),
+        )
+        conn.execute(
+            "UPDATE orders SET created_at = '2026-09-21T00:00:00+00:00' "
+            "WHERE id IN (?, ?)",
+            (first_tied["id"], second_tied["id"]),
+        )
+        conn.execute("UPDATE plans SET is_active = 0, price_cents = 1990 WHERE id = 1")
+
+    response = client.get("/api/orders")
+    assert response.status_code == 200
+    orders = response.json()["orders"]
+    expected_ids = sorted([first_tied["id"], second_tied["id"]], reverse=True)
+    assert [order["id"] for order in orders] == [*expected_ids, older["id"]]
+    for order in orders:
+        assert order["user_id"] == 1
+        assert order["plan_name"] == "月套餐"
+        assert order["amount_cents"] == 990
+        assert {key: value for key, value in order.items() if key != "plan_name"} == (
+            stored_order(order["id"])
+        )
+
+    client.cookies.set("session", "payment-session-bob")
+    assert [order["id"] for order in client.get("/api/orders").json()["orders"]] == [
+        bobs_order["id"],
+    ]
+
+
+@pytest.mark.parametrize("channel", ["alipay", "wechat"])
+def test_refund_endpoint_updates_order_subscription_and_list(client, channel):
+    order = create_order(client, channel)
+    assert send_callback(client, order).status_code == 200
+
+    response = client.post(f"/api/orders/{order['id']}/refund")
+    assert response.status_code == 200
+    refunded = response.json()["order"]
+    assert refunded["status"] == "refunded"
+    assert refunded["refunded_at"]
+    assert refunded == stored_order(order["id"])
+    assert subscription() == {"plan_id": None, "plan_expires_at": None}
+    current_user = client.get("/api/me").json()
+    assert current_user["plan_id"] is None
+    assert current_user["plan_expires_at"] is None
+    assert client.get("/api/orders").json()["orders"][0]["status"] == "refunded"
+
+    repeat = client.post(f"/api/orders/{order['id']}/refund")
+    assert repeat.status_code == 409
+    assert stored_order(order["id"]) == refunded
+
+
+def test_refund_endpoint_rejects_pending_and_other_users_orders(client):
+    order = create_order(client)
+    assert client.post(f"/api/orders/{order['id']}/refund").status_code == 409
+    assert send_callback(client, order).status_code == 200
+    before_subscription = subscription()
+
+    client.cookies.set("session", "payment-session-bob")
+    assert client.post(f"/api/orders/{order['id']}/refund").status_code == 404
+    assert client.post("/api/orders/missing/refund").status_code == 404
+    assert stored_order(order["id"])["status"] == "paid"
+    assert subscription() == before_subscription

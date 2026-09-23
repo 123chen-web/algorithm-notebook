@@ -674,6 +674,16 @@ def get_order(order_id: str, user=Depends(current_user)):
     return {"order": payments.get_order(user["id"], order_id)}
 
 
+@app.get("/api/orders")
+def list_orders(user=Depends(current_user)):
+    return {"orders": payments.list_orders(user["id"])}
+
+
+@app.post("/api/orders/{order_id}/refund")
+def refund_order(order_id: str, user=Depends(current_user)):
+    return {"order": payments.refund_order(user["id"], order_id)}
+
+
 @app.post("/api/payments/mock/{channel}/callback")
 async def mock_payment_callback(
     channel: Literal["alipay", "wechat"],

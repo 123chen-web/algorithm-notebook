@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 import pytest
 from fastapi import HTTPException
@@ -208,3 +209,184 @@ def test_duplicate_paid_callback_does_not_grant_subscription_twice(database):
     first = subscription()
     deliver(order)
     assert subscription() == first
+
+
+@pytest.mark.parametrize("channel", ["alipay", "wechat"])
+def test_refund_clears_subscription_preserves_usage_and_records_time(database, channel):
+    order = payments.create_order(1, 1, channel)["order"]
+    paid = deliver(order)
+    with connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO ai_usage(user_id, day, attempts) VALUES (1, ?, 7)",
+            (NOW[:10],),
+        )
+
+    refunded = payments.refund_order(1, order["id"])
+
+    assert refunded == payments.get_order(1, order["id"])
+    assert refunded["status"] == "refunded"
+    assert refunded["refunded_at"] == NOW
+    assert refunded["paid_at"] == paid["paid_at"]
+    assert refunded["provider_trade_no"] == paid["provider_trade_no"]
+    assert refunded["amount_cents"] == 990
+    assert subscription() == {
+        "plan_id": None, "plan_expires_at": None, "is_trial": 0,
+    }
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT attempts FROM ai_usage WHERE user_id = 1 AND day = ?",
+            (NOW[:10],),
+        ).fetchone()[0] == 7
+
+
+def test_refund_of_older_order_clears_entire_newer_subscription(database):
+    older = payments.create_order(1, 1, "alipay")["order"]
+    newer = payments.create_order(1, 2, "alipay")["order"]
+    deliver(older)
+    deliver(newer)
+    assert subscription()["plan_id"] == 2
+    assert subscription()["plan_expires_at"] == "2026-11-20T10:00:00+00:00"
+
+    payments.refund_order(1, older["id"])
+
+    assert subscription()["plan_id"] is None
+    assert subscription()["plan_expires_at"] is None
+    assert payments.get_order(1, newer["id"])["status"] == "paid"
+
+
+@pytest.mark.parametrize("status", ["pending", "failed", "closed", "refunded"])
+def test_refund_rejects_non_paid_orders_before_contacting_channel(
+    database, monkeypatch, status
+):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    if status == "refunded":
+        deliver(order)
+        payments.refund_order(1, order["id"])
+    elif status != "pending":
+        deliver(order, status=status)
+    before = payments.get_order(1, order["id"])
+    before_subscription = subscription()
+
+    def unexpected_refund(adapter, order):
+        pytest.fail("Ineligible orders must not call the payment channel")
+
+    monkeypatch.setattr(MockChannel, "refund", unexpected_refund)
+    with pytest.raises(HTTPException) as error:
+        payments.refund_order(1, order["id"])
+    assert error.value.status_code == 409
+    assert payments.get_order(1, order["id"]) == before
+    assert subscription() == before_subscription
+
+
+@pytest.mark.parametrize("order_exists", [False, True])
+def test_refund_rejects_missing_or_other_users_order_before_channel(
+    database, monkeypatch, order_exists
+):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    paid = deliver(order)
+    before_subscription = subscription()
+
+    def unexpected_refund(adapter, order):
+        pytest.fail("Unauthorized refunds must not call the payment channel")
+
+    monkeypatch.setattr(MockChannel, "refund", unexpected_refund)
+    with pytest.raises(HTTPException) as error:
+        payments.refund_order(2, order["id"] if order_exists else "missing")
+    assert error.value.status_code == 404
+    assert payments.get_order(1, order["id"]) == paid
+    assert subscription() == before_subscription
+
+
+def test_uncertain_channel_refund_retains_paid_order_and_allows_retry(
+    database, monkeypatch
+):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    paid = deliver(order)
+    before_subscription = subscription()
+    attempts = []
+    original_refund = MockChannel.refund
+
+    def lost_response(adapter, order):
+        attempts.append(dict(order))
+        if len(attempts) == 1:
+            raise PaymentChannelError("simulated response loss after acceptance")
+        return original_refund(adapter, order)
+
+    monkeypatch.setattr(MockChannel, "refund", lost_response)
+    with pytest.raises(HTTPException) as error:
+        payments.refund_order(1, order["id"])
+    assert error.value.status_code == 502
+    assert error.value.detail["order_id"] == order["id"]
+    assert error.value.detail["message"]
+    assert payments.get_order(1, order["id"]) == paid
+    assert subscription() == before_subscription
+
+    assert payments.refund_order(1, order["id"])["status"] == "refunded"
+    assert attempts == [paid, paid]
+    assert subscription()["plan_id"] is None
+
+
+def test_refund_transaction_rolls_back_order_when_subscription_update_fails(database):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    paid = deliver(order)
+    before_subscription = subscription()
+    with connect(write=True) as conn:
+        conn.execute(
+            "CREATE TRIGGER fail_subscription_clear "
+            "BEFORE UPDATE OF plan_id ON users WHEN NEW.plan_id IS NULL "
+            "BEGIN SELECT RAISE(ABORT, 'simulated subscription failure'); END"
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="simulated subscription failure"):
+        payments.refund_order(1, order["id"])
+    assert payments.get_order(1, order["id"]) == paid
+    assert subscription() == before_subscription
+
+    with connect(write=True) as conn:
+        conn.execute("DROP TRIGGER fail_subscription_clear")
+    assert payments.refund_order(1, order["id"])["status"] == "refunded"
+    assert subscription()["plan_id"] is None
+
+
+def test_interleaved_refund_loser_does_not_revoke_new_purchase(database, monkeypatch):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    deliver(order)
+    original_refund = MockChannel.refund
+    channel_calls = []
+    winner = {}
+    new_purchase = {}
+
+    def interleave(adapter, snapshot):
+        channel_calls.append(dict(snapshot))
+        if len(channel_calls) == 1:
+            # Both requests already read paid; the nested request commits first.
+            # It also needs a write lock, proving no lock spans the channel call.
+            winner.update(payments.refund_order(1, order["id"]))
+            purchase = payments.create_order(1, 2, "alipay")["order"]
+            deliver(purchase)
+            new_purchase.update(subscription())
+        return original_refund(adapter, snapshot)
+
+    monkeypatch.setattr(MockChannel, "refund", interleave)
+    with pytest.raises(HTTPException) as error:
+        payments.refund_order(1, order["id"])
+
+    assert error.value.status_code == 409
+    assert len(channel_calls) == 2
+    assert all(snapshot["status"] == "paid" for snapshot in channel_calls)
+    assert payments.get_order(1, order["id"]) == winner
+    assert winner["status"] == "refunded"
+    assert subscription() == new_purchase
+    assert new_purchase["plan_id"] == 2
+
+
+def test_paid_callback_after_refund_cannot_restore_subscription(database):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    deliver(order)
+    refunded = payments.refund_order(1, order["id"])
+
+    with pytest.raises(HTTPException) as error:
+        deliver(order)
+    assert error.value.status_code == 409
+    assert payments.get_order(1, order["id"]) == refunded
+    assert subscription()["plan_id"] is None

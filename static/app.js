@@ -60,6 +60,7 @@ function signedOut() {
   planPurchase = null;
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
+  $("#plan-orders-list").replaceChildren();
   $("#plan-payment").replaceChildren();
   $("#plan-order-details").replaceChildren();
   $("#plan-order-status").textContent = "";
@@ -100,6 +101,8 @@ async function api(path, options = {}) {
       detail = detail
         .map((item) => `${item.loc.join(".")}: ${item.msg}`)
         .join("；");
+    } else if (typeof detail === "object") {
+      detail = detail.message || "请求失败，请稍后重试";
     }
 
     const error = new Error(String(detail));
@@ -207,7 +210,10 @@ function planFacts(entries) {
 }
 
 async function refreshPlanSubscription() {
-  user = await api("/api/me");
+  const currentUser = user;
+  const updated = await api("/api/me");
+  if (user !== currentUser || !user || view !== "plan") return false;
+  user = updated;
   updateUserInfo();
   const entries = [
     ["套餐", user.plan_name || "当前使用免费额度"],
@@ -222,6 +228,85 @@ async function refreshPlanSubscription() {
   );
   $("#plan-subscription").replaceChildren(planFacts(entries));
   $("#plan-trial-note").hidden = !user.is_trial;
+  return true;
+}
+
+async function loadPlanOrders() {
+  const currentUser = user;
+  const { orders } = await api("/api/orders");
+  if (user !== currentUser || !user || view !== "plan") return false;
+  const list = $("#plan-orders-list");
+  list.replaceChildren();
+  if (!orders.length) {
+    list.append(element("p", "暂无订单。", "muted"));
+    return true;
+  }
+  const statuses = {
+    pending: "待支付",
+    paid: "已支付",
+    failed: "支付失败",
+    closed: "已关闭",
+    refunded: "已退款",
+  };
+  for (const order of orders) {
+    const row = element("article", "", "plan-order-row");
+    const heading = element("div", "", "plan-order-heading");
+    heading.append(
+      element("h4", order.plan_name),
+      element("span", yuan(order.amount_cents), "plan-order-amount")
+    );
+    row.append(heading, planFacts([
+      ["订单号", order.id],
+      ["状态", statuses[order.status] || "未知状态"],
+      ["创建时间", timestamp(order.created_at)],
+    ]));
+    if (order.status === "paid") {
+      const refund = element("button", "申请退款", "danger");
+      refund.type = "button";
+      refund.disabled = busy;
+      refund.setAttribute("aria-label", `申请退款：${order.plan_name}，订单 ${order.id}`);
+      refund.addEventListener("click", () => run(() => refundPlanOrder(order)));
+      const actions = element("div", "", "actions");
+      actions.append(refund);
+      row.append(actions);
+    }
+    list.append(row);
+  }
+  return true;
+}
+
+async function refundPlanOrder(order) {
+  if (!confirm(`确认申请退回「${order.plan_name}」订单 ${order.id} 的全部款项 ${yuan(order.amount_cents)}？\n\n退款成功后会立即清空当前整体套餐，即使当前套餐来自其他订单；不按剩余天数折算，也不恢复今天已用掉的 AI 次数。此操作不可撤销。`)) return;
+  const currentUser = user;
+  message();
+  let refunded;
+  try {
+    const result = await api(`/api/orders/${encodeURIComponent(order.id)}/refund`, { method: "POST" });
+    refunded = result.order;
+  } catch (error) {
+    // 另一页面可能已经退款；刷新状态后仍保留原始错误，未确认结果时允许重试。
+    if (error.status === 409 && user === currentUser && view === "plan") {
+      try {
+        if (await refreshPlanSubscription()) await loadPlanOrders();
+      } catch {
+        // 保留原始退款错误。
+      }
+    }
+    throw error;
+  }
+  if (user !== currentUser || !user || view !== "plan") return;
+  if (planPurchase && planPurchase.order.id === refunded.id) {
+    planPurchase.order = refunded;
+    renderPlanOrder();
+  }
+  try {
+    if (!await refreshPlanSubscription()) return;
+    if (!await loadPlanOrders()) return;
+    message("退款成功，当前套餐已收回，今日已用 AI 次数保持不变。");
+  } catch (error) {
+    if (error.status === 401) throw error;
+    message("退款成功，当前套餐已收回；页面刷新失败，请稍后刷新查看。", true);
+  }
 }
 
 function renderPlans(plans) {
@@ -253,8 +338,10 @@ function renderPlans(plans) {
         stopOrderPolling();
         planPurchase = purchase;
         renderPlanOrder();
-        if (purchase.order.status === "pending") startOrderPolling();
-        else await finishPlanOrder();
+        if (purchase.order.status === "pending") {
+          startOrderPolling();
+          await loadPlanOrders();
+        } else await finishPlanOrder();
       }));
       const actions = element("div", "", "actions");
       actions.append(buy);
@@ -318,9 +405,12 @@ function stopOrderPolling() {
 async function finishPlanOrder() {
   stopOrderPolling();
   const status = planPurchase.order.status;
+  if (!await refreshPlanSubscription()) return;
+  if (!await loadPlanOrders()) return;
   if (status === "paid") {
-    await refreshPlanSubscription();
-    message("购买成功，套餐已生效。");
+    message(user.plan_active
+      ? "购买成功，套餐已生效。"
+      : "订单已支付；当前无有效套餐，请查看当前订阅。");
   } else {
     message($("#plan-order-status").textContent, true);
   }
@@ -334,7 +424,7 @@ async function checkPlanOrder(generation) {
   purchase.order = order;
   // pending 时保留支付文本的选区和链接焦点，方便复制或打开。
   if (statusChanged) renderPlanOrder();
-  if (order.status !== "pending") await finishPlanOrder();
+  if (statusChanged && order.status !== "pending") await finishPlanOrder();
 }
 
 function startOrderPolling() {
@@ -347,6 +437,8 @@ function startOrderPolling() {
       stopOrderPolling();
       return;
     }
+    // run 会串行处理异步操作；其他操作进行中时跳过查询和超时提示。
+    if (busy) return;
     if (Date.now() >= deadline) {
       stopOrderPolling();
       const text = "暂未检测到支付结果，可以稍后刷新这个页面查看。";
@@ -354,8 +446,6 @@ function startOrderPolling() {
       message(text);
       return;
     }
-    // run 会串行处理异步操作；其他操作进行中时跳过本次查询。
-    if (busy) return;
     run(async () => {
       await checkPlanOrder(generation);
     });
@@ -364,11 +454,14 @@ function startOrderPolling() {
 
 async function loadPlanPage() {
   stopOrderPolling();
-  await refreshPlanSubscription();
+  if (!await refreshPlanSubscription()) return;
   if (user.is_trial) planPurchase = null;
+  const currentUser = user;
   const { plans } = await api("/api/plans");
+  if (user !== currentUser || !user || view !== "plan") return;
   renderPlans(plans);
   renderPlanOrder();
+  if (!await loadPlanOrders()) return;
   if (planPurchase) {
     if (planPurchase.order.status === "pending") startOrderPolling();
     await checkPlanOrder(orderPollGeneration);

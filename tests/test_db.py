@@ -79,6 +79,11 @@ def test_init_new_database_has_empty_payment_tables(database_path):
         assert columns["plan_id"]["notnull"] == 0
         assert columns["plan_expires_at"]["type"] == "TEXT"
         assert columns["plan_expires_at"]["notnull"] == 0
+        order_columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(orders)")
+        }
+        assert order_columns["refunded_at"]["type"] == "TEXT"
+        assert order_columns["refunded_at"]["notnull"] == 0
 
 
 @pytest.mark.parametrize("has_existing_migrations", [False, True])
@@ -173,6 +178,7 @@ def test_payment_defaults_boundaries_and_amount_snapshot(database):
         assert order["provider_trade_no"] is None
         assert order["paid_at"] is None
         assert order["closed_at"] is None
+        assert order["refunded_at"] is None
         assert order["created_at"] == CREATED_AT
 
         # 成交金额独立保存，套餐价格和启用状态变化不能改写历史订单。
@@ -304,3 +310,71 @@ def test_provider_trade_number_is_unique_within_channel(database):
                 conn, order_id="duplicate-trade", provider_trade_no="same-trade"
             )
         assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 6
+
+
+def test_init_migrates_old_orders_without_losing_orders_or_refund_times(database_path):
+    with closing(sqlite3.connect(database_path)) as conn:
+        # Freeze the pre-refund schema rather than deriving it from current SCHEMA.
+        conn.executescript(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL, timezone TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE plans (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                period_days INTEGER NOT NULL, ai_daily_limit INTEGER NOT NULL,
+                price_cents INTEGER NOT NULL, is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE orders (
+                id TEXT NOT NULL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE RESTRICT,
+                amount_cents INTEGER NOT NULL,
+                channel TEXT NOT NULL CHECK(channel IN ('alipay', 'wechat')),
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'paid', 'failed', 'closed', 'refunded')),
+                provider_trade_no TEXT,
+                created_at TEXT NOT NULL, paid_at TEXT, closed_at TEXT
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO users VALUES (1, 'alice', 'original-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        insert_plan(conn)
+        for status in ("pending", "paid", "refunded"):
+            insert_order(conn, order_id=f"legacy-{status}")
+            conn.execute(
+                "UPDATE orders SET status = ?, paid_at = ? WHERE id = ?",
+                (status, None if status == "pending" else CREATED_AT, f"legacy-{status}"),
+            )
+        conn.row_factory = sqlite3.Row
+        before = [dict(row) for row in conn.execute("SELECT * FROM orders ORDER BY id")]
+        conn.commit()
+
+    init_db()
+    init_db()
+
+    with connect(write=True) as conn:
+        after = [dict(row) for row in conn.execute("SELECT * FROM orders ORDER BY id")]
+        assert after == [{**order, "refunded_at": None} for order in before]
+        columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(orders)")
+        }
+        assert columns["refunded_at"]["type"] == "TEXT"
+        assert columns["refunded_at"]["notnull"] == 0
+        conn.execute(
+            "UPDATE orders SET refunded_at = ? WHERE id = 'legacy-refunded'",
+            (CREATED_AT,),
+        )
+
+    init_db()
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT refunded_at FROM orders WHERE id = 'legacy-refunded'"
+        ).fetchone()[0] == CREATED_AT
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

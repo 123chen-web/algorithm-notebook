@@ -132,7 +132,7 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 #plan-page { max-width: 960px; margin: 0 auto; }
 #plan-page > .panel > h3, .plan-card > h3, .plan-card > h4 { margin-top: 0; }
 #plan-trial-note { margin: 18px 0; }
-#plan-catalog, #plan-order { margin-top: 24px; }
+#plan-catalog, #plan-order, #plan-orders { margin-top: 24px; }
 #plan-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 18px; }
 .plan-card { display: flex; flex-direction: column; overflow-wrap: anywhere; }
 .plan-card .actions { margin-top: auto; margin-bottom: 0; padding-top: 16px; }
@@ -145,6 +145,11 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .plan-payment-link { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 pre.plan-payment-text.code { padding: 16px; color: var(--ink); background: var(--soft); border-color: var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
 #plan-order > .actions { margin-bottom: 0; }
+.plan-order-row { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.plan-order-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+.plan-order-heading h4 { margin: 0; overflow-wrap: anywhere; }
+.plan-order-amount { color: var(--accent); font-weight: 650; font-variant-numeric: tabular-nums; }
+.plan-order-row .actions { margin: 16px 0 0; }
 .mistake-row { margin: 14px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #f7f8f1; }
 .mistake-row label { margin-bottom: 10px; }
 .mistake-row > button { padding: 5px 10px; min-height: 34px; color: var(--muted); font-size: 12px; }

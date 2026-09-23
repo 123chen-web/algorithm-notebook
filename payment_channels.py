@@ -37,6 +37,9 @@ class PaymentChannel(Protocol):
     def create_payment(self, order: Mapping[str, object]) -> dict:
         ...
 
+    def refund(self, order: Mapping[str, object]) -> dict:
+        ...
+
     def verify_callback(
         self, raw_body: bytes, headers: Mapping[str, str]
     ) -> VerifiedCallback:
@@ -58,6 +61,15 @@ class MockChannel:
             "provider": "mock",
             "qr_code_url": f"mock://{self.channel}/{order['id']}",
             "redirect_url": None,
+        }
+
+    def refund(self, order: Mapping[str, object]) -> dict:
+        # 同步本地占位，无外部资金变动，也不需要回调签名。
+        return {
+            "provider": "mock",
+            "order_id": order["id"],
+            "refund_amount_cents": order["amount_cents"],
+            "out_request_no": f"refund-{order['id']}",
         }
 
     def sign_callback(self, raw_body: bytes) -> str:
@@ -172,6 +184,73 @@ class AlipayChannel:
             "provider": "alipay",
             "qr_code_url": result["qr_code"],
             "redirect_url": None,
+        }
+
+    @staticmethod
+    def _refund_matches_order(result, order, amount_field):
+        if (
+            not isinstance(result, dict)
+            or result.get("code") != "10000"
+            or result.get("out_trade_no") != order["id"]
+            or result.get("trade_no") != order["provider_trade_no"]
+        ):
+            return False
+        amount = result.get(amount_field)
+        if (
+            not isinstance(amount, str)
+            or len(amount) > 32
+            or re.fullmatch(r"[0-9]+(?:\.[0-9]{1,2})?", amount) is None
+        ):
+            return False
+        yuan, _, cents = amount.partition(".")
+        return int(yuan) * 100 + int(cents.ljust(2, "0")) == order["amount_cents"]
+
+    def refund(self, order: Mapping[str, object]) -> dict:
+        amount_cents = order["amount_cents"]
+        if type(amount_cents) is not int or amount_cents <= 0:
+            raise PaymentChannelError("支付宝退款金额无效")
+        if (
+            not isinstance(order.get("provider_trade_no"), str)
+            or not order["provider_trade_no"].strip()
+        ):
+            raise PaymentChannelError("支付宝订单交易号无效")
+        refund_amount = f"{amount_cents // 100}.{amount_cents % 100:02d}"
+        # 同一订单始终使用同一请求号：超时重试、并发调用均由支付宝去重。
+        out_request_no = f"refund-{order['id']}"
+        try:
+            result = self._client.api_alipay_trade_refund(
+                out_trade_no=order["id"],
+                refund_amount=refund_amount,
+                out_request_no=out_request_no,
+                refund_reason="用户自助申请全额退款",
+            )
+        except Exception:
+            # SDK 验签、解析、网络异常均可能发生在渠道退款已经成功之后。
+            result = None
+        # refund_fee 是该交易累计退款成功金额；本轮只支持一次全额退款。
+        # fund_change=N 只表示本次没有资金变化，幂等重试仍可能成功。
+        if not (
+            self._refund_matches_order(result, order, "refund_fee")
+            and result.get("fund_change") in ("Y", "N")
+        ):
+            try:
+                result = self._client.api_alipay_trade_fastpay_refund_query(
+                    out_request_no=out_request_no, out_trade_no=order["id"]
+                )
+            except Exception:
+                raise PaymentChannelError("支付宝退款结果暂未确认，请稍后重试") from None
+            # 查询的 code=10000 仅代表查询成功；缺少 REFUND_SUCCESS 不能销账。
+            if not (
+                self._refund_matches_order(result, order, "refund_amount")
+                and result.get("out_request_no") == out_request_no
+                and result.get("refund_status") == "REFUND_SUCCESS"
+            ):
+                raise PaymentChannelError("支付宝退款结果暂未确认，请稍后重试")
+        return {
+            "provider": "alipay",
+            "order_id": order["id"],
+            "refund_amount_cents": amount_cents,
+            "out_request_no": out_request_no,
         }
 
     def verify_callback(

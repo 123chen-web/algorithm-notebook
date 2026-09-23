@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS orders (
     -- 时间沿用 UTC ISO 8601 字符串，由业务写入。
     created_at TEXT NOT NULL,
     paid_at TEXT,
-    closed_at TEXT
+    closed_at TEXT,
+    refunded_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_user
@@ -163,6 +164,11 @@ USER_COLUMN_MIGRATIONS = (
 )
 
 
+ORDER_COLUMN_MIGRATIONS = (
+    ("refunded_at", "ALTER TABLE orders ADD COLUMN refunded_at TEXT"),
+)
+
+
 @contextmanager
 def connect(write=False):
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
@@ -194,6 +200,11 @@ def init_db():
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         for column, statement in USER_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+        for column, statement in ORDER_COLUMN_MIGRATIONS:
             if column not in existing:
                 conn.execute(statement)
 

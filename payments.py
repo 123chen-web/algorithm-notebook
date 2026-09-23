@@ -34,6 +34,20 @@ def get_order(user_id, order_id):
     return dict(row)
 
 
+def list_orders(user_id):
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT o.*, p.name AS plan_name
+            FROM orders o JOIN plans p ON p.id = o.plan_id
+            WHERE o.user_id = ?
+            ORDER BY o.created_at DESC, o.id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def channel_adapter(channel):
     try:
         return get_channel(channel)
@@ -84,6 +98,44 @@ def create_order(user_id, plan_id, channel):
         ) from None
     # 回调可能比发起支付的响应更早到达，返回数据库里的最新状态。
     return {"order": get_order(user_id, order_id), "payment": payment}
+
+
+def refund_order(user_id, order_id):
+    order = get_order(user_id, order_id)
+    if order["status"] != "paid":
+        raise HTTPException(409, "订单状态不允许退款")
+    adapter = channel_adapter(order["channel"])
+
+    # 不持有数据库写锁等待网络；渠道必须复用同一退款请求号，防止重复出款。
+    try:
+        adapter.refund(order)
+    except PaymentChannelError:
+        # 渠道可能已退款但响应丢失。适配器查询仍不能确认时保留 paid 和套餐，
+        # 用户重试同一订单可幂等核实结果；不能把不确定结果当作退款成功。
+        raise HTTPException(
+            502,
+            {"message": "退款结果暂未确认，请稍后重试以核实结果", "order_id": order_id},
+        ) from None
+
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE orders SET status = 'refunded', refunded_at = ?
+            WHERE id = ? AND status = 'paid'
+            """,
+            (utc_now(), order_id),
+        )
+        if cursor.rowcount != 1:
+            # 另一请求已完成退款时，不能再次清空此后新购买的套餐。
+            raise HTTPException(409, "订单状态已变更，请重新查询")
+        # V1 整体收回套餐，即使当前套餐来自另一笔订单；不补回当天 AI 用量。
+        conn.execute(
+            "UPDATE users SET plan_id = NULL, plan_expires_at = NULL WHERE id = ?",
+            (user_id,),
+        )
+        return dict(conn.execute(
+            "SELECT * FROM orders WHERE id = ?", (order_id,)
+        ).fetchone())
 
 
 def handle_callback(channel, raw_body, headers, *, user_id=None):
