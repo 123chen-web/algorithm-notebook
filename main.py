@@ -8,7 +8,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -175,6 +175,20 @@ def utc_now():
 
 def today_for(user):
     return today_in_timezone(user["timezone"])
+
+
+def current_streak(review_dates, today):
+    # 今天还没打卡但昨天打卡了，连续天数按"还没断"算，不因为今天没过完就清零。
+    cursor = today
+    if cursor not in review_dates:
+        cursor -= timedelta(days=1)
+        if cursor not in review_dates:
+            return 0
+    streak = 0
+    while cursor in review_dates:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
 
 
 def ai_limit():
@@ -977,3 +991,71 @@ def save_variant_result(
 
     # 保存练习结果不会隐式修改原易错点的复习计划。
     return dict(result)
+
+
+LEADERBOARD_SIZE = 50
+
+
+@app.get("/api/leaderboard")
+def leaderboard(user=Depends(current_user)):
+    with connect() as conn:
+        users = conn.execute("SELECT id, timezone, is_trial FROM users").fetchall()
+        review_rows = conn.execute(
+            """
+            SELECT p.user_id AS user_id, r.reviewed_at
+            FROM reviews r
+            JOIN mistakes m ON m.id = r.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            """
+        ).fetchall()
+
+    timezones = {row["id"]: row["timezone"] for row in users}
+    review_dates = defaultdict(set)
+    for row in review_rows:
+        tz = timezones.get(row["user_id"])
+        if tz is None:
+            continue
+        reviewed_at = datetime.fromisoformat(row["reviewed_at"])
+        review_dates[row["user_id"]].add(today_in_timezone(tz, reviewed_at))
+
+    streaks = {}
+    for row in users:
+        streaks[row["id"]] = current_streak(
+            review_dates.get(row["id"], set()),
+            today_for(row),
+        )
+
+    # 体验账号不参与排行榜——跟体验账号能看 /api/plans 但不能真的下单是
+    # 同一种"能看不能上榜"的模式；已排除的账号不占用前 LEADERBOARD_SIZE 名额。
+    eligible = sorted(
+        (row for row in users if not row["is_trial"] and streaks[row["id"]] >= 1),
+        key=lambda row: (-streaks[row["id"]], row["id"]),
+    )
+
+    entries = [
+        {
+            "rank": index + 1,
+            # 匿名标识，不带出真实 username；跟 rank 是两个独立字段，
+            # 数字含义不同，不能把标识里的号码当成排名。
+            "display_name": f"用户 #{row['id']}",
+            "streak_days": streaks[row["id"]],
+        }
+        for index, row in enumerate(eligible[:LEADERBOARD_SIZE])
+    ]
+
+    my_rank = None
+    if not user["is_trial"] and streaks[user["id"]] >= 1:
+        for index, row in enumerate(eligible):
+            if row["id"] == user["id"]:
+                my_rank = index + 1
+                break
+
+    return {
+        "entries": entries,
+        "leaderboard_size": LEADERBOARD_SIZE,
+        "me": {
+            "streak_days": streaks[user["id"]],
+            "rank": my_rank,
+            "is_trial": user["is_trial"],
+        },
+    }

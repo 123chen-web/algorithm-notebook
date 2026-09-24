@@ -75,6 +75,11 @@ function signedOut() {
   showAuthPanels(["login-form", "register-form"]);
   $("#cards").replaceChildren();
   $("#detail").replaceChildren();
+  $("#leaderboard-me").replaceChildren();
+  $("#leaderboard-entries").replaceChildren();
+  $("#leaderboard-status").textContent = "";
+  $("#leaderboard-table-wrap").hidden = true;
+  $("#leaderboard-page").setAttribute("aria-busy", "false");
   $("#problem-form").reset();
   $("#mistake-inputs").replaceChildren();
   addMistakeInput();
@@ -187,14 +192,65 @@ async function showView(nextView) {
   $("#new-page").hidden = view !== "new";
   $("#list-page").hidden = view !== "today" && view !== "all";
   $("#plan-page").hidden = view !== "plan";
+  $("#leaderboard-page").hidden = view !== "leaderboard";
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  if (view === "plan") await loadPlanPage();
+  if (view === "leaderboard") await loadLeaderboard();
+  else if (view === "plan") await loadPlanPage();
   else if (view === "today" || view === "all") await loadList();
+}
+
+async function loadLeaderboard() {
+  const currentUser = user;
+  const page = $("#leaderboard-page");
+  const status = $("#leaderboard-status");
+  const entries = $("#leaderboard-entries");
+  const mine = $("#leaderboard-me");
+  page.setAttribute("aria-busy", "true");
+  status.textContent = "正在加载连续打卡排行榜…";
+  entries.replaceChildren();
+  mine.replaceChildren();
+  $("#leaderboard-table-wrap").hidden = true;
+
+  try {
+    const data = await api("/api/leaderboard");
+    if (user !== currentUser || !user || view !== "leaderboard") return;
+    const { me } = data;
+    $("#leaderboard-list-title").textContent = `排行榜 · 前 ${data.leaderboard_size} 名`;
+    const rankText = me.is_trial
+      ? "体验账号不参与排名，你仍可查看自己的连续打卡天数。"
+      : me.rank === null
+        ? "暂无排名，连续打卡至少 1 天即可参与排名。"
+        : `第 ${me.rank} 名${me.rank > data.leaderboard_size ? `（未进入前 ${data.leaderboard_size} 名）` : ""}`;
+    mine.append(
+      element("p", `${me.streak_days} 天`, "leaderboard-streak"),
+      element("p", rankText, "leaderboard-my-rank")
+    );
+    for (const entry of data.entries) {
+      const row = element("tr");
+      row.append(
+        element("td", `第 ${entry.rank} 名`, "leaderboard-rank"),
+        element("td", entry.display_name),
+        element("td", `${entry.streak_days} 天`, "leaderboard-days")
+      );
+      entries.append(row);
+    }
+    status.textContent = data.entries.length ? "" : "暂无上榜用户，完成一次复习评分，开始连续打卡吧。";
+    $("#leaderboard-table-wrap").hidden = !data.entries.length;
+  } catch (error) {
+    if (user === currentUser && user && view === "leaderboard") {
+      status.textContent = "排行榜加载失败，请点击上方“刷新”重试。";
+    }
+    throw error;
+  } finally {
+    if (user === currentUser && user && view === "leaderboard") {
+      page.setAttribute("aria-busy", "false");
+    }
+  }
 }
 
 function yuan(cents) {
@@ -1026,6 +1082,12 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 });
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "leaderboard") {
+    message();
+    await loadLeaderboard();
+    message("已刷新。");
+    return;
+  }
   if (view === "plan") {
     message();
     await loadPlanPage();

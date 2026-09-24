@@ -129,6 +129,19 @@ details[open] > summary { margin-bottom: 12px; }
 button.danger { color: var(--danger); background: transparent; border-color: #e3c8c1; font-size: 12px; }
 button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border-color: #c49688; }
 #new-page { max-width: 860px; margin: 0 auto; }
+#leaderboard-page { max-width: 960px; margin: 0 auto; }
+#leaderboard-page > .panel > h3 { margin-top: 0; }
+.leaderboard-personal { background: var(--soft); }
+.leaderboard-streak { margin: 8px 0; color: var(--accent); font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.leaderboard-my-rank { margin-bottom: 0; font-variant-numeric: tabular-nums; }
+.leaderboard-list { margin-top: 24px; }
+#leaderboard-status:empty { display: none; }
+.leaderboard-table { width: 100%; margin-top: 18px; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.leaderboard-table th, .leaderboard-table td { padding: 14px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.leaderboard-table th { color: var(--muted); font-size: 12px; font-weight: 600; }
+.leaderboard-table th:last-child, .leaderboard-days { text-align: right; }
+.leaderboard-rank { color: var(--accent); font-weight: 650; }
+.leaderboard-table tbody tr:last-child td { border-bottom: 0; }
 #plan-page { max-width: 960px; margin: 0 auto; }
 #plan-page > .panel > h3, .plan-card > h3, .plan-card > h4 { margin-top: 0; }
 #plan-trial-note { margin: 18px 0; }
@@ -194,6 +207,7 @@ pre.plan-payment-text.code { padding: 16px; color: var(--ink); background: var(-
   .variant { padding: 8px 14px 14px; }
   .variant > .prose { padding: 14px; }
   .danger-zone button { flex-grow: 1; }
+  .leaderboard-table th, .leaderboard-table td { padding: 12px 6px; }
   #notice:not(:empty) { top: 8px; }
 }
 @media (max-width: 380px) {

@@ -238,6 +238,7 @@
         <button type="button" data-view="all">全部记录</button>
         <button type="button" data-view="new">新增记录</button>
         <button type="button" data-view="plan">我的套餐</button>
+        <button type="button" data-view="leaderboard">打卡排行榜</button>
         <button type="button" id="refresh">刷新</button>
       </nav>
 
@@ -308,6 +309,37 @@
             <button type="submit" class="primary">保存记录</button>
           </div>
         </form>
+      </section>
+
+      <section id="leaderboard-page" aria-labelledby="leaderboard-title" hidden>
+        <div class="page-heading">
+          <h2 id="leaderboard-title">连续打卡天数排行榜</h2>
+          <p class="muted">每天完成至少一次复习评分，就算打卡。日期按每个人自己的时区计算，同一天多次评分只计一天。</p>
+          <p class="muted">今天还没打卡时，保留截至昨天的连续天数；今天和昨天都没打卡则归零。</p>
+        </div>
+
+        <section class="panel leaderboard-personal" aria-labelledby="leaderboard-me-title">
+          <h3 id="leaderboard-me-title">你的连续打卡</h3>
+          <div id="leaderboard-me"></div>
+        </section>
+
+        <section class="panel leaderboard-list" aria-labelledby="leaderboard-list-title">
+          <h3 id="leaderboard-list-title">排行榜</h3>
+          <p id="leaderboard-rules" class="muted">仅展示连续打卡至少 1 天的正式账号，天数相同按用户编号升序排列。“用户 #”后的编号是匿名身份标识，和排名无关。</p>
+          <p id="leaderboard-status" class="muted" role="status" aria-live="polite"></p>
+          <div id="leaderboard-table-wrap" hidden>
+            <table class="leaderboard-table" aria-labelledby="leaderboard-list-title" aria-describedby="leaderboard-rules">
+              <thead>
+                <tr>
+                  <th scope="col">排名</th>
+                  <th scope="col">匿名身份标识</th>
+                  <th scope="col">连续天数</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-entries"></tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="plan-page" aria-labelledby="plan-title" hidden>
