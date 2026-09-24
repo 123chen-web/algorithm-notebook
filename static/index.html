@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=2">
-  <link rel="stylesheet" href="/static/intro.css?v=2">
-  <script defer src="/static/intro.js?v=2"></script>
-  <script defer src="/static/app.js?v=2"></script>
+  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/intro.css?v=3">
+  <script defer src="/static/intro.js?v=3"></script>
+  <script defer src="/static/app.js?v=3"></script>
 </head>
 <body>
   <div class="container">
@@ -242,6 +242,7 @@
         <button type="button" data-view="plan">我的套餐</button>
         <button type="button" data-view="leaderboard">打卡排行榜</button>
         <button type="button" data-view="forum">讨论区</button>
+        <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
         <button type="button" id="refresh">刷新</button>
       </nav>
 
@@ -395,6 +396,15 @@
             </form>
           </section>
         </section>
+      </section>
+
+      <section id="admin-page" aria-labelledby="admin-title" hidden>
+        <div class="page-heading">
+          <h2 id="admin-title">管理后台</h2>
+          <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
+        </div>
+        <p id="admin-status" class="muted" role="status" aria-live="polite"></p>
+        <div id="admin-reports"></div>
       </section>
 
       <section id="plan-page" aria-labelledby="plan-title" hidden>

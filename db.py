@@ -178,6 +178,36 @@ ON post_comments(post_id);
 
 CREATE INDEX IF NOT EXISTS idx_post_comments_user
 ON post_comments(user_id);
+
+-- 举报指向帖子或评论二选一，CHECK 保证不会两个都填或者都不填。
+-- resolved_at 非空表示管理员已经处理过（删除内容或者忽略），
+-- 处理过的举报不再出现在管理队列里。
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY,
+    reporter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+    comment_id INTEGER REFERENCES post_comments(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    CHECK (
+        (post_id IS NOT NULL AND comment_id IS NULL)
+        OR (post_id IS NULL AND comment_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_resolved
+ON reports(resolved_at);
+
+-- 同一用户对同一目标只能有一条待处理举报；处理完之后如果问题复现，
+-- 允许再次举报（用部分索引而不是全局唯一索引）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_unique_pending_post
+ON reports(reporter_user_id, post_id)
+WHERE post_id IS NOT NULL AND resolved_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_unique_pending_comment
+ON reports(reporter_user_id, comment_id)
+WHERE comment_id IS NOT NULL AND resolved_at IS NULL;
 """
 
 # CREATE TABLE IF NOT EXISTS 不会给旧表补列，需要按需 ALTER TABLE ADD COLUMN；

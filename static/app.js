@@ -88,6 +88,9 @@ function signedOut() {
   $("#forum-comments").replaceChildren();
   $("#forum-compose-form").reset();
   $("#forum-comment-form").reset();
+  $("#admin-tab").hidden = true;
+  $("#admin-reports").replaceChildren();
+  $("#admin-status").textContent = "";
   $("#problem-form").reset();
   $("#mistake-inputs").replaceChildren();
   addMistakeInput();
@@ -183,6 +186,7 @@ function updateUserInfo() {
     `${user.username} · ${user.timezone} · ${user.today}`;
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
+  $("#admin-tab").hidden = !user.is_admin;
 }
 
 async function enterApp() {
@@ -202,13 +206,15 @@ async function showView(nextView) {
   $("#plan-page").hidden = view !== "plan";
   $("#leaderboard-page").hidden = view !== "leaderboard";
   $("#forum-page").hidden = view !== "forum";
+  $("#admin-page").hidden = view !== "admin";
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  if (view === "forum") await showForumList();
+  if (view === "admin") await loadAdminReports();
+  else if (view === "forum") await showForumList();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "plan") await loadPlanPage();
   else if (view === "today" || view === "all") await loadList();
@@ -1092,6 +1098,12 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 });
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "admin") {
+    message();
+    await loadAdminReports();
+    message("已刷新。");
+    return;
+  }
   if (view === "forum") {
     message();
     if (forumPost) await openForumPost(forumPost.id);
@@ -1229,6 +1241,13 @@ function renderForumPost(post) {
       const actions = element("div", "", "actions");
       actions.append(editBtn, deleteBtn);
       root.append(actions);
+    } else if (!user.is_trial) {
+      const actions = element("div", "", "actions");
+      const reportBtn = element("button", "举报这条帖子");
+      reportBtn.type = "button";
+      reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
+      actions.append(reportBtn);
+      root.append(actions);
     }
   }
 
@@ -1267,6 +1286,32 @@ function renderForumPost(post) {
     root.replaceChildren(form);
   }
 
+  // 只替换"举报"按钮所在的操作区，不动上面已经展示的标题和正文。
+  function reportForm() {
+    const reason = textarea("", 500, 3);
+    const submit = element("button", "提交举报", "primary");
+    submit.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(field("举报原因（可选）", reason), submit, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        await api(`/api/posts/${post.id}/report`, {
+          method: "POST",
+          body: JSON.stringify({ reason: reason.value }),
+        });
+        message("已提交举报，管理员会尽快处理。");
+        readOnly();
+      });
+    });
+
+    return form;
+  }
+
   readOnly();
 }
 
@@ -1299,6 +1344,13 @@ function renderForumComment(comment) {
       const actions = element("div", "", "actions");
       actions.append(editBtn, deleteBtn);
       wrap.append(actions);
+    } else if (!user.is_trial) {
+      const actions = element("div", "", "actions");
+      const reportBtn = element("button", "举报");
+      reportBtn.type = "button";
+      reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
+      actions.append(reportBtn);
+      wrap.append(actions);
     }
   }
 
@@ -1330,6 +1382,31 @@ function renderForumComment(comment) {
     wrap.replaceChildren(form);
   }
 
+  function reportForm() {
+    const reason = textarea("", 500, 3);
+    const submit = element("button", "提交举报", "primary");
+    submit.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(field("举报原因（可选）", reason), submit, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        await api(`/api/comments/${comment.id}/report`, {
+          method: "POST",
+          body: JSON.stringify({ reason: reason.value }),
+        });
+        message("已提交举报，管理员会尽快处理。");
+        readOnly();
+      });
+    });
+
+    return form;
+  }
+
   readOnly();
   return wrap;
 }
@@ -1344,6 +1421,91 @@ function renderForumComments(comments) {
     list.append(renderForumComment(comment));
   }
   $("#forum-comment-form").hidden = user.is_trial;
+}
+
+function removeReportCard(card) {
+  card.remove();
+  if (!$("#admin-reports").children.length) {
+    $("#admin-status").textContent = "暂无待处理的举报。";
+  }
+}
+
+async function loadAdminReports() {
+  const currentUser = user;
+  const status = $("#admin-status");
+  const list = $("#admin-reports");
+  status.textContent = "正在加载举报队列…";
+  list.replaceChildren();
+  const { reports } = await api("/api/admin/reports");
+  if (user !== currentUser || !user || view !== "admin") return;
+  status.textContent = reports.length ? "" : "暂无待处理的举报。";
+  for (const report of reports) {
+    list.append(renderAdminReport(report));
+  }
+}
+
+function renderAdminReport(report) {
+  const isPost = report.post_id !== null;
+  const kind = isPost ? "帖子" : "评论";
+  const authorId = isPost ? report.post_author_id : report.comment_author_id;
+  const authorName = isPost
+    ? report.post_author_username
+    : report.comment_author_username;
+  const deletedAt = isPost ? report.post_deleted_at : report.comment_deleted_at;
+  const contentPreview = isPost
+    ? `${report.post_title}\n${report.post_body}`
+    : report.comment_body;
+
+  const card = element("article", "", "panel admin-report");
+  card.append(
+    element("h3", `举报的${kind} · 作者 ${authorName}`),
+    element(
+      "p",
+      `举报人：${report.reporter_username} · ${timestamp(report.created_at)}`,
+      "muted"
+    )
+  );
+  if (report.reason) {
+    card.append(element("p", `举报原因：${report.reason}`));
+  }
+  card.append(element("pre", contentPreview, "prose"));
+  if (deletedAt) {
+    card.append(element("p", "该内容已被作者自行删除，只能忽略这条举报。", "muted"));
+  }
+
+  const actions = element("div", "", "actions");
+  const deleteBtn = element("button", `删除这条${kind}`, "danger");
+  deleteBtn.type = "button";
+  deleteBtn.disabled = Boolean(deletedAt);
+  deleteBtn.addEventListener("click", () => run(async () => {
+    if (!confirm(`删除这条${kind}？无法恢复，关联的举报会一并标记为已处理。`)) return;
+    const path = isPost
+      ? `/api/admin/posts/${report.post_id}`
+      : `/api/admin/comments/${report.comment_id}`;
+    await api(path, { method: "DELETE" });
+    removeReportCard(card);
+    message("已删除，举报已处理。");
+  }));
+
+  const dismissBtn = element("button", "忽略举报");
+  dismissBtn.type = "button";
+  dismissBtn.addEventListener("click", () => run(async () => {
+    await api(`/api/admin/reports/${report.id}/resolve`, { method: "POST" });
+    removeReportCard(card);
+    message("已忽略这条举报。");
+  }));
+
+  const banBtn = element("button", `封禁 ${authorName}`, "danger");
+  banBtn.type = "button";
+  banBtn.addEventListener("click", () => run(async () => {
+    if (!confirm(`封禁账号「${authorName}」？该账号将无法再登录。`)) return;
+    await api(`/api/admin/users/${authorId}/ban`, { method: "POST" });
+    message(`已封禁 ${authorName}。`);
+  }));
+
+  actions.append(deleteBtn, dismissBtn, banBtn);
+  card.append(actions);
+  return card;
 }
 
 $("#forum-new-post-btn").addEventListener("click", () => {

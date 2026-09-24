@@ -155,6 +155,11 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .forum-comment-meta { margin: 0 0 6px; font-size: 12px; }
 .forum-comment .actions { margin: 10px 0 0; }
 #forum-comment-form { margin-top: 20px; }
+#admin-page { max-width: 860px; margin: 0 auto; }
+#admin-reports { display: flex; flex-direction: column; gap: 18px; }
+.admin-report h3 { margin-top: 0; }
+.admin-report pre { margin: 12px 0; }
+.admin-report .actions { margin-bottom: 0; }
 #plan-page { max-width: 960px; margin: 0 auto; }
 #plan-page > .panel > h3, .plan-card > h3, .plan-card > h4 { margin-top: 0; }
 #plan-trial-note { margin: 18px 0; }

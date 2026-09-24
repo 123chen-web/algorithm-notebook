@@ -199,6 +199,10 @@ class CommentEdit(InputModel):
     body: CommentBody
 
 
+class ReportInput(InputModel):
+    reason: str = Field(default="", max_length=500)
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -353,7 +357,15 @@ def current_user(request: Request):
         raise HTTPException(401, "账号已被封禁，无法继续使用")
     user = dict(row)
     user["is_trial"] = bool(user["is_trial"])
+    # 单管理员账号：由环境变量指定用户名，不需要额外的数据库列或登录方式。
+    admin_username = os.getenv("ADMIN_USERNAME", "").strip().lower()
+    user["is_admin"] = bool(admin_username) and user["username"] == admin_username
     return user
+
+
+def require_admin(user):
+    if not user["is_admin"]:
+        raise HTTPException(403, "需要管理员权限")
 
 
 MISTAKE_SELECT = """
@@ -396,6 +408,9 @@ FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
 RESET_PASSWORD_LIMIT = 10
 RESET_PASSWORD_WINDOW_SECONDS = 15 * 60
 RESET_TOKEN_SECONDS = 30 * 60
+# 举报是登录后的操作，按 user_id 限流比按 IP 更准（不会误伤同一 IP 下的其他人）。
+REPORT_LIMIT = 10
+REPORT_WINDOW_SECONDS = 60 * 60
 
 _rate_lock = threading.Lock()
 _rate_buckets = defaultdict(deque)
@@ -471,7 +486,14 @@ async def request_protection(request, call_next):
 
 @app.get("/")
 def home():
-    return FileResponse(ROOT / "static" / "index.html")
+    # 入口文档不能被浏览器无条件缓存：它引用的 CSS/JS 靠 ?v= 查询参数
+    # 手动失效，但前提是浏览器每次都真的重新请求这份 HTML 去看新的
+    # ?v= 号。no-cache 允许缓存副本，但强制每次先用 ETag 向服务端验证，
+    # 没变就是很快的 304，变了才重新下载，不会让用户长期卡在旧版本。
+    return FileResponse(
+        ROOT / "static" / "index.html",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.post("/api/auth/register", status_code=201)
@@ -1293,4 +1315,149 @@ def delete_comment(comment_id: int, user=Depends(current_user)):
             "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
             (utc_now(), comment_id),
         )
+    return {"ok": True}
+
+
+def create_report(user, *, post_id=None, comment_id=None, reason):
+    require_not_trial(user, "举报")
+    if rate_limited(f"report:{user['id']}", REPORT_LIMIT, REPORT_WINDOW_SECONDS):
+        raise HTTPException(429, "举报过于频繁，请稍后再试")
+    with connect(write=True) as conn:
+        target = (
+            visible_post(conn, post_id)
+            if post_id is not None
+            else visible_comment(conn, comment_id)
+        )
+        if target["user_id"] == user["id"]:
+            raise HTTPException(400, "不能举报自己发布的内容")
+        try:
+            conn.execute(
+                """
+                INSERT INTO reports(
+                    reporter_user_id, post_id, comment_id, reason, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (user["id"], post_id, comment_id, reason, utc_now()),
+            )
+        except sqlite3.IntegrityError:
+            # 部分唯一索引挡住了对同一目标的重复待处理举报。
+            raise HTTPException(409, "你已经举报过这条内容，管理员正在处理") from None
+    return {"ok": True}
+
+
+@app.post("/api/posts/{post_id}/report", status_code=201)
+def report_post(post_id: int, data: ReportInput, user=Depends(current_user)):
+    return create_report(user, post_id=post_id, reason=data.reason)
+
+
+@app.post("/api/comments/{comment_id}/report", status_code=201)
+def report_comment(comment_id: int, data: ReportInput, user=Depends(current_user)):
+    return create_report(user, comment_id=comment_id, reason=data.reason)
+
+
+def resolve_reports_for(conn, *, post_id=None, comment_id=None):
+    now = utc_now()
+    if post_id is not None:
+        conn.execute(
+            "UPDATE reports SET resolved_at = ? WHERE post_id = ? AND resolved_at IS NULL",
+            (now, post_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE reports SET resolved_at = ? WHERE comment_id = ? AND resolved_at IS NULL",
+            (now, comment_id),
+        )
+
+
+@app.get("/api/admin/reports")
+def list_reports(user=Depends(current_user)):
+    require_admin(user)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                r.id, r.reason, r.created_at, r.post_id, r.comment_id,
+                reporter.username AS reporter_username,
+                post.title AS post_title, post.body AS post_body,
+                post.deleted_at AS post_deleted_at,
+                post.user_id AS post_author_id,
+                post_author.username AS post_author_username,
+                comment.body AS comment_body,
+                comment.deleted_at AS comment_deleted_at,
+                comment.user_id AS comment_author_id,
+                comment_author.username AS comment_author_username
+            FROM reports r
+            JOIN users reporter ON reporter.id = r.reporter_user_id
+            LEFT JOIN posts post ON post.id = r.post_id
+            LEFT JOIN users post_author ON post_author.id = post.user_id
+            LEFT JOIN post_comments comment ON comment.id = r.comment_id
+            LEFT JOIN users comment_author ON comment_author.id = comment.user_id
+            WHERE r.resolved_at IS NULL
+            ORDER BY r.created_at ASC
+            """
+        ).fetchall()
+    return {"reports": [dict(row) for row in rows]}
+
+
+@app.post("/api/admin/reports/{report_id}/resolve")
+def admin_resolve_report(report_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE reports SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL",
+            (utc_now(), report_id),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(404, "举报不存在或已处理")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/posts/{post_id}")
+def admin_delete_post(post_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        visible_post(conn, post_id)
+        conn.execute(
+            "UPDATE posts SET deleted_at = ? WHERE id = ?", (utc_now(), post_id)
+        )
+        resolve_reports_for(conn, post_id=post_id)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/comments/{comment_id}")
+def admin_delete_comment(comment_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        visible_comment(conn, comment_id)
+        conn.execute(
+            "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
+            (utc_now(), comment_id),
+        )
+        resolve_reports_for(conn, comment_id=comment_id)
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{user_id}/ban")
+def admin_ban_user(user_id: int, user=Depends(current_user)):
+    require_admin(user)
+    if user_id == user["id"]:
+        raise HTTPException(400, "不能封禁自己")
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE users SET is_banned = 1 WHERE id = ?", (user_id,)
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(404, "用户不存在")
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{user_id}/unban")
+def admin_unban_user(user_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE users SET is_banned = 0 WHERE id = ?", (user_id,)
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(404, "用户不存在")
     return {"ok": True}
