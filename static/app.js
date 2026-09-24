@@ -22,6 +22,7 @@ let busy = false;
 let planPurchase = null;
 let orderPollTimer = null;
 let orderPollGeneration = 0;
+let forumPost = null;
 
 const ORDER_POLL_INTERVAL = 3000;
 const ORDER_POLL_DURATION = 5 * 60 * 1000;
@@ -80,6 +81,13 @@ function signedOut() {
   $("#leaderboard-status").textContent = "";
   $("#leaderboard-table-wrap").hidden = true;
   $("#leaderboard-page").setAttribute("aria-busy", "false");
+  forumPost = null;
+  $("#forum-posts").replaceChildren();
+  $("#forum-list-status").textContent = "";
+  $("#forum-post").replaceChildren();
+  $("#forum-comments").replaceChildren();
+  $("#forum-compose-form").reset();
+  $("#forum-comment-form").reset();
   $("#problem-form").reset();
   $("#mistake-inputs").replaceChildren();
   addMistakeInput();
@@ -193,13 +201,15 @@ async function showView(nextView) {
   $("#list-page").hidden = view !== "today" && view !== "all";
   $("#plan-page").hidden = view !== "plan";
   $("#leaderboard-page").hidden = view !== "leaderboard";
+  $("#forum-page").hidden = view !== "forum";
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  if (view === "leaderboard") await loadLeaderboard();
+  if (view === "forum") await showForumList();
+  else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "plan") await loadPlanPage();
   else if (view === "today" || view === "all") await loadList();
 }
@@ -1082,6 +1092,13 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 });
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "forum") {
+    message();
+    if (forumPost) await openForumPost(forumPost.id);
+    else await showForumList();
+    message("已刷新。");
+    return;
+  }
   if (view === "leaderboard") {
     message();
     await loadLeaderboard();
@@ -1129,6 +1146,252 @@ $("#problem-form").addEventListener("submit", (event) => {
     await showView("today");
     await openMistake(created.mistake_ids[0]);
     message("记录已保存，新的易错点已加入今日复习。");
+  });
+});
+
+async function showForumList() {
+  forumPost = null;
+  $("#forum-compose").hidden = true;
+  $("#forum-detail").hidden = true;
+  $("#forum-list").hidden = false;
+  $("#forum-new-post-btn").hidden = user.is_trial;
+  await loadForumPosts();
+}
+
+async function loadForumPosts() {
+  const currentUser = user;
+  const status = $("#forum-list-status");
+  const list = $("#forum-posts");
+  status.textContent = "正在加载帖子列表…";
+  list.replaceChildren();
+  const { posts } = await api("/api/posts");
+  if (user !== currentUser || !user || view !== "forum") return;
+  status.textContent = posts.length ? "" : "还没有帖子，来发第一条吧。";
+  for (const post of posts) {
+    const row = element("button", "", "record-button");
+    row.type = "button";
+    row.append(
+      element("strong", post.title),
+      element(
+        "small",
+        `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`,
+        "muted"
+      )
+    );
+    row.addEventListener("click", () => run(() => openForumPost(post.id)));
+    list.append(row);
+  }
+}
+
+function showForumCompose() {
+  $("#forum-list").hidden = true;
+  $("#forum-detail").hidden = true;
+  $("#forum-compose").hidden = false;
+}
+
+async function openForumPost(postId) {
+  const post = await api(`/api/posts/${postId}`);
+  forumPost = post;
+  $("#forum-list").hidden = true;
+  $("#forum-compose").hidden = true;
+  $("#forum-detail").hidden = false;
+  renderForumPost(post);
+  renderForumComments(post.comments);
+}
+
+function renderForumPost(post) {
+  const root = $("#forum-post");
+
+  function readOnly() {
+    root.replaceChildren();
+    root.append(
+      element("h2", post.title),
+      element(
+        "p",
+        `${post.username} · ${timestamp(post.created_at)}` +
+          (post.updated_at ? `（编辑于 ${timestamp(post.updated_at)}）` : ""),
+        "muted"
+      ),
+      element("p", post.body, "multiline")
+    );
+    if (user.id === post.user_id) {
+      const editBtn = element("button", "编辑");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", editForm);
+      const deleteBtn = element("button", "删除这条帖子", "danger");
+      deleteBtn.type = "button";
+      deleteBtn.addEventListener("click", () => run(async () => {
+        if (!confirm("删除这条帖子？帖子下的评论也会一起不可见，无法恢复。")) return;
+        await api(`/api/posts/${post.id}`, { method: "DELETE" });
+        message("已删除这条帖子。");
+        await showForumList();
+      }));
+      const actions = element("div", "", "actions");
+      actions.append(editBtn, deleteBtn);
+      root.append(actions);
+    }
+  }
+
+  function editForm() {
+    const title = document.createElement("input");
+    title.value = post.title;
+    title.maxLength = 200;
+    title.required = true;
+
+    const body = textarea(post.body, 8000, 8);
+    body.required = true;
+
+    const save = element("button", "保存修改", "primary");
+    save.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(field("标题", title), field("正文", body), save, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        const updated = await api(`/api/posts/${post.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ title: title.value, body: body.value }),
+        });
+        post.title = updated.title;
+        post.body = updated.body;
+        post.updated_at = updated.updated_at;
+        message("帖子已更新。");
+        readOnly();
+      });
+    });
+
+    root.replaceChildren(form);
+  }
+
+  readOnly();
+}
+
+function renderForumComment(comment) {
+  const wrap = element("div", "", "forum-comment");
+
+  function readOnly() {
+    wrap.replaceChildren();
+    wrap.append(
+      element(
+        "p",
+        `${comment.username} · ${timestamp(comment.created_at)}` +
+          (comment.updated_at ? `（编辑于 ${timestamp(comment.updated_at)}）` : ""),
+        "muted forum-comment-meta"
+      ),
+      element("p", comment.body, "multiline")
+    );
+    if (user.id === comment.user_id) {
+      const editBtn = element("button", "编辑");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", editForm);
+      const deleteBtn = element("button", "删除", "danger");
+      deleteBtn.type = "button";
+      deleteBtn.addEventListener("click", () => run(async () => {
+        if (!confirm("删除这条评论？无法恢复。")) return;
+        await api(`/api/comments/${comment.id}`, { method: "DELETE" });
+        wrap.remove();
+        message("已删除这条评论。");
+      }));
+      const actions = element("div", "", "actions");
+      actions.append(editBtn, deleteBtn);
+      wrap.append(actions);
+    }
+  }
+
+  function editForm() {
+    const body = textarea(comment.body, 2000, 3);
+    body.required = true;
+    const save = element("button", "保存修改", "primary");
+    save.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.append(field("评论内容", body), save, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        const updated = await api(`/api/comments/${comment.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ body: body.value }),
+        });
+        comment.body = updated.body;
+        comment.updated_at = updated.updated_at;
+        message("评论已更新。");
+        readOnly();
+      });
+    });
+
+    wrap.replaceChildren(form);
+  }
+
+  readOnly();
+  return wrap;
+}
+
+function renderForumComments(comments) {
+  const list = $("#forum-comments");
+  list.replaceChildren();
+  if (!comments.length) {
+    list.append(element("p", "还没有评论，来发表第一条看法吧。", "muted"));
+  }
+  for (const comment of comments) {
+    list.append(renderForumComment(comment));
+  }
+  $("#forum-comment-form").hidden = user.is_trial;
+}
+
+$("#forum-new-post-btn").addEventListener("click", () => {
+  message();
+  showForumCompose();
+});
+
+$("#forum-compose-cancel").addEventListener("click", () => run(async () => {
+  message();
+  await showForumList();
+}));
+
+$("#forum-compose-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    const data = new FormData(form);
+    const created = await api("/api/posts", {
+      method: "POST",
+      body: JSON.stringify({
+        title: data.get("title"),
+        body: data.get("body"),
+      }),
+    });
+    form.reset();
+    await openForumPost(created.id);
+    message("帖子已发布。");
+  });
+});
+
+$("#forum-back").addEventListener("click", () => run(async () => {
+  message();
+  await showForumList();
+}));
+
+$("#forum-comment-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    const data = new FormData(form);
+    const created = await api(`/api/posts/${forumPost.id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body: data.get("body") }),
+    });
+    form.reset();
+    forumPost.comments.push(created);
+    renderForumComments(forumPost.comments);
+    message("评论已发表。");
   });
 });
 

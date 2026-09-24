@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="记录真实的算法错误，按时复习，让 AI 围绕薄弱点生成新的练习。算法错题本，邀请内测中。">
   <title>算法错题本 · 把错误变成掌握</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/intro.css">
-  <script defer src="/static/intro.js"></script>
-  <script defer src="/static/app.js"></script>
+  <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
+       否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
+  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/intro.css?v=2">
+  <script defer src="/static/intro.js?v=2"></script>
+  <script defer src="/static/app.js?v=2"></script>
 </head>
 <body>
   <div class="container">
@@ -239,6 +241,7 @@
         <button type="button" data-view="new">新增记录</button>
         <button type="button" data-view="plan">我的套餐</button>
         <button type="button" data-view="leaderboard">打卡排行榜</button>
+        <button type="button" data-view="forum">讨论区</button>
         <button type="button" id="refresh">刷新</button>
       </nav>
 
@@ -339,6 +342,58 @@
               <tbody id="leaderboard-entries"></tbody>
             </table>
           </div>
+        </section>
+      </section>
+
+      <section id="forum-page" aria-labelledby="forum-title" hidden>
+        <div class="page-heading">
+          <h2 id="forum-title">讨论区</h2>
+          <p class="muted">自由讨论，发帖和评论都会显示你的用户名。体验账号可以浏览，不能发帖或评论。</p>
+        </div>
+
+        <section id="forum-list" aria-labelledby="forum-list-title">
+          <div class="page-heading forum-list-heading">
+            <h3 id="forum-list-title">全部帖子</h3>
+            <button id="forum-new-post-btn" type="button" class="primary">发帖</button>
+          </div>
+          <p id="forum-list-status" class="muted" role="status" aria-live="polite"></p>
+          <div id="forum-posts"></div>
+        </section>
+
+        <section id="forum-compose" class="panel" aria-labelledby="forum-compose-title" hidden>
+          <h3 id="forum-compose-title">发布新帖子</h3>
+          <form id="forum-compose-form">
+            <label>
+              标题
+              <input name="title" required maxlength="200" placeholder="这次想聊点什么">
+            </label>
+            <label>
+              正文
+              <textarea name="body" required maxlength="8000" rows="8" placeholder="写下你想说的内容"></textarea>
+            </label>
+            <div class="actions">
+              <button type="submit" class="primary">发布</button>
+              <button id="forum-compose-cancel" type="button">取消</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="forum-detail" class="panel" aria-labelledby="forum-detail-title" hidden>
+          <div class="actions">
+            <button id="forum-back" type="button">返回帖子列表</button>
+          </div>
+          <div id="forum-post"></div>
+          <section id="forum-comments-section">
+            <h3 id="forum-comments-title">评论</h3>
+            <div id="forum-comments"></div>
+            <form id="forum-comment-form">
+              <label>
+                发表评论
+                <textarea name="body" required maxlength="2000" rows="3"></textarea>
+              </label>
+              <button type="submit" class="primary">发表评论</button>
+            </form>
+          </section>
         </section>
       </section>
 

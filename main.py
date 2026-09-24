@@ -45,6 +45,15 @@ MistakeText = Annotated[
 ThinkingText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
 ]
+PostTitle = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+]
+PostBody = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
+]
+CommentBody = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+]
 
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
 # 而不是注册时的格式检查，所以没有引入额外的邮箱校验依赖。
@@ -167,6 +176,27 @@ class VariantResult(InputModel):
 class NewOrder(InputModel):
     plan_id: int = Field(strict=True, gt=0)
     channel: Literal["alipay", "wechat"]
+
+
+class PostFields(InputModel):
+    title: PostTitle
+    body: PostBody
+
+
+class NewPost(PostFields):
+    pass
+
+
+class PostEdit(PostFields):
+    pass
+
+
+class NewComment(InputModel):
+    body: CommentBody
+
+
+class CommentEdit(InputModel):
+    body: CommentBody
 
 
 def utc_now():
@@ -305,7 +335,7 @@ def current_user(request: Request):
         row = conn.execute(
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
-                   u.plan_id, u.plan_expires_at
+                   u.plan_id, u.plan_expires_at, u.is_banned
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -315,6 +345,12 @@ def current_user(request: Request):
 
     if row is None:
         raise HTTPException(401, "登录已过期，请重新登录")
+    # 用不同的文案区分"被封禁"和"单纯过期"；状态码沿用 401，这样前端
+    # 现有的 signedOut() 逻辑不用改就能把人立刻踢出去，具体原因走
+    # error.message 正常显示。session 在被封禁后仍有效也要在下一次
+    # 请求就拦下，不能等它自然过期才生效。
+    if row["is_banned"]:
+        raise HTTPException(401, "账号已被封禁，无法继续使用")
     user = dict(row)
     user["is_trial"] = bool(user["is_trial"])
     return user
@@ -526,6 +562,10 @@ def login(data: Credentials, request: Request, response: Response):
     )
     if not user or not valid:
         raise HTTPException(401, "用户名或密码不正确")
+    # 封禁检查放在密码校验通过之后，避免向未认证的调用方泄露
+    # "这个用户名存在且被封禁" 这类额外信息。
+    if user["is_banned"]:
+        raise HTTPException(403, "账号已被封禁，无法登录")
 
     with connect(write=True) as conn:
         set_session(conn, user["id"], response)
@@ -1059,3 +1099,198 @@ def leaderboard(user=Depends(current_user)):
             "is_trial": user["is_trial"],
         },
     }
+
+
+POST_LIST_LIMIT = 100
+
+
+def require_not_trial(user, action):
+    if user["is_trial"]:
+        raise HTTPException(403, f"体验账号不支持{action}")
+
+
+def visible_post(conn, post_id):
+    row = conn.execute(
+        "SELECT * FROM posts WHERE id = ? AND deleted_at IS NULL",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "帖子不存在")
+    return dict(row)
+
+
+def owned_post(conn, post_id, user_id):
+    post = visible_post(conn, post_id)
+    if post["user_id"] != user_id:
+        raise HTTPException(404, "帖子不存在")
+    return post
+
+
+def visible_comment(conn, comment_id):
+    row = conn.execute(
+        "SELECT * FROM post_comments WHERE id = ? AND deleted_at IS NULL",
+        (comment_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "评论不存在")
+    return dict(row)
+
+
+def owned_comment(conn, comment_id, user_id):
+    comment = visible_comment(conn, comment_id)
+    if comment["user_id"] != user_id:
+        raise HTTPException(404, "评论不存在")
+    return comment
+
+
+@app.get("/api/posts")
+def list_posts(user=Depends(current_user)):
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.title, p.created_at, u.username,
+                   (
+                       SELECT COUNT(*) FROM post_comments c
+                       WHERE c.post_id = p.id AND c.deleted_at IS NULL
+                   ) AS comment_count
+            FROM posts p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.deleted_at IS NULL
+            ORDER BY p.created_at DESC
+            LIMIT ?
+            """,
+            (POST_LIST_LIMIT,),
+        ).fetchall()
+    return {"posts": [dict(row) for row in rows]}
+
+
+@app.post("/api/posts", status_code=201)
+def create_post(data: NewPost, user=Depends(current_user)):
+    require_not_trial(user, "发帖")
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "INSERT INTO posts(user_id, title, body, created_at) VALUES (?, ?, ?, ?)",
+            (user["id"], data.title, data.body, utc_now()),
+        )
+        row = conn.execute(
+            """
+            SELECT p.*, u.username FROM posts p JOIN users u ON u.id = p.user_id
+            WHERE p.id = ?
+            """,
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.get("/api/posts/{post_id}")
+def get_post(post_id: int, user=Depends(current_user)):
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT p.*, u.username
+            FROM posts p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.id = ? AND p.deleted_at IS NULL
+            """,
+            (post_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "帖子不存在")
+        post = dict(row)
+        comments = conn.execute(
+            """
+            SELECT c.id, c.user_id, c.body, c.created_at, c.updated_at, u.username
+            FROM post_comments c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.post_id = ? AND c.deleted_at IS NULL
+            ORDER BY c.created_at ASC
+            """,
+            (post_id,),
+        ).fetchall()
+    post["comments"] = [dict(row) for row in comments]
+    return post
+
+
+@app.put("/api/posts/{post_id}")
+def edit_post(post_id: int, data: PostEdit, user=Depends(current_user)):
+    require_not_trial(user, "发帖")
+    with connect(write=True) as conn:
+        owned_post(conn, post_id, user["id"])
+        conn.execute(
+            "UPDATE posts SET title = ?, body = ?, updated_at = ? WHERE id = ?",
+            (data.title, data.body, utc_now(), post_id),
+        )
+        row = conn.execute(
+            """
+            SELECT p.*, u.username FROM posts p JOIN users u ON u.id = p.user_id
+            WHERE p.id = ?
+            """,
+            (post_id,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.delete("/api/posts/{post_id}")
+def delete_post(post_id: int, user=Depends(current_user)):
+    require_not_trial(user, "发帖")
+    with connect(write=True) as conn:
+        owned_post(conn, post_id, user["id"])
+        # 软删除：标记 deleted_at，不物理删除，也不级联标记这个帖子下的
+        # 评论——帖子对所有人不可见之后，正常业务路径本来就到达不了
+        # 这些评论，不需要逐条标记。
+        conn.execute(
+            "UPDATE posts SET deleted_at = ? WHERE id = ?",
+            (utc_now(), post_id),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/posts/{post_id}/comments", status_code=201)
+def create_comment(post_id: int, data: NewComment, user=Depends(current_user)):
+    require_not_trial(user, "评论")
+    with connect(write=True) as conn:
+        visible_post(conn, post_id)
+        cursor = conn.execute(
+            "INSERT INTO post_comments(post_id, user_id, body, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (post_id, user["id"], data.body, utc_now()),
+        )
+        row = conn.execute(
+            """
+            SELECT c.*, u.username FROM post_comments c
+            JOIN users u ON u.id = c.user_id WHERE c.id = ?
+            """,
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.put("/api/comments/{comment_id}")
+def edit_comment(comment_id: int, data: CommentEdit, user=Depends(current_user)):
+    require_not_trial(user, "评论")
+    with connect(write=True) as conn:
+        owned_comment(conn, comment_id, user["id"])
+        conn.execute(
+            "UPDATE post_comments SET body = ?, updated_at = ? WHERE id = ?",
+            (data.body, utc_now(), comment_id),
+        )
+        row = conn.execute(
+            """
+            SELECT c.*, u.username FROM post_comments c
+            JOIN users u ON u.id = c.user_id WHERE c.id = ?
+            """,
+            (comment_id,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.delete("/api/comments/{comment_id}")
+def delete_comment(comment_id: int, user=Depends(current_user)):
+    require_not_trial(user, "评论")
+    with connect(write=True) as conn:
+        owned_comment(conn, comment_id, user["id"])
+        conn.execute(
+            "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
+            (utc_now(), comment_id),
+        )
+    return {"ok": True}

@@ -130,6 +130,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "is_trial": 1 if has_existing_migrations else 0,
             "plan_id": None,
             "plan_expires_at": None,
+            "is_banned": 0,
         }
         plan_id = insert_plan(conn)
         conn.execute(

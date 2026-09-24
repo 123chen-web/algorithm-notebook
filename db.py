@@ -144,6 +144,40 @@ CREATE TABLE IF NOT EXISTS password_resets (
 
 CREATE INDEX IF NOT EXISTS idx_password_resets_user
 ON password_resets(user_id);
+
+-- 软删除：deleted_at 非空表示已删除，对所有人（含作者自己）不可见，
+-- 但保留在库里，不做物理删除；由管理员或作者手动 UPDATE 这一列。
+CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_user
+ON posts(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_posts_created
+ON posts(created_at);
+
+CREATE TABLE IF NOT EXISTS post_comments (
+    id INTEGER PRIMARY KEY,
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_comments_post
+ON post_comments(post_id);
+
+CREATE INDEX IF NOT EXISTS idx_post_comments_user
+ON post_comments(user_id);
 """
 
 # CREATE TABLE IF NOT EXISTS 不会给旧表补列，需要按需 ALTER TABLE ADD COLUMN；
@@ -161,6 +195,10 @@ USER_COLUMN_MIGRATIONS = (
         "ON DELETE RESTRICT",
     ),
     ("plan_expires_at", "ALTER TABLE users ADD COLUMN plan_expires_at TEXT"),
+    (
+        "is_banned",
+        "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0",
+    ),
 )
 
 

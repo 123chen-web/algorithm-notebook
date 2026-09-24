@@ -1,5 +1,5 @@
 .intro {
-  color: #233d35;
+  color: #1f1e1c;
   margin: 0 0 56px;
 }
 
@@ -16,7 +16,7 @@
   align-items: center;
   gap: 9px;
   margin: 0 0 22px;
-  color: #527260;
+  color: #a5502f;
   font-size: 12px;
   font-weight: 650;
   letter-spacing: .1em;
@@ -28,7 +28,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #66866e;
+  background: #bc5b3a;
 }
 
 .intro #intro-title {
@@ -43,7 +43,7 @@
 .intro .intro-lead {
   max-width: 440px;
   margin: 24px 0 0;
-  color: #637168;
+  color: #7a766d;
   font-size: 16px;
   line-height: 1.95;
 }
@@ -62,9 +62,9 @@
   justify-content: space-between;
   gap: 28px;
   padding: 13px 20px;
-  border: 1px solid #28624f;
+  border: 1px solid #bc5b3a;
   border-radius: 9px;
-  background: #28624f;
+  background: #bc5b3a;
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -73,12 +73,12 @@
 }
 
 .intro .intro-cta:hover {
-  border-color: #1e4d3d;
-  background: #1e4d3d;
+  border-color: #9c4a2f;
+  background: #9c4a2f;
 }
 
 .intro .intro-secondary {
-  color: #315d49;
+  color: #9c4a2f;
   font-size: 13px;
   text-decoration-thickness: 1px;
   text-underline-offset: 5px;
@@ -103,20 +103,20 @@
 
 .intro a:focus-visible,
 .intro button.intro-trial:focus-visible {
-  outline: 3px solid #28624f;
+  outline: 3px solid #bc5b3a;
   outline-offset: 5px;
 }
 
 .intro .intro-audience {
   margin: 0;
-  color: #64705f;
+  color: #7a766d;
   font-size: 12px;
 }
 
 .intro .intro-trial-note {
   max-width: 440px;
   margin: 6px 0 0;
-  color: #64705f;
+  color: #7a766d;
   font-size: 12px;
 }
 
@@ -133,7 +133,7 @@
   inset: 0 0 50px;
   z-index: 0;
   border-radius: 24px;
-  background: #eaf1e9;
+  background: #f4ece2;
 }
 
 .intro .sample-note {
@@ -141,10 +141,10 @@
   z-index: 1;
   padding: 25px 28px 0;
   overflow: hidden;
-  border: 1px solid #dce3d9;
+  border: 1px solid #e7e3da;
   border-radius: 13px;
-  background: #fffefa;
-  box-shadow: 0 10px 32px #233d350b, 0 2px 4px #233d3505;
+  background: #fffefc;
+  box-shadow: 0 10px 32px #1f1e1c0b, 0 2px 4px #1f1e1c05;
 }
 
 .intro .sample-topline,
@@ -157,7 +157,7 @@
   font-size: 11px;
 }
 
-.intro .sample-topline { color: #66735f; }
+.intro .sample-topline { color: #7a766d; }
 
 .intro .sample-status {
   padding: 3px 8px;
@@ -170,7 +170,7 @@
 
 .intro .sample-subject {
   margin: 25px 0 9px;
-  color: #63745f;
+  color: #7a766d;
   font-size: 11px;
   font-weight: 550;
   letter-spacing: .035em;
@@ -178,7 +178,7 @@
 
 .intro .sample-note h3 {
   margin: 0;
-  color: #233d35;
+  color: #1f1e1c;
   font-size: clamp(20px, 2.25vw, 27px);
   font-weight: 600;
   line-height: 1.55;
@@ -188,10 +188,10 @@
 .intro .sample-code {
   margin: 18px 0;
   padding: 12px 15px;
-  border: 1px solid #e5e9e0;
+  border: 1px solid #e7e3da;
   border-radius: 7px;
-  background: #f4f5ef;
-  color: #364c3f;
+  background: #f5f1ea;
+  color: #3a3632;
   font: 12px/1.8 Consolas, Monaco, monospace;
 }
 
@@ -205,7 +205,7 @@
 
 .intro .sample-mistake p {
   margin: 6px 0 0;
-  color: #5d695d;
+  color: #7a766d;
   font-size: 12px;
   line-height: 1.8;
 }
@@ -222,24 +222,24 @@
   align-items: flex-start;
   gap: 7px;
   margin: 20px 0;
-  color: #43664d;
+  color: #8a4a2c;
   font-size: 11px;
 }
 
-.intro .sample-check { color: #688867; }
+.intro .sample-check { color: #bc5b3a; }
 
 .intro .sample-bottomline {
   margin: 0 -28px;
   padding: 13px 28px;
-  border-top: 1px solid #e5e9e0;
-  color: #63715f;
+  border-top: 1px solid #e7e3da;
+  color: #7a766d;
   font-size: 11px;
 }
 
 .intro .intro-example figcaption {
   position: relative;
   margin-top: 13px;
-  color: #667160;
+  color: #7a766d;
   font-size: 11px;
   text-align: center;
 }
@@ -249,12 +249,12 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 32px;
   padding: 34px 0 38px;
-  border-top: 1px solid #dce3d9;
-  border-bottom: 1px solid #dce3d9;
+  border-top: 1px solid #e7e3da;
+  border-bottom: 1px solid #e7e3da;
 }
 
 .intro .intro-step-number {
-  color: #5d745b;
+  color: #a5502f;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .06em;
@@ -262,7 +262,7 @@
 
 .intro .intro-step h3 {
   margin: 12px 0 10px;
-  color: #2f493c;
+  color: #1f1e1c;
   font-size: 16px;
   font-weight: 650;
 }
@@ -270,7 +270,7 @@
 .intro .intro-step p {
   max-width: 320px;
   margin: 0;
-  color: #626f60;
+  color: #7a766d;
   font-size: 13px;
   line-height: 1.9;
 }
@@ -298,14 +298,14 @@
 
 .intro .intro-difference-copy > p {
   margin: 0;
-  color: #647261;
+  color: #7a766d;
   font-size: 13px;
   line-height: 2;
 }
 
 .intro .intro-difference-copy .intro-small {
   margin-top: 16px;
-  color: #64705f;
+  color: #7a766d;
   font-size: 11px;
 }
 
@@ -315,8 +315,8 @@
   gap: 9px;
   margin: 0;
   padding: 15px 0;
-  border-top: 1px solid #dce3d9;
-  color: #64705f;
+  border-top: 1px solid #e7e3da;
+  color: #7a766d;
   font-size: 12px;
 }
 
