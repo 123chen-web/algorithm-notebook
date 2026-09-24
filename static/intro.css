@@ -63,7 +63,7 @@
   gap: 28px;
   padding: 13px 20px;
   border: 1px solid #bc5b3a;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: #bc5b3a;
   color: #fff;
   font-size: 14px;
@@ -142,7 +142,7 @@
   padding: 25px 28px 0;
   overflow: hidden;
   border: 1px solid #e7e3da;
-  border-radius: 13px;
+  border-radius: var(--radius);
   background: #fffefc;
   box-shadow: 0 10px 32px #1f1e1c0b, 0 2px 4px #1f1e1c05;
 }
@@ -189,7 +189,7 @@
   margin: 18px 0;
   padding: 12px 15px;
   border: 1px solid #e7e3da;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: #f5f1ea;
   color: #3a3632;
   font: 12px/1.8 Consolas, Monaco, monospace;
