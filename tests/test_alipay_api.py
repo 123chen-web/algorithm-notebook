@@ -11,6 +11,7 @@ from payment_channels import MockChannel
 
 
 CALLBACK_PATH = "/api/payments/alipay/callback"
+WECHAT_CALLBACK_PATH = "/api/payments/wechat/callback"
 
 
 @pytest.fixture
@@ -97,14 +98,28 @@ def test_public_callback_is_disabled_in_mock_mode(client, monkeypatch):
         ("DELETE", CALLBACK_PATH),
         ("POST", CALLBACK_PATH + "/"),
         ("POST", CALLBACK_PATH + "/other"),
-        ("POST", "/api/payments/wechat/callback"),
+        ("PUT", WECHAT_CALLBACK_PATH),
+        ("PATCH", WECHAT_CALLBACK_PATH),
+        ("DELETE", WECHAT_CALLBACK_PATH),
+        ("POST", WECHAT_CALLBACK_PATH + "/"),
+        ("POST", WECHAT_CALLBACK_PATH + "/other"),
         ("POST", "/api/payments/mock/alipay/callback"),
+        ("POST", "/api/payments/mock/wechat/callback"),
         ("POST", "/api/orders"),
     ],
 )
-def test_csrf_exemption_is_only_exact_alipay_post(client, method, path):
+def test_csrf_exemption_is_only_exact_provider_callback_paths(client, method, path):
     response = client.request(method, path, content=b"test", follow_redirects=False)
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("path", [CALLBACK_PATH, WECHAT_CALLBACK_PATH])
+def test_csrf_exemption_lets_exact_provider_post_reach_the_route(client, path):
+    # Config is incomplete in this fixture (only ALIPAY_* / no WECHAT_* env),
+    # so both exempt paths reach channel_adapter() and fail there (503) rather
+    # than being rejected by the CSRF gate itself (403).
+    response = client.post(path, content=b"test", follow_redirects=False)
+    assert response.status_code == 503
 
 
 def test_mock_callback_still_requires_login(client, monkeypatch):

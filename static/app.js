@@ -447,9 +447,10 @@ function renderPlanOrder() {
 
   const paymentText = payment.qr_code_url || "";
   const isMock = payment.provider === "mock" || paymentText.startsWith("mock://");
+  const providerName = { alipay: "支付宝", wechat: "微信支付" }[payment.provider] || "对应 App";
   // 支付内容来自接口，仅允许预期的链接协议；原文始终以文本节点展示。
-  if (/^(https?:\/\/|alipays?:\/\/|mock:\/\/)/i.test(paymentText)) {
-    const link = element("a", isMock ? "Mock 支付链接（仅占位）" : "打开支付宝完成支付", "plan-payment-link");
+  if (/^(https?:\/\/|alipays?:\/\/|weixin:\/\/|mock:\/\/)/i.test(paymentText)) {
+    const link = element("a", isMock ? "Mock 支付链接（仅占位）" : `打开${providerName}完成支付`, "plan-payment-link");
     link.href = paymentText;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
@@ -460,7 +461,7 @@ function renderPlanOrder() {
   }
   paymentBox.append(element("p", isMock
     ? "这是本地 Mock 支付占位内容，不能扫码或完成真实付款。"
-    : "手机上点击链接直接跳转支付宝完成支付；电脑上可先将上面的原始文本生成二维码，再用支付宝扫一扫。当前页面暂不提供图形二维码，不能直接扫描这段文字。",
+    : `手机上点击链接直接跳转${providerName}完成支付；电脑上可先将上面的原始文本生成二维码，再用${providerName}扫一扫。当前页面暂不提供图形二维码，不能直接扫描这段文字。`,
   "muted"));
   if (!paymentText) {
     paymentBox.append(element("p", "暂未取得支付链接，请稍后刷新查看订单状态。", "muted"));

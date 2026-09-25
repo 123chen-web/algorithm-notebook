@@ -456,16 +456,16 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 async def request_protection(request, call_next):
     # 前端与 API 同源，且本应用不启用 CORS。
     # 跨站表单不能携带这个自定义请求头。
-    # 支付宝服务器的通知不携带浏览器请求头，由渠道的 RSA2 验签保护。
-    alipay_notification = (
-        request.method == "POST"
-        and request.url.path == "/api/payments/alipay/callback"
+    # 支付宝/微信支付服务器的通知不携带浏览器请求头，由渠道各自的验签保护。
+    provider_notification = request.method == "POST" and request.url.path in (
+        "/api/payments/alipay/callback",
+        "/api/payments/wechat/callback",
     )
     if (
         request.url.path.startswith("/api/")
         and request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and request.headers.get("X-CSRF-Protection") != "1"
-        and not alipay_notification
+        and not provider_notification
     ):
         return JSONResponse(
             status_code=403,
@@ -797,6 +797,28 @@ async def alipay_payment_callback(request: Request):
         return PlainTextResponse("failure", status_code=exc.status_code)
     # 只有业务处理完成、事务提交后才确认；重复通知由业务层幂等处理。
     return PlainTextResponse("success")
+
+
+@app.post("/api/payments/wechat/callback")
+async def wechat_payment_callback(request: Request):
+    # 公开通知入口绝不能在本地 mock 模式下接收 AEAD 回调。
+    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") == "1":
+        return JSONResponse({"code": "FAILED", "message": "失败"}, status_code=404)
+    raw_body = await request.body()
+    try:
+        await run_in_threadpool(
+            payments.handle_callback,
+            "wechat",
+            raw_body,
+            request.headers,
+            user_id=None,
+        )
+    except HTTPException as exc:
+        return JSONResponse(
+            {"code": "FAILED", "message": "失败"}, status_code=exc.status_code
+        )
+    # 微信支付要求 2xx + {"code": "SUCCESS"}，纯文本 "success"/"failure" 是支付宝的约定。
+    return JSONResponse({"code": "SUCCESS", "message": "成功"})
 
 
 @app.post("/api/problems", status_code=201)

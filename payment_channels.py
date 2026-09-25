@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -328,6 +329,205 @@ class AlipayChannel:
             raise CallbackVerificationError("支付宝回调内容无效") from None
 
 
+class WechatPayChannel:
+    def __init__(
+        self,
+        *,
+        app_id: str,
+        mch_id: str,
+        api_v3_key: str,
+        cert_serial_no: str,
+        private_key: str,
+        public_key: str,
+        public_key_id: str,
+        notify_url: str,
+    ):
+        if not all(
+            value and value.strip()
+            for value in (
+                app_id, mch_id, api_v3_key, cert_serial_no,
+                private_key, public_key, public_key_id, notify_url,
+            )
+        ):
+            raise PaymentChannelError("微信支付配置不完整")
+        self.app_id = app_id.strip()
+        self.mch_id = mch_id.strip()
+        self.notify_url = notify_url.strip()
+        try:
+            url = urlsplit(self.notify_url)
+            if (
+                url.scheme not in ("http", "https")
+                or not url.hostname
+                or url.username is not None
+                or url.password is not None
+                or url.fragment
+            ):
+                raise ValueError("invalid notify URL")
+            # 延迟导入：未启用真实支付时不需要初始化 SDK 或密钥。
+            from wechatpayv3 import WeChatPay, WeChatPayType
+
+            self._client = WeChatPay(
+                wechatpay_type=WeChatPayType.NATIVE,
+                mchid=self.mch_id,
+                private_key=private_key.strip().replace("\\n", "\n"),
+                cert_serial_no=cert_serial_no.strip(),
+                appid=self.app_id,
+                apiv3_key=api_v3_key.strip(),
+                notify_url=self.notify_url,
+                # 平台公钥模式：不需要 cert_dir 自动下载/缓存平台证书，纯本地初始化，
+                # 不向项目目录写任何文件（沙盒权限问题在这个仓库里出过好几次事故）。
+                public_key=public_key.strip().replace("\\n", "\n"),
+                public_key_id=public_key_id.strip(),
+            )
+            core = self._client._core
+            from cryptography.hazmat.primitives.asymmetric import rsa
+
+            if (
+                not isinstance(core._private_key, rsa.RSAPrivateKey)
+                or core._private_key.key_size < 2048
+                or not isinstance(core._public_key, rsa.RSAPublicKey)
+                or core._public_key.key_size < 2048
+            ):
+                raise ValueError("expected RSA 2048+ private/public keys")
+        except Exception:
+            # wechatpayv3 对无效 PEM 抛裸 Exception（可能包含密钥材料），
+            # 不透传给调用方；这里没有比 Exception 更窄、仍覆盖它的类型可用。
+            raise PaymentChannelError("微信支付 SDK 或密钥配置无效") from None
+
+    @staticmethod
+    def _call(method, **kwargs):
+        try:
+            status, message = method(**kwargs)
+            if status not in range(200, 300):
+                return None
+            result = json.loads(message)
+        except Exception:
+            # 网络、SDK 验签、JSON 解析异常统一按"结果未知"处理，不视为确定失败。
+            return None
+        return result if isinstance(result, dict) else None
+
+    def create_payment(self, order: Mapping[str, object]) -> dict:
+        amount_cents = order["amount_cents"]
+        if type(amount_cents) is not int or amount_cents <= 0:
+            raise PaymentChannelError("微信支付订单金额无效")
+        result = self._call(
+            self._client.pay,
+            description="算法错题本订阅",
+            out_trade_no=order["id"],
+            amount={"total": amount_cents},
+            notify_url=self.notify_url,
+        )
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("code_url"), str)
+            or not result["code_url"].strip()
+        ):
+            raise PaymentChannelError("微信支付预下单失败")
+        return {
+            "provider": "wechat",
+            "qr_code_url": result["code_url"],
+            "redirect_url": None,
+        }
+
+    @staticmethod
+    def _refund_confirmed(result, order, out_refund_no):
+        if (
+            not isinstance(result, dict)
+            or result.get("out_trade_no") != order["id"]
+            or result.get("transaction_id") != order["provider_trade_no"]
+            or result.get("out_refund_no") != out_refund_no
+            or result.get("status") != "SUCCESS"
+        ):
+            return False
+        amount = result.get("amount")
+        return (
+            isinstance(amount, dict)
+            and type(amount.get("refund")) is int
+            and amount["refund"] == order["amount_cents"]
+        )
+
+    def refund(self, order: Mapping[str, object]) -> dict:
+        amount_cents = order["amount_cents"]
+        if type(amount_cents) is not int or amount_cents <= 0:
+            raise PaymentChannelError("微信支付退款金额无效")
+        if (
+            not isinstance(order.get("provider_trade_no"), str)
+            or not order["provider_trade_no"].strip()
+        ):
+            raise PaymentChannelError("微信支付订单交易号无效")
+        # 同一订单始终使用同一退款单号：超时重试、并发调用均由微信支付去重。
+        out_refund_no = f"refund-{order['id']}"
+        result = self._call(
+            self._client.refund,
+            out_refund_no=out_refund_no,
+            amount={"refund": amount_cents, "total": amount_cents, "currency": "CNY"},
+            transaction_id=order["provider_trade_no"],
+            reason="用户自助申请全额退款",
+        )
+        if not self._refund_confirmed(result, order, out_refund_no):
+            # 退款可能是异步处理（PROCESSING），查询兜底确认最终状态。
+            result = self._call(self._client.query_refund, out_refund_no=out_refund_no)
+            if not self._refund_confirmed(result, order, out_refund_no):
+                raise PaymentChannelError("微信退款结果暂未确认，请稍后重试")
+        return {
+            "provider": "wechat",
+            "order_id": order["id"],
+            "refund_amount_cents": amount_cents,
+            "out_request_no": out_refund_no,
+        }
+
+    def verify_callback(
+        self, raw_body: bytes, headers: Mapping[str, str]
+    ) -> VerifiedCallback:
+        try:
+            result = self._client.callback(headers=headers, body=raw_body)
+        except Exception:
+            raise CallbackVerificationError("微信支付回调签名无效") from None
+        if not isinstance(result, dict):
+            raise CallbackVerificationError("微信支付回调签名无效")
+
+        # 微信只在支付成功时推送这个事件；关闭/失败没有对应的异步通知。
+        try:
+            if (
+                result.get("resource_type") != "encrypt-resource"
+                or result.get("event_type") != "TRANSACTION.SUCCESS"
+            ):
+                raise ValueError("unexpected callback envelope")
+            resource = result["resource"]
+            if (
+                not isinstance(resource, dict)
+                or resource.get("appid") != self.app_id
+                or resource.get("mchid") != self.mch_id
+            ):
+                raise ValueError("unexpected appid or mchid")
+            amount_cents = resource["amount"]["total"]
+            if type(amount_cents) is not int or amount_cents <= 0:
+                raise ValueError("invalid amount")
+            # trade_state 精确匹配；REFUND/NOTPAY/USERPAYING/ACCEPT 等一律拒绝。
+            status = {
+                "SUCCESS": "paid",
+                "CLOSED": "closed",
+                "REVOKED": "closed",
+                "PAYERROR": "failed",
+            }[resource["trade_state"]]
+            order_id = resource["out_trade_no"]
+            provider_trade_no = resource["transaction_id"]
+            if (
+                not isinstance(order_id, str)
+                or not isinstance(provider_trade_no, str)
+            ):
+                raise ValueError("invalid trade reference")
+            return VerifiedCallback(
+                order_id=order_id,
+                channel="wechat",
+                provider_trade_no=provider_trade_no,
+                amount_cents=amount_cents,
+                status=status,
+            )
+        except (ValueError, KeyError, TypeError):
+            raise CallbackVerificationError("微信支付回调内容无效") from None
+
+
 def get_channel(channel: str) -> PaymentChannel:
     if channel not in ("alipay", "wechat"):
         raise ValueError("不支持的支付渠道")
@@ -346,4 +546,13 @@ def get_channel(channel: str) -> PaymentChannel:
             notify_url=os.getenv("ALIPAY_NOTIFY_URL", ""),
             sandbox=sandbox == "1",
         )
-    raise PaymentChannelError("微信支付尚未接入")
+    return WechatPayChannel(
+        app_id=os.getenv("WECHAT_APP_ID", ""),
+        mch_id=os.getenv("WECHAT_MCH_ID", ""),
+        api_v3_key=os.getenv("WECHAT_API_V3_KEY", ""),
+        cert_serial_no=os.getenv("WECHAT_CERT_SERIAL_NO", ""),
+        private_key=os.getenv("WECHAT_PRIVATE_KEY", ""),
+        public_key=os.getenv("WECHAT_PUBLIC_KEY", ""),
+        public_key_id=os.getenv("WECHAT_PUBLIC_KEY_ID", ""),
+        notify_url=os.getenv("WECHAT_NOTIFY_URL", ""),
+    )

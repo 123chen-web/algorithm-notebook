@@ -450,7 +450,8 @@ print(a + b)
 
 ## 支付与本地联调
 
-当前提供套餐列表、下单、订单查询、自助全额退款、支付宝当面付及 Mock 回调。
+当前提供套餐列表、下单、订单查询、自助全额退款、支付宝当面付、
+微信支付 Native 支付及 Mock 回调。
 本地 Mock 模式下 `alipay` 和 `wechat` 都由 `MockChannel` 模拟；返回的
 `mock://` 二维码地址仅占位，不能扫码付款。默认关闭 Mock；在本地 `.env` 设置：
 
@@ -463,7 +464,7 @@ PAYMENTS_MOCK_SECRET=填写独立随机密钥
 密钥只用于服务端和本地联调脚本，不发送给浏览器。正式部署保持 Mock 关闭。
 
 以下浏览器及 Mock 接口均需已有的 Session Cookie；POST 还需
-`X-CSRF-Protection: 1`。真实支付宝通知入口见“支付宝当面付”一节。
+`X-CSRF-Protection: 1`。真实支付宝、微信支付通知入口分别见对应小节。
 
 | 接口 | 请求或返回 |
 | --- | --- |
@@ -577,8 +578,8 @@ Mock 退款仅同步模拟成功，不调用外部渠道，也不需要退款签
 使用第三方 [python-alipay-sdk](https://github.com/fzlee/alipay) 3.4.0，
 其 `api_alipay_trade_precreate` 支持生成二维码、请求 RSA2 签名和同步响应
 验签，`verify` 支持异步通知验签；这里固定已核对的版本。
-仅接入 RSA2 公钥模式，暂不接证书模式、微信真实支付或支付主动查单补偿；
-自助退款及退款结果查询见上节。
+仅接入 RSA2 公钥模式，暂不接证书模式或支付主动查单补偿；
+自助退款及退款结果查询见上节。微信支付见下节。
 
 安装 `requirements.txt` 后，关闭 Mock，并按 [.env.example](.env.example)
 填写 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`（应用私钥）、
@@ -613,6 +614,63 @@ APPID 和密钥不能混用。申请应用、签约当面付和取密钥的位�
 本地测试用临时生成的两对 RSA 密钥模拟应用与支付宝，真实执行 SDK 验签；
 预下单、退款与退款查询的网络请求被替换，不需要真实商户账号，也不访问支付宝服务器。
 
+### 微信支付 Native 支付
+
+使用第三方 [wechatpayv3](https://github.com/minibear2021/wechatpayv3) 2.0.4
+（微信支付没有官方 Python SDK，这是社区维护、生态里最主流的 APIv3 实现，
+这里固定已核对源码的版本）。只接入 Native 支付（扫码），不接 JSAPI、
+H5、小程序支付，因此不需要微信 OAuth、不需要拿用户 openid、
+前端不需要任何微信 JS SDK。
+
+初始化使用**微信支付平台公钥模式**，不是默认的平台证书模式：不需要指定
+`cert_dir`、SDK 不会向本地目录自动下载或轮换微信支付平台证书，纯本地
+初始化，不产生任何进程外状态。已核对本仓库 `.venv` 中 SDK 2.0.4 源码：
+公钥模式下 `WeChatPay.__init__` 不会调用证书下载逻辑，同步请求和回调验签
+命中 `public_key_id` 时也都走本地公钥验签，不发起额外网络请求。
+
+**微信支付 APIv3 没有沙箱环境**，不像支付宝那样能用沙箱账户联调；本地
+真实联调只能用真实商户号做小额（如 0.01 元）交易，测试前请知悉。
+
+安装 `requirements.txt` 后，关闭 Mock，并按 [.env.example](.env.example)
+填写 `WECHAT_APP_ID`、`WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL_NO`、
+`WECHAT_PRIVATE_KEY`（商户 API 证书私钥）、`WECHAT_PUBLIC_KEY`
+（微信支付平台公钥，不是商户自己的公钥）、`WECHAT_PUBLIC_KEY_ID`、
+`WECHAT_API_V3_KEY` 和 `WECHAT_NOTIFY_URL`。八项均必填；配置缺失、
+无效或密钥不足 2048 位时下单返回 503。密钥支持完整多行 PEM 或单引号
+包裹的单行 PEM（用字面量 `\n` 表示换行）。各项去哪个后台菜单获取见
+配置文件注释。
+
+下单仍为 `POST /api/orders`，`channel` 填 `wechat`。服务端调用 Native
+统一下单接口，返回：
+
+```json
+{"provider": "wechat", "qr_code_url": "weixin://wxpay/bizpayurl?pr=...", "redirect_url": null}
+```
+
+`qr_code_url` 同样是需要编码成二维码的内容，不是二维码图片，和支付宝
+共用同一套前端展示与轮询逻辑。金额直接用整数分传给微信（`amount.total`
+本身就是分），不像支付宝需要换算成带小数的元字符串。
+
+`WECHAT_NOTIFY_URL` 指向公开的 `POST /api/payments/wechat/callback`，
+无需 Session Cookie 或 CSRF 头；仅此 POST 路径豁免浏览器 CSRF 检查。
+微信只在支付成功时推送这个通知（没有"关闭"事件的异步通知），适配器验
+AEAD_AES_256_GCM 回调签名与解密、核对 APPID、商户号，业务层继续核对
+订单金额、渠道和交易号。事务提交后按微信的约定返回 `{"code": "SUCCESS"}`；
+验签或业务处理失败返回非 2xx，以便微信重试。这个响应格式和支付宝的纯
+文本 `success`/`failure` 不同，两者互不通用。开启 Mock 时该公开通知
+入口关闭，Mock 回调仍需登录。
+
+微信支付退款使用同步的申请退款接口，不新增退款回调；同一订单固定使用
+`refund-{订单号}` 作为 `out_refund_no`。退款可能异步处理（`PROCESSING`），
+适配器在非 `SUCCESS` 时自动调用退款查询接口兜底确认，仍无法确认时返回
+含 `order_id` 的 502，行为与支付宝退款一致（保留 `paid` 和套餐，不假定
+退款成功或失败，可稍后重试）。
+
+本地测试用临时生成的 RSA 密钥模拟商户与微信支付平台，独立实现
+AEAD_AES_256_GCM 加密和 RSA 签名（不复用 SDK 自身的验签逻辑），真实执行
+SDK 的解密和验签；预下单、退款与退款查询的网络请求被替换，不需要真实
+商户账号，也不访问微信支付服务器。
+
 ## 部署说明
 
 这是面向少量邀请用户的 V1。
@@ -645,5 +703,6 @@ APPID 和密钥不能混用。申请应用、签约当面付和取密钥的位�
 计数只存在单进程内存里，重启即清零；部署多实例或反向代理之后需要
 改成共享存储，并确认拿到的是真实客户端 IP。
 
-支付宝接口尚需商户账号开通后完成沙箱/实网联调；V1 不包含多实例部署和
-正式的数据库版本迁移工具。
+支付宝接口尚需商户账号开通后完成沙箱/实网联调；微信支付没有沙箱，
+只能用真实商户号完成小额联调。V1 不包含多实例部署和正式的数据库版本
+迁移工具。
