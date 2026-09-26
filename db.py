@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS variants (
     result TEXT NOT NULL DEFAULT 'unattempted'
         CHECK(result IN ('unattempted', 'solved', 'partial', 'failed')),
     answer_code TEXT NOT NULL DEFAULT '',
+    answer TEXT NOT NULL DEFAULT '',
+    expected_answer TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     result_updated_at TEXT
 );
@@ -270,6 +272,18 @@ PROBLEM_COLUMN_MIGRATIONS = (
 )
 
 
+VARIANT_COLUMN_MIGRATIONS = (
+    (
+        "expected_answer",
+        "ALTER TABLE variants ADD COLUMN expected_answer TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        "answer",
+        "ALTER TABLE variants ADD COLUMN answer TEXT NOT NULL DEFAULT ''",
+    ),
+)
+
+
 @contextmanager
 def connect(write=False):
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
@@ -311,6 +325,11 @@ def init_db():
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(problems)")}
         for column, statement in PROBLEM_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(variants)")}
+        for column, statement in VARIANT_COLUMN_MIGRATIONS:
             if column not in existing:
                 conn.execute(statement)
 

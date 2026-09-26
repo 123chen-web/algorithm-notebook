@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=7">
-  <link rel="stylesheet" href="/static/intro.css?v=7">
-  <script defer src="/static/intro.js?v=7"></script>
-  <script defer src="/static/app.js?v=7"></script>
+  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/intro.css?v=10">
+  <script defer src="/static/intro.js?v=10"></script>
+  <script defer src="/static/app.js?v=10"></script>
 </head>
 <body>
   <div class="container">
@@ -34,7 +34,7 @@
             <button id="remove-avatar-btn" type="button" hidden>移除</button>
           </div>
         </div>
-        <p id="user-info" class="muted"></p>
+        <div id="user-info-wrap" class="muted"></div>
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
     </header>
@@ -62,7 +62,7 @@
         <div class="intro-copy">
           <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>算法错题本 · 邀请内测</p>
           <h2 id="intro-title">让做错的题，<br>成为下次的把握。</h2>
-          <p class="intro-lead">刷过的题会忘，犯过的错值得记住。<br>留下真实错因，按时回来复习，再用一道新题检查自己是否真的理解。</p>
+          <p class="intro-lead">刷过的题会忘，犯过的错值得记住。<br>留下真实错因，按时回来复习，再用两道新题检查自己是否真的理解。</p>
           <div class="intro-links">
             <a class="intro-cta" href="#login-form">进入我的错题本 <span aria-hidden="true">↗</span></a>
             <a class="intro-secondary" href="#register-form">我有邀请码，注册</a>
@@ -116,8 +116,8 @@
         </article>
         <article class="intro-step">
           <span class="intro-step-number" aria-hidden="true">03 / 练习</span>
-          <h3>换一道题，检查理解</h3>
-          <p>让 AI 围绕同一个薄弱点生成变体题。自己解题，再留下结果和新的发现。</p>
+          <h3>练两道新题，检查理解</h3>
+          <p>让 AI 围绕同一个薄弱点生成两道有实质差异的变体题。编程题参考样例自评，数学题提交答案后查看系统判定。</p>
         </article>
       </div>
 
@@ -128,7 +128,7 @@
         </div>
         <div class="intro-difference-copy">
           <p>普通 flashcard 帮你回忆知识结论。这里还会保留你写错的代码和当时的想法，让复习围绕具体的错误模式展开。新练习也针对你选中的薄弱点生成，不从随机题库抽题。</p>
-          <p class="intro-small">代码仅用于记录，不运行、不自动判题。到期记录会显示在「今日复习」中。</p>
+          <p class="intro-small">代码仅用于记录，不运行、不自动判题；数学练习会比对最终答案，并展示参考答案供你核对。到期记录会显示在「今日复习」中。</p>
         </div>
       </div>
       <p class="intro-invitation"><span class="intro-dot" aria-hidden="true"></span>目前处于内部测试阶段，暂不对外开放。</p>
@@ -145,7 +145,7 @@
         </div>
         <label>
           用户名
-          <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
+          <input name="username" required maxlength="32"
                  autocomplete="username" aria-describedby="login-username-hint"
                  placeholder="注册时使用的用户名">
         </label>
@@ -172,10 +172,10 @@
           <div>
             <label>
               用户名
-              <input name="username" required pattern="[A-Za-z0-9_]{3,32}"
+              <input name="username" required maxlength="32"
                      autocomplete="username" aria-describedby="register-username-hint">
             </label>
-            <p id="register-username-hint" class="field-hint">3–32 位字母、数字或下划线。</p>
+            <p id="register-username-hint" class="field-hint">最多 32 个字符。</p>
           </div>
           <div>
             <label>

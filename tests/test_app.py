@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import sqlite3
 
 import pytest
 from fastapi import HTTPException
@@ -46,12 +47,12 @@ def register(client, username="alice", email=None):
     return response.json()
 
 
-def new_problem(client):
+def new_problem(client, zone="算法"):
     response = client.post(
         "/api/problems",
         json={
             "title": "二分查找",
-            "zone": "算法",
+            "zone": zone,
             "language": "Python",
             "code": "def search(a, target):\n    return -1\n",
             "thinking": "维护闭区间，但对结束条件理解不清楚。",
@@ -63,6 +64,30 @@ def new_problem(client):
     )
     assert response.status_code == 201
     return response.json()["mistake_ids"]
+
+
+def mock_generated_practice(item):
+    if item["zone"] in main.CODE_ZONES:
+        questions = [
+            {
+                "question": "在有序数组中查找第一个不小于目标值的位置。",
+                "answer": "输入：[1, 3, 3, 7]，目标值 3\n输出：1",
+            },
+            {
+                "question": "日志按时间排序，查找首条不早于指定时刻的记录。",
+                "answer": "输入：[(8, 'a'), (10, 'b')]，时刻 9\n输出：'b'",
+            },
+        ]
+    else:
+        questions = [
+            {"question": "求矩阵 A 的全部特征值，保留重数。", "answer": "1, 1, 4"},
+            {"question": "求线性变换 T 的全部特征值，保留重数。", "answer": "-2, 0, 3"},
+        ]
+    return {
+        "mistake_summary": "边界条件或重数处理遗漏。",
+        "model": "mock-model",
+        "questions": questions,
+    }
 
 
 def test_sm2_success_failure_and_floor():
@@ -161,25 +186,18 @@ def test_ai_persists_results_and_limits_attempts(client, monkeypatch):
         f"/api/mistakes/{mistake_id}"
     ).json()["variants"] == []
 
-    monkeypatch.setattr(
-        ai,
-        "generate",
-        lambda item: {
-            "description": "新题目：在有序数组中查找第一个不小于目标值的位置。",
-            "mistake_summary": "右边界更新漏掉了等号",
-            "model": "mock-model",
-        },
-    )
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
     generated = client.post(f"/api/mistakes/{mistake_id}/variants")
     assert generated.status_code == 201
-    variant_id = generated.json()["id"]
+    variants = generated.json()["variants"]
+    assert len(variants) == 2
+    variant_id = variants[0]["id"]
 
     saved = client.put(
         f"/api/variants/{variant_id}/result",
         json={
             "result": "solved",
             "answer_code": "def lower_bound(a, x):\n    pass\n",
-            "notes": "这次正确处理了闭区间的结束条件。",
         },
     )
     assert saved.status_code == 200
@@ -189,23 +207,280 @@ def test_ai_persists_results_and_limits_attempts(client, monkeypatch):
     assert limited.status_code == 429
 
     detail = client.get(f"/api/mistakes/{mistake_id}").json()
-    assert detail["variants"][0]["result"] == "solved"
-    assert detail["variants"][0]["notes"]
+    stored = {variant["id"]: variant for variant in detail["variants"]}
+    assert len(stored) == 2
+    assert stored[variant_id]["result"] == "solved"
+    assert stored[variant_id]["answer_code"] == "def lower_bound(a, x):\n    pass\n"
+    assert stored[variants[1]["id"]]["result"] == "unattempted"
+    assert all("notes" not in variant for variant in stored.values())
     assert detail["version"] == 0
     assert detail["due_date"] == "2026-09-19"
 
 
-def test_user_isolation(client, monkeypatch):
-    register(client, "alice")
+@pytest.mark.parametrize("zone", main.PROBLEM_ZONES)
+def test_generation_stores_two_questions_with_zone_specific_answers(
+    client, monkeypatch, zone
+):
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client, zone=zone)[0]
+    original = client.get(f"/api/mistakes/{mistake_id}").json()
+    expected = mock_generated_practice(original)
+    calls = []
+
+    def generate(item):
+        calls.append(item)
+        return expected
+
+    monkeypatch.setattr(ai, "generate", generate)
+    response = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {"variants", "mistake_description"}
+    assert body["mistake_description"] == original["description"]
+    assert len(calls) == 1
+    assert calls[0]["zone"] == zone
+    assert len(body["variants"]) == 2
+    assert len({variant["id"] for variant in body["variants"]}) == 2
+    for variant, question in zip(body["variants"], expected["questions"]):
+        assert variant["mistake_id"] == mistake_id
+        assert variant["model"] == expected["model"]
+        assert variant["created_at"]
+        assert variant["result"] == "unattempted"
+        assert variant["answer"] == ""
+        assert "notes" not in variant
+        if zone in main.CODE_ZONES:
+            assert variant["description"] == (
+                f"{question['question']}\n\n【样例】\n{question['answer']}"
+            )
+            assert variant["expected_answer"] == ""
+        else:
+            assert variant["description"] == question["question"]
+            assert question["answer"] not in variant["description"]
+            # 生成阶段不下发真实标准答案，只给一个非空占位，等提交练习结果
+            # 之后才通过 save_variant_result 的响应看到真实文字（见下面
+            # test_math_zone_auto_judges_result 等用例）。
+            assert variant["expected_answer"] == "***"
+            with connect() as conn:
+                stored = conn.execute(
+                    "SELECT expected_answer FROM variants WHERE id = ?",
+                    (variant["id"],),
+                ).fetchone()["expected_answer"]
+            assert stored == question["answer"]
+
+    detail = client.get(f"/api/mistakes/{mistake_id}").json()
+    assert detail["variants"] == list(reversed(body["variants"]))
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT attempts FROM ai_usage WHERE user_id = ? AND day = ?",
+            (user_id, "2026-09-19"),
+        ).fetchone()["attempts"] == 1
+
+
+@pytest.mark.parametrize(
+    "initial_description,concurrent_description,expected_description",
+    [
+        ("", None, "边界条件或重数处理遗漏。"),
+        ("原来的错因", None, "原来的错因"),
+        ("", "生成时用户补充的错因", "生成时用户补充的错因"),
+        ("原来的错因", "", "边界条件或重数处理遗漏。"),
+    ],
+)
+def test_generation_backfills_current_description_once(
+    client, monkeypatch, initial_description, concurrent_description,
+    expected_description,
+):
+    register(client)
     mistake_id = new_problem(client)[0]
-    monkeypatch.setattr(
-        ai,
-        "generate",
-        lambda item: {"description": "模拟题目", "model": "mock-model"},
-    )
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE mistakes SET description = ? WHERE id = ?",
+            (initial_description, mistake_id),
+        )
+
+    def generate(item):
+        assert item["description"] == initial_description
+        if concurrent_description is not None:
+            updated = client.put(
+                f"/api/mistakes/{mistake_id}",
+                json={"description": concurrent_description, "version": 0},
+            )
+            assert updated.status_code == 200
+        return mock_generated_practice(item)
+
+    monkeypatch.setattr(ai, "generate", generate)
+    response = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert response.status_code == 201
+    assert len(response.json()["variants"]) == 2
+    assert response.json()["mistake_description"] == expected_description
+    detail = client.get(f"/api/mistakes/{mistake_id}").json()
+    assert detail["description"] == expected_description
+    assert detail["version"] == int(concurrent_description is not None)
+
+
+def test_generation_rolls_back_both_questions_if_second_insert_fails(client, monkeypatch):
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client)[0]
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    with connect(write=True) as conn:
+        conn.execute("UPDATE mistakes SET description = '' WHERE id = ?", (mistake_id,))
+        conn.execute(
+            """
+            CREATE TRIGGER reject_second_variant BEFORE INSERT ON variants
+            WHEN (SELECT COUNT(*) FROM variants WHERE mistake_id = NEW.mistake_id) = 1
+            BEGIN
+                SELECT RAISE(ABORT, 'second variant rejected');
+            END
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="second variant rejected"):
+        client.post(f"/api/mistakes/{mistake_id}/variants")
+
+    detail = client.get(f"/api/mistakes/{mistake_id}").json()
+    assert detail["variants"] == []
+    assert detail["description"] == ""
+    with connect() as conn:
+        # 生成确实执行过，失败仍消耗一次额度；两道题和错因回填整体回滚。
+        assert conn.execute(
+            "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
+        ).fetchone()["attempts"] == 1
+
+
+@pytest.mark.parametrize(
+    "expected_answer,answer,expected_result",
+    [
+        ("1, 1, 4", "4, 1, 1", "solved"),
+        ("1, 1, 4", " ４，１、１ ", "solved"),
+        ("1, 1, 4", "１；４;１", "solved"),
+        ("1, 1, 4", "1.0, 4e0, 1", "solved"),
+        ("1, 1, 4", "1, 4", "failed"),
+        ("1, 1, 4", "1, 1, 5", "failed"),
+        ("0, 2.0", "2, -0", "solved"),
+        (" X + Y ", "x+\ny", "solved"),
+        ("x, y", "y, x", "failed"),
+        ("1/2", "１／２", "solved"),
+        ("1/2", "0.5", "failed"),
+    ],
+)
+def test_math_variant_grades_normalized_answer_and_ignores_client_result(
+    client, monkeypatch, expected_answer, answer, expected_result
+):
+    register(client)
+    mistake_id = new_problem(client, zone="线性代数")[0]
+
+    def generate(item):
+        generated = mock_generated_practice(item)
+        generated["questions"][0]["answer"] = expected_answer
+        return generated
+
+    monkeypatch.setattr(ai, "generate", generate)
     variant_id = client.post(
         f"/api/mistakes/{mistake_id}/variants"
-    ).json()["id"]
+    ).json()["variants"][0]["id"]
+    requested_result = "failed" if expected_result == "solved" else "solved"
+    response = client.put(
+        f"/api/variants/{variant_id}/result",
+        json={"result": requested_result, "answer": answer},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"] == expected_result
+    assert body["expected_answer"] == expected_answer
+    assert body["answer"] == answer
+    assert body["answer_code"] == ""
+    assert body["result_updated_at"]
+    assert "notes" not in body
+    detail = client.get(f"/api/mistakes/{mistake_id}").json()
+    stored = next(variant for variant in detail["variants"] if variant["id"] == variant_id)
+    assert stored == body
+    assert detail["version"] == 0
+    assert detail["due_date"] == "2026-09-19"
+
+
+@pytest.mark.parametrize("zone", ["算法", "线性代数"], ids=["code", "legacy-math"])
+@pytest.mark.parametrize("result", ["unattempted", "solved", "partial", "failed"])
+def test_variants_without_expected_answer_keep_manual_results(
+    client, monkeypatch, zone, result
+):
+    register(client)
+    mistake_id = new_problem(client, zone=zone)[0]
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    variant_id = client.post(
+        f"/api/mistakes/{mistake_id}/variants"
+    ).json()["variants"][0]["id"]
+    with connect(write=True) as conn:
+        # 旧题迁移后的 expected_answer 为空；保留当年已经存下来的 notes。
+        conn.execute(
+            "UPDATE variants SET expected_answer = '', notes = ? WHERE id = ?",
+            ("旧练习备注", variant_id),
+        )
+    response = client.put(
+        f"/api/variants/{variant_id}/result",
+        json={"result": result, "answer_code": "  pass\n", "answer": "4, 1, 1"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"] == result
+    assert body["answer_code"] == "  pass\n"
+    assert body["answer"] == "4, 1, 1"
+    assert body["expected_answer"] == ""
+    assert "notes" not in body
+    with connect() as conn:
+        stored = conn.execute("SELECT * FROM variants WHERE id = ?", (variant_id,)).fetchone()
+        assert stored["notes"] == "旧练习备注"
+        assert stored["result"] == result
+        assert stored["answer_code"] == "  pass\n"
+        assert stored["answer"] == "4, 1, 1"
+
+
+@pytest.mark.parametrize("answer", [None, "", " \u3000\n"])
+def test_math_variant_with_no_answer_keeps_requested_result(client, monkeypatch, answer):
+    register(client)
+    mistake_id = new_problem(client, zone="高等数学")[0]
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    variant_id = client.post(
+        f"/api/mistakes/{mistake_id}/variants"
+    ).json()["variants"][0]["id"]
+    payload = {"result": "partial"}
+    if answer is not None:
+        payload["answer"] = answer
+    response = client.put(f"/api/variants/{variant_id}/result", json=payload)
+    assert response.status_code == 200
+    assert response.json()["result"] == "partial"
+    assert response.json()["answer"] == (answer or "")
+    assert response.json()["expected_answer"] == "1, 1, 4"
+
+
+@pytest.mark.parametrize(
+    "invalid_fields", [{"notes": ""}, {"notes": "新备注"}, {"answer": "1" * 501}]
+)
+def test_variant_result_rejects_notes_and_overlong_answer(
+    client, monkeypatch, invalid_fields
+):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    variant_id = client.post(
+        f"/api/mistakes/{mistake_id}/variants"
+    ).json()["variants"][0]["id"]
+    response = client.put(
+        f"/api/variants/{variant_id}/result", json={"result": "solved", **invalid_fields}
+    )
+    assert response.status_code == 422
+    with connect() as conn:
+        stored = conn.execute("SELECT * FROM variants WHERE id = ?", (variant_id,)).fetchone()
+        assert stored["result"] == "unattempted"
+        assert stored["result_updated_at"] is None
+
+
+@pytest.mark.parametrize("zone", ["算法", "线性代数"])
+def test_user_isolation(client, monkeypatch, zone):
+    register(client, "alice")
+    mistake_id = new_problem(client, zone=zone)[0]
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    variant_id = client.post(
+        f"/api/mistakes/{mistake_id}/variants"
+    ).json()["variants"][0]["id"]
 
     client.post("/api/auth/logout")
     register(client, "bob")
@@ -224,7 +499,7 @@ def test_user_isolation(client, monkeypatch):
 
     assert client.put(
         f"/api/variants/{variant_id}/result",
-        json={"result": "failed", "answer_code": "", "notes": ""},
+        json={"result": "failed", "answer_code": "", "answer": "1, 1, 4"},
     ).status_code == 404
 
 
@@ -276,11 +551,7 @@ def test_edit_and_delete_mistake(client):
 def test_edit_and_delete_problem_cascades(client, monkeypatch):
     register(client)
     mistake_id = new_problem(client)[0]
-    monkeypatch.setattr(
-        ai,
-        "generate",
-        lambda item: {"description": "模拟题目", "model": "mock-model"},
-    )
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
     client.post(f"/api/mistakes/{mistake_id}/variants")
     problem_id = client.get(f"/api/mistakes/{mistake_id}").json()["problem_id"]
 
@@ -783,6 +1054,69 @@ def test_update_email_rejects_duplicate(client):
     assert conflict.status_code == 409
 
 
+def test_update_username(client):
+    register(client, "alice")
+
+    updated = client.put("/api/me/username", json={"username": "alice_renamed"})
+    assert updated.status_code == 200
+    assert updated.json()["username"] == "alice_renamed"
+    assert client.get("/api/me").json()["username"] == "alice_renamed"
+
+    # 字符集不再限制（中文、单字符都允许），只保留非空和长度上限。
+    short = client.put("/api/me/username", json={"username": "a"})
+    assert short.status_code == 200
+    assert short.json()["username"] == "a"
+
+    chinese = client.put("/api/me/username", json={"username": "小明"})
+    assert chinese.status_code == 200
+    assert chinese.json()["username"] == "小明"
+
+    empty = client.put("/api/me/username", json={"username": "   "})
+    assert empty.status_code == 422
+
+    too_long = client.put("/api/me/username", json={"username": "x" * 33})
+    assert too_long.status_code == 422
+
+
+def test_update_username_rejects_duplicate(client):
+    register(client, "alice")
+    client.post("/api/auth/logout")
+    register(client, "bob")
+
+    conflict = client.put("/api/me/username", json={"username": "alice"})
+    assert conflict.status_code == 409
+    # 冲突被拒绝之后用户名不应该被改动。
+    assert client.get("/api/me").json()["username"] == "bob"
+
+
+def test_renamed_author_shows_new_name_on_existing_forum_content(client):
+    from test_forum import create_post
+
+    register(client, "alice")
+    post = create_post(client, "帖子标题")
+    client.put("/api/me/username", json={"username": "alice_v2"})
+
+    assert client.get("/api/posts").json()["posts"][0]["username"] == "alice_v2"
+    assert client.get(f"/api/posts/{post['id']}").json()["username"] == "alice_v2"
+
+
+def test_trial_account_cannot_change_username(client):
+    client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
+    response = client.put("/api/me/username", json={"username": "renamed_trial"})
+    assert response.status_code == 403
+
+
+def test_renaming_away_from_admin_username_loses_admin_immediately(client, monkeypatch):
+    # is_admin 是按当前用户名跟 ADMIN_USERNAME 实时比较算出来的，不是存在
+    # 数据库里的角色列；改名后不再匹配就应该立刻失去管理员权限。
+    monkeypatch.setenv("ADMIN_USERNAME", "alice")
+    register(client, "alice")
+    assert client.get("/api/me").json()["is_admin"] is True
+
+    client.put("/api/me/username", json={"username": "alice_renamed"})
+    assert client.get("/api/me").json()["is_admin"] is False
+
+
 def test_forgot_password_is_rate_limited(client):
     for _ in range(main.FORGOT_PASSWORD_LIMIT):
         client.post(
@@ -837,11 +1171,7 @@ def test_trial_account_uses_its_own_lower_ai_limit(client, monkeypatch):
     # 正式账号的额度（client fixture 里设成 2）比体验账号（这里设成 1）
     # 更宽松，确认体验账号用的是自己的更低上限，不是全局的 AI_DAILY_LIMIT。
     monkeypatch.setenv("TRIAL_AI_DAILY_LIMIT", "1")
-    monkeypatch.setattr(
-        ai,
-        "generate",
-        lambda item: {"description": "新题目", "model": "mock-model"},
-    )
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
 
     client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
     mistake_id = new_problem(client)[0]
@@ -871,11 +1201,7 @@ def quota_environment(monkeypatch):
 
     def generate(item):
         calls.append(item["id"])
-        return {
-            "description": "配额测试题目",
-            "mistake_summary": "配额测试错因",
-            "model": "mock-model",
-        }
+        return mock_generated_practice(item)
 
     monkeypatch.setattr(ai, "generate", generate)
     return calls
@@ -960,6 +1286,9 @@ def test_ai_quota_uses_current_subscription(
         ).fetchone()
         # 额度使用请求时刻的 UTC；计数日期仍使用 client fixture 的用户当地日。
         assert dict(row) == {"day": "2026-09-19", "attempts": expected_limit}
+        assert conn.execute(
+            "SELECT COUNT(*) FROM variants WHERE mistake_id = ?", (mistake_id,)
+        ).fetchone()[0] == 2 * expected_limit
         stored_expiry = conn.execute(
             "SELECT plan_expires_at FROM users WHERE id = ?", (user_id,)
         ).fetchone()["plan_expires_at"]

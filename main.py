@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -85,7 +86,13 @@ class InputModel(BaseModel):
 
 
 class Credentials(InputModel):
-    username: str = Field(pattern=r"^[A-Za-z0-9_]{3,32}$")
+    # 不再限制字符集（原来只认 ASCII 字母/数字/下划线，中文用户名会被拒绝），
+    # 只保留最基本的边界：非空、去掉首尾空白、长度封顶，避免空白串或
+    # 超长字符串搞坏列表展示；讨论区渲染用户名走 textContent，不走
+    # innerHTML，这里放开字符集不会引入 XSS。
+    username: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
+    ]
     password: str = Field(min_length=6, max_length=128)
 
 
@@ -152,6 +159,12 @@ class EmailUpdate(InputModel):
         return normalize_email(value)
 
 
+class UsernameUpdate(InputModel):
+    username: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
+    ]
+
+
 class ProblemFields(InputModel):
     title: Title
     zone: str
@@ -205,7 +218,7 @@ class ReviewInput(InputModel):
 class VariantResult(InputModel):
     result: Literal["unattempted", "solved", "partial", "failed"]
     answer_code: str = Field(default="", max_length=40000)
-    notes: str = Field(default="", max_length=8000)
+    answer: str = Field(default="", max_length=500)
 
 
 class NewOrder(InputModel):
@@ -461,6 +474,23 @@ SELECT m.*, p.title, p.zone, p.language, p.code, p.thinking
 FROM mistakes m
 JOIN problems p ON p.id = m.problem_id
 """
+
+
+# notes 只保留在数据库中供旧数据留存，不再读取或返回。
+VARIANT_SELECT = """
+SELECT v.id, v.mistake_id, v.description, v.model, v.created_at,
+       v.result, v.answer_code, v.answer, v.expected_answer, v.result_updated_at
+FROM variants v
+"""
+
+
+def redact_pending_answer(variant):
+    # 还没提交过练习结果的变体，标准答案只用来告诉前端"这道题能不能自动判对
+    # 错"（真假即可），具体文字要等提交之后 save_variant_result 的响应才
+    # 给出，否则打开网络面板就能在动手之前看到答案，等于白设计这个校验。
+    if variant["expected_answer"] and not variant["result_updated_at"]:
+        variant["expected_answer"] = "***"
+    return variant
 
 
 def owned_mistake(conn, mistake_id, user_id):
@@ -823,6 +853,23 @@ def update_email(data: EmailUpdate, user=Depends(current_user)):
     return {"ok": True, "email": data.email}
 
 
+@app.put("/api/me/username")
+def update_username(data: UsernameUpdate, user=Depends(current_user)):
+    # 用户名是讨论区里展示身份的字段，允许自己改；管理员身份是按当前
+    # 用户名跟 ADMIN_USERNAME 实时比较的，改名后不再匹配就会立刻失去
+    # 管理员权限——这是预期行为，不是 bug，改回原用户名或改环境变量都能恢复。
+    require_not_trial(user, "修改用户名")
+    try:
+        with connect(write=True) as conn:
+            conn.execute(
+                "UPDATE users SET username = ? WHERE id = ?",
+                (data.username, user["id"]),
+            )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "这个用户名已经被使用") from None
+    return {"ok": True, "username": data.username}
+
+
 @app.post("/api/me/avatar")
 async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)):
     require_not_trial(user, "上传头像")
@@ -1062,9 +1109,9 @@ def get_mistake(mistake_id: int, user=Depends(current_user)):
             )
         ]
         item["variants"] = [
-            dict(row)
+            redact_pending_answer(dict(row))
             for row in conn.execute(
-                "SELECT * FROM variants WHERE mistake_id = ? ORDER BY id DESC",
+                VARIANT_SELECT + " WHERE v.mistake_id = ? ORDER BY v.id DESC",
                 (mistake_id,),
             )
         ]
@@ -1174,32 +1221,59 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
             raise HTTPException(429, "今天的 AI 生成次数已用完")
 
     generated = ai.generate(item)
+    is_code_zone = item["zone"] in CODE_ZONES
+    rows = []
+    for question in generated["questions"]:
+        if is_code_zone:
+            description = f"{question['question']}\n\n【样例】\n{question['answer']}"
+            expected_answer = ""
+        else:
+            description = question["question"]
+            expected_answer = question["answer"]
+        rows.append((description, expected_answer))
 
     with connect(write=True) as conn:
         # 重新读取当前错因：生成期间用户可能已经自己编辑过，不能用生成前的
         # 旧快照来判断是否需要回填，否则可能覆盖掉用户刚写的内容。
         current = owned_mistake(conn, mistake_id, user["id"])
-        cursor = conn.execute(
-            """
-            INSERT INTO variants(mistake_id, description, model, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                mistake_id, generated["description"],
-                generated["model"], utc_now(),
-            ),
-        )
+        variants = []
+        created_at = utc_now()
+        for description, expected_answer in rows:
+            cursor = conn.execute(
+                """
+                INSERT INTO variants(
+                    mistake_id, description, model, created_at, expected_answer
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    mistake_id, description, generated["model"],
+                    created_at, expected_answer,
+                ),
+            )
+            created_row = dict(conn.execute(
+                VARIANT_SELECT + " WHERE v.id = ?", (cursor.lastrowid,),
+            ).fetchone())
+            variants.append(redact_pending_answer(created_row))
         if not current["description"].strip():
             conn.execute(
                 "UPDATE mistakes SET description = ? WHERE id = ?",
                 (generated["mistake_summary"], mistake_id),
             )
             current["description"] = generated["mistake_summary"]
-        variant = conn.execute(
-            "SELECT * FROM variants WHERE id = ?",
-            (cursor.lastrowid,),
-        ).fetchone()
-    return {**dict(variant), "mistake_description": current["description"]}
+    return {"variants": variants, "mistake_description": current["description"]}
+
+
+def normalize_math_answer(value: str) -> str:
+    # 尽力而为的近似比较：只统一格式和数字项顺序，不处理分数化简、
+    # 根号等数学等价形式，也不提供浮点误差容忍或符号运算。
+    normalized = unicodedata.normalize("NFKC", value).strip()
+    normalized = re.sub(r"[、，;；]", ",", normalized)
+    try:
+        numbers = sorted(float(part.strip()) for part in normalized.split(","))
+    except ValueError:
+        return "".join(normalized.split()).lower()
+    # 正零与负零数值相同，拼接前统一表示；重复数字仍按原重数保留。
+    return ",".join(str(0.0 if number == 0 else number) for number in numbers)
 
 
 @app.put("/api/variants/{variant_id}/result")
@@ -1211,7 +1285,7 @@ def save_variant_result(
     with connect(write=True) as conn:
         owned = conn.execute(
             """
-            SELECT v.id
+            SELECT v.id, v.expected_answer
             FROM variants v
             JOIN mistakes m ON m.id = v.mistake_id
             JOIN problems p ON p.id = m.problem_id
@@ -1222,19 +1296,28 @@ def save_variant_result(
         if owned is None:
             raise HTTPException(404, "变体题不存在")
 
+        result = data.result
+        if owned["expected_answer"] and data.answer.strip():
+            result = (
+                "solved"
+                if normalize_math_answer(data.answer)
+                == normalize_math_answer(owned["expected_answer"])
+                else "failed"
+            )
+
         conn.execute(
             """
             UPDATE variants
-            SET result = ?, answer_code = ?, notes = ?, result_updated_at = ?
+            SET result = ?, answer_code = ?, answer = ?, result_updated_at = ?
             WHERE id = ?
             """,
             (
-                data.result, data.answer_code, data.notes,
+                result, data.answer_code, data.answer,
                 utc_now(), variant_id,
             ),
         )
         result = conn.execute(
-            "SELECT * FROM variants WHERE id = ?",
+            VARIANT_SELECT + " WHERE v.id = ?",
             (variant_id,),
         ).fetchone()
 

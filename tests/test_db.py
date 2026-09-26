@@ -84,6 +84,13 @@ def test_init_new_database_has_empty_payment_tables(database_path):
         }
         assert order_columns["refunded_at"]["type"] == "TEXT"
         assert order_columns["refunded_at"]["notnull"] == 0
+        variant_columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(variants)")
+        }
+        for name in ("answer", "expected_answer"):
+            assert variant_columns[name]["type"] == "TEXT"
+            assert variant_columns[name]["notnull"] == 1
+            assert variant_columns[name]["dflt_value"] == "''"
 
 
 @pytest.mark.parametrize("has_existing_migrations", [False, True])
@@ -430,4 +437,76 @@ def test_init_migrates_old_problems_and_backfills_zone(database_path):
         assert conn.execute(
             "SELECT zone FROM problems WHERE id = 1"
         ).fetchone()[0] == "前端"
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_init_migrates_old_variants_and_preserves_results_and_notes(database):
+    with connect(write=True) as conn:
+        # 固定本次改动前的 variants 结构；其他表与已存在的账号保持不变。
+        conn.execute("DROP TABLE variants")
+        conn.execute(
+            """
+            CREATE TABLE variants (
+                id INTEGER PRIMARY KEY,
+                mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+                description TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                result TEXT NOT NULL DEFAULT 'unattempted'
+                    CHECK(result IN ('unattempted', 'solved', 'partial', 'failed')),
+                answer_code TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                result_updated_at TEXT
+            )
+            """
+        )
+        problem_id = conn.execute(
+            "INSERT INTO problems(user_id, title, language, code, thinking, created_at) "
+            "VALUES (1, '二分查找', 'Python', 'pass', '边界问题', ?)",
+            (CREATED_AT,),
+        ).lastrowid
+        mistake_id = conn.execute(
+            "INSERT INTO mistakes(problem_id, description, due_date) VALUES (?, ?, ?)",
+            (problem_id, "循环终止条件出错", "2026-09-21"),
+        ).lastrowid
+        variant_id = conn.execute(
+            """
+            INSERT INTO variants(
+                mistake_id, description, model, created_at, result,
+                answer_code, notes, result_updated_at
+            ) VALUES (?, '旧题正文', 'old-model', ?, 'partial', 'pass', '旧备注', ?)
+            """,
+            (mistake_id, CREATED_AT, CREATED_AT),
+        ).lastrowid
+        before = dict(conn.execute(
+            "SELECT * FROM variants WHERE id = ?", (variant_id,)
+        ).fetchone())
+
+    init_db()
+    init_db()
+
+    with connect(write=True) as conn:
+        after = dict(conn.execute(
+            "SELECT * FROM variants WHERE id = ?", (variant_id,)
+        ).fetchone())
+        assert after == {**before, "answer": "", "expected_answer": ""}
+        columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(variants)")
+        }
+        for name in ("answer", "expected_answer"):
+            assert columns[name]["type"] == "TEXT"
+            assert columns[name]["notnull"] == 1
+            assert columns[name]["dflt_value"] == "''"
+        conn.execute(
+            "UPDATE variants SET answer = '４，１、１', expected_answer = '1, 1, 4' "
+            "WHERE id = ?",
+            (variant_id,),
+        )
+
+    init_db()
+    with connect() as conn:
+        row = dict(conn.execute(
+            "SELECT * FROM variants WHERE id = ?", (variant_id,)
+        ).fetchone())
+        assert row == {**before, "answer": "４，１、１", "expected_answer": "1, 1, 4"}
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

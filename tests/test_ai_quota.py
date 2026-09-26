@@ -6,7 +6,7 @@ from fastapi import Request
 import ai
 import main
 from db import connect
-from test_app import client, new_problem, register
+from test_app import client, mock_generated_practice, new_problem, register
 
 
 def add_plan(conn, limit=3):
@@ -30,7 +30,7 @@ def test_generation_reloads_subscription_after_authentication(
 
     def generate(item):
         calls.append(item["id"])
-        return {"description": "新题目", "mistake_summary": "新错因", "model": "mock-model"}
+        return mock_generated_practice(item)
 
     monkeypatch.setattr(ai, "generate", generate)
     with connect(write=True) as conn:
@@ -67,6 +67,8 @@ def test_generation_reloads_subscription_after_authentication(
         main.app.dependency_overrides.pop(main.current_user)
     assert response.status_code == (201 if change == "upgrade" else 429)
     assert calls == ([mistake_id] if change == "upgrade" else [])
+    if change == "upgrade":
+        assert len(response.json()["variants"]) == 2
     with connect() as conn:
         attempts = conn.execute(
             "SELECT attempts FROM ai_usage WHERE user_id = ? AND day = ?",
@@ -111,10 +113,12 @@ def test_quota_read_and_reservation_hold_write_lock_until_commit(client, monkeyp
             # 模拟另一请求/支付写入；网络生成阶段必须已经释放写锁。
             competitor.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
         checks.append("committed")
-        return {"description": "新题目", "mistake_summary": "新错因", "model": "mock-model"}
+        return mock_generated_practice(item)
 
     monkeypatch.setattr(main, "ai_quota", competing_writer_is_blocked)
     monkeypatch.setattr(ai, "generate", generate_after_commit)
-    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
+    response = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert response.status_code == 201
+    assert len(response.json()["variants"]) == 2
     assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 429
     assert checks == ["locked", "committed", "locked"]

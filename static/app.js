@@ -121,7 +121,7 @@ function signedOut() {
   $("#auth").hidden = false;
   $("#app").hidden = true;
   $("#logout").hidden = true;
-  $("#user-info").textContent = "";
+  $("#user-info-wrap").replaceChildren();
   $("#my-avatar-wrap").hidden = true;
   $("#avatar-file-input").value = "";
   $("#email-prompt").hidden = true;
@@ -257,9 +257,57 @@ function timestamp(value) {
   });
 }
 
+function renderUserInfo() {
+  const wrap = $("#user-info-wrap");
+
+  function readOnly() {
+    wrap.replaceChildren(
+      element("span", `${user.username} · ${user.timezone} · ${user.today}`)
+    );
+    if (!user.is_trial) {
+      const editBtn = element("button", "改用户名", "link-button");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", editForm);
+      wrap.append(editBtn);
+    }
+  }
+
+  function editForm() {
+    const input = document.createElement("input");
+    input.value = user.username;
+    input.maxLength = 32;
+    input.required = true;
+    input.autocomplete = "off";
+    const save = element("button", "保存", "primary");
+    save.type = "submit";
+    const cancel = element("button", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", readOnly);
+
+    const form = document.createElement("form");
+    form.className = "inline-form";
+    form.append(field("新用户名", input), save, cancel);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(async () => {
+        const updated = await api("/api/me/username", {
+          method: "PUT",
+          body: JSON.stringify({ username: input.value }),
+        });
+        user.username = updated.username;
+        message("用户名已更新。");
+        readOnly();
+      });
+    });
+
+    wrap.replaceChildren(form);
+  }
+
+  readOnly();
+}
+
 function updateUserInfo() {
-  $("#user-info").textContent =
-    `${user.username} · ${user.timezone} · ${user.today}`;
+  renderUserInfo();
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
   $("#admin-tab").hidden = !user.is_admin;
@@ -732,7 +780,7 @@ const VARIANT_SECTION_PATTERN =
 function renderVariantDescription(text) {
   const match = text.trim().match(VARIANT_SECTION_PATTERN);
   if (!match) {
-    // 这条变体题是四段式格式上线之前生成的，仍按原来的纯文本展示。
+    // 新变体只含单题正文（编程题还带样例）；也兼容更早的纯文本题目。
     return element("pre", text, "prose");
   }
   const [, summary, explanation, knowledge, question] = match;
@@ -746,7 +794,7 @@ function renderVariantDescription(text) {
   return wrap;
 }
 
-function renderVariant(variant) {
+function renderVariant(variant, isCodeZone) {
   const box = document.createElement("details");
   box.className = "variant";
   box.open = variant.result === "unattempted";
@@ -764,42 +812,70 @@ function renderVariant(variant) {
   );
 
   const form = document.createElement("form");
-  const result = document.createElement("select");
-
-  for (const [value, label] of Object.entries(resultLabels)) {
-    const option = element("option", label);
-    option.value = value;
-    result.append(option);
+  // 旧数学题没有参考答案，继续允许用户自行记录结果。
+  const autoJudge = !isCodeZone && Boolean(variant.expected_answer);
+  let result;
+  if (!autoJudge) {
+    result = document.createElement("select");
+    for (const [value, label] of Object.entries(resultLabels)) {
+      const option = element("option", label);
+      option.value = value;
+      result.append(option);
+    }
+    result.value = variant.result;
+    form.append(field("练习结果", result));
   }
-  result.value = variant.result;
 
-  const code = textarea(variant.answer_code, 40000, 7, true);
-  const notes = textarea(variant.notes, 8000, 3);
+  let code;
+  let answer;
+  if (isCodeZone) {
+    code = textarea(variant.answer_code, 40000, 7, true);
+    form.append(field("我的解答代码 · 仅保存，不运行", code));
+  } else {
+    answer = document.createElement("input");
+    answer.name = "answer";
+    answer.value = variant.answer || "";
+    answer.maxLength = 500;
+    answer.required = autoJudge;
+    answer.placeholder = "多个数值用英文逗号分隔，例如：1, 1, 4";
+    form.append(field("我的答案", answer));
+    if (!autoJudge) {
+      form.append(element("p", "这道旧练习题没有参考答案，请自行记录结果。", "muted"));
+    }
+  }
+  const judgment = element("p");
+  const reference = element("p", "", "multiline");
+
+  function updateJudgment(updated) {
+    const hasSavedResult = autoJudge && Boolean(updated.result_updated_at);
+    judgment.hidden = !hasSavedResult;
+    reference.hidden = !hasSavedResult;
+    judgment.textContent = updated.result === "solved"
+      ? "系统判定：正确"
+      : updated.result === "failed" ? "系统判定：错误" : "系统判定：待作答";
+    reference.textContent = hasSavedResult ? `参考答案：${updated.expected_answer}` : "";
+  }
+  updateJudgment(variant);
+
   const save = element("button", "保存练习结果", "primary");
   save.type = "submit";
-
-  form.append(
-    field("练习结果", result),
-    field("我的解答代码 · 仅保存，不运行", code),
-    field("这次还犯了同样的错误吗？", notes),
-    save
-  );
+  form.append(save);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     run(async () => {
       const updated = await api(`/api/variants/${variant.id}/result`, {
         method: "PUT",
-        body: JSON.stringify({
-          result: result.value,
-          answer_code: code.value,
-          notes: notes.value,
-        }),
+        body: JSON.stringify(isCodeZone
+          ? { result: result.value, answer_code: code.value }
+          : { result: result ? result.value : variant.result, answer: answer.value }),
       });
+      variant = updated;
       summary.textContent =
         `变体 #${updated.id} · ${resultLabels[updated.result]}`;
       savedAt.textContent =
         `结果保存于：${timestamp(updated.result_updated_at)}`;
+      updateJudgment(updated);
       message("练习结果已保存。这次练习不会改变复习日期。");
     });
   });
@@ -808,7 +884,9 @@ function renderVariant(variant) {
     summary,
     renderVariantDescription(variant.description),
     savedAt,
-    form
+    form,
+    judgment,
+    reference
   );
   return box;
 }
@@ -822,7 +900,7 @@ function renderMistakeText(item) {
     editBtn.addEventListener("click", editForm);
     const text = item.description
       ? element("p", item.description, "multiline")
-      : element("p", "还没有错因描述，点击下面「诊断错因并出一道新题」让 AI 帮你反推。", "muted");
+      : element("p", "还没有错因描述，点击下面「诊断错因并出两道新题」让 AI 帮你反推。", "muted");
     wrap.replaceChildren(text, editBtn);
   }
 
@@ -966,6 +1044,7 @@ function clearDetail(
 function renderDetail(item) {
   const root = $("#detail");
   root.replaceChildren();
+  const isCodeZone = codeZones.has(item.zone);
 
   const heading = element("div", "", "detail-heading");
   heading.append(
@@ -1083,7 +1162,7 @@ function renderDetail(item) {
 
   const aiSection = element("section", "", "ai-section");
   aiSection.append(
-    element("h3", "诊断错因，再练一道"),
+    element("h3", "诊断错因，再练两道"),
     element(
       "p",
       "生成时会把这道题的代码（或解题过程）、思路发送给 OpenAI；" +
@@ -1093,21 +1172,23 @@ function renderDetail(item) {
     ),
     element(
       "p",
-      "生成后请先核对题意，自己解答，再记录练习结果。这里不会运行代码或自动判题。",
+      isCodeZone
+        ? "每次生成两道题。请先核对题意，参考样例自行解答并记录结果；代码仅保存，不运行或自动判题。"
+        : "每次生成两道题。提交最终答案后，系统会比对参考答案并显示判定；如有疑问，请自行核对参考答案。",
       "muted"
     )
   );
 
   const variants = element("div");
-  const empty = element("p", "还没有变体题。换一道题，检查自己是否真的理解了。", "muted");
+  const empty = element("p", "还没有变体题。练两道新题，检查自己是否真的理解了。", "muted");
   if (!item.variants.length) variants.append(empty);
   for (const variant of item.variants) {
-    variants.append(renderVariant(variant));
+    variants.append(renderVariant(variant, isCodeZone));
   }
 
   const generate = element(
     "button",
-    user.ai_enabled ? "诊断错因并出一道新题" : "AI 尚未配置，暂时无法出题",
+    user.ai_enabled ? "诊断错因并出两道新题" : "AI 尚未配置，暂时无法出题",
     "primary"
   );
   generate.type = "button";
@@ -1115,19 +1196,21 @@ function renderDetail(item) {
   generate.disabled = !user.ai_enabled;
 
   generate.addEventListener("click", () => run(async () => {
-    message("AI 正在诊断错因、准备讲解和新题目，可能需要一两分钟。请保持页面打开。");
-    const variant = await api(`/api/mistakes/${item.id}/variants`, {
+    message("AI 正在诊断错因、准备两道新题，可能需要一两分钟。请保持页面打开。");
+    const generated = await api(`/api/mistakes/${item.id}/variants`, {
       method: "POST",
     });
     empty.remove();
-    variants.prepend(renderVariant(variant));
-    if (variant.mistake_description !== item.description) {
-      item.description = variant.mistake_description;
+    for (const variant of generated.variants) {
+      variants.prepend(renderVariant(variant, isCodeZone));
+    }
+    if (generated.mistake_description !== item.description) {
+      item.description = generated.mistake_description;
       const updated = renderMistakeText(item);
       mistakeTextNode.replaceWith(updated);
       mistakeTextNode = updated;
     }
-    message("讲解、知识点和新题目已生成并保存。");
+    message("两道新题已生成并保存。");
   }));
 
   aiSection.append(generate, variants);

@@ -21,12 +21,23 @@ MISTAKE = {
 }
 
 
-def sectioned(summary="右边界更新漏掉了等号", explanation="讲解内容", knowledge="知识点内容", question="题目正文"):
+def sectioned(
+    summary="右边界更新漏掉了等号",
+    explanation="讲解内容",
+    knowledge="知识点内容",
+    question_one="题目一正文",
+    answer_one="输入：1 2 2\n输出：1",
+    question_two="题目二正文",
+    answer_two="输入：a a b\n输出：0",
+):
     return (
         f"【错因】\n{summary}\n\n"
         f"【讲解】\n{explanation}\n\n"
         f"【核心知识点】\n{knowledge}\n\n"
-        f"【练习题】\n{question}"
+        f"【练习题一】\n{question_one}\n\n"
+        f"【答案一】\n{answer_one}\n\n"
+        f"【练习题二】\n{question_two}\n\n"
+        f"【答案二】\n{answer_two}"
     )
 
 
@@ -95,9 +106,12 @@ def test_generate_uses_chat_completions_and_returns_sections(monkeypatch):
     result = ai.generate(MISTAKE)
 
     assert result == {
-        "description": sectioned(),
         "mistake_summary": "右边界更新漏掉了等号",
         "model": "gpt-4.1-mini",
+        "questions": [
+            {"question": "题目一正文", "answer": "输入：1 2 2\n输出：1"},
+            {"question": "题目二正文", "answer": "输入：a a b\n输出：0"},
+        ],
     }
     # 走的是 messages 形式的 Chat Completions 接口，不是 Responses 接口的
     # instructions/input，这样才对第三方 OpenAI 兼容服务商也有效。
@@ -124,6 +138,13 @@ def test_generate_uses_chat_completions_and_returns_sections(monkeypatch):
         assert constraint in messages[0]["content"]
     for constraint in ("引用", "复述", "翻译", "改写", "分隔"):
         assert constraint in messages[0]["content"]
+    for constraint in (
+        "相同的薄弱点", "不能只是换个数字", "至少一组样例输入", "对应的期望输出",
+        "系统不运行代码、不自动判题", "英文逗号", "从小到大排序", "保留重复值",
+        "不要写成", "解题过程",
+    ):
+        assert constraint in messages[0]["content"]
+    assert completions.last_kwargs["max_tokens"] == 30000
     # 没配置 OPENAI_BASE_URL 时，走真正 OpenAI 的默认地址（不传 base_url）。
     assert captured_init["base_url"] is None
 
@@ -145,6 +166,28 @@ def test_generate_omits_empty_language_and_mistake_from_reference(monkeypatch):
     assert "language" not in payload
     assert "mistake" not in payload
     assert payload["zone"] == "线性代数"
+
+
+def test_generate_returns_math_answers_separately_and_trims_sections(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    mistake = {**MISTAKE, "zone": "线性代数", "language": ""}
+    completions = FakeCompletions(FakeResponse(sectioned(
+        summary=" \n特征值重数理解有误\n ",
+        question_one=" \n矩阵题一\n ",
+        answer_one=" \n1, 1, 4\n ",
+        question_two=" \n矩阵题二\n ",
+        answer_two=" \n-2, 3, 3\n ",
+    )))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    assert ai.generate(mistake) == {
+        "mistake_summary": "特征值重数理解有误",
+        "model": "gpt-4.1-mini",
+        "questions": [
+            {"question": "矩阵题一", "answer": "1, 1, 4"},
+            {"question": "矩阵题二", "answer": "-2, 3, 3"},
+        ],
+    }
 
 
 def test_generate_escapes_delimiters_inside_reference_without_changing_data(monkeypatch):
@@ -234,9 +277,8 @@ def test_generate_rejects_overlong_text(monkeypatch):
     [
         "题目正文，完全没有分段标题。",
         "【错因】\n只有错因，没有其他部分。",
-        "【讲解】\n顺序错了，错因应该在最前面。\n\n【错因】\nx\n\n【核心知识点】\ny\n\n【练习题】\nz",
-        "【错因】\nx\n\n【讲解】\ny\n\n【核心知识点】\nz",  # 缺练习题
-        "【错因】\n\n【讲解】\ny\n\n【核心知识点】\nz\n\n【练习题】\nq",  # 错因是空的
+        "【错因】\nx\n\n【讲解】\ny\n\n【核心知识点】\nz\n\n【练习题】\nq",  # 旧四段格式
+        "下面是生成的题目：\n" + sectioned(),
     ],
 )
 def test_generate_rejects_output_missing_required_sections(monkeypatch, malformed):
@@ -246,6 +288,63 @@ def test_generate_rejects_output_missing_required_sections(monkeypatch, malforme
 
     with pytest.raises(HTTPException) as exc:
         ai.generate(MISTAKE)
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.parametrize("header", ["错因", "讲解", "核心知识点", "练习题一", "答案一", "练习题二", "答案二"])
+def test_generate_rejects_each_missing_section(monkeypatch, header):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    content = "\n\n".join(
+        part for part in sectioned().split("\n\n") if not part.startswith(f"【{header}】")
+    )
+    completions = FakeCompletions(FakeResponse(content))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    with pytest.raises(HTTPException) as exc:
+        ai.generate(MISTAKE)
+
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.parametrize(
+    "section", ["summary", "explanation", "knowledge", "question_one", "answer_one", "question_two", "answer_two"]
+)
+def test_generate_rejects_each_empty_section(monkeypatch, section):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    completions = FakeCompletions(FakeResponse(sectioned(**{section: " \t\n "})))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    with pytest.raises(HTTPException) as exc:
+        ai.generate(MISTAKE)
+
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.parametrize("position", range(6))
+def test_generate_rejects_sections_out_of_order(monkeypatch, position):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    parts = sectioned().split("\n\n")
+    parts[position], parts[position + 1] = parts[position + 1], parts[position]
+    completions = FakeCompletions(FakeResponse("\n\n".join(parts)))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    with pytest.raises(HTTPException) as exc:
+        ai.generate(MISTAKE)
+
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.parametrize("position", range(7))
+def test_generate_rejects_duplicate_sections(monkeypatch, position):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    parts = sectioned().split("\n\n")
+    parts.insert(position, parts[position])
+    completions = FakeCompletions(FakeResponse("\n\n".join(parts)))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    with pytest.raises(HTTPException) as exc:
+        ai.generate(MISTAKE)
+
     assert exc.value.status_code == 502
 
 
@@ -316,13 +415,16 @@ def test_generate_accepts_full_problem_mentioning_marker_in_body(monkeypatch):
 
 约束：1 <= n <= 100000，每个状态字符串长度为 1 至 30，输入日志按字典序非递减排列。"""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    completions = FakeCompletions(FakeResponse(sectioned(question=problem)))
+    completions = FakeCompletions(FakeResponse(sectioned(question_one=problem)))
     monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
 
     assert ai.generate(MISTAKE) == {
-        "description": sectioned(question=problem),
         "mistake_summary": "右边界更新漏掉了等号",
         "model": "gpt-4.1-mini",
+        "questions": [
+            {"question": problem, "answer": "输入：1 2 2\n输出：1"},
+            {"question": "题目二正文", "answer": "输入：a a b\n输出：0"},
+        ],
     }
 
 
@@ -330,7 +432,7 @@ def test_generate_accepts_full_problem_mentioning_marker_in_body(monkeypatch):
 def test_generate_does_not_treat_marker_prefix_in_identifier_as_refusal(monkeypatch, suffix):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     problem = f"{ai.REFUSAL_MARKER}{suffix} 计数问题\n给定一组状态字符串，统计指定状态的出现次数。"
-    completions = FakeCompletions(FakeResponse(sectioned(question=problem)))
+    completions = FakeCompletions(FakeResponse(sectioned(question_one=problem)))
     monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
 
-    assert ai.generate(MISTAKE)["description"] == sectioned(question=problem)
+    assert ai.generate(MISTAKE)["questions"][0]["question"] == problem
