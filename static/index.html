@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=4">
-  <link rel="stylesheet" href="/static/intro.css?v=4">
-  <script defer src="/static/intro.js?v=4"></script>
-  <script defer src="/static/app.js?v=4"></script>
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/intro.css?v=7">
+  <script defer src="/static/intro.js?v=7"></script>
+  <script defer src="/static/app.js?v=7"></script>
 </head>
 <body>
   <div class="container">
@@ -23,6 +23,17 @@
         </div>
       </div>
       <div class="user-meta">
+        <div id="my-avatar-wrap" class="my-avatar-wrap" hidden>
+          <span id="my-avatar"></span>
+          <div class="avatar-actions">
+            <label class="avatar-upload-label">
+              更换头像
+              <input id="avatar-file-input" type="file"
+                     accept="image/jpeg,image/png,image/webp" hidden>
+            </label>
+            <button id="remove-avatar-btn" type="button" hidden>移除</button>
+          </div>
+        </div>
         <p id="user-info" class="muted"></p>
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
@@ -141,7 +152,7 @@
         <p id="login-username-hint" class="field-hint">使用用户名登录，不是邮箱。</p>
         <label>
           密码
-          <input name="password" type="password" required minlength="10"
+          <input name="password" type="password" required minlength="6"
                  maxlength="128" autocomplete="current-password"
                  placeholder="输入你的密码">
         </label>
@@ -169,11 +180,11 @@
           <div>
             <label>
               密码
-              <input name="password" type="password" required minlength="10"
+              <input name="password" type="password" required minlength="6"
                      maxlength="128" autocomplete="new-password"
                      aria-describedby="register-password-hint">
             </label>
-            <p id="register-password-hint" class="field-hint">至少 10 个字符。</p>
+            <p id="register-password-hint" class="field-hint">至少 6 个字符。</p>
           </div>
         </div>
         <label>
@@ -225,11 +236,11 @@
         </div>
         <label>
           新密码
-          <input name="password" type="password" required minlength="10"
+          <input name="password" type="password" required minlength="6"
                  maxlength="128" autocomplete="new-password"
                  aria-describedby="reset-password-hint">
         </label>
-        <p id="reset-password-hint" class="field-hint">至少 10 个字符。</p>
+        <p id="reset-password-hint" class="field-hint">至少 6 个字符。</p>
         <button type="submit" class="primary">保存新密码</button>
       </form>
     </section>
@@ -253,6 +264,12 @@
             <h2 id="list-title">今日复习</h2>
             <p id="list-summary" class="muted"></p>
           </div>
+          <label class="zone-filter">
+            分区
+            <select id="zone-filter">
+              <option value="">全部分区</option>
+            </select>
+          </label>
         </div>
         <div class="workspace">
           <aside id="cards" aria-label="易错点列表"></aside>
@@ -280,12 +297,16 @@
                        placeholder="例如：A + B、迷宫可达性判断">
               </label>
               <label>
+                分区
+                <select name="zone" id="problem-zone" required></select>
+              </label>
+              <label data-role="language-field">
                 编程语言
-                <input name="language" required maxlength="40" value="Python">
+                <input name="language" maxlength="40" value="Python">
               </label>
             </div>
             <label>
-              当时的代码
+              <span data-role="code-label">当时的代码</span>
               <textarea name="code" required maxlength="40000" rows="12"
                         spellcheck="false" class="code"
                         aria-describedby="code-hint"
@@ -305,7 +326,7 @@
 
           <section class="form-section" aria-labelledby="problem-mistakes-title">
             <h3 id="problem-mistakes-title">03 · 拆出具体的易错点</h3>
-            <p id="mistake-hint" class="muted">每条只写一个问题，例如「二分查找中，右边界更新漏掉了等号」。每条会独立安排复习，最多添加 10 条。</p>
+            <p id="mistake-hint" class="muted">说不清也没关系，可以留空——生成练习题时 AI 会从代码和思路里自动诊断。每条会独立安排复习，最多添加 10 条。</p>
             <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
           </section>
           <div class="actions form-footer">

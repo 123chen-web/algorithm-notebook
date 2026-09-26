@@ -30,7 +30,7 @@ def test_generation_reloads_subscription_after_authentication(
 
     def generate(item):
         calls.append(item["id"])
-        return {"description": "新题目", "model": "mock-model"}
+        return {"description": "新题目", "mistake_summary": "新错因", "model": "mock-model"}
 
     monkeypatch.setattr(ai, "generate", generate)
     with connect(write=True) as conn:
@@ -111,7 +111,7 @@ def test_quota_read_and_reservation_hold_write_lock_until_commit(client, monkeyp
             # 模拟另一请求/支付写入；网络生成阶段必须已经释放写锁。
             competitor.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
         checks.append("committed")
-        return {"description": "新题目", "model": "mock-model"}
+        return {"description": "新题目", "mistake_summary": "新错因", "model": "mock-model"}
 
     monkeypatch.setattr(main, "ai_quota", competing_writer_is_blocked)
     monkeypatch.setattr(ai, "generate", generate_after_commit)

@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS problems (
     code TEXT NOT NULL,
     thinking TEXT NOT NULL,
     created_at TEXT NOT NULL
+    -- zone 由 init_db() 迁移补上，兼容在这个列加入前就已存在的旧数据库文件。
 );
 
 CREATE INDEX IF NOT EXISTS idx_problems_user
@@ -208,6 +209,26 @@ WHERE post_id IS NOT NULL AND resolved_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_unique_pending_comment
 ON reports(reporter_user_id, comment_id)
 WHERE comment_id IS NOT NULL AND resolved_at IS NULL;
+
+-- 头像举报单独建表，而不是往 reports 加一列：reports 表已有的 CHECK
+-- 约束（post_id/comment_id 二选一）没法通过 ALTER TABLE 改掉，SQLite
+-- 修改已有 CHECK 约束必须整表重建；新开一张表可以让新库和旧库用同一份
+-- schema，不用给这次改动单独写一次"重建表"迁移。
+CREATE TABLE IF NOT EXISTS avatar_reports (
+    id INTEGER PRIMARY KEY,
+    reporter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    avatar_owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_avatar_reports_resolved
+ON avatar_reports(resolved_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_avatar_reports_unique_pending
+ON avatar_reports(reporter_user_id, avatar_owner_id)
+WHERE resolved_at IS NULL;
 """
 
 # CREATE TABLE IF NOT EXISTS 不会给旧表补列，需要按需 ALTER TABLE ADD COLUMN；
@@ -229,11 +250,23 @@ USER_COLUMN_MIGRATIONS = (
         "is_banned",
         "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0",
     ),
+    (
+        "avatar_version",
+        "ALTER TABLE users ADD COLUMN avatar_version INTEGER NOT NULL DEFAULT 0",
+    ),
 )
 
 
 ORDER_COLUMN_MIGRATIONS = (
     ("refunded_at", "ALTER TABLE orders ADD COLUMN refunded_at TEXT"),
+)
+
+
+PROBLEM_COLUMN_MIGRATIONS = (
+    (
+        "zone",
+        "ALTER TABLE problems ADD COLUMN zone TEXT NOT NULL DEFAULT '算法'",
+    ),
 )
 
 
@@ -273,6 +306,11 @@ def init_db():
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
         for column, statement in ORDER_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(problems)")}
+        for column, statement in PROBLEM_COLUMN_MIGRATIONS:
             if column not in existing:
                 conn.execute(statement)
 

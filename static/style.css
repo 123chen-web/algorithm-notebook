@@ -22,6 +22,50 @@ button, input, textarea, select, a, summary { -webkit-tap-highlight-color: trans
 .brand-copy h1, .header h1 { margin: 0; font-size: 21px; letter-spacing: .04em; }
 .header .muted { margin: 3px 0 0; font-size: 12px; }
 .user-meta { display: flex; align-items: center; justify-content: flex-end; gap: 16px; text-align: right; }
+.my-avatar-wrap { display: flex; flex-shrink: 0; align-items: center; gap: 10px; }
+.avatar {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+  object-fit: cover;
+  user-select: none;
+}
+.avatar-sm { width: 22px; height: 22px; font-size: 11px; }
+.avatar-actions { display: flex; flex-shrink: 0; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; white-space: nowrap; }
+.avatar-upload-label {
+  min-height: 0;
+  padding: 0;
+  color: var(--accent-hover);
+  font-weight: 550;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#remove-avatar-btn {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+#remove-avatar-btn:hover { background: none; color: var(--danger); }
+.author-line { display: flex; align-items: center; gap: 8px; }
 .trial-banner { margin: 16px 0 0; padding: 10px 16px; border: 1px solid #ecd9c8; border-radius: var(--radius-sm); background: var(--soft); color: var(--accent); font-size: 13px; font-weight: 550; }
 #user-info { max-width: 290px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #logout { padding: 7px 12px; font-size: 13px; flex-shrink: 0; }
@@ -76,6 +120,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .page-heading { margin: 26px 0 22px; }
 .page-heading h2 { margin: 0 0 6px; }
 .page-heading p { margin: 5px 0; }
+.zone-filter { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.zone-filter select { width: auto; }
 .workspace { display: grid; grid-template-columns: 298px minmax(0, 1fr); gap: 24px; align-items: start; }
 #cards { min-width: 0; }
 .record-button { position: relative; display: block; width: 100%; text-align: left; padding: 18px 18px 16px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fffefc99; }

@@ -1,4 +1,5 @@
 import hashlib
+import io
 import logging
 import os
 import re
@@ -9,19 +10,22 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, UnidentifiedImageError
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     StringConstraints,
     field_validator,
+    model_validator,
 )
 
 import ai
@@ -39,8 +43,10 @@ DUMMY_PASSWORD = "0" * 32 + ":" + "0" * 64
 Title = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
 ]
+# 错因描述现在是可选的：留空时由 AI 在生成练习题时自动诊断并回填，
+# 不再要求用户先自己说清楚错在哪。
 MistakeText = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    str, StringConstraints(strip_whitespace=True, max_length=2000)
 ]
 ThinkingText = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
@@ -55,6 +61,20 @@ CommentBody = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
 ]
 
+# 题目分区：先给一版常见方向，后续要增删分区目前需要改这里。
+# CODE_ZONES 要求填写编程语言，且"当时的代码"就是字面意义的代码；
+# 数学类分区没有编程语言，"当时的代码"是解题过程/演算，字段名不变但语义更宽。
+CODE_ZONES = ("算法", "前端", "后端", "数据库", "系统设计")
+NON_CODE_ZONES = ("高等数学", "线性代数", "概率统计")
+PROBLEM_ZONES = CODE_ZONES + NON_CODE_ZONES
+
+# 头像：只接受这几种真实解码出来的格式（不看文件名后缀或请求头，
+# 防止伪装成图片的其他文件类型）；上传后统一重新编码成正方形 JPEG，
+# 顺带清掉原图可能带的 EXIF 等元数据、绝不直接保存用户上传的原始字节。
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_SIZE = 256
+ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
+
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
 # 而不是注册时的格式检查，所以没有引入额外的邮箱校验依赖。
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -66,7 +86,7 @@ class InputModel(BaseModel):
 
 class Credentials(InputModel):
     username: str = Field(pattern=r"^[A-Za-z0-9_]{3,32}$")
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 def normalize_timezone(value):
@@ -120,7 +140,7 @@ class ForgotPassword(InputModel):
 
 class ResetPassword(InputModel):
     token: str = Field(min_length=1, max_length=512)
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class EmailUpdate(InputModel):
@@ -134,11 +154,26 @@ class EmailUpdate(InputModel):
 
 class ProblemFields(InputModel):
     title: Title
+    zone: str
+    # 数学类分区没有编程语言，允许留空；是否必填由下面的整体校验按分区判断。
     language: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
-    ]
+        str, StringConstraints(strip_whitespace=True, max_length=40)
+    ] = ""
     code: str = Field(min_length=1, max_length=40000)
     thinking: ThinkingText
+
+    @field_validator("zone")
+    @classmethod
+    def valid_zone(cls, value):
+        if value not in PROBLEM_ZONES:
+            raise ValueError("请选择一个有效的题目分区")
+        return value
+
+    @model_validator(mode="after")
+    def language_required_for_code_zones(self):
+        if self.zone in CODE_ZONES and not self.language:
+            raise ValueError("这个分区需要填写编程语言")
+        return self
 
     @field_validator("code")
     @classmethod
@@ -285,6 +320,59 @@ def public_base_url():
     return os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
+def avatar_dir():
+    # 相对路径以项目目录为基准，跟 DATABASE_PATH 的解析方式一致；
+    # 放在 data/ 下面，备份时复制整个 data 目录就会一起带上。
+    path = Path(os.getenv("AVATAR_DIR", "data/avatars")).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def avatar_path(user_id):
+    return avatar_dir() / f"{user_id}.jpg"
+
+
+def decode_avatar_image(content: bytes) -> Image.Image:
+    # verify() 只检查文件没有损坏，之后这个 Image 对象不能再用来处理，
+    # 必须从同一份字节重新 open 一次；再调用 load() 强制完整解码，
+    # 防止头部合法但数据被截断的文件绕过 verify()。
+    try:
+        Image.open(io.BytesIO(content)).verify()
+        image = Image.open(io.BytesIO(content))
+        image.load()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        # DecompressionBombError：Pillow 按文件头声明的像素数提前拒绝，
+        # 不会真的去解码一个几万乘几万像素的图片撑爆内存；这里只是把它
+        # 也归为"文件不是有效的图片"，不让它变成一个裸的 500。
+        raise HTTPException(400, "文件不是有效的图片") from None
+    if image.format not in ALLOWED_AVATAR_FORMATS:
+        raise HTTPException(400, "只支持 JPEG、PNG 或 WebP 格式的图片")
+    return image
+
+
+def resize_avatar_to_square_jpeg(image: Image.Image) -> bytes:
+    if image.mode in ("RGBA", "LA", "P"):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (255, 255, 255))
+        background.paste(rgba, mask=rgba.split()[-1])
+        image = background
+    else:
+        image = image.convert("RGB")
+
+    width, height = image.size
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    image = image.crop((left, top, left + side, top + side))
+    image = image.resize((AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue()
+
+
 def token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -339,7 +427,7 @@ def current_user(request: Request):
         row = conn.execute(
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
-                   u.plan_id, u.plan_expires_at, u.is_banned
+                   u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ?
@@ -369,7 +457,7 @@ def require_admin(user):
 
 
 MISTAKE_SELECT = """
-SELECT m.*, p.title, p.language, p.code, p.thinking
+SELECT m.*, p.title, p.zone, p.language, p.code, p.thinking
 FROM mistakes m
 JOIN problems p ON p.id = m.problem_id
 """
@@ -735,6 +823,62 @@ def update_email(data: EmailUpdate, user=Depends(current_user)):
     return {"ok": True, "email": data.email}
 
 
+@app.post("/api/me/avatar")
+async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)):
+    require_not_trial(user, "上传头像")
+    content = await file.read(AVATAR_MAX_BYTES + 1)
+    if len(content) > AVATAR_MAX_BYTES:
+        raise HTTPException(413, "图片太大，最多 2MB")
+    if not content:
+        raise HTTPException(400, "文件是空的")
+
+    image = decode_avatar_image(content)
+    jpeg_bytes = await run_in_threadpool(resize_avatar_to_square_jpeg, image)
+
+    directory = avatar_dir()
+    final_path = avatar_path(user["id"])
+    # 先写临时文件再原子替换，避免另一个请求读到写了一半的文件。
+    temp_path = directory / f".{user['id']}-{secrets.token_hex(8)}.tmp"
+    temp_path.write_bytes(jpeg_bytes)
+    os.replace(temp_path, final_path)
+
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            (user["id"],),
+        )
+        avatar_version = conn.execute(
+            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["avatar_version"]
+    return {"ok": True, "avatar_version": avatar_version}
+
+
+@app.delete("/api/me/avatar")
+def delete_own_avatar(user=Depends(current_user)):
+    avatar_path(user["id"]).unlink(missing_ok=True)
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            (user["id"],),
+        )
+        avatar_version = conn.execute(
+            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["avatar_version"]
+    return {"ok": True, "avatar_version": avatar_version}
+
+
+@app.get("/api/users/{user_id}/avatar")
+def get_avatar(user_id: int, user=Depends(current_user)):
+    path = avatar_path(user_id)
+    if not path.is_file():
+        raise HTTPException(404, "这个用户还没有头像")
+    # URL 本身不带版本号；前端用 ?v=avatar_version 做缓存失效，
+    # 这里可以放心用较长的缓存时间。
+    return FileResponse(
+        path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"}
+    )
+
+
 @app.get("/api/plans")
 def list_plans(user=Depends(current_user)):
     return {"plans": payments.list_plans()}
@@ -821,6 +965,11 @@ async def wechat_payment_callback(request: Request):
     return JSONResponse({"code": "SUCCESS", "message": "成功"})
 
 
+@app.get("/api/zones")
+def list_zones():
+    return {"zones": list(PROBLEM_ZONES), "code_zones": list(CODE_ZONES)}
+
+
 @app.post("/api/problems", status_code=201)
 def create_problem(data: NewProblem, user=Depends(current_user)):
     day = today_for(user).isoformat()
@@ -828,11 +977,11 @@ def create_problem(data: NewProblem, user=Depends(current_user)):
         cursor = conn.execute(
             """
             INSERT INTO problems(
-                user_id, title, language, code, thinking, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                user_id, title, zone, language, code, thinking, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                user["id"], data.title, data.language,
+                user["id"], data.title, data.zone, data.language,
                 data.code, data.thinking, utc_now(),
             ),
         )
@@ -858,10 +1007,13 @@ def edit_problem(problem_id: int, data: ProblemEdit, user=Depends(current_user))
         conn.execute(
             """
             UPDATE problems
-            SET title = ?, language = ?, code = ?, thinking = ?
+            SET title = ?, zone = ?, language = ?, code = ?, thinking = ?
             WHERE id = ?
             """,
-            (data.title, data.language, data.code, data.thinking, problem_id),
+            (
+                data.title, data.zone, data.language,
+                data.code, data.thinking, problem_id,
+            ),
         )
         updated = conn.execute(
             "SELECT * FROM problems WHERE id = ?", (problem_id,)
@@ -879,13 +1031,18 @@ def delete_problem(problem_id: int, user=Depends(current_user)):
 
 
 @app.get("/api/mistakes")
-def list_mistakes(due_only: bool = True, user=Depends(current_user)):
+def list_mistakes(due_only: bool = True, zone: str | None = None, user=Depends(current_user)):
+    if zone is not None and zone not in PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
     day = today_for(user).isoformat()
     sql = MISTAKE_SELECT + " WHERE p.user_id = ?"
     params = [user["id"]]
     if due_only:
         sql += " AND m.due_date <= ?"
         params.append(day)
+    if zone is not None:
+        sql += " AND p.zone = ?"
+        params.append(zone)
     sql += " ORDER BY m.due_date ASC, m.id ASC"
 
     with connect() as conn:
@@ -1019,7 +1176,9 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
     generated = ai.generate(item)
 
     with connect(write=True) as conn:
-        owned_mistake(conn, mistake_id, user["id"])
+        # 重新读取当前错因：生成期间用户可能已经自己编辑过，不能用生成前的
+        # 旧快照来判断是否需要回填，否则可能覆盖掉用户刚写的内容。
+        current = owned_mistake(conn, mistake_id, user["id"])
         cursor = conn.execute(
             """
             INSERT INTO variants(mistake_id, description, model, created_at)
@@ -1030,11 +1189,17 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
                 generated["model"], utc_now(),
             ),
         )
+        if not current["description"].strip():
+            conn.execute(
+                "UPDATE mistakes SET description = ? WHERE id = ?",
+                (generated["mistake_summary"], mistake_id),
+            )
+            current["description"] = generated["mistake_summary"]
         variant = conn.execute(
             "SELECT * FROM variants WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
-    return dict(variant)
+    return {**dict(variant), "mistake_description": current["description"]}
 
 
 @app.put("/api/variants/{variant_id}/result")
@@ -1192,7 +1357,8 @@ def list_posts(user=Depends(current_user)):
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.title, p.created_at, u.username,
+            SELECT p.id, p.title, p.created_at, p.user_id, u.username,
+                   u.avatar_version,
                    (
                        SELECT COUNT(*) FROM post_comments c
                        WHERE c.post_id = p.id AND c.deleted_at IS NULL
@@ -1231,7 +1397,7 @@ def get_post(post_id: int, user=Depends(current_user)):
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT p.*, u.username
+            SELECT p.*, u.username, u.avatar_version
             FROM posts p
             JOIN users u ON u.id = p.user_id
             WHERE p.id = ? AND p.deleted_at IS NULL
@@ -1243,7 +1409,8 @@ def get_post(post_id: int, user=Depends(current_user)):
         post = dict(row)
         comments = conn.execute(
             """
-            SELECT c.id, c.user_id, c.body, c.created_at, c.updated_at, u.username
+            SELECT c.id, c.user_id, c.body, c.created_at, c.updated_at,
+                   u.username, u.avatar_version
             FROM post_comments c
             JOIN users u ON u.id = c.user_id
             WHERE c.post_id = ? AND c.deleted_at IS NULL
@@ -1377,6 +1544,35 @@ def report_comment(comment_id: int, data: ReportInput, user=Depends(current_user
     return create_report(user, comment_id=comment_id, reason=data.reason)
 
 
+@app.post("/api/users/{user_id}/avatar/report", status_code=201)
+def report_avatar(user_id: int, data: ReportInput, user=Depends(current_user)):
+    require_not_trial(user, "举报")
+    if user_id == user["id"]:
+        raise HTTPException(400, "不能举报自己的头像")
+    # 复用和帖子/评论举报同一个限流计数：同一个人短时间内狂发举报，
+    # 不管举报的是什么内容，都是同一类滥用。
+    if rate_limited(f"report:{user['id']}", REPORT_LIMIT, REPORT_WINDOW_SECONDS):
+        raise HTTPException(429, "举报过于频繁，请稍后再试")
+    with connect(write=True) as conn:
+        target = conn.execute(
+            "SELECT id FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if target is None:
+            raise HTTPException(404, "用户不存在")
+        try:
+            conn.execute(
+                """
+                INSERT INTO avatar_reports(
+                    reporter_user_id, avatar_owner_id, reason, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (user["id"], user_id, data.reason, utc_now()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "你已经举报过这个头像，管理员正在处理") from None
+    return {"ok": True}
+
+
 def resolve_reports_for(conn, *, post_id=None, comment_id=None):
     now = utc_now()
     if post_id is not None:
@@ -1418,7 +1614,24 @@ def list_reports(user=Depends(current_user)):
             ORDER BY r.created_at ASC
             """
         ).fetchall()
-    return {"reports": [dict(row) for row in rows]}
+        avatar_rows = conn.execute(
+            """
+            SELECT
+                a.id, a.reason, a.created_at, a.avatar_owner_id,
+                reporter.username AS reporter_username,
+                owner.username AS avatar_owner_username,
+                owner.avatar_version AS avatar_owner_avatar_version
+            FROM avatar_reports a
+            JOIN users reporter ON reporter.id = a.reporter_user_id
+            JOIN users owner ON owner.id = a.avatar_owner_id
+            WHERE a.resolved_at IS NULL
+            ORDER BY a.created_at ASC
+            """
+        ).fetchall()
+    reports = [{"type": ("post" if row["post_id"] is not None else "comment"), **dict(row)} for row in rows]
+    reports += [{"type": "avatar", **dict(row)} for row in avatar_rows]
+    reports.sort(key=lambda report: report["created_at"])
+    return {"reports": reports}
 
 
 @app.post("/api/admin/reports/{report_id}/resolve")
@@ -1427,6 +1640,19 @@ def admin_resolve_report(report_id: int, user=Depends(current_user)):
     with connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE reports SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL",
+            (utc_now(), report_id),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(404, "举报不存在或已处理")
+    return {"ok": True}
+
+
+@app.post("/api/admin/avatar-reports/{report_id}/resolve")
+def admin_resolve_avatar_report(report_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE avatar_reports SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL",
             (utc_now(), report_id),
         )
         if cursor.rowcount != 1:
@@ -1456,6 +1682,27 @@ def admin_delete_comment(comment_id: int, user=Depends(current_user)):
             (utc_now(), comment_id),
         )
         resolve_reports_for(conn, comment_id=comment_id)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/users/{user_id}/avatar")
+def admin_clear_avatar(user_id: int, user=Depends(current_user)):
+    require_admin(user)
+    avatar_path(user_id).unlink(missing_ok=True)
+    with connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            (user_id,),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(404, "用户不存在")
+        conn.execute(
+            """
+            UPDATE avatar_reports SET resolved_at = ?
+            WHERE avatar_owner_id = ? AND resolved_at IS NULL
+            """,
+            (utc_now(), user_id),
+        )
     return {"ok": True}
 
 

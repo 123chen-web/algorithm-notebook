@@ -23,6 +23,8 @@ let planPurchase = null;
 let orderPollTimer = null;
 let orderPollGeneration = 0;
 let forumPost = null;
+let zones = [];
+let codeZones = new Set();
 
 const ORDER_POLL_INTERVAL = 3000;
 const ORDER_POLL_DURATION = 5 * 60 * 1000;
@@ -32,6 +34,55 @@ function element(tag, text = "", className = "") {
   node.textContent = text;
   if (className) node.className = className;
   return node;
+}
+
+function avatarHue(username) {
+  let hash = 0;
+  for (const char of username) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % 360;
+}
+
+// avatarVersion > 0 时用户上传过头像，走真实图片；否则用用户名首字母的
+// 纯色圆形占位，颜色由用户名哈希决定——同一个人每次看到的颜色都一样。
+function avatarElement(userId, username, avatarVersion, { small = false } = {}) {
+  const className = small ? "avatar avatar-sm" : "avatar";
+  if (avatarVersion > 0) {
+    const img = document.createElement("img");
+    img.className = className;
+    img.src = `/api/users/${userId}/avatar?v=${avatarVersion}`;
+    img.alt = `${username} 的头像`;
+    return img;
+  }
+  const fallback = element("span", (username || "?").slice(0, 1).toUpperCase(), className);
+  fallback.style.background = `hsl(${avatarHue(username || "")}, 55%, 45%)`;
+  fallback.setAttribute("aria-hidden", "true");
+  return fallback;
+}
+
+// 举报某个用户的头像；用在帖子/评论作者旁边，跟举报帖子/评论内容是两件事。
+// onCancel 通常是把界面切回举报前的只读状态。
+function avatarReportForm(userId, onCancel) {
+  const reason = textarea("", 500, 3);
+  const submit = element("button", "提交举报", "primary");
+  submit.type = "submit";
+  const cancel = element("button", "取消");
+  cancel.type = "button";
+  cancel.addEventListener("click", onCancel);
+
+  const form = document.createElement("form");
+  form.append(field("举报头像的原因（可选）", reason), submit, cancel);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(async () => {
+      await api(`/api/users/${userId}/avatar/report`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.value }),
+      });
+      message("已提交头像举报，管理员会尽快处理。");
+      onCancel();
+    });
+  });
+  return form;
 }
 
 function message(text = "", error = false) {
@@ -71,6 +122,8 @@ function signedOut() {
   $("#app").hidden = true;
   $("#logout").hidden = true;
   $("#user-info").textContent = "";
+  $("#my-avatar-wrap").hidden = true;
+  $("#avatar-file-input").value = "";
   $("#email-prompt").hidden = true;
   $("#trial-banner").hidden = true;
   showAuthPanels(["login-form", "register-form"]);
@@ -126,6 +179,29 @@ async function api(path, options = {}) {
     throw error;
   }
 
+  return data;
+}
+
+async function uploadAvatarFile(file) {
+  const body = new FormData();
+  body.append("file", file);
+  // 不能像 api() 那样固定 Content-Type: application/json——multipart 请求
+  // 的 boundary 必须由浏览器自己生成，手动设置反而会破坏它。
+  const response = await fetch("/api/me/avatar", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "X-CSRF-Protection": "1" },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) signedOut();
+    const detail = data.detail;
+    const text = typeof detail === "object" && detail !== null ? detail.message : detail;
+    const error = new Error(String(text || "上传失败，请稍后重试"));
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -187,6 +263,55 @@ function updateUserInfo() {
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
   $("#admin-tab").hidden = !user.is_admin;
+
+  $("#my-avatar-wrap").hidden = false;
+  $("#my-avatar").replaceWith(
+    Object.assign(avatarElement(user.id, user.username, user.avatar_version), { id: "my-avatar" })
+  );
+  $(".avatar-upload-label").hidden = user.is_trial;
+  $("#remove-avatar-btn").hidden = user.is_trial || !(user.avatar_version > 0);
+}
+
+async function loadZones() {
+  const data = await api("/api/zones");
+  zones = data.zones;
+  codeZones = new Set(data.code_zones);
+
+  const problemZone = $("#problem-zone");
+  problemZone.replaceChildren();
+  for (const zone of zones) {
+    const option = element("option", zone);
+    option.value = zone;
+    problemZone.append(option);
+  }
+
+  const zoneFilter = $("#zone-filter");
+  for (const zone of zones) {
+    const option = element("option", zone);
+    option.value = zone;
+    zoneFilter.append(option);
+  }
+
+  applyZoneFieldMode($("#problem-form"), problemZone.value);
+}
+
+// 编程类分区要求填写编程语言，"代码"字段就是字面意义的代码；
+// 数学类分区没有编程语言，同一个字段改用来记录解题过程/演算。
+function applyZoneFieldMode(form, zoneValue) {
+  const isCode = codeZones.has(zoneValue);
+  const languageField = form.querySelector("[data-role=language-field]");
+  const languageInput = form.querySelector("[name=language]");
+  const codeLabel = form.querySelector("[data-role=code-label]");
+  languageField.hidden = !isCode;
+  languageInput.required = isCode;
+  if (!isCode) languageInput.value = "";
+  codeLabel.textContent = isCode ? "当时的代码" : "当时的解题过程";
+  const codeInput = codeLabel.nextElementSibling;
+  if (codeInput) {
+    codeInput.placeholder = isCode
+      ? "粘贴当时的代码，保留错误也没关系。"
+      : "写下当时的解题过程或演算，保留错误也没关系。";
+  }
 }
 
 async function enterApp() {
@@ -195,6 +320,7 @@ async function enterApp() {
   $("#app").hidden = false;
   $("#logout").hidden = false;
   updateUserInfo();
+  await loadZones();
   await showView("today");
 }
 
@@ -542,7 +668,9 @@ async function loadPlanPage() {
 }
 
 async function loadList() {
-  const data = await api(`/api/mistakes?due_only=${view === "today"}`);
+  const zoneParam = $("#zone-filter").value;
+  const query = `due_only=${view === "today"}` + (zoneParam ? `&zone=${encodeURIComponent(zoneParam)}` : "");
+  const data = await api(`/api/mistakes?${query}`);
   user.today = data.today;
   updateUserInfo();
 
@@ -577,8 +705,8 @@ async function loadList() {
     button.setAttribute("aria-pressed", "false");
     button.append(
       element("strong", item.title),
-      element("span", item.description, "record-description"),
-      element("small", `${item.due_date <= data.today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted")
+      element("span", item.description || "错因待 AI 诊断", "record-description"),
+      element("small", `${item.zone} · ${item.due_date <= data.today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted")
     );
     button.addEventListener("click", () => run(() => openMistake(item.id)));
     $("#cards").append(button);
@@ -596,6 +724,26 @@ async function openMistake(id) {
   });
 
   renderDetail(item);
+}
+
+const VARIANT_SECTION_PATTERN =
+  /^【错因】\s*\n([\s\S]*?)\n【讲解】\s*\n([\s\S]*?)\n【核心知识点】\s*\n([\s\S]*?)\n【练习题】\s*\n([\s\S]*)$/;
+
+function renderVariantDescription(text) {
+  const match = text.trim().match(VARIANT_SECTION_PATTERN);
+  if (!match) {
+    // 这条变体题是四段式格式上线之前生成的，仍按原来的纯文本展示。
+    return element("pre", text, "prose");
+  }
+  const [, summary, explanation, knowledge, question] = match;
+  const wrap = element("div", "", "variant-sections");
+  for (const [label, content] of [
+    ["错因", summary], ["讲解", explanation],
+    ["核心知识点", knowledge], ["练习题", question],
+  ]) {
+    wrap.append(element("h4", label), element("p", content.trim(), "multiline"));
+  }
+  return wrap;
 }
 
 function renderVariant(variant) {
@@ -658,7 +806,7 @@ function renderVariant(variant) {
 
   box.append(
     summary,
-    element("pre", variant.description, "prose"),
+    renderVariantDescription(variant.description),
     savedAt,
     form
   );
@@ -672,7 +820,10 @@ function renderMistakeText(item) {
     const editBtn = element("button", "编辑这条错因");
     editBtn.type = "button";
     editBtn.addEventListener("click", editForm);
-    wrap.replaceChildren(element("p", item.description, "multiline"), editBtn);
+    const text = item.description
+      ? element("p", item.description, "multiline")
+      : element("p", "还没有错因描述，点击下面「诊断错因并出一道新题」让 AI 帮你反推。", "muted");
+    wrap.replaceChildren(text, editBtn);
   }
 
   function editForm() {
@@ -684,7 +835,7 @@ function renderMistakeText(item) {
     cancel.addEventListener("click", readOnly);
 
     const form = document.createElement("form");
-    form.append(field("哪里容易错，为什么会错？", input), save, cancel);
+    form.append(field("哪里容易错，为什么会错？（可选）", input), save, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
@@ -717,7 +868,7 @@ function renderProblemEditor(item) {
     wrap.replaceChildren(
       element("h4", "当时的思路"),
       element("p", item.thinking, "multiline"),
-      element("h4", "当时的代码"),
+      element("h4", codeZones.has(item.zone) ? "当时的代码" : "当时的解题过程"),
       element("pre", item.code, "code"),
       editBtn
     );
@@ -729,12 +880,29 @@ function renderProblemEditor(item) {
     title.maxLength = 200;
     title.required = true;
 
+    const zoneSelect = document.createElement("select");
+    zoneSelect.required = true;
+    for (const zone of zones) {
+      const option = element("option", zone);
+      option.value = zone;
+      zoneSelect.append(option);
+    }
+    zoneSelect.value = item.zone;
+
     const language = document.createElement("input");
+    language.name = "language";
     language.value = item.language;
     language.maxLength = 40;
-    language.required = true;
+    const languageField = element("label", "编程语言", "");
+    languageField.dataset.role = "language-field";
+    languageField.append(language);
 
     const code = textarea(item.code, 40000, 10, true);
+    const codeLabelText = element("span", "当时的代码");
+    codeLabelText.dataset.role = "code-label";
+    const codeField = element("label");
+    codeField.append(codeLabelText, code);
+
     const thinking = textarea(item.thinking, 8000, 4);
 
     const save = element("button", "保存题目信息", "primary");
@@ -744,10 +912,12 @@ function renderProblemEditor(item) {
     cancel.addEventListener("click", readOnly);
 
     const form = document.createElement("form");
+    zoneSelect.addEventListener("change", () => applyZoneFieldMode(form, zoneSelect.value));
     form.append(
       field("标题", title),
-      field("编程语言", language),
-      field("代码", code),
+      field("分区", zoneSelect),
+      languageField,
+      codeField,
       field("思路", thinking),
       save,
       cancel
@@ -759,6 +929,7 @@ function renderProblemEditor(item) {
           method: "PUT",
           body: JSON.stringify({
             title: title.value,
+            zone: zoneSelect.value,
             language: language.value,
             code: code.value,
             thinking: thinking.value,
@@ -770,6 +941,7 @@ function renderProblemEditor(item) {
     });
 
     wrap.replaceChildren(form);
+    applyZoneFieldMode(form, zoneSelect.value);
   }
 
   readOnly();
@@ -798,12 +970,13 @@ function renderDetail(item) {
   const heading = element("div", "", "detail-heading");
   heading.append(
     element("h2", item.title),
-    element("p", item.language, "language-badge")
+    element("p", item.language ? `${item.zone} · ${item.language}` : item.zone, "language-badge")
   );
+  let mistakeTextNode = renderMistakeText(item);
   root.append(
     heading,
     element("h3", "这次需要记住的错因", "section-label"),
-    renderMistakeText(item),
+    mistakeTextNode,
     element(
       "p",
       `下次复习：${item.due_date} · 连续成功：${item.repetitions} 次`,
@@ -910,10 +1083,11 @@ function renderDetail(item) {
 
   const aiSection = element("section", "", "ai-section");
   aiSection.append(
-    element("h3", "同一薄弱点，再练一道"),
+    element("h3", "诊断错因，再练一道"),
     element(
       "p",
-      "生成时会将这道题的代码、思路和当前易错点发送给 OpenAI。" +
+      "生成时会把这道题的代码（或解题过程）、思路发送给 OpenAI；" +
+      "错因没填时 AI 会自己反推，已经填了则作为参考。" +
       `每天最多 ${user.ai_daily_limit} 次尝试，失败也计入次数。`,
       "muted"
     ),
@@ -933,7 +1107,7 @@ function renderDetail(item) {
 
   const generate = element(
     "button",
-    user.ai_enabled ? "围绕这个错因，出一道新题" : "AI 尚未配置，暂时无法出题",
+    user.ai_enabled ? "诊断错因并出一道新题" : "AI 尚未配置，暂时无法出题",
     "primary"
   );
   generate.type = "button";
@@ -941,13 +1115,19 @@ function renderDetail(item) {
   generate.disabled = !user.ai_enabled;
 
   generate.addEventListener("click", () => run(async () => {
-    message("AI 正在围绕这条错因出题，可能需要一两分钟。请保持页面打开。");
+    message("AI 正在诊断错因、准备讲解和新题目，可能需要一两分钟。请保持页面打开。");
     const variant = await api(`/api/mistakes/${item.id}/variants`, {
       method: "POST",
     });
     empty.remove();
     variants.prepend(renderVariant(variant));
-    message("变体题已生成并保存。");
+    if (variant.mistake_description !== item.description) {
+      item.description = variant.mistake_description;
+      const updated = renderMistakeText(item);
+      mistakeTextNode.replaceWith(updated);
+      mistakeTextNode = updated;
+    }
+    message("讲解、知识点和新题目已生成并保存。");
   }));
 
   aiSection.append(generate, variants);
@@ -964,8 +1144,7 @@ function addMistakeInput() {
   const row = element("div", "", "mistake-row");
   const input = textarea("", 2000, 3);
   input.name = "mistake";
-  input.required = true;
-  input.placeholder = "例如：忘了检查数据范围，用 int 存 10¹⁰ 导致溢出。下次先估算范围，再选类型。";
+  input.placeholder = "不确定的话可以留空，AI 会从代码和思路里帮你反推错因。";
 
   const remove = element("button", "移除这条输入");
   remove.type = "button";
@@ -973,7 +1152,7 @@ function addMistakeInput() {
     if (container.children.length > 1) row.remove();
   });
 
-  row.append(field("哪里容易错，为什么会错？", input), remove);
+  row.append(field("哪里容易错，为什么会错？（可选）", input), remove);
   container.append(row);
 }
 
@@ -1098,6 +1277,31 @@ document.querySelectorAll("[data-view]").forEach((button) => {
   }));
 });
 
+$("#zone-filter").addEventListener("change", () => run(loadList));
+
+$("#problem-zone").addEventListener("change", (event) => {
+  applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
+});
+
+$("#avatar-file-input").addEventListener("change", (event) => {
+  const file = event.currentTarget.files[0];
+  if (!file) return;
+  run(async () => {
+    const result = await uploadAvatarFile(file);
+    user.avatar_version = result.avatar_version;
+    updateUserInfo();
+    event.currentTarget.value = "";
+    message("头像已更新。");
+  });
+});
+
+$("#remove-avatar-btn").addEventListener("click", () => run(async () => {
+  const result = await api("/api/me/avatar", { method: "DELETE" });
+  user.avatar_version = result.avatar_version;
+  updateUserInfo();
+  message("头像已移除。");
+}));
+
 $("#refresh").addEventListener("click", () => run(async () => {
   if (view === "admin") {
     message();
@@ -1146,6 +1350,7 @@ $("#problem-form").addEventListener("submit", (event) => {
       method: "POST",
       body: JSON.stringify({
         title: data.get("title"),
+        zone: data.get("zone"),
         language: data.get("language"),
         code: data.get("code"),
         thinking: data.get("thinking"),
@@ -1154,6 +1359,7 @@ $("#problem-form").addEventListener("submit", (event) => {
     });
 
     form.reset();
+    applyZoneFieldMode(form, form.zone.value);
     $("#mistake-inputs").replaceChildren();
     addMistakeInput();
     await showView("today");
@@ -1183,14 +1389,15 @@ async function loadForumPosts() {
   for (const post of posts) {
     const row = element("button", "", "record-button");
     row.type = "button";
-    row.append(
-      element("strong", post.title),
+    const authorLine = element("div", "", "author-line muted");
+    authorLine.append(
+      avatarElement(post.user_id, post.username, post.avatar_version, { small: true }),
       element(
         "small",
-        `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`,
-        "muted"
+        `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`
       )
     );
+    row.append(element("strong", post.title), authorLine);
     row.addEventListener("click", () => run(() => openForumPost(post.id)));
     list.append(row);
   }
@@ -1217,14 +1424,18 @@ function renderForumPost(post) {
 
   function readOnly() {
     root.replaceChildren();
+    const authorLine = element("p", "", "muted author-line");
+    authorLine.append(
+      avatarElement(post.user_id, post.username, post.avatar_version, { small: true }),
+      element(
+        "span",
+        `${post.username} · ${timestamp(post.created_at)}` +
+          (post.updated_at ? `（编辑于 ${timestamp(post.updated_at)}）` : "")
+      )
+    );
     root.append(
       element("h2", post.title),
-      element(
-        "p",
-        `${post.username} · ${timestamp(post.created_at)}` +
-          (post.updated_at ? `（编辑于 ${timestamp(post.updated_at)}）` : ""),
-        "muted"
-      ),
+      authorLine,
       element("p", post.body, "multiline")
     );
     if (user.id === post.user_id) {
@@ -1247,7 +1458,12 @@ function renderForumPost(post) {
       const reportBtn = element("button", "举报这条帖子");
       reportBtn.type = "button";
       reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
-      actions.append(reportBtn);
+      const reportAvatarBtn = element("button", "举报头像");
+      reportAvatarBtn.type = "button";
+      reportAvatarBtn.addEventListener("click", () =>
+        actions.replaceWith(avatarReportForm(post.user_id, readOnly))
+      );
+      actions.append(reportBtn, reportAvatarBtn);
       root.append(actions);
     }
   }
@@ -1321,15 +1537,16 @@ function renderForumComment(comment) {
 
   function readOnly() {
     wrap.replaceChildren();
-    wrap.append(
+    const meta = element("p", "", "muted forum-comment-meta author-line");
+    meta.append(
+      avatarElement(comment.user_id, comment.username, comment.avatar_version, { small: true }),
       element(
-        "p",
+        "span",
         `${comment.username} · ${timestamp(comment.created_at)}` +
-          (comment.updated_at ? `（编辑于 ${timestamp(comment.updated_at)}）` : ""),
-        "muted forum-comment-meta"
-      ),
-      element("p", comment.body, "multiline")
+          (comment.updated_at ? `（编辑于 ${timestamp(comment.updated_at)}）` : "")
+      )
     );
+    wrap.append(meta, element("p", comment.body, "multiline"));
     if (user.id === comment.user_id) {
       const editBtn = element("button", "编辑");
       editBtn.type = "button";
@@ -1350,7 +1567,12 @@ function renderForumComment(comment) {
       const reportBtn = element("button", "举报");
       reportBtn.type = "button";
       reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
-      actions.append(reportBtn);
+      const reportAvatarBtn = element("button", "举报头像");
+      reportAvatarBtn.type = "button";
+      reportAvatarBtn.addEventListener("click", () =>
+        actions.replaceWith(avatarReportForm(comment.user_id, readOnly))
+      );
+      actions.append(reportBtn, reportAvatarBtn);
       wrap.append(actions);
     }
   }
@@ -1446,7 +1668,9 @@ async function loadAdminReports() {
 }
 
 function renderAdminReport(report) {
-  const isPost = report.post_id !== null;
+  if (report.type === "avatar") return renderAdminAvatarReport(report);
+
+  const isPost = report.type === "post";
   const kind = isPost ? "帖子" : "评论";
   const authorId = isPost ? report.post_author_id : report.comment_author_id;
   const authorName = isPost
@@ -1505,6 +1729,63 @@ function renderAdminReport(report) {
   }));
 
   actions.append(deleteBtn, dismissBtn, banBtn);
+  card.append(actions);
+  return card;
+}
+
+function renderAdminAvatarReport(report) {
+  const authorId = report.avatar_owner_id;
+  const authorName = report.avatar_owner_username;
+
+  const card = element("article", "", "panel admin-report");
+  card.append(
+    element("h3", `举报的头像 · 用户 ${authorName}`),
+    element(
+      "p",
+      `举报人：${report.reporter_username} · ${timestamp(report.created_at)}`,
+      "muted"
+    )
+  );
+  if (report.reason) {
+    card.append(element("p", `举报原因：${report.reason}`));
+  }
+  const preview = avatarElement(authorId, authorName, report.avatar_owner_avatar_version);
+  preview.style.width = "96px";
+  preview.style.height = "96px";
+  preview.style.fontSize = "36px";
+  card.append(preview);
+  if (!(report.avatar_owner_avatar_version > 0)) {
+    card.append(element("p", "该用户目前没有自定义头像（可能已被清除或本人移除），只能忽略这条举报。", "muted"));
+  }
+
+  const actions = element("div", "", "actions");
+  const clearBtn = element("button", "清除该头像", "danger");
+  clearBtn.type = "button";
+  clearBtn.disabled = !(report.avatar_owner_avatar_version > 0);
+  clearBtn.addEventListener("click", () => run(async () => {
+    if (!confirm(`清除「${authorName}」的头像？无法恢复，关联的举报会一并标记为已处理。`)) return;
+    await api(`/api/admin/users/${authorId}/avatar`, { method: "DELETE" });
+    removeReportCard(card);
+    message("已清除头像，举报已处理。");
+  }));
+
+  const dismissBtn = element("button", "忽略举报");
+  dismissBtn.type = "button";
+  dismissBtn.addEventListener("click", () => run(async () => {
+    await api(`/api/admin/avatar-reports/${report.id}/resolve`, { method: "POST" });
+    removeReportCard(card);
+    message("已忽略这条举报。");
+  }));
+
+  const banBtn = element("button", `封禁 ${authorName}`, "danger");
+  banBtn.type = "button";
+  banBtn.addEventListener("click", () => run(async () => {
+    if (!confirm(`封禁账号「${authorName}」？该账号将无法再登录。`)) return;
+    await api(`/api/admin/users/${authorId}/ban`, { method: "POST" });
+    message(`已封禁 ${authorName}。`);
+  }));
+
+  actions.append(clearBtn, dismissBtn, banBtn);
   card.append(actions);
   return card;
 }

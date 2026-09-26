@@ -51,6 +51,7 @@ def new_problem(client):
         "/api/problems",
         json={
             "title": "二分查找",
+            "zone": "算法",
             "language": "Python",
             "code": "def search(a, target):\n    return -1\n",
             "thinking": "维护闭区间，但对结束条件理解不清楚。",
@@ -165,6 +166,7 @@ def test_ai_persists_results_and_limits_attempts(client, monkeypatch):
         "generate",
         lambda item: {
             "description": "新题目：在有序数组中查找第一个不小于目标值的位置。",
+            "mistake_summary": "右边界更新漏掉了等号",
             "model": "mock-model",
         },
     )
@@ -286,6 +288,7 @@ def test_edit_and_delete_problem_cascades(client, monkeypatch):
         f"/api/problems/{problem_id}",
         json={
             "title": "二分查找（修订）",
+            "zone": "算法",
             "language": "Python",
             "code": "def search(a, target):\n    return -1\n",
             "thinking": "补充了对空数组的处理。",
@@ -327,12 +330,154 @@ def test_edit_and_delete_respect_ownership(client):
         f"/api/problems/{problem_id}",
         json={
             "title": "越权修改",
+            "zone": "算法",
             "language": "Python",
             "code": "pass",
             "thinking": "x",
         },
     ).status_code == 404
     assert client.delete(f"/api/problems/{problem_id}").status_code == 404
+
+
+def test_zones_endpoint_lists_fixed_zones(client):
+    register(client)
+    response = client.get("/api/zones")
+    assert response.status_code == 200
+    assert response.json() == {
+        "zones": list(main.PROBLEM_ZONES),
+        "code_zones": list(main.CODE_ZONES),
+    }
+
+
+def test_problem_creation_rejects_unknown_zone(client):
+    register(client)
+    response = client.post(
+        "/api/problems",
+        json={
+            "title": "二分查找",
+            "zone": "生物",
+            "language": "Python",
+            "code": "pass",
+            "thinking": "x",
+            "mistakes": ["边界条件"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_problem_creation_requires_zone(client):
+    register(client)
+    response = client.post(
+        "/api/problems",
+        json={
+            "title": "二分查找",
+            "language": "Python",
+            "code": "pass",
+            "thinking": "x",
+            "mistakes": ["边界条件"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_mistakes_can_be_filtered_by_zone(client):
+    register(client)
+    # new_problem() 的题目自带两条易错点，两条都属于同一个"算法"题目。
+    algo_mistake_ids = set(new_problem(client))
+    frontend_response = client.post(
+        "/api/problems",
+        json={
+            "title": "flex 布局",
+            "zone": "前端",
+            "language": "CSS",
+            "code": ".box { display: flex; }",
+            "thinking": "以为 justify-content 能控制交叉轴对齐。",
+            "mistakes": ["主轴和交叉轴的对齐属性搞混了"],
+        },
+    )
+    assert frontend_response.status_code == 201
+    frontend_mistake_id = frontend_response.json()["mistake_ids"][0]
+
+    all_items = client.get(
+        "/api/mistakes", params={"due_only": "false"}
+    ).json()["items"]
+    assert {item["id"] for item in all_items} == algo_mistake_ids | {frontend_mistake_id}
+
+    algo_only = client.get(
+        "/api/mistakes", params={"due_only": "false", "zone": "算法"}
+    ).json()["items"]
+    assert {item["id"] for item in algo_only} == algo_mistake_ids
+
+    frontend_only = client.get(
+        "/api/mistakes", params={"due_only": "false", "zone": "前端"}
+    ).json()["items"]
+    assert [item["id"] for item in frontend_only] == [frontend_mistake_id]
+
+    assert client.get(
+        "/api/mistakes", params={"due_only": "false", "zone": "不存在的分区"}
+    ).status_code == 400
+
+
+def test_problem_zone_can_be_edited(client):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    problem_id = client.get(f"/api/mistakes/{mistake_id}").json()["problem_id"]
+
+    edited = client.put(
+        f"/api/problems/{problem_id}",
+        json={
+            "title": "二分查找",
+            "zone": "后端",
+            "language": "Python",
+            "code": "def search(a, target):\n    return -1\n",
+            "thinking": "维护闭区间，但对结束条件理解不清楚。",
+        },
+    )
+    assert edited.status_code == 200
+    assert edited.json()["zone"] == "后端"
+    assert client.get(f"/api/mistakes/{mistake_id}").json()["zone"] == "后端"
+
+
+def test_math_zone_does_not_require_language(client):
+    register(client)
+    response = client.post(
+        "/api/problems",
+        json={
+            "title": "特征值计算",
+            "zone": "线性代数",
+            "language": "",
+            "code": "把特征多项式的符号算错了，det(A - λI) 展开时漏了一项。",
+            "thinking": "先求特征多项式，再解特征值。",
+            "mistakes": ["行列式展开漏项"],
+        },
+    )
+    assert response.status_code == 201
+    mistake_id = response.json()["mistake_ids"][0]
+    assert client.get(f"/api/mistakes/{mistake_id}").json()["language"] == ""
+
+
+def test_code_zone_requires_language(client):
+    register(client)
+    missing_language = client.post(
+        "/api/problems",
+        json={
+            "title": "二分查找",
+            "zone": "算法",
+            "language": "",
+            "code": "pass",
+            "thinking": "x",
+            "mistakes": ["边界条件"],
+        },
+    )
+    assert missing_language.status_code == 422
+
+
+def test_zones_endpoint_marks_math_zones_as_non_code(client):
+    register(client)
+    data = client.get("/api/zones").json()
+    for zone in ("高等数学", "线性代数", "概率统计"):
+        assert zone in data["zones"]
+        assert zone not in data["code_zones"]
 
 
 def test_register_is_rate_limited(client):
@@ -726,7 +871,11 @@ def quota_environment(monkeypatch):
 
     def generate(item):
         calls.append(item["id"])
-        return {"description": "配额测试题目", "model": "mock-model"}
+        return {
+            "description": "配额测试题目",
+            "mistake_summary": "配额测试错因",
+            "model": "mock-model",
+        }
 
     monkeypatch.setattr(ai, "generate", generate)
     return calls

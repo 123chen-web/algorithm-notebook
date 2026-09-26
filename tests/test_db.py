@@ -131,6 +131,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "plan_id": None,
             "plan_expires_at": None,
             "is_banned": 0,
+            "avatar_version": 0,
         }
         plan_id = insert_plan(conn)
         conn.execute(
@@ -378,4 +379,55 @@ def test_init_migrates_old_orders_without_losing_orders_or_refund_times(database
         assert conn.execute(
             "SELECT refunded_at FROM orders WHERE id = 'legacy-refunded'"
         ).fetchone()[0] == CREATED_AT
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_init_migrates_old_problems_and_backfills_zone(database_path):
+    with closing(sqlite3.connect(database_path)) as conn:
+        # Freeze the pre-zone schema rather than deriving it from current SCHEMA.
+        conn.executescript(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL, timezone TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE problems (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL, language TEXT NOT NULL,
+                code TEXT NOT NULL, thinking TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO users VALUES (1, 'alice', 'original-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO problems(user_id, title, language, code, thinking, created_at) "
+            "VALUES (1, '二分查找', 'Python', 'pass', '未理清边界', ?)",
+            (CREATED_AT,),
+        )
+        conn.commit()
+
+    init_db()
+    init_db()
+
+    with connect(write=True) as conn:
+        row = dict(conn.execute("SELECT * FROM problems WHERE id = 1").fetchone())
+        assert row["zone"] == "算法"
+        columns = {
+            col["name"]: col for col in conn.execute("PRAGMA table_info(problems)")
+        }
+        assert columns["zone"]["type"] == "TEXT"
+        assert columns["zone"]["notnull"] == 1
+        conn.execute("UPDATE problems SET zone = '前端' WHERE id = 1")
+
+    init_db()
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT zone FROM problems WHERE id = 1"
+        ).fetchone()[0] == "前端"
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
