@@ -436,3 +436,38 @@ def test_generate_does_not_treat_marker_prefix_in_identifier_as_refusal(monkeypa
     monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
 
     assert ai.generate(MISTAKE)["questions"][0]["question"] == problem
+
+
+@pytest.mark.parametrize("missing_signal", [None, "unknown", "", "MASTERING"])
+def test_generate_leaves_instructions_untouched_without_a_recognized_signal(monkeypatch, missing_signal):
+    # 首次生成(没有这个键)、信号不明确、或者拼错大小写，都必须和现有行为
+    # 完全一致，一个字都不能多，这是核心生成流程，不能悄悄回归。
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    completions = FakeCompletions(FakeResponse(sectioned()))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    mistake = {**MISTAKE, "mastery_signal": missing_signal} if missing_signal is not None else MISTAKE
+    ai.generate(mistake)
+
+    assert completions.last_kwargs["messages"][0]["content"] == ai.INSTRUCTIONS
+
+
+@pytest.mark.parametrize("signal", ["struggling", "mastering"])
+def test_generate_appends_matching_guidance_for_a_recognized_signal(monkeypatch, signal):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    completions = FakeCompletions(FakeResponse(sectioned()))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(completions))
+
+    ai.generate({**MISTAKE, "mastery_signal": signal})
+
+    instructions = completions.last_kwargs["messages"][0]["content"]
+    assert instructions == f"{ai.INSTRUCTIONS}\n\n{ai.MASTERY_GUIDANCE[signal]}"
+    assert instructions.startswith(ai.INSTRUCTIONS)
+
+
+def test_generate_struggling_and_mastering_guidance_point_in_opposite_directions(monkeypatch):
+    # 两种信号绝不能被写反：一个要求更基础，另一个要求明显更难。
+    assert "更基础" in ai.MASTERY_GUIDANCE["struggling"]
+    assert "更基础" not in ai.MASTERY_GUIDANCE["mastering"]
+    assert "明显提升" in ai.MASTERY_GUIDANCE["mastering"]
+    assert "明显提升" not in ai.MASTERY_GUIDANCE["struggling"]

@@ -217,6 +217,87 @@ def test_ai_persists_results_and_limits_attempts(client, monkeypatch):
     assert detail["due_date"] == "2026-09-19"
 
 
+def insert_review(mistake_id, quality, reviewed_at):
+    with connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) "
+            "VALUES (?, ?, ?, ?)",
+            (mistake_id, quality, reviewed_at, reviewed_at),
+        )
+
+
+@pytest.mark.parametrize(
+    "qualities,expected",
+    [
+        ([], None),
+        ([4], None),
+        ([1], None),
+        ([1, 2], "struggling"),
+        ([0, 1, 2], "struggling"),
+        ([4, 5], "mastering"),
+        ([4, 4, 5], "mastering"),
+        ([1, 4], None),
+        ([3, 3], None),
+        ([2, 3], None),
+        ([3, 4], None),
+    ],
+)
+def test_mastery_signal_reads_recent_reviews(client, qualities, expected):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    for index, quality in enumerate(qualities):
+        insert_review(mistake_id, quality, f"2026-09-{10 + index:02d}T00:00:00+00:00")
+
+    with connect() as conn:
+        assert main.mastery_signal(conn, mistake_id) == expected
+
+
+def test_mastery_signal_only_considers_the_three_most_recent_reviews(client):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    # 很久以前反复低分，但最近三次都已经掌握——不能被旧历史带偏。
+    for index, quality in enumerate([0, 1, 2]):
+        insert_review(mistake_id, quality, f"2026-08-{10 + index:02d}T00:00:00+00:00")
+    for index, quality in enumerate([4, 5, 4]):
+        insert_review(mistake_id, quality, f"2026-09-{20 + index:02d}T00:00:00+00:00")
+
+    with connect() as conn:
+        assert main.mastery_signal(conn, mistake_id) == "mastering"
+
+
+def test_create_variant_passes_mastery_signal_into_generate(client, monkeypatch):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    for index, quality in enumerate([0, 1]):
+        insert_review(mistake_id, quality, f"2026-09-{10 + index:02d}T00:00:00+00:00")
+
+    captured = {}
+
+    def capturing_generate(item):
+        captured["mastery_signal"] = item.get("mastery_signal")
+        return mock_generated_practice(item)
+
+    monkeypatch.setattr(ai, "generate", capturing_generate)
+    response = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert response.status_code == 201
+    assert captured["mastery_signal"] == "struggling"
+
+
+def test_create_variant_passes_none_signal_without_review_history(client, monkeypatch):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    captured = {}
+
+    def capturing_generate(item):
+        captured["mastery_signal"] = item.get("mastery_signal")
+        return mock_generated_practice(item)
+
+    monkeypatch.setattr(ai, "generate", capturing_generate)
+    response = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert response.status_code == 201
+    assert captured["mastery_signal"] is None
+
+
 @pytest.mark.parametrize("zone", main.PROBLEM_ZONES)
 def test_generation_stores_two_questions_with_zone_specific_answers(
     client, monkeypatch, zone

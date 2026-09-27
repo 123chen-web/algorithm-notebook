@@ -10,10 +10,6 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
-/* 柔彩只铺在内容后方；不改变卡片底色、不接收点击，也不参与布局。 */
-body { isolation: isolate; }
-body > .container { position: relative; z-index: 1; }
-.marble-background { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; opacity: .65; pointer-events: none; user-select: none; }
 ::selection { color: #7a3620; background: #f0ded2; }
 a { color: var(--accent); text-underline-offset: 4px; }
 a:hover { color: var(--accent-hover); }
@@ -202,6 +198,25 @@ details[open] > summary { margin-bottom: 12px; }
 button.danger { color: var(--danger); background: transparent; border-color: #e3c8c1; font-size: 12px; }
 button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border-color: #c49688; }
 #new-page { max-width: 860px; margin: 0 auto; }
+#weakness-page { max-width: 960px; margin: 0 auto; }
+.weakness-controls > h3, .weakness-empty > h3, .weakness-overview > h3 { margin-top: 0; }
+.weakness-count { font-weight: 600; }
+.weakness-controls .actions { margin-bottom: 12px; }
+.weakness-empty, .weakness-overview, .weakness-pattern { margin-top: 22px; }
+.weakness-overview { border-color: #e3cbb9; background: #fcf6ef; }
+.weakness-sample { display: inline-block; margin-bottom: 0; padding: 7px 12px; border-radius: 8px; background: #f2e8dc; font-size: 13px; }
+.weakness-pattern-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px 20px; }
+.weakness-pattern-heading h3 { flex: 1; min-width: 180px; margin: 0; overflow-wrap: anywhere; }
+.weakness-confidence { flex-shrink: 0; padding: 3px 10px; border-radius: 20px; background: var(--soft); color: #875f3d; font-size: 12px; }
+.weakness-evidence { padding-left: 20px; font-size: 13px; }
+.weakness-evidence li { margin: 14px 0; overflow-wrap: anywhere; }
+.weakness-evidence li::marker { color: var(--accent); }
+.weakness-evidence p { margin: 4px 0; color: #6b655c; }
+.weakness-action { padding: 16px 18px; border-left: 3px solid #d99a76; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: #faf2ea; }
+.weakness-action h4 { margin: 0 0 6px; }
+.weakness-action p { margin: 0; }
+#weakness-status:empty { display: none; }
+#weakness-status.error { color: var(--danger); }
 #leaderboard-page { max-width: 960px; margin: 0 auto; }
 #leaderboard-page > .panel > h3 { margin-top: 0; }
 .leaderboard-personal { background: var(--soft); }
@@ -317,6 +332,10 @@ body.home-view { background: radial-gradient(ellipse at 90% 0, #e9e6ff 0, transp
 .lobby-tile-forum { --tile-icon-bg: #e6edf9; --tile-ink: #496f9d; }
 .lobby-tile-leaderboard { --tile-icon-bg: #fff0cf; --tile-ink: #966527; }
 .lobby-tile-plan { --tile-icon-bg: #f8e5df; --tile-ink: #a35f45; }
+.lobby-tile-insights { grid-column: 1 / -1; min-height: 0; --tile-bg: #f1edfa; --tile-ink: #685091; border-color: #d9d0e9; }
+.lobby-tile-insights .tile-topline { margin-bottom: 8px; }
+.lobby-tile-insights .tile-tag { color: #685091; background: #e4dcf2; }
+.lobby-tile-insights .tile-footer { flex-wrap: wrap; gap: 8px 24px; }
 .lobby-tile-review { --tile-bg: #302740; --tile-ink: #b8df93; --tile-icon-bg: #ffffff12; grid-column: span 6; min-height: 312px; border-color: #40324f; color: #fff; background-image: radial-gradient(ellipse at 100% 0, #66508066, transparent 70%); box-shadow: 0 5px 0 #20182c, 0 14px 24px #2a1d3e16; }
 .lobby-tile-review > :not(.tile-orbit) { position: relative; z-index: 1; }
 .lobby-tile-review:hover:not(:disabled) { background-image: radial-gradient(ellipse at 100% 0, #66508066, transparent 70%); box-shadow: 0 7px 0 #20182c, 0 18px 28px #2a1d3e20; }
@@ -436,6 +455,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
   .lobby-refresh { min-height: 42px; padding: 7px 10px; font-size: 11px; }
   .lobby-tile { grid-column: span 6; min-height: 180px; border-radius: 18px; }
   .lobby-tile-review { grid-column: 1 / -1; min-height: 290px; }
+  .lobby-tile-insights { grid-column: 1 / -1; min-height: 0; }
   .lobby-tile-plan { grid-column: 1 / -1; }
   .tile-title { font-size: 20px; }
   .tile-topline { margin-bottom: 16px; }

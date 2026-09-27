@@ -29,6 +29,10 @@ let orderPollGeneration = 0;
 let forumPost = null;
 let forumSearchQuery = "";
 let forumListGeneration = 0;
+let weaknessAnalysis = null;
+let weaknessGeneration = 0;
+let weaknessPending = false;
+let weaknessQuotaAvailable = false;
 let zones = [];
 let codeZones = new Set();
 
@@ -115,6 +119,7 @@ function showAuthPanels(visibleIds) {
 
 function signedOut() {
   stopOrderPolling();
+  resetWeaknessAnalysis();
   planPurchase = null;
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
@@ -451,6 +456,7 @@ function fillProblemFormFromPhoto(fields) {
 }
 
 async function enterApp() {
+  resetWeaknessAnalysis();
   user = await api("/api/me");
   $("#auth").hidden = true;
   $("#app").hidden = false;
@@ -470,6 +476,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#list-page").hidden = view !== "today" && view !== "all";
   $("#plan-page").hidden = view !== "plan";
   $("#leaderboard-page").hidden = view !== "leaderboard";
+  $("#weakness-page").hidden = view !== "insights";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
@@ -484,6 +491,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "admin") await loadAdminReports();
   else if (view === "forum") await showForumList();
   else if (view === "leaderboard") await loadLeaderboard();
+  else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "plan") await loadPlanPage();
   else if (view === "new") renderPhotoQuota();
   else if (view === "today" || view === "all") await loadList();
@@ -581,6 +589,180 @@ async function loadLeaderboard() {
   } finally {
     if (user === currentUser && user && view === "leaderboard") {
       page.setAttribute("aria-busy", "false");
+    }
+  }
+}
+
+function resetWeaknessAnalysis() {
+  weaknessGeneration += 1;
+  weaknessAnalysis = null;
+  weaknessPending = false;
+  weaknessQuotaAvailable = false;
+  $("#weakness-page").hidden = true;
+  $("#weakness-page").setAttribute("aria-busy", "false");
+  $("#weakness-result").replaceChildren();
+  $("#weakness-result").hidden = true;
+  $("#weakness-empty").hidden = true;
+  $("#weakness-empty-text").textContent = "";
+  $("#weakness-count").textContent = "";
+  $("#weakness-quota").textContent = "";
+  $("#weakness-status").textContent = "";
+  $("#weakness-status").classList.remove("error");
+  $("#weakness-analyze").dataset.blocked = "1";
+  $("#weakness-analyze").disabled = true;
+}
+
+function weaknessRequestCurrent(generation, userId) {
+  return Boolean(user) && user.id === userId && weaknessGeneration === generation;
+}
+
+function renderWeaknessControls() {
+  const minimum = weaknessAnalysis?.minimum_mistakes ?? 5;
+  const count = weaknessAnalysis?.mistake_count;
+  const insufficient = Number.isInteger(count) && count < minimum;
+  $("#weakness-count").textContent = Number.isInteger(count)
+    ? insufficient
+      ? `已积累 ${count} 条易错点，再记录 ${minimum - count} 条就可以开始分析。`
+      : `已积累 ${count} 条易错点，可以开始分析。`
+    : "先积累至少 5 条易错点，让分析有足够的线索。";
+  const remaining = user?.ai_daily_remaining;
+  const limit = user?.ai_daily_limit;
+  const quotaKnown = weaknessQuotaAvailable && Number.isInteger(remaining) && Number.isInteger(limit);
+  $("#weakness-quota").textContent = quotaKnown
+    ? `今日 AI 额度剩余 ${remaining} / ${limit} 次${remaining === 0 ? "，明天可再次分析，或前往“我的套餐”查看额度。" : "。"}`
+    : weaknessPending ? "正在读取今日 AI 额度…" : "暂时无法读取剩余额度，分析前会由服务端检查额度。";
+  const button = $("#weakness-analyze");
+  button.dataset.blocked = weaknessPending || insufficient || (quotaKnown && remaining === 0) ? "1" : "0";
+  button.disabled = busy || button.dataset.blocked === "1";
+  button.textContent = weaknessPending
+    ? "正在处理，请稍候…"
+    : weaknessAnalysis?.insight
+      ? "更新我的薄弱点分析 · 消耗 1 次 AI 额度"
+      : "分析我的薄弱点 · 消耗 1 次 AI 额度";
+  $("#weakness-page").setAttribute("aria-busy", String(weaknessPending));
+}
+
+function renderWeaknessAnalysis() {
+  const insight = weaknessAnalysis?.insight;
+  const result = $("#weakness-result");
+  result.replaceChildren();
+  result.hidden = !insight;
+  $("#weakness-empty").hidden = Boolean(insight);
+  $("#weakness-empty-text").textContent = weaknessAnalysis?.message
+    || "还没有分析过。点击上方按钮，把积累的错因和复习评分连起来，看看哪些问题值得先解决。";
+  renderWeaknessControls();
+  if (!insight) return;
+
+  const { content } = insight;
+  const overview = element("section", "", "panel weakness-overview");
+  overview.append(
+    element("p", "最近一次分析", "eyebrow"),
+    element("h3", content.patterns.length ? "值得优先关注的规律" : "目前的记录还不足以确认重复规律"),
+    element("p", content.summary, "multiline"),
+    element("p", `更新于 ${timestamp(insight.created_at)} · 只保留最近一次分析`, "muted")
+  );
+  const sample = content.sample;
+  overview.append(element("p", `本次依据：${sample.problem_count} 道题 · ${sample.mistake_count} 条易错点 · ${sample.review_count} 次复习评分`, "weakness-sample"));
+  if (sample.period_start && sample.period_end) {
+    overview.append(element("p", `题目记录范围：${timestamp(sample.period_start)} 至 ${timestamp(sample.period_end)}`, "muted"));
+  }
+  if (weaknessAnalysis.status === "insufficient_data") {
+    overview.append(element("p", "以下是上次保存的分析；当前易错点数量不足，暂时无法更新。", "muted"));
+  }
+  result.append(overview);
+  content.patterns.forEach((pattern, index) => {
+    const card = element("article", "", "panel weakness-pattern");
+    const heading = element("div", "", "weakness-pattern-heading");
+    heading.append(
+      element("h3", `${index + 1}. ${pattern.title}`),
+      element("span", pattern.confidence, "weakness-confidence")
+    );
+    card.append(heading, element("p", pattern.explanation, "multiline"));
+    const evidence = element("ul", "", "weakness-evidence");
+    for (const item of pattern.evidence) {
+      const entry = element("li");
+      entry.append(
+        element("strong", `${item.zone} · ${item.title}`),
+        element("p", item.observation, "multiline")
+      );
+      evidence.append(entry);
+    }
+    card.append(element("h4", "哪些记录支持这个判断"), evidence);
+    const action = element("div", "", "weakness-action");
+    action.append(element("h4", "下一步可以这样练"), element("p", pattern.action, "multiline"));
+    card.append(action);
+    result.append(card);
+  });
+  result.append(element("p", "分析是基于当前样本的学习建议。继续记录具体错因、如实复习评分，下次更新时再验证这些判断。", "muted"));
+}
+
+async function loadWeaknessAnalysis() {
+  const generation = ++weaknessGeneration;
+  const userId = user.id;
+  weaknessPending = true;
+  weaknessQuotaAvailable = false;
+  renderWeaknessControls();
+  const status = $("#weakness-status");
+  status.classList.remove("error");
+  status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
+  const [analysis, profile] = await Promise.allSettled([
+    api("/api/insights/weakness-analysis"),
+    api("/api/me"),
+  ]);
+  if (!weaknessRequestCurrent(generation, userId)) return;
+  if (profile.status === "fulfilled") {
+    user = profile.value;
+    weaknessQuotaAvailable = true;
+    updateUserInfo();
+  }
+  weaknessPending = false;
+  if (analysis.status === "fulfilled") {
+    weaknessAnalysis = analysis.value;
+    renderWeaknessAnalysis();
+    status.textContent = weaknessAnalysis.message || "";
+  } else {
+    renderWeaknessControls();
+    status.classList.add("error");
+    status.textContent = `读取分析失败：${analysis.reason.message || "请检查网络后重试"}。可点击上方“刷新”重新读取。`;
+  }
+}
+
+async function analyzeWeakness() {
+  if (!user || weaknessPending || view !== "insights" || $("#weakness-analyze").dataset.blocked === "1") return;
+  const generation = ++weaknessGeneration;
+  const userId = user.id;
+  const status = $("#weakness-status");
+  weaknessPending = true;
+  renderWeaknessControls();
+  status.classList.remove("error");
+  status.textContent = "正在结合错题与复习历史寻找重复规律，请稍候…";
+  try {
+    const data = await api("/api/insights/weakness-analysis", { method: "POST" });
+    if (!weaknessRequestCurrent(generation, userId)) return;
+    weaknessAnalysis = data;
+    renderWeaknessAnalysis();
+    status.textContent = data.message || "分析已更新，可以查看下方的判断依据和练习建议。";
+  } catch (error) {
+    if (!weaknessRequestCurrent(generation, userId)) return;
+    status.classList.add("error");
+    status.textContent = `${error.message || "分析失败，请稍后重试"}${weaknessAnalysis?.insight ? "。已保留上次分析结果。" : ""}`;
+  } finally {
+    if (weaknessRequestCurrent(generation, userId)) {
+      weaknessQuotaAvailable = false;
+      try {
+        const profile = await api("/api/me");
+        if (weaknessRequestCurrent(generation, userId)) {
+          user = profile;
+          weaknessQuotaAvailable = true;
+          updateUserInfo();
+        }
+      } catch {
+        // 调用失败同样可能已扣额度；读取失败时不显示过期的剩余次数。
+      }
+      if (weaknessRequestCurrent(generation, userId)) {
+        weaknessPending = false;
+        renderWeaknessControls();
+      }
     }
   }
 }
@@ -1511,6 +1693,8 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
   await loadHome();
 }));
 
+$("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
+
 $("#problem-zone").addEventListener("change", (event) => {
   applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
 });
@@ -1535,6 +1719,11 @@ $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
 }));
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "insights") {
+    message();
+    await loadWeaknessAnalysis();
+    return;
+  }
   if (view === "admin") {
     message();
     await loadAdminReports();
@@ -2175,238 +2364,3 @@ if (resetToken) {
     }
   });
 }
-
-// 纯展示：不读取用户数据，也不参与页面路由。放在文件尾部便于独立验证生命周期。
-function initMarbleBackground() {
-  if (typeof window.matchMedia !== "function") return;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const finePointer = window.matchMedia("(pointer: fine)");
-  // 首次不符合条件时，连 DOM、画布和监听器都不创建。
-  if (reducedMotion.matches || !finePointer.matches) return;
-
-  let canvas = null;
-  let context = null;
-  let texture = null;
-  let glow = null;
-  let frame = 0;
-  let running = false;
-  let disposed = false;
-  let resizeNeeded = true;
-  let lastFrame = null;
-  let elapsed = 0;
-  let width = 1;
-  let height = 1;
-  const pointer = { x: .5, y: .5, targetX: .5, targetY: .5, strength: 0, targetStrength: 0 };
-
-  function makeCanvas(w, h) {
-    const node = document.createElement("canvas");
-    node.width = w;
-    node.height = h;
-    return node;
-  }
-
-  function makeGlow(rgb) {
-    const node = makeCanvas(192, 192);
-    const ctx = node.getContext("2d");
-    if (!ctx) return null;
-    const gradient = ctx.createRadialGradient(96, 96, 0, 96, 96, 96);
-    gradient.addColorStop(0, `rgba(${rgb}, .9)`);
-    gradient.addColorStop(.35, `rgba(${rgb}, .55)`);
-    gradient.addColorStop(.7, `rgba(${rgb}, .16)`);
-    gradient.addColorStop(1, `rgba(${rgb}, 0)`);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 192, 192);
-    return node;
-  }
-
-  function prepareTexture() {
-    // 大理石纹理：经典的"湍流扰动正弦相位"手法——一个基础斜纹波被湍流场扰动
-    // 相位后会弯曲成有机的纹理带，再把波值映射到一段柔彩渐变上色，效果类似
-    // 大理石紋/水面墨迹的弯曲纹路，而不是几个柔边色块直接叠加出的平滑渐变
-    // （那样边界会糊成一片，看不出纹理）。逐像素计算，但只在低分辨率位图上
-    // 算一次，动画帧只整体缩放绘制，不逐帧重算。
-    const w = 240, h = 180;
-    texture = makeCanvas(w, h);
-    const ctx = texture.getContext("2d");
-    glow = makeGlow("205, 190, 240");
-    if (!ctx || !glow) return false;
-
-    // 渐变环带按顺序排列，相邻颜色在纹理带交界处平滑过渡。
-    const palette = [
-      [205, 188, 240], // 薰衣草紫
-      [186, 224, 214], // 薄荷绿
-      [252, 214, 176], // 蜜桃橙
-      [242, 196, 220], // 浅粉
-      [205, 188, 240], // 首尾同色，纹理带首尾相接不产生硬边
-    ];
-
-    // 三层不同频率/相位的正弦互相调制，近似湍流噪声：足够产生有机的扭曲，
-    // 不需要真正的 Perlin 噪声实现。
-    const turbulence = (x, y, seed) => {
-      let value = 0, amp = 1, total = 0, fx = 1, fy = 1;
-      for (let o = 0; o < 4; o += 1) {
-        value += Math.sin(x * fx + seed) * Math.cos(y * fy * 1.3 - seed) * amp;
-        total += amp;
-        fx *= 2.03;
-        fy *= 1.97;
-        amp *= .55;
-      }
-      return value / total;
-    };
-
-    const image = ctx.createImageData(w, h);
-    const data = image.data;
-    for (let py = 0; py < h; py += 1) {
-      const ny = py / h;
-      for (let px = 0; px < w; px += 1) {
-        const nx = px / w;
-        // 两条不同角度/频率的纹理波叠加，各自被湍流扰动相位后再相加：单独一条
-        // 波纹会是规则的重复条带，两条交叉叠加才会呈现不规则的漩涡感。
-        const warpA = turbulence(nx * 2.6, ny * 2.6, 3.1);
-        const waveA = Math.sin((nx + ny * .6) * 5.2 + warpA * 4.4);
-        const warpB = turbulence(nx * 2.1 - 4, ny * 2.1 - 4, 6.6);
-        const waveB = Math.sin((nx * .7 - ny * 1.3) * 4.1 + warpB * 3.8);
-        const wave = (waveA + waveB) / 2;
-        const position = (wave + 1) / 2 * (palette.length - 1);
-        const i0 = Math.min(palette.length - 2, Math.floor(position));
-        const localT = position - i0;
-        const r = palette[i0][0] + (palette[i0 + 1][0] - palette[i0][0]) * localT;
-        const g = palette[i0][1] + (palette[i0 + 1][1] - palette[i0][1]) * localT;
-        const b = palette[i0][2] + (palette[i0 + 1][2] - palette[i0][2]) * localT;
-
-        // 另一层湍流控制浓淡（alpha），让纹路深浅不一，不是均匀满版的色块。
-        const density = turbulence(nx * 3.4 + 9, ny * 3.4 + 9, 8.8);
-        const alpha = Math.max(70, Math.min(215, Math.round(150 + density * 80)));
-
-        const idx = (py * w + px) * 4;
-        data[idx] = r;
-        data[idx + 1] = g;
-        data[idx + 2] = b;
-        data[idx + 3] = alpha;
-      }
-    }
-    ctx.putImageData(image, 0, 0);
-    return true;
-  }
-
-  function createSurface() {
-    canvas = makeCanvas(1, 1);
-    context = canvas.getContext("2d", { alpha: true });
-    if (!context || !prepareTexture()) return false;
-    canvas.className = "marble-background";
-    canvas.setAttribute("aria-hidden", "true");
-    document.body.prepend(canvas);
-    return true;
-  }
-
-  function resize() { resizeNeeded = true; }
-  function movePointer(event) {
-    if (event.pointerType !== "mouse" && event.pointerType !== "pen") return;
-    pointer.targetX = Math.max(0, Math.min(1, event.clientX / Math.max(1, window.innerWidth)));
-    pointer.targetY = Math.max(0, Math.min(1, event.clientY / Math.max(1, window.innerHeight)));
-    pointer.targetStrength = 1;
-  }
-  function leavePointer() { pointer.targetStrength = 0; }
-
-  function draw(now) {
-    frame = 0;
-    if (!running) return;
-    frame = window.requestAnimationFrame(draw);
-    // 最高约 30fps；低分辨率画布交给浏览器平滑放大，高 DPI 屏也不增加绘制量。
-    if (lastFrame !== null && now - lastFrame < 1000 / 30) return;
-    const delta = lastFrame === null ? 1000 / 30 : Math.min(now - lastFrame, 80);
-    lastFrame = now;
-    elapsed += delta;
-    if (resizeNeeded) {
-      const scale = Math.min(1, 960 / Math.max(1, window.innerWidth), 720 / Math.max(1, window.innerHeight));
-      width = Math.max(1, Math.round(window.innerWidth * scale));
-      height = Math.max(1, Math.round(window.innerHeight * scale));
-      canvas.width = width;
-      canvas.height = height;
-      resizeNeeded = false;
-    }
-    const follow = 1 - Math.exp(-delta / 650);
-    pointer.x += (pointer.targetX - pointer.x) * follow;
-    pointer.y += (pointer.targetY - pointer.y) * follow;
-    pointer.strength += (pointer.targetStrength - pointer.strength) * follow;
-    const phase = elapsed / 18000;
-    context.clearRect(0, 0, width, height);
-    context.save();
-    context.translate(width / 2 + Math.sin(phase) * width * .015, height / 2 + Math.cos(phase * .7) * height * .012);
-    context.rotate(Math.sin(phase * .6) * .012);
-    context.globalAlpha = .91 + Math.sin(phase * .8) * .045;
-    context.drawImage(texture, -width * .56, -height * .56, width * 1.12, height * 1.12);
-    context.restore();
-    if (pointer.strength > .005) {
-      const size = Math.max(width, height) * .48;
-      context.globalAlpha = pointer.strength * .16;
-      context.drawImage(glow, pointer.x * width - size / 2, pointer.y * height - size / 2, size, size);
-      context.globalAlpha = 1;
-    }
-  }
-
-  function suspend() {
-    running = false;
-    window.cancelAnimationFrame(frame);
-    frame = 0;
-    lastFrame = null;
-    pointer.targetStrength = 0;
-    pointer.strength = 0;
-    window.removeEventListener("pointermove", movePointer);
-    window.removeEventListener("pointerout", pointerOut);
-    window.removeEventListener("blur", leavePointer);
-    window.removeEventListener("resize", resize);
-  }
-  function pointerOut(event) {
-    if (!event.relatedTarget) leavePointer();
-  }
-  function resume() {
-    if (disposed || running || document.hidden) return;
-    if (reducedMotion.matches || !finePointer.matches) { destroy(); return; }
-    if (!canvas && !createSurface()) { destroy(); return; }
-    running = true;
-    resizeNeeded = true;
-    window.addEventListener("pointermove", movePointer, { passive: true });
-    window.addEventListener("pointerout", pointerOut, { passive: true });
-    window.addEventListener("blur", leavePointer);
-    window.addEventListener("resize", resize, { passive: true });
-    frame = window.requestAnimationFrame(draw);
-  }
-  function visibilityChanged() {
-    if (document.hidden) suspend();
-    else resume();
-  }
-  function preferenceChanged() {
-    // 一旦禁用就彻底释放监听器；恢复特效需重新载入，禁用状态不保留后台观察。
-    if (reducedMotion.matches || !finePointer.matches) destroy();
-  }
-  function pageHidden(event) {
-    if (event.persisted) suspend();
-    else destroy();
-  }
-  function destroy() {
-    if (disposed) return;
-    disposed = true;
-    suspend();
-    reducedMotion.removeEventListener("change", preferenceChanged);
-    finePointer.removeEventListener("change", preferenceChanged);
-    document.removeEventListener("visibilitychange", visibilityChanged);
-    window.removeEventListener("pagehide", pageHidden);
-    window.removeEventListener("pageshow", resume);
-    if (canvas) canvas.remove();
-    // 主动释放 backing stores，包括未插入 DOM 的纹理缓存。
-    for (const buffer of [canvas, texture, glow]) {
-      if (buffer) { buffer.width = 0; buffer.height = 0; }
-    }
-    canvas = context = texture = glow = null;
-  }
-
-  reducedMotion.addEventListener("change", preferenceChanged);
-  finePointer.addEventListener("change", preferenceChanged);
-  document.addEventListener("visibilitychange", visibilityChanged);
-  window.addEventListener("pagehide", pageHidden);
-  window.addEventListener("pageshow", resume);
-  resume();
-}
-
-initMarbleBackground();

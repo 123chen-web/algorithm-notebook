@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=13">
+  <link rel="stylesheet" href="/static/style.css?v=15">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=16"></script>
+  <script defer src="/static/app.js?v=19"></script>
 </head>
 <body>
   <div class="container">
@@ -259,6 +259,7 @@
         <button type="button" data-view="today">今日复习</button>
         <button type="button" data-view="all">全部记录</button>
         <button type="button" data-view="new">新增记录</button>
+        <button type="button" data-view="insights">薄弱点分析</button>
         <button type="button" data-view="plan">我的套餐</button>
         <button type="button" data-view="leaderboard">打卡排行榜</button>
         <button type="button" data-view="forum">讨论区</button>
@@ -306,6 +307,13 @@
             <span class="tile-footer">收集新的易错点 <span aria-hidden="true">＋</span></span>
           </button>
 
+          <button type="button" class="lobby-tile lobby-tile-insights" data-view="insights">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19h14M5 15V9M12 15V5M19 15v-3M3 3v18h18"/></svg></span><span class="tile-tag">从错题历史中发现规律</span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">薄弱点分析</span>
+            <span class="tile-description">哪些错误换一道题还会出现？结合跨题记录与复习表现，找出你反复卡住的原因。</span>
+            <span class="tile-footer">查看我的分析 <span>主动分析时消耗 1 次 AI 额度 →</span></span>
+          </button>
+
           <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
             <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
             <span class="tile-title">讨论区</span>
@@ -325,6 +333,30 @@
           </button>
         </nav>
         <div class="lobby-bottom"><p>记录 · 复习 · 真正掌握</p><button id="home-admin" type="button" data-view="admin" hidden>管理后台 <span aria-hidden="true">↗</span></button></div>
+      </section>
+
+      <section id="weakness-page" aria-labelledby="weakness-title" hidden>
+        <div class="page-heading">
+          <p class="eyebrow">从一次做错，到看清反复出错的原因</p>
+          <h2 id="weakness-title">薄弱点分析</h2>
+          <p class="muted">单次对话看不到的反复错误，藏在你的错题历史里。把跨题错因与复习表现放在一起，找出值得优先突破的 1–3 个根本性薄弱点。</p>
+        </div>
+        <div class="panel weakness-controls">
+          <h3>让积累的记录告诉你，下一步该练什么</h3>
+          <p class="muted">每次取最近 40 条易错点及其复习评分历史。记录和复习越具体，越有机会看出有依据的规律；证据不足时，分析会如实说明。</p>
+          <p id="weakness-count" class="weakness-count"></p>
+          <p id="weakness-quota" class="muted"></p>
+          <div class="actions">
+            <button id="weakness-analyze" type="button" class="primary" aria-describedby="weakness-cost" data-blocked="1" disabled>分析我的薄弱点 · 消耗 1 次 AI 额度</button>
+          </div>
+          <p id="weakness-cost" class="field-hint">与拍照识别、生成练习题共用今日 AI 额度。调用失败也占用次数；不足 5 条易错点时不调用 AI、不扣额度。查看已有结果和刷新页面免费。</p>
+          <p id="weakness-status" role="status" aria-live="polite"></p>
+        </div>
+        <div id="weakness-empty" class="panel weakness-empty" hidden>
+          <h3>错题积累下来，规律才会浮现</h3>
+          <p id="weakness-empty-text" class="muted"></p>
+        </div>
+        <div id="weakness-result" hidden></div>
       </section>
 
       <section id="list-page">

@@ -139,6 +139,13 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     PRIMARY KEY(user_id, day)
 );
 
+-- 新表随 SCHEMA 的幂等执行同时迁移旧库；每个用户只保留最近一次分析。
+CREATE TABLE IF NOT EXISTS weakness_insights (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS password_resets (
     token_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

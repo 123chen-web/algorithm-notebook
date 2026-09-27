@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -71,6 +72,10 @@ CommentBody = Annotated[
 CODE_ZONES = ("算法", "前端", "后端", "数据库", "系统设计")
 NON_CODE_ZONES = ("高等数学", "线性代数", "概率统计")
 PROBLEM_ZONES = CODE_ZONES + NON_CODE_ZONES
+
+WEAKNESS_MIN_MISTAKES = 5
+WEAKNESS_MAX_MISTAKES = 40
+WEAKNESS_RECENT_REVIEWS = 8
 
 # 头像、拍照识别题目都只接受这几种真实解码出来的格式（不看文件名后缀或
 # 请求头，防止伪装成图片的其他文件类型）；上传后统一重新编码，顺带清掉
@@ -1079,6 +1084,158 @@ def create_problem(data: NewProblem, user=Depends(current_user)):
     return {"id": problem_id, "mistake_ids": mistake_ids}
 
 
+def weakness_analysis_state(conn, user_id):
+    count = conn.execute(
+        "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+        "WHERE p.user_id = ?",
+        (user_id,),
+    ).fetchone()[0]
+    row = conn.execute(
+        "SELECT content, created_at FROM weakness_insights WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    insight = (
+        {"content": json.loads(row["content"]), "created_at": row["created_at"]}
+        if row else None
+    )
+    if count < WEAKNESS_MIN_MISTAKES:
+        status = "insufficient_data"
+        message = (
+            f"再积累几条错题就能看出真正的规律了。当前有 {count} 条易错点，"
+            f"还差 {WEAKNESS_MIN_MISTAKES - count} 条；本次不会调用 AI，也不消耗额度。"
+        )
+    elif insight is None:
+        status = "not_analyzed"
+        message = "还没有分析过。让 AI 结合错题和复习历史，找出反复卡住你的根本原因。"
+    else:
+        status, message = "ready", None
+    return {
+        "status": status,
+        "message": message,
+        "minimum_mistakes": WEAKNESS_MIN_MISTAKES,
+        "mistake_count": count,
+        "insight": insight,
+    }
+
+
+def weakness_analysis_reference(conn, user_id, total_mistakes):
+    # 最近的题目优先；同题下的易错点也按 ID 确定顺序，避免 LIMIT 不稳定。
+    # 在 SQL 层限制文本长度，空错因才补充原始思路/解法片段，不修改原记录。
+    rows = conn.execute(
+        """
+        SELECT m.id AS mistake_id, m.problem_id, substr(p.title, 1, 200) AS title,
+               p.zone, substr(m.description, 1, 1000) AS description, p.created_at,
+               substr(p.thinking, 1, 600) AS thinking,
+               substr(p.code, 1, 800) AS work_excerpt
+        FROM mistakes m JOIN problems p ON p.id = m.problem_id
+        WHERE p.user_id = ?
+        ORDER BY p.created_at DESC, m.id DESC LIMIT ?
+        """,
+        (user_id, WEAKNESS_MAX_MISTAKES),
+    ).fetchall()
+    mistakes = []
+    for row in rows:
+        item = dict(row)
+        if item["description"].strip():
+            item.pop("thinking")
+            item.pop("work_excerpt")
+        item.update(review_count=0, failed_review_count=0, recent_reviews=[])
+        mistakes.append(item)
+    by_id = {item["mistake_id"]: item for item in mistakes}
+    placeholders = ",".join("?" for _ in by_id)
+    # 聚合完整复习历史，但只发送最近几次明细，兼顾反复低分与近期改善。
+    # 仅查询当前用户名下已经选中的错点 ID，不读取其他用户的复习记录。
+    reviews = conn.execute(
+        f"""
+        WITH ranked AS (
+            SELECT id, mistake_id, quality, reviewed_at,
+                   COUNT(*) OVER (PARTITION BY mistake_id) AS review_count,
+                   SUM(CASE WHEN quality < 3 THEN 1 ELSE 0 END)
+                       OVER (PARTITION BY mistake_id) AS failed_review_count,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY mistake_id ORDER BY reviewed_at DESC, id DESC
+                   ) AS recent_rank
+            FROM reviews WHERE mistake_id IN ({placeholders})
+        )
+        SELECT * FROM ranked WHERE recent_rank <= ?
+        ORDER BY reviewed_at, id
+        """,
+        (*by_id, WEAKNESS_RECENT_REVIEWS),
+    ).fetchall()
+    for row in reviews:
+        item = by_id[row["mistake_id"]]
+        item["review_count"] = row["review_count"]
+        item["failed_review_count"] = row["failed_review_count"]
+        item["recent_reviews"].append({
+            "quality": row["quality"], "reviewed_at": row["reviewed_at"],
+        })
+    sample = {
+        "mistake_count": len(mistakes),
+        "problem_count": len({item["problem_id"] for item in mistakes}),
+        "review_count": sum(item["review_count"] for item in mistakes),
+        "period_start": min(item["created_at"] for item in mistakes),
+        "period_end": max(item["created_at"] for item in mistakes),
+    }
+    return {"total_mistakes": total_mistakes, "sample": sample, "mistakes": mistakes}
+
+
+@app.get("/api/insights/weakness-analysis")
+def get_weakness_analysis(user=Depends(current_user)):
+    with connect() as conn:
+        return weakness_analysis_state(conn, user["id"])
+
+
+@app.post("/api/insights/weakness-analysis")
+def create_weakness_analysis(user=Depends(current_user)):
+    with connect(write=True) as conn:
+        state = weakness_analysis_state(conn, user["id"])
+        # 先判断数量，哪怕额度已用完或未配置 Key，也只返回积累材料的提示。
+        if state["mistake_count"] < WEAKNESS_MIN_MISTAKES:
+            return state
+        if not os.getenv("OPENAI_API_KEY", "").strip():
+            raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+        reference = weakness_analysis_reference(conn, user["id"], state["mistake_count"])
+        # 与生成练习题、拍照识别完全相同的套餐读取及原子扣额 SQL。
+        # 失败仍占用次数；在发起外部请求前提交，网络调用不持有写锁。
+        day = today_for(user).isoformat()
+        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
+        cursor = conn.execute(
+            """
+            INSERT INTO ai_usage(user_id, day, attempts)
+            SELECT ?, ?, 1 WHERE ? > 0
+            ON CONFLICT(user_id, day) DO UPDATE
+            SET attempts = ai_usage.attempts + 1
+            WHERE ai_usage.attempts < ?
+            """,
+            (user["id"], day, limit, limit),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(429, "今天的 AI 生成次数已用完")
+        # 记录材料快照时间，微秒精度区分同秒请求，旧请求晚完成也不覆盖新快照。
+        created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+    content = ai.analyze_weaknesses(reference)
+    content["sample"] = reference["sample"]
+    by_id = {item["mistake_id"]: item for item in reference["mistakes"]}
+    for pattern in content["patterns"]:
+        for evidence in pattern["evidence"]:
+            source = by_id[evidence["mistake_id"]]
+            # 标题和分区由可信的来源映射补齐，不让模型虚构题目归属。
+            evidence.update({key: source[key] for key in ("problem_id", "title", "zone")})
+
+    with connect(write=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE
+            SET content = excluded.content, created_at = excluded.created_at
+            WHERE excluded.created_at >= weakness_insights.created_at
+            """,
+            (user["id"], json.dumps(content, ensure_ascii=False), created_at),
+        )
+        return weakness_analysis_state(conn, user["id"])
+
+
 @app.post("/api/problems/photo")
 async def recognize_problem_photo(user=Depends(current_user), file: UploadFile = File(...)):
     # 只识别、不落库：返回结构化字段供前端预填新增记录表单，用户确认后
@@ -1260,12 +1417,34 @@ def review_mistake(
     return {**state, "version": item["version"] + 1}
 
 
+def mastery_signal(conn, mistake_id):
+    # 只看最近几次复习：太久以前的表现代表性不够，用户可能早已改善或退步。
+    # 只有 2 次以上评分一致偏低/偏高才给方向性提示；1 次或忽高忽低都太吵，
+    # 保持不调整（None），这不是精确科学，宁可保守也不要被噪声带偏。
+    rows = conn.execute(
+        "SELECT quality FROM reviews WHERE mistake_id = ? "
+        "ORDER BY reviewed_at DESC, id DESC LIMIT 3",
+        (mistake_id,),
+    ).fetchall()
+    if len(rows) < 2:
+        return None
+    qualities = [row["quality"] for row in rows]
+    if all(quality < 3 for quality in qualities):
+        return "struggling"
+    if all(quality >= 4 for quality in qualities):
+        return "mastering"
+    return None
+
+
 @app.post("/api/mistakes/{mistake_id}/variants", status_code=201)
 def create_variant(mistake_id: int, user=Depends(current_user)):
     # BEGIN IMMEDIATE 后重读套餐并扣额，与支付回调等写入串行执行。
     # 配额在短事务内原子扣除，网络请求期间不持有数据库写锁。
     with connect(write=True) as conn:
         item = owned_mistake(conn, mistake_id, user["id"])
+        # 完全没有复习记录时是 None，generate() 的提示词行为跟之前完全一样；
+        # 有反复偏低/偏高的复习历史时才提示 AI 调整新题难度。
+        item["mastery_signal"] = mastery_signal(conn, mistake_id)
         if not os.getenv("OPENAI_API_KEY", "").strip():
             raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
 
