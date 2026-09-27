@@ -74,6 +74,8 @@ def create_order(user_id, plan_id, channel):
         ).fetchone()
         if plan is None:
             raise HTTPException(404, "套餐不存在或已停用")
+        if not plan["purchasable"]:
+            raise HTTPException(403, "该套餐暂未开放购买，敬请期待")
         order_id = secrets.token_hex(16)
         conn.execute(
             """

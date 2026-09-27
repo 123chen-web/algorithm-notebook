@@ -440,6 +440,38 @@ def test_init_migrates_old_problems_and_backfills_zone(database_path):
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_init_migrates_old_plans_and_defaults_purchasable_to_true(database_path):
+    with closing(sqlite3.connect(database_path)) as conn:
+        # Freeze the pre-purchasable schema rather than deriving it from current SCHEMA.
+        conn.executescript(
+            """
+            CREATE TABLE plans (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                period_days INTEGER NOT NULL,
+                ai_daily_limit INTEGER NOT NULL,
+                price_cents INTEGER NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO plans(name, period_days, ai_daily_limit, price_cents, created_at) "
+            "VALUES ('老套餐', 30, 10, 990, ?)",
+            (CREATED_AT,),
+        )
+        conn.commit()
+
+    init_db()
+    init_db()
+    with connect() as conn:
+        # 迁移前已存在的套餐不能因为加了新列就变成不能购买。
+        assert conn.execute(
+            "SELECT purchasable FROM plans WHERE name = '老套餐'"
+        ).fetchone()[0] == 1
+
+
 def test_init_migrates_old_variants_and_preserves_results_and_notes(database):
     with connect(write=True) as conn:
         # 固定本次改动前的 variants 结构；其他表与已存在的账号保持不变。

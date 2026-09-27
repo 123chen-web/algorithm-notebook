@@ -58,6 +58,9 @@ PostTitle = Annotated[
 PostBody = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
 ]
+PostSearchQuery = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=200)
+]
 CommentBody = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
 ]
@@ -69,12 +72,16 @@ CODE_ZONES = ("算法", "前端", "后端", "数据库", "系统设计")
 NON_CODE_ZONES = ("高等数学", "线性代数", "概率统计")
 PROBLEM_ZONES = CODE_ZONES + NON_CODE_ZONES
 
-# 头像：只接受这几种真实解码出来的格式（不看文件名后缀或请求头，
-# 防止伪装成图片的其他文件类型）；上传后统一重新编码成正方形 JPEG，
-# 顺带清掉原图可能带的 EXIF 等元数据、绝不直接保存用户上传的原始字节。
+# 头像、拍照识别题目都只接受这几种真实解码出来的格式（不看文件名后缀或
+# 请求头，防止伪装成图片的其他文件类型）；上传后统一重新编码，顺带清掉
+# 原图可能带的 EXIF 等元数据、绝不直接保存或转发用户上传的原始字节。
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 AVATAR_SIZE = 256
-ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+# 拍照识别：手机拍的一整页手写解题过程可能有好几 MB，上限比头像更宽松；
+# 识别前会重新编码压缩，不会把原始大图直接传给 AI。
+PHOTO_MAX_BYTES = 8 * 1024 * 1024
+PHOTO_MAX_DIMENSION = 1600
 
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
 # 而不是注册时的格式检查，所以没有引入额外的邮箱校验依赖。
@@ -347,7 +354,7 @@ def avatar_path(user_id):
     return avatar_dir() / f"{user_id}.jpg"
 
 
-def decode_avatar_image(content: bytes) -> Image.Image:
+def decode_uploaded_image(content: bytes) -> Image.Image:
     # verify() 只检查文件没有损坏，之后这个 Image 对象不能再用来处理，
     # 必须从同一份字节重新 open 一次；再调用 load() 强制完整解码，
     # 防止头部合法但数据被截断的文件绕过 verify()。
@@ -360,7 +367,7 @@ def decode_avatar_image(content: bytes) -> Image.Image:
         # 不会真的去解码一个几万乘几万像素的图片撑爆内存；这里只是把它
         # 也归为"文件不是有效的图片"，不让它变成一个裸的 500。
         raise HTTPException(400, "文件不是有效的图片") from None
-    if image.format not in ALLOWED_AVATAR_FORMATS:
+    if image.format not in ALLOWED_IMAGE_FORMATS:
         raise HTTPException(400, "只支持 JPEG、PNG 或 WebP 格式的图片")
     return image
 
@@ -383,6 +390,31 @@ def resize_avatar_to_square_jpeg(image: Image.Image) -> bytes:
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue()
+
+
+def resize_photo_for_recognition(image: Image.Image) -> bytes:
+    # 保留原始长宽比（不像头像那样裁成正方形），只在图片过大时按最长边
+    # 缩小；手写题目和代码要保持完整可读，裁剪会丢内容。
+    if image.mode in ("RGBA", "LA", "P"):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (255, 255, 255))
+        background.paste(rgba, mask=rgba.split()[-1])
+        image = background
+    else:
+        image = image.convert("RGB")
+
+    width, height = image.size
+    longest = max(width, height)
+    if longest > PHOTO_MAX_DIMENSION:
+        scale = PHOTO_MAX_DIMENSION / longest
+        image = image.resize(
+            (max(1, round(width * scale)), max(1, round(height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=88)
     return buffer.getvalue()
 
 
@@ -879,7 +911,7 @@ async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)
     if not content:
         raise HTTPException(400, "文件是空的")
 
-    image = decode_avatar_image(content)
+    image = decode_uploaded_image(content)
     jpeg_bytes = await run_in_threadpool(resize_avatar_to_square_jpeg, image)
 
     directory = avatar_dir()
@@ -1045,6 +1077,43 @@ def create_problem(data: NewProblem, user=Depends(current_user)):
             mistake_ids.append(cursor.lastrowid)
 
     return {"id": problem_id, "mistake_ids": mistake_ids}
+
+
+@app.post("/api/problems/photo")
+async def recognize_problem_photo(user=Depends(current_user), file: UploadFile = File(...)):
+    # 只识别、不落库：返回结构化字段供前端预填新增记录表单，用户确认后
+    # 仍然走 create_problem 那条已有校验路径，这里不重复实现建档逻辑。
+    content = await file.read(PHOTO_MAX_BYTES + 1)
+    if len(content) > PHOTO_MAX_BYTES:
+        raise HTTPException(413, f"图片太大，最多 {PHOTO_MAX_BYTES // (1024 * 1024)} MiB")
+    if not content:
+        raise HTTPException(400, "文件是空的")
+
+    image = decode_uploaded_image(content)
+    jpeg_bytes = await run_in_threadpool(resize_photo_for_recognition, image)
+
+    # 配额检查和扣减跟生成练习题共用同一套逻辑：同一次 BEGIN IMMEDIATE 事务内
+    # 原子扣减，调用失败也占用次数；AI 调用本身放到事务外面执行，不在网络
+    # 请求期间持有数据库写锁。
+    with connect(write=True) as conn:
+        if not os.getenv("OPENAI_API_KEY", "").strip():
+            raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+        day = today_for(user).isoformat()
+        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
+        cursor = conn.execute(
+            """
+            INSERT INTO ai_usage(user_id, day, attempts)
+            SELECT ?, ?, 1 WHERE ? > 0
+            ON CONFLICT(user_id, day) DO UPDATE
+            SET attempts = ai_usage.attempts + 1
+            WHERE ai_usage.attempts < ?
+            """,
+            (user["id"], day, limit, limit),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(429, "今天的 AI 生成次数已用完")
+
+    return await run_in_threadpool(ai.recognize_photo, jpeg_bytes)
 
 
 @app.put("/api/problems/{problem_id}")
@@ -1436,10 +1505,20 @@ def owned_comment(conn, comment_id, user_id):
 
 
 @app.get("/api/posts")
-def list_posts(user=Depends(current_user)):
+def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
+    search_filter = ""
+    params = []
+    if q:
+        # Escape LIKE metacharacters (including the escape character itself).
+        # SQLite LIKE is case-insensitive for ASCII letters by default.
+        keyword = q.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        pattern = f"%{keyword}%"
+        search_filter = "AND (p.title LIKE ? ESCAPE '!' OR p.body LIKE ? ESCAPE '!')"
+        params.extend((pattern, pattern))
+    params.append(POST_LIST_LIMIT)
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT p.id, p.title, p.created_at, p.user_id, u.username,
                    u.avatar_version,
                    (
@@ -1449,10 +1528,11 @@ def list_posts(user=Depends(current_user)):
             FROM posts p
             JOIN users u ON u.id = p.user_id
             WHERE p.deleted_at IS NULL
+            {search_filter}
             ORDER BY p.created_at DESC
             LIMIT ?
             """,
-            (POST_LIST_LIMIT,),
+            params,
         ).fetchall()
     return {"posts": [dict(row) for row in rows]}
 

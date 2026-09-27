@@ -55,6 +55,17 @@ def client(tmp_path, monkeypatch):
                     (2, "已停用套餐", 60, 40, 1990, 0, main.utc_now()),
                 ],
             )
+            # 展示中但暂不能购买：is_active = 1（GET /api/plans 会返回它），
+            # purchasable = 0（下单必须被拒绝），跟"已停用"是两种不同的状态。
+            conn.execute(
+                """
+                INSERT INTO plans(
+                    id, name, period_days, ai_daily_limit,
+                    price_cents, is_active, purchasable, created_at
+                ) VALUES (3, '即将上线套餐', 30, 30, 1990, 1, 0, ?)
+                """,
+                (main.utc_now(),),
+            )
         instance.cookies.set("session", "payment-session-alice")
         yield instance
 
@@ -132,12 +143,23 @@ def test_payment_writes_require_csrf(client, path, payload):
     assert response.status_code == 403
 
 
-def test_plan_list_excludes_inactive_plans(client):
+def test_plan_list_excludes_inactive_plans_but_keeps_not_yet_purchasable_ones(client):
     response = client.get("/api/plans")
     assert response.status_code == 200
-    plans = response.json()["plans"]
-    assert [plan["id"] for plan in plans] == [1]
-    assert plans[0]["price_cents"] == 990
+    plans = {plan["id"]: plan for plan in response.json()["plans"]}
+    # 已停用（id=2）被排除；展示中但暂不能买（id=3）仍然要出现在列表里，
+    # 前端靠 purchasable 字段单独决定按钮是否可点，不是靠接口过滤掉它。
+    assert set(plans) == {1, 3}
+    assert plans[1]["price_cents"] == 990
+    assert plans[1]["purchasable"] == 1
+    assert plans[3]["purchasable"] == 0
+
+
+def test_create_order_rejects_not_yet_purchasable_plan(client):
+    response = client.post("/api/orders", json={"plan_id": 3, "channel": "alipay"})
+    assert response.status_code == 403
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("channel", ["alipay", "wechat"])

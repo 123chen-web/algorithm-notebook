@@ -21,6 +21,7 @@ from db import connect, init_db
 from scheduler import today_in_timezone
 
 REMINDER_SUBJECT = "算法错题本：今天有易错点待复习"
+REMINDER_ITEM_LIMIT = 8
 
 
 def due_count(conn, user_id, day_iso):
@@ -36,12 +37,46 @@ def due_count(conn, user_id, day_iso):
     return row["n"]
 
 
-def reminder_body(username, count):
-    return (
-        f"你好 {username}，\n\n"
-        f"今天有 {count} 条易错点到期待复习，打开算法错题本看看吧。\n\n"
-        "（这是自动提醒邮件，回复不会被处理。）"
-    )
+def due_mistakes(conn, user_id, day_iso):
+    """优先展示最早到期的易错点；同日到期时按 ID 保持顺序稳定。"""
+    return conn.execute(
+        """
+        SELECT p.title, p.zone, m.description, m.due_date
+        FROM mistakes m
+        JOIN problems p ON p.id = m.problem_id
+        WHERE p.user_id = ? AND m.due_date <= ?
+        ORDER BY m.due_date ASC, m.id ASC
+        LIMIT ?
+        """,
+        (user_id, day_iso, REMINDER_ITEM_LIMIT),
+    ).fetchall()
+
+
+def reminder_body(username, count, mistakes):
+    displayed = mistakes[:REMINDER_ITEM_LIMIT]
+    lines = [
+        f"你好 {username}，", "",
+        f"今天有 {count} 条易错点到期待复习（含逾期），按到期日期从早到晚列出：", "",
+    ]
+    for index, mistake in enumerate(displayed, start=1):
+        title = " ".join(mistake["title"].split())
+        zone = " ".join(mistake["zone"].split())
+        description = " ".join(mistake["description"].split())
+        if len(description) > 80:
+            description = description[:79] + "…"
+        lines.extend([
+            f"{index}. [{zone}] {title}",
+            f"   易错点：{description}（到期：{mistake['due_date']}）",
+        ])
+
+    remaining = count - len(displayed)
+    if remaining > 0:
+        lines.extend(["", f"还有 {remaining} 条易错点待复习，可在网站查看。"])
+    lines.extend([
+        "", "打开算法错题本，进入“今日复习”，从最早到期的一条开始吧。", "",
+        "（这是自动提醒邮件，回复不会被处理。）",
+    ])
+    return "\n".join(lines)
 
 
 def main(argv=None):
@@ -85,7 +120,10 @@ def main(argv=None):
             try:
                 mailer.send_email(
                     user["email"], REMINDER_SUBJECT,
-                    reminder_body(user["username"], count),
+                    reminder_body(
+                        user["username"], count,
+                        due_mistakes(conn, user["id"], day),
+                    ),
                 )
             except Exception as exc:
                 print(f"  发信失败，跳过（不标记为已发送）：{exc}")

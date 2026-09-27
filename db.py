@@ -284,6 +284,17 @@ VARIANT_COLUMN_MIGRATIONS = (
 )
 
 
+PLAN_COLUMN_MIGRATIONS = (
+    # is_active 控制"展示 + 能买"两件事一起开关；purchasable 单独控制"能不能
+    # 下单"，用来支持"先只展示新套餐、暂不接真实支付"这种上线节奏，默认 1
+    # 让所有已有套餐的购买行为保持不变。
+    (
+        "purchasable",
+        "ALTER TABLE plans ADD COLUMN purchasable INTEGER NOT NULL DEFAULT 1",
+    ),
+)
+
+
 @contextmanager
 def connect(write=False):
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
@@ -330,6 +341,11 @@ def init_db():
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(variants)")}
         for column, statement in VARIANT_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(plans)")}
+        for column, statement in PLAN_COLUMN_MIGRATIONS:
             if column not in existing:
                 conn.execute(statement)
 

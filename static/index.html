@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=13">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=10"></script>
+  <script defer src="/static/app.js?v=16"></script>
 </head>
 <body>
   <div class="container">
@@ -35,6 +35,14 @@
           </div>
         </div>
         <div id="user-info-wrap" class="muted"></div>
+        <div id="home-quota" class="home-quota" hidden>
+          <div class="home-quota-heading">
+            <label for="home-quota-progress">今日 AI 生成额度</label>
+            <span id="home-quota-text"></span>
+          </div>
+          <progress id="home-quota-progress" max="1" value="0" aria-describedby="home-quota-text"></progress>
+          <span class="home-quota-hint">围绕薄弱点，再练两道新题</span>
+        </div>
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
     </header>
@@ -246,7 +254,8 @@
     </section>
 
     <main id="app" hidden>
-      <nav class="tabs" aria-label="页面">
+      <nav id="page-nav" class="tabs" aria-label="页面">
+        <button type="button" data-view="home">学习大厅</button>
         <button type="button" data-view="today">今日复习</button>
         <button type="button" data-view="all">全部记录</button>
         <button type="button" data-view="new">新增记录</button>
@@ -256,6 +265,67 @@
         <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
         <button type="button" id="refresh">刷新</button>
       </nav>
+
+      <section id="home-page" class="lobby" aria-labelledby="home-title" hidden>
+        <div class="lobby-heading">
+          <div>
+            <p class="eyebrow">学习大厅 · 每一次回顾，都算数</p>
+            <h2 id="home-title">把薄弱点，练成得分点。</h2>
+            <p>选一个入口，继续今天的进步。</p>
+          </div>
+          <button id="home-refresh" type="button" class="lobby-refresh"><span aria-hidden="true">↻</span> 刷新大厅</button>
+        </div>
+
+        <nav class="lobby-grid" aria-label="学习大厅入口">
+          <button type="button" class="lobby-tile lobby-tile-review" data-view="today">
+            <span class="tile-topline">
+              <span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M13 3h8v8M21 3 11 13"/><path d="m7 13 4 4 5-5"/></svg></span>
+              <span class="tile-tag">今日主线</span>
+            </span>
+            <span class="tile-title">今日复习</span>
+            <span class="tile-description">回顾到期易错点，巩固每一次进步。</span>
+            <span id="home-review-status" class="tile-review-status" role="status">
+              <span id="home-due-count" class="tile-count" hidden></span>
+              <span id="home-due-caption">正在读取待复习记录…</span>
+            </span>
+            <span class="tile-footer"><span class="tile-cta">进入复习 <span aria-hidden="true">→</span></span><span class="tile-footnote">含逾期 · 全部分区</span></span>
+            <span class="tile-orbit" aria-hidden="true"></span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-records" data-view="all">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">全部记录</span>
+            <span class="tile-description">翻开笔记，找回解题的关键。</span>
+            <span class="tile-footer">我的知识档案 <span aria-hidden="true">→</span></span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-new" data-view="new">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">新增记录</span>
+            <span class="tile-description">记下这次错因，留给下次突破。</span>
+            <span class="tile-footer">收集新的易错点 <span aria-hidden="true">＋</span></span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">讨论区</span>
+            <span class="tile-description">交流思路，让卡住的地方有回音。</span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-leaderboard" data-view="leaderboard">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">打卡排行榜</span>
+            <span class="tile-description">看看连续打卡榜，和坚持的人同行。</span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-plan" data-view="plan">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">我的套餐</span>
+            <span class="tile-description">查看订阅与 AI 额度，为练习补给。</span>
+          </button>
+        </nav>
+        <div class="lobby-bottom"><p>记录 · 复习 · 真正掌握</p><button id="home-admin" type="button" data-view="admin" hidden>管理后台 <span aria-hidden="true">↗</span></button></div>
+      </section>
 
       <section id="list-page">
         <div class="page-heading">
@@ -287,6 +357,21 @@
             <p class="muted">保留当时的想法，尤其是出错的那一步。</p>
           </div>
         </div>
+        <form id="problem-photo-form" class="photo-input" aria-labelledby="problem-photo-title">
+          <h3 id="problem-photo-title">拍照 / 上传图片</h3>
+          <p class="muted">上传手写解题过程或代码截图，AI 会提取题目和原始解法，填入下方表单供你核对。</p>
+          <label for="problem-photo-file">选择图片
+            <input id="problem-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-describedby="problem-photo-hint">
+          </label>
+          <p id="problem-photo-hint" class="field-hint">支持 JPEG、PNG、WebP，最大 8 MiB。照片识别和生成练习各使用 1 次 AI 额度，AI 调用失败也计入次数。</p>
+          <p id="problem-photo-quota" class="muted"></p>
+          <img id="problem-photo-preview" class="photo-preview" alt="所选题目照片预览" hidden>
+          <div class="actions">
+            <button id="problem-photo-recognize" type="submit" data-blocked="1" disabled>识别并填入表单</button>
+            <button id="problem-photo-clear" type="button" hidden>移除图片</button>
+          </div>
+          <p id="problem-photo-status" class="field-hint" role="status" aria-live="polite"></p>
+        </form>
         <form id="problem-form">
           <section class="form-section" aria-labelledby="problem-basics-title">
             <h3 id="problem-basics-title">01 · 题目和代码</h3>
@@ -331,7 +416,8 @@
           </section>
           <div class="actions form-footer">
             <button id="add-mistake" type="button">再加一个易错点</button>
-            <button type="submit" class="primary">保存记录</button>
+            <button id="problem-save" type="submit" class="primary">保存记录</button>
+            <button id="problem-photo-save" type="submit" class="primary" hidden>确认保存并生成练习</button>
           </div>
         </form>
       </section>
@@ -378,6 +464,13 @@
             <h3 id="forum-list-title">全部帖子</h3>
             <button id="forum-new-post-btn" type="button" class="primary">发帖</button>
           </div>
+          <form id="forum-search-form" role="search">
+            <label for="forum-search">搜索帖子</label>
+            <div class="forum-search-controls">
+              <input id="forum-search" name="q" type="search" maxlength="200" placeholder="标题或正文关键词（最多 200 字符）">
+              <button type="submit">搜索</button>
+            </div>
+          </form>
           <p id="forum-list-status" class="muted" role="status" aria-live="polite"></p>
           <div id="forum-posts"></div>
         </section>

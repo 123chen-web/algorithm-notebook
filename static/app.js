@@ -18,11 +18,17 @@ const resultLabels = {
 
 let user = null;
 let view = "today";
+// 上一次拍照识别成功的结果；非空时说明表单当前内容来自 AI 识别，
+// 保存记录后要顺带自动生成练习题。手动编辑无关字段不会清空它，
+// 但重新选图、移除图片或表单重置都会清空。
+let photoRecognition = null;
 let busy = false;
 let planPurchase = null;
 let orderPollTimer = null;
 let orderPollGeneration = 0;
 let forumPost = null;
+let forumSearchQuery = "";
+let forumListGeneration = 0;
 let zones = [];
 let codeZones = new Set();
 
@@ -118,6 +124,10 @@ function signedOut() {
   $("#plan-order-status").textContent = "";
   $("#plan-order").hidden = true;
   user = null;
+  document.body.classList.remove("home-view");
+  $("#home-page").hidden = true;
+  $("#home-admin").hidden = true;
+  resetHomeSummary();
   $("#auth").hidden = false;
   $("#app").hidden = true;
   $("#logout").hidden = true;
@@ -135,6 +145,10 @@ function signedOut() {
   $("#leaderboard-table-wrap").hidden = true;
   $("#leaderboard-page").setAttribute("aria-busy", "false");
   forumPost = null;
+  forumSearchQuery = "";
+  forumListGeneration += 1;
+  $("#forum-search-form").reset();
+  $("#forum-list-title").textContent = "全部帖子";
   $("#forum-posts").replaceChildren();
   $("#forum-list-status").textContent = "";
   $("#forum-post").replaceChildren();
@@ -147,6 +161,7 @@ function signedOut() {
   $("#problem-form").reset();
   $("#mistake-inputs").replaceChildren();
   addMistakeInput();
+  resetPhotoForm();
 }
 
 async function api(path, options = {}) {
@@ -261,9 +276,17 @@ function renderUserInfo() {
   const wrap = $("#user-info-wrap");
 
   function readOnly() {
-    wrap.replaceChildren(
-      element("span", `${user.username} · ${user.timezone} · ${user.today}`)
-    );
+    if (view === "home") {
+      wrap.replaceChildren(
+        element("span", "欢迎回来，继续积累你的解题力", "home-greeting"),
+        element("strong", user.username, "home-username"),
+        element("span", `${user.timezone} · ${user.today}`, "home-user-context")
+      );
+    } else {
+      wrap.replaceChildren(
+        element("span", `${user.username} · ${user.timezone} · ${user.today}`)
+      );
+    }
     if (!user.is_trial) {
       const editBtn = element("button", "改用户名", "link-button");
       editBtn.type = "button";
@@ -311,6 +334,8 @@ function updateUserInfo() {
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
   $("#admin-tab").hidden = !user.is_admin;
+  $("#home-admin").hidden = !user.is_admin;
+  renderHomeQuota();
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceWith(
@@ -362,6 +387,69 @@ function applyZoneFieldMode(form, zoneValue) {
   }
 }
 
+function renderPhotoQuota() {
+  const limit = user?.ai_daily_limit;
+  const remaining = user?.ai_daily_remaining;
+  const available = Number.isInteger(limit) && limit > 0 && Number.isInteger(remaining);
+  $("#problem-photo-quota").textContent = available
+    ? `今日 AI 额度剩余 ${Math.max(0, remaining)} / ${limit} 次`
+    : "";
+}
+
+function resetPhotoForm() {
+  photoRecognition = null;
+  $("#problem-photo-form").reset();
+  $("#problem-photo-preview").hidden = true;
+  $("#problem-photo-preview").src = "";
+  $("#problem-photo-recognize").disabled = true;
+  $("#problem-photo-clear").hidden = true;
+  $("#problem-photo-status").textContent = "";
+  $("#problem-save").hidden = false;
+  $("#problem-photo-save").hidden = true;
+  renderPhotoQuota();
+}
+
+async function uploadPhotoForRecognition(file) {
+  const body = new FormData();
+  body.append("file", file);
+  // 不能像 api() 那样固定 Content-Type: application/json——multipart 请求
+  // 的 boundary 必须由浏览器自己生成，手动设置反而会破坏它。
+  const response = await fetch("/api/problems/photo", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "X-CSRF-Protection": "1" },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) signedOut();
+    const detail = data.detail;
+    const text = typeof detail === "object" && detail !== null ? detail.message : detail;
+    const error = new Error(String(text || "识别失败，请稍后重试"));
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function fillProblemFormFromPhoto(fields) {
+  const form = $("#problem-form");
+  form.reset();
+  form.title.value = fields.title;
+  form.zone.value = fields.zone;
+  applyZoneFieldMode(form, form.zone.value);
+  form.language.value = fields.language;
+  form.code.value = fields.code;
+  form.thinking.value = fields.thinking;
+
+  $("#mistake-inputs").replaceChildren();
+  addMistakeInput();
+  $("#mistake-inputs").querySelector("[name=mistake]").value = fields.description;
+
+  $("#problem-save").hidden = true;
+  $("#problem-photo-save").hidden = false;
+}
+
 async function enterApp() {
   user = await api("/api/me");
   $("#auth").hidden = true;
@@ -369,29 +457,83 @@ async function enterApp() {
   $("#logout").hidden = false;
   updateUserInfo();
   await loadZones();
-  await showView("today");
+  await showView("home", { refreshUser: false });
 }
 
-async function showView(nextView) {
+async function showView(nextView, { refreshUser = true } = {}) {
   stopOrderPolling();
   view = nextView;
+  document.body.classList.toggle("home-view", view === "home");
+  $("#home-page").hidden = view !== "home";
+  $("#page-nav").hidden = view === "home";
   $("#new-page").hidden = view !== "new";
   $("#list-page").hidden = view !== "today" && view !== "all";
   $("#plan-page").hidden = view !== "plan";
   $("#leaderboard-page").hidden = view !== "leaderboard";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
+  renderUserInfo();
+  renderHomeQuota();
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  if (view === "admin") await loadAdminReports();
+  if (view === "home") await loadHome({ refreshUser });
+  else if (view === "admin") await loadAdminReports();
   else if (view === "forum") await showForumList();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "plan") await loadPlanPage();
+  else if (view === "new") renderPhotoQuota();
   else if (view === "today" || view === "all") await loadList();
+}
+
+function resetHomeSummary() {
+  $("#home-due-count").hidden = true;
+  $("#home-due-count").textContent = "";
+  $("#home-due-caption").textContent = "正在读取待复习记录…";
+  $("#home-quota").hidden = true;
+  $("#home-quota-text").textContent = "";
+  $("#home-quota-progress").value = 0;
+  $("#home-quota-progress").max = 1;
+}
+
+function renderHomeQuota() {
+  const limit = user?.ai_daily_limit;
+  const remaining = user?.ai_daily_remaining;
+  const available = view === "home" && Number.isInteger(limit) && limit > 0
+    && Number.isInteger(remaining) && remaining >= 0 && remaining <= limit;
+  $("#home-quota").hidden = !available;
+  if (!available) return;
+  $("#home-quota-progress").max = limit;
+  $("#home-quota-progress").value = remaining;
+  $("#home-quota-text").textContent = `剩余 ${remaining} / ${limit} 次`;
+}
+
+async function loadHome({ refreshUser = true } = {}) {
+  const currentUser = user;
+  resetHomeSummary();
+  // 大厅统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
+  // 两份数据独立降级，读取失败不显示旧值或假定的零值。
+  const [profile, reviews] = await Promise.allSettled([
+    refreshUser ? api("/api/me") : Promise.resolve(user),
+    api("/api/mistakes?due_only=true"),
+  ]);
+  if (!user || user !== currentUser || view !== "home") return;
+  if (profile.status === "fulfilled") {
+    user = profile.value;
+    updateUserInfo();
+  }
+  if (reviews.status === "fulfilled") {
+    const count = reviews.value.items.length;
+    $("#home-due-count").textContent = String(count);
+    $("#home-due-count").hidden = false;
+    $("#home-due-caption").textContent = count
+      ? "条易错点，等你来巩固" : "今日暂无待复习，去记录新的发现吧";
+  } else {
+    $("#home-due-caption").textContent = "暂时无法读取数量，可进入复习重试";
+  }
 }
 
 async function loadLeaderboard() {
@@ -570,7 +712,9 @@ function renderPlans(plans) {
       element("p", `${plan.period_days} 天`, "muted"),
       element("p", `每天 ${plan.ai_daily_limit} 次 AI 生成`)
     );
-    if (!user.is_trial) {
+    if (!plan.purchasable) {
+      card.append(element("p", "即将开放购买，敬请期待", "muted"));
+    } else if (!user.is_trial) {
       const buy = element("button", "购买", "primary");
       buy.type = "button";
       buy.setAttribute("aria-label", `购买${plan.name}`);
@@ -1362,6 +1506,11 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 
 $("#zone-filter").addEventListener("change", () => run(loadList));
 
+$("#home-refresh").addEventListener("click", () => run(async () => {
+  message();
+  await loadHome();
+}));
+
 $("#problem-zone").addEventListener("change", (event) => {
   applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
 });
@@ -1423,9 +1572,54 @@ $("#plan-back").addEventListener("click", () => run(async () => {
 
 $("#add-mistake").addEventListener("click", addMistakeInput);
 
+$("#problem-photo-file").addEventListener("change", (event) => {
+  photoRecognition = null;
+  $("#problem-photo-save").hidden = true;
+  $("#problem-save").hidden = false;
+  $("#problem-photo-status").textContent = "";
+  const file = event.currentTarget.files[0];
+  if (!file) {
+    $("#problem-photo-preview").hidden = true;
+    $("#problem-photo-preview").src = "";
+    $("#problem-photo-recognize").disabled = true;
+    $("#problem-photo-clear").hidden = true;
+    return;
+  }
+  $("#problem-photo-preview").src = URL.createObjectURL(file);
+  $("#problem-photo-preview").hidden = false;
+  $("#problem-photo-recognize").disabled = false;
+  $("#problem-photo-clear").hidden = false;
+});
+
+$("#problem-photo-clear").addEventListener("click", () => resetPhotoForm());
+
+$("#problem-photo-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const file = $("#problem-photo-file").files[0];
+  if (!file) return;
+
+  run(async () => {
+    $("#problem-photo-status").textContent = "正在识别图片，可能需要几十秒…";
+    try {
+      const fields = await uploadPhotoForRecognition(file);
+      photoRecognition = fields;
+      fillProblemFormFromPhoto(fields);
+      $("#problem-photo-status").textContent = "已识别，请核对下方内容后再保存。";
+    } catch (error) {
+      $("#problem-photo-status").textContent = "识别未成功，可以换一张更清晰的照片重试。";
+      throw error;
+    } finally {
+      user = await api("/api/me");
+      updateUserInfo();
+      renderPhotoQuota();
+    }
+  });
+});
+
 $("#problem-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const cameFromPhoto = Boolean(photoRecognition);
 
   run(async () => {
     const data = new FormData(form);
@@ -1445,14 +1639,27 @@ $("#problem-form").addEventListener("submit", (event) => {
     applyZoneFieldMode(form, form.zone.value);
     $("#mistake-inputs").replaceChildren();
     addMistakeInput();
+    resetPhotoForm();
+
+    let noticeText = "记录已保存，新的易错点已加入今日复习。";
+    if (cameFromPhoto && created.mistake_ids[0]) {
+      try {
+        await api(`/api/mistakes/${created.mistake_ids[0]}/variants`, { method: "POST" });
+        noticeText = "记录已保存，已根据识别结果自动生成练习题。";
+      } catch (error) {
+        noticeText = `记录已保存，但自动生成练习题失败：${error.message}`;
+      }
+    }
+
     await showView("today");
     await openMistake(created.mistake_ids[0]);
-    message("记录已保存，新的易错点已加入今日复习。");
+    message(noticeText);
   });
 });
 
 async function showForumList() {
   forumPost = null;
+  $("#forum-search").value = forumSearchQuery;
   $("#forum-compose").hidden = true;
   $("#forum-detail").hidden = true;
   $("#forum-list").hidden = false;
@@ -1462,13 +1669,25 @@ async function showForumList() {
 
 async function loadForumPosts() {
   const currentUser = user;
+  const generation = ++forumListGeneration;
+  const query = forumSearchQuery;
   const status = $("#forum-list-status");
   const list = $("#forum-posts");
+  const isCurrent = () => generation === forumListGeneration && user === currentUser
+    && user && view === "forum" && !$("#forum-list").hidden;
+  $("#forum-list-title").textContent = query ? "搜索结果" : "全部帖子";
   status.textContent = "正在加载帖子列表…";
   list.replaceChildren();
-  const { posts } = await api("/api/posts");
-  if (user !== currentUser || !user || view !== "forum") return;
-  status.textContent = posts.length ? "" : "还没有帖子，来发第一条吧。";
+  let posts;
+  try {
+    ({ posts } = await api(query ? `/api/posts?q=${encodeURIComponent(query)}` : "/api/posts"));
+  } catch (error) {
+    if (isCurrent()) status.textContent = error.message || "帖子列表加载失败，请稍后重试。";
+    return;
+  }
+  if (!isCurrent()) return;
+  status.textContent = posts.length ? "" : (query
+    ? "没有找到相关帖子，请试试其他关键词。" : "还没有帖子，来发第一条吧。");
   for (const post of posts) {
     const row = element("button", "", "record-button");
     row.type = "button";
@@ -1873,6 +2092,20 @@ function renderAdminAvatarReport(report) {
   return card;
 }
 
+$("#forum-search-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = $("#forum-search");
+  const query = input.value.trim();
+  input.value = query;
+  if (Array.from(query).length > 200) {
+    $("#forum-list-status").textContent = "搜索关键词不能超过 200 个字符。";
+    return;
+  }
+  forumSearchQuery = query;
+  message();
+  loadForumPosts();
+});
+
 $("#forum-new-post-btn").addEventListener("click", () => {
   message();
   showForumCompose();
@@ -1942,3 +2175,238 @@ if (resetToken) {
     }
   });
 }
+
+// 纯展示：不读取用户数据，也不参与页面路由。放在文件尾部便于独立验证生命周期。
+function initMarbleBackground() {
+  if (typeof window.matchMedia !== "function") return;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const finePointer = window.matchMedia("(pointer: fine)");
+  // 首次不符合条件时，连 DOM、画布和监听器都不创建。
+  if (reducedMotion.matches || !finePointer.matches) return;
+
+  let canvas = null;
+  let context = null;
+  let texture = null;
+  let glow = null;
+  let frame = 0;
+  let running = false;
+  let disposed = false;
+  let resizeNeeded = true;
+  let lastFrame = null;
+  let elapsed = 0;
+  let width = 1;
+  let height = 1;
+  const pointer = { x: .5, y: .5, targetX: .5, targetY: .5, strength: 0, targetStrength: 0 };
+
+  function makeCanvas(w, h) {
+    const node = document.createElement("canvas");
+    node.width = w;
+    node.height = h;
+    return node;
+  }
+
+  function makeGlow(rgb) {
+    const node = makeCanvas(192, 192);
+    const ctx = node.getContext("2d");
+    if (!ctx) return null;
+    const gradient = ctx.createRadialGradient(96, 96, 0, 96, 96, 96);
+    gradient.addColorStop(0, `rgba(${rgb}, .9)`);
+    gradient.addColorStop(.35, `rgba(${rgb}, .55)`);
+    gradient.addColorStop(.7, `rgba(${rgb}, .16)`);
+    gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 192, 192);
+    return node;
+  }
+
+  function prepareTexture() {
+    // 大理石纹理：经典的"湍流扰动正弦相位"手法——一个基础斜纹波被湍流场扰动
+    // 相位后会弯曲成有机的纹理带，再把波值映射到一段柔彩渐变上色，效果类似
+    // 大理石紋/水面墨迹的弯曲纹路，而不是几个柔边色块直接叠加出的平滑渐变
+    // （那样边界会糊成一片，看不出纹理）。逐像素计算，但只在低分辨率位图上
+    // 算一次，动画帧只整体缩放绘制，不逐帧重算。
+    const w = 240, h = 180;
+    texture = makeCanvas(w, h);
+    const ctx = texture.getContext("2d");
+    glow = makeGlow("205, 190, 240");
+    if (!ctx || !glow) return false;
+
+    // 渐变环带按顺序排列，相邻颜色在纹理带交界处平滑过渡。
+    const palette = [
+      [205, 188, 240], // 薰衣草紫
+      [186, 224, 214], // 薄荷绿
+      [252, 214, 176], // 蜜桃橙
+      [242, 196, 220], // 浅粉
+      [205, 188, 240], // 首尾同色，纹理带首尾相接不产生硬边
+    ];
+
+    // 三层不同频率/相位的正弦互相调制，近似湍流噪声：足够产生有机的扭曲，
+    // 不需要真正的 Perlin 噪声实现。
+    const turbulence = (x, y, seed) => {
+      let value = 0, amp = 1, total = 0, fx = 1, fy = 1;
+      for (let o = 0; o < 4; o += 1) {
+        value += Math.sin(x * fx + seed) * Math.cos(y * fy * 1.3 - seed) * amp;
+        total += amp;
+        fx *= 2.03;
+        fy *= 1.97;
+        amp *= .55;
+      }
+      return value / total;
+    };
+
+    const image = ctx.createImageData(w, h);
+    const data = image.data;
+    for (let py = 0; py < h; py += 1) {
+      const ny = py / h;
+      for (let px = 0; px < w; px += 1) {
+        const nx = px / w;
+        // 两条不同角度/频率的纹理波叠加，各自被湍流扰动相位后再相加：单独一条
+        // 波纹会是规则的重复条带，两条交叉叠加才会呈现不规则的漩涡感。
+        const warpA = turbulence(nx * 2.6, ny * 2.6, 3.1);
+        const waveA = Math.sin((nx + ny * .6) * 5.2 + warpA * 4.4);
+        const warpB = turbulence(nx * 2.1 - 4, ny * 2.1 - 4, 6.6);
+        const waveB = Math.sin((nx * .7 - ny * 1.3) * 4.1 + warpB * 3.8);
+        const wave = (waveA + waveB) / 2;
+        const position = (wave + 1) / 2 * (palette.length - 1);
+        const i0 = Math.min(palette.length - 2, Math.floor(position));
+        const localT = position - i0;
+        const r = palette[i0][0] + (palette[i0 + 1][0] - palette[i0][0]) * localT;
+        const g = palette[i0][1] + (palette[i0 + 1][1] - palette[i0][1]) * localT;
+        const b = palette[i0][2] + (palette[i0 + 1][2] - palette[i0][2]) * localT;
+
+        // 另一层湍流控制浓淡（alpha），让纹路深浅不一，不是均匀满版的色块。
+        const density = turbulence(nx * 3.4 + 9, ny * 3.4 + 9, 8.8);
+        const alpha = Math.max(70, Math.min(215, Math.round(150 + density * 80)));
+
+        const idx = (py * w + px) * 4;
+        data[idx] = r;
+        data[idx + 1] = g;
+        data[idx + 2] = b;
+        data[idx + 3] = alpha;
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+    return true;
+  }
+
+  function createSurface() {
+    canvas = makeCanvas(1, 1);
+    context = canvas.getContext("2d", { alpha: true });
+    if (!context || !prepareTexture()) return false;
+    canvas.className = "marble-background";
+    canvas.setAttribute("aria-hidden", "true");
+    document.body.prepend(canvas);
+    return true;
+  }
+
+  function resize() { resizeNeeded = true; }
+  function movePointer(event) {
+    if (event.pointerType !== "mouse" && event.pointerType !== "pen") return;
+    pointer.targetX = Math.max(0, Math.min(1, event.clientX / Math.max(1, window.innerWidth)));
+    pointer.targetY = Math.max(0, Math.min(1, event.clientY / Math.max(1, window.innerHeight)));
+    pointer.targetStrength = 1;
+  }
+  function leavePointer() { pointer.targetStrength = 0; }
+
+  function draw(now) {
+    frame = 0;
+    if (!running) return;
+    frame = window.requestAnimationFrame(draw);
+    // 最高约 30fps；低分辨率画布交给浏览器平滑放大，高 DPI 屏也不增加绘制量。
+    if (lastFrame !== null && now - lastFrame < 1000 / 30) return;
+    const delta = lastFrame === null ? 1000 / 30 : Math.min(now - lastFrame, 80);
+    lastFrame = now;
+    elapsed += delta;
+    if (resizeNeeded) {
+      const scale = Math.min(1, 960 / Math.max(1, window.innerWidth), 720 / Math.max(1, window.innerHeight));
+      width = Math.max(1, Math.round(window.innerWidth * scale));
+      height = Math.max(1, Math.round(window.innerHeight * scale));
+      canvas.width = width;
+      canvas.height = height;
+      resizeNeeded = false;
+    }
+    const follow = 1 - Math.exp(-delta / 650);
+    pointer.x += (pointer.targetX - pointer.x) * follow;
+    pointer.y += (pointer.targetY - pointer.y) * follow;
+    pointer.strength += (pointer.targetStrength - pointer.strength) * follow;
+    const phase = elapsed / 18000;
+    context.clearRect(0, 0, width, height);
+    context.save();
+    context.translate(width / 2 + Math.sin(phase) * width * .015, height / 2 + Math.cos(phase * .7) * height * .012);
+    context.rotate(Math.sin(phase * .6) * .012);
+    context.globalAlpha = .91 + Math.sin(phase * .8) * .045;
+    context.drawImage(texture, -width * .56, -height * .56, width * 1.12, height * 1.12);
+    context.restore();
+    if (pointer.strength > .005) {
+      const size = Math.max(width, height) * .48;
+      context.globalAlpha = pointer.strength * .16;
+      context.drawImage(glow, pointer.x * width - size / 2, pointer.y * height - size / 2, size, size);
+      context.globalAlpha = 1;
+    }
+  }
+
+  function suspend() {
+    running = false;
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    lastFrame = null;
+    pointer.targetStrength = 0;
+    pointer.strength = 0;
+    window.removeEventListener("pointermove", movePointer);
+    window.removeEventListener("pointerout", pointerOut);
+    window.removeEventListener("blur", leavePointer);
+    window.removeEventListener("resize", resize);
+  }
+  function pointerOut(event) {
+    if (!event.relatedTarget) leavePointer();
+  }
+  function resume() {
+    if (disposed || running || document.hidden) return;
+    if (reducedMotion.matches || !finePointer.matches) { destroy(); return; }
+    if (!canvas && !createSurface()) { destroy(); return; }
+    running = true;
+    resizeNeeded = true;
+    window.addEventListener("pointermove", movePointer, { passive: true });
+    window.addEventListener("pointerout", pointerOut, { passive: true });
+    window.addEventListener("blur", leavePointer);
+    window.addEventListener("resize", resize, { passive: true });
+    frame = window.requestAnimationFrame(draw);
+  }
+  function visibilityChanged() {
+    if (document.hidden) suspend();
+    else resume();
+  }
+  function preferenceChanged() {
+    // 一旦禁用就彻底释放监听器；恢复特效需重新载入，禁用状态不保留后台观察。
+    if (reducedMotion.matches || !finePointer.matches) destroy();
+  }
+  function pageHidden(event) {
+    if (event.persisted) suspend();
+    else destroy();
+  }
+  function destroy() {
+    if (disposed) return;
+    disposed = true;
+    suspend();
+    reducedMotion.removeEventListener("change", preferenceChanged);
+    finePointer.removeEventListener("change", preferenceChanged);
+    document.removeEventListener("visibilitychange", visibilityChanged);
+    window.removeEventListener("pagehide", pageHidden);
+    window.removeEventListener("pageshow", resume);
+    if (canvas) canvas.remove();
+    // 主动释放 backing stores，包括未插入 DOM 的纹理缓存。
+    for (const buffer of [canvas, texture, glow]) {
+      if (buffer) { buffer.width = 0; buffer.height = 0; }
+    }
+    canvas = context = texture = glow = null;
+  }
+
+  reducedMotion.addEventListener("change", preferenceChanged);
+  finePointer.addEventListener("change", preferenceChanged);
+  document.addEventListener("visibilitychange", visibilityChanged);
+  window.addEventListener("pagehide", pageHidden);
+  window.addEventListener("pageshow", resume);
+  resume();
+}
+
+initMarbleBackground();
