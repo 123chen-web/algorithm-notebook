@@ -1236,6 +1236,101 @@ def create_weakness_analysis(user=Depends(current_user)):
         return weakness_analysis_state(conn, user["id"])
 
 
+GROWTH_RECENT_WINDOW_DAYS = 30
+GROWTH_QUIET_THRESHOLD_DAYS = 60
+
+
+def growth_by_zone(conn, user_id, today):
+    # 不用 SQL 日期函数：created_at 是 UTC 时间戳，"今天"要按用户自己的
+    # 时区算，两者混在一条 SQL 里容易出偏差；取出来后在 Python 里统一按
+    # 日期比较，跟 current_streak() 的思路一致。mistakes 本身没有
+    # created_at，用所属 problem 的记录时间代表这条易错点的录入时间——
+    # 这跟"薄弱点分析"里 period_start/period_end 的口径一致。
+    rows = conn.execute(
+        "SELECT p.zone, p.created_at FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+        "WHERE p.user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+    by_zone = {}
+    for row in rows:
+        created_date = datetime.fromisoformat(row["created_at"]).date()
+        by_zone.setdefault(row["zone"], []).append(created_date)
+
+    zones = []
+    for zone, dates in by_zone.items():
+        most_recent = max(dates)
+        days_since_last = (today - most_recent).days
+        recent = sum(
+            1 for created_date in dates
+            if 0 <= (today - created_date).days < GROWTH_RECENT_WINDOW_DAYS
+        )
+        prior = sum(
+            1 for created_date in dates
+            if GROWTH_RECENT_WINDOW_DAYS <= (today - created_date).days < 2 * GROWTH_RECENT_WINDOW_DAYS
+        )
+        zones.append({
+            "zone": zone,
+            "total_mistakes": len(dates),
+            "days_since_last_mistake": days_since_last,
+            "recent_30_days": recent,
+            "prior_30_days": prior,
+            "quiet_streak": recent == 0 and days_since_last >= GROWTH_QUIET_THRESHOLD_DAYS,
+        })
+
+    zones.sort(key=lambda item: item["zone"])
+    return zones
+
+
+COMMUNITY_STRUGGLING_THRESHOLD = 3
+COMMUNITY_MIN_COHORT = 5
+
+
+def community_weakness_by_zone(conn):
+    # 只统计计数，绝不选取用户名、题目标题或任何错题内容——这是唯一一次
+    # 跨用户的查询，返回值必须只含数字。样本(全站在这个分区有过记录的
+    # 用户数)低于 COMMUNITY_MIN_COHORT 时不给百分比，避免小群体下"占比"
+    # 实质等于点名某个具体的人。
+    rows = conn.execute(
+        """
+        SELECT p.zone, COUNT(*) AS mistake_count
+        FROM mistakes m JOIN problems p ON p.id = m.problem_id
+        GROUP BY p.zone, p.user_id
+        """
+    ).fetchall()
+    by_zone = {}
+    for row in rows:
+        stats = by_zone.setdefault(row["zone"], {"total_users": 0, "struggling_users": 0})
+        stats["total_users"] += 1
+        if row["mistake_count"] >= COMMUNITY_STRUGGLING_THRESHOLD:
+            stats["struggling_users"] += 1
+
+    result = {}
+    for zone, stats in by_zone.items():
+        total = stats["total_users"]
+        result[zone] = {
+            "sample_size": total,
+            "struggling_ratio": (
+                round(stats["struggling_users"] / total, 4)
+                if total >= COMMUNITY_MIN_COHORT else None
+            ),
+        }
+    return result
+
+
+@app.get("/api/insights/growth")
+def get_growth_insights(user=Depends(current_user)):
+    # 纯统计，不调用 AI、不涉及配额——跟"薄弱点分析"是两个独立入口。
+    with connect() as conn:
+        zones = growth_by_zone(conn, user["id"], today_for(user))
+        community = community_weakness_by_zone(conn)
+    for zone in zones:
+        stats = community.get(zone["zone"], {"sample_size": 0, "struggling_ratio": None})
+        zone["community_sample_size"] = stats["sample_size"]
+        zone["community_struggling_ratio"] = stats["struggling_ratio"]
+    return {"zones": zones}
+
+
 @app.post("/api/problems/photo")
 async def recognize_problem_photo(user=Depends(current_user), file: UploadFile = File(...)):
     # 只识别、不落库：返回结构化字段供前端预填新增记录表单，用户确认后

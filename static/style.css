@@ -217,6 +217,12 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .weakness-action p { margin: 0; }
 #weakness-status:empty { display: none; }
 #weakness-status.error { color: var(--danger); }
+.growth-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+.growth-zone { padding: 16px 18px; }
+.growth-zone h4 { margin: 0 0 8px; }
+.growth-headline { margin: 0 0 6px; font-weight: 600; }
+.growth-zone-quiet { border-color: #a9c9a6; background: #f2f8f0; }
+.growth-zone-quiet .growth-headline { color: #3d7a3a; }
 #leaderboard-page { max-width: 960px; margin: 0 auto; }
 #leaderboard-page > .panel > h3 { margin-top: 0; }
 .leaderboard-personal { background: var(--soft); }

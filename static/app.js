@@ -33,6 +33,7 @@ let weaknessAnalysis = null;
 let weaknessGeneration = 0;
 let weaknessPending = false;
 let weaknessQuotaAvailable = false;
+let growthZones = null;
 let zones = [];
 let codeZones = new Set();
 
@@ -705,9 +706,10 @@ async function loadWeaknessAnalysis() {
   const status = $("#weakness-status");
   status.classList.remove("error");
   status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
-  const [analysis, profile] = await Promise.allSettled([
+  const [analysis, profile, growth] = await Promise.allSettled([
     api("/api/insights/weakness-analysis"),
     api("/api/me"),
+    api("/api/insights/growth"),
   ]);
   if (!weaknessRequestCurrent(generation, userId)) return;
   if (profile.status === "fulfilled") {
@@ -724,6 +726,58 @@ async function loadWeaknessAnalysis() {
     renderWeaknessControls();
     status.classList.add("error");
     status.textContent = `读取分析失败：${analysis.reason.message || "请检查网络后重试"}。可点击上方“刷新”重新读取。`;
+  }
+  // 独立降级：成长趋势和薄弱点分析是两个互不依赖的接口，一个失败不影响另一个展示。
+  growthZones = growth.status === "fulfilled" ? growth.value.zones : null;
+  renderGrowthInsights(growth.status === "fulfilled");
+}
+
+function renderGrowthInsights(loadedOk) {
+  const panel = $("#growth-summary");
+  const empty = $("#growth-empty");
+  const list = $("#growth-zones");
+  list.replaceChildren();
+
+  if (!loadedOk) {
+    panel.hidden = true;
+    empty.hidden = false;
+    empty.textContent = "暂时无法读取成长趋势，可稍后刷新重试。";
+    return;
+  }
+  if (!growthZones || !growthZones.length) {
+    panel.hidden = true;
+    empty.hidden = false;
+    empty.textContent = "还没有足够的历史记录，积累几条易错点后回来看看趋势。";
+    return;
+  }
+  empty.hidden = true;
+  panel.hidden = false;
+  for (const zone of growthZones) {
+    const card = element("article", "", "panel growth-zone");
+    if (zone.quiet_streak) card.classList.add("growth-zone-quiet");
+    card.append(element("h4", zone.zone));
+    card.append(element(
+      "p",
+      zone.quiet_streak
+        ? `已经 ${zone.days_since_last_mistake} 天没有新的易错点了。`
+        : zone.days_since_last_mistake === 0
+          ? "今天刚记录了新的易错点。"
+          : `距离上一次记录新的易错点已经 ${zone.days_since_last_mistake} 天。`,
+      "growth-headline"
+    ));
+    card.append(element(
+      "p",
+      `过去 30 天 ${zone.recent_30_days} 条，再往前 30 天 ${zone.prior_30_days} 条 · 累计 ${zone.total_mistakes} 条`,
+      "muted"
+    ));
+    card.append(element(
+      "p",
+      zone.community_struggling_ratio === null
+        ? "这个方向记录的人还不够多，暂时看不出群体趋势。"
+        : `全站有记录的用户里，${Math.round(zone.community_struggling_ratio * 100)}% 的人也在这个方向反复出错（≥3 条易错点）。`,
+      "muted growth-community"
+    ));
+    list.append(card);
   }
 }
 
