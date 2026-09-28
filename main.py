@@ -2028,6 +2028,106 @@ def resolve_reports_for(conn, *, post_id=None, comment_id=None):
         )
 
 
+@app.get("/api/admin/dashboard")
+def admin_dashboard(user=Depends(current_user)):
+    require_admin(user)
+    now = datetime.fromisoformat(utc_now()).astimezone(timezone.utc)
+    # 运营看板统一用 UTC；时间戳按过去 N × 24 小时，AI 日汇总按含今天的 7 天。
+    bounds = {
+        "now": now.isoformat(),
+        "since_7_days": (now - timedelta(days=7)).isoformat(),
+        "since_30_days": (now - timedelta(days=30)).isoformat(),
+        "today": now.date().isoformat(),
+        "first_ai_day": (now.date() - timedelta(days=6)).isoformat(),
+    }
+    with connect() as conn:
+        # 多个聚合读取同一个快照，避免并发写入让总数和分区明细对不上。
+        conn.execute("BEGIN")
+        users = dict(conn.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COUNT(CASE WHEN is_trial = 1 THEN 1 END) AS trial,
+                   COUNT(CASE WHEN is_trial = 0 THEN 1 END) AS registered,
+                   COUNT(CASE WHEN julianday(created_at)
+                       BETWEEN julianday(:since_7_days) AND julianday(:now)
+                       THEN 1 END) AS new_7_days,
+                   COUNT(CASE WHEN julianday(created_at)
+                       BETWEEN julianday(:since_30_days) AND julianday(:now)
+                       THEN 1 END) AS new_30_days,
+                   COUNT(CASE WHEN plan_id IS NOT NULL
+                       AND julianday(plan_expires_at) > julianday(:now)
+                       THEN 1 END) AS active_subscriptions
+            FROM users
+            """, bounds,
+        ).fetchone())
+        active_users = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT user_id FROM problems
+                WHERE julianday(created_at)
+                    BETWEEN julianday(:since_7_days) AND julianday(:now)
+                UNION
+                SELECT p.user_id FROM reviews r
+                JOIN mistakes m ON m.id = r.mistake_id
+                JOIN problems p ON p.id = m.problem_id
+                WHERE julianday(r.reviewed_at)
+                    BETWEEN julianday(:since_7_days) AND julianday(:now)
+            )
+            """, bounds,
+        ).fetchone()[0]
+        ai_usage = dict(conn.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN day = :today THEN attempts ELSE 0 END), 0)
+                       AS today,
+                   COALESCE(SUM(attempts), 0) AS last_7_days
+            FROM ai_usage WHERE day BETWEEN :first_ai_day AND :today
+            """, bounds,
+        ).fetchone())
+        content = dict(conn.execute(
+            """
+            SELECT (SELECT COUNT(*) FROM problems) AS problems,
+                   (SELECT COUNT(*) FROM mistakes) AS mistakes,
+                   (SELECT COUNT(*) FROM posts WHERE deleted_at IS NULL) AS posts,
+                   (SELECT COUNT(*) FROM reports WHERE resolved_at IS NULL)
+                     + (SELECT COUNT(*) FROM avatar_reports WHERE resolved_at IS NULL)
+                       AS pending_reports
+            """
+        ).fetchone())
+        zone_counts = dict.fromkeys(PROBLEM_ZONES, 0)
+        zone_counts.update({
+            row["zone"]: row["mistake_count"]
+            for row in conn.execute(
+                """
+                SELECT p.zone, COUNT(m.id) AS mistake_count
+                FROM problems p LEFT JOIN mistakes m ON m.problem_id = p.id
+                GROUP BY p.zone
+                """
+            )
+        })
+        subscriptions = dict(conn.execute(
+            """
+            SELECT COUNT(*) AS paid_orders,
+                   COALESCE(SUM(amount_cents), 0) AS paid_amount_cents
+            FROM orders WHERE status = 'paid'
+            """
+        ).fetchone())
+    subscriptions["active"] = users.pop("active_subscriptions")
+    pending_reports = content.pop("pending_reports")
+    return {
+        "generated_at": bounds["now"],
+        "users": users,
+        "activity": {"active_users_7_days": active_users},
+        "ai_usage": ai_usage,
+        "content": content,
+        "pending_reports": pending_reports,
+        "zones": [
+            {"zone": zone, "mistake_count": count}
+            for zone, count in sorted(zone_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "subscriptions": subscriptions,
+    }
+
+
 @app.get("/api/admin/reports")
 def list_reports(user=Depends(current_user)):
     require_admin(user)

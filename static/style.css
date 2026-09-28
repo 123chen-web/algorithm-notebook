@@ -255,6 +255,26 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .forum-comment .actions { margin: 10px 0 0; }
 #forum-comment-form { margin-top: 20px; }
 #admin-page { max-width: 860px; margin: 0 auto; }
+.admin-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.admin-dashboard-heading h3 { margin: 0; }
+.admin-dashboard-note { margin: 8px 0 14px; font-size: 12px; }
+#admin-dashboard-status:empty, #admin-dashboard-updated:empty { display: none; }
+#admin-dashboard-status.error { color: var(--danger); }
+.admin-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 16px; }
+.admin-stat-card { padding: 22px; }
+.admin-stat-card h4, .admin-zone-panel h4 { margin: 0; }
+.admin-stat-value { margin: 10px 0 14px; color: var(--accent); font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-stat-value small { margin-left: 6px; color: var(--muted); font-size: 13px; font-weight: 400; }
+.admin-stat-facts { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 14px; margin: 0; font-size: 13px; }
+.admin-stat-facts dt { color: var(--muted); }
+.admin-stat-facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-stat-card .admin-dashboard-note { margin-bottom: 0; }
+.admin-zone-panel { margin-top: 16px; padding: 22px; }
+.admin-zone-list { margin: 0; padding: 0; list-style: none; }
+.admin-zone-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.admin-zone-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.admin-zone-list strong { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.admin-reports-heading { margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--line); }
 #admin-reports { display: flex; flex-direction: column; gap: 18px; }
 .admin-report h3 { margin-top: 0; }
 .admin-report pre { margin: 12px 0; }

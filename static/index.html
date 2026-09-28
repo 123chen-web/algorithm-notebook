@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=16">
+  <link rel="stylesheet" href="/static/style.css?v=17">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=21"></script>
+  <script defer src="/static/app.js?v=22"></script>
 </head>
 <body>
   <div class="container">
@@ -555,8 +555,28 @@
       <section id="admin-page" aria-labelledby="admin-title" hidden>
         <div class="page-heading">
           <h2 id="admin-title">管理后台</h2>
-          <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
+          <p class="muted">查看全站运营数据，处理讨论区与头像举报。</p>
         </div>
+        <section id="admin-dashboard" aria-labelledby="admin-dashboard-title" aria-busy="false">
+          <div class="admin-dashboard-heading">
+            <h3 id="admin-dashboard-title">数据看板</h3>
+            <button id="admin-dashboard-refresh" type="button">刷新数据</button>
+          </div>
+          <p class="muted admin-dashboard-note">全站统计，统一按 UTC（协调世界时）计算。新增用户与活跃人数从当前时刻向前推算；AI 最近 7 天包含今天及前 6 天。</p>
+          <p id="admin-dashboard-status" class="muted" role="status" aria-live="polite"></p>
+          <p id="admin-dashboard-updated" class="muted admin-dashboard-note"></p>
+          <div id="admin-dashboard-content" hidden>
+            <div id="admin-dashboard-cards" class="admin-dashboard-grid"></div>
+            <section class="panel admin-zone-panel" aria-labelledby="admin-zones-title">
+              <h4 id="admin-zones-title">分区热度</h4>
+              <p class="muted admin-dashboard-note">各分区的易错点数量，按数量从高到低排列。</p>
+              <ol id="admin-dashboard-zones" class="admin-zone-list"></ol>
+              <p id="admin-dashboard-zones-empty" class="muted" hidden>暂无分区数据。</p>
+            </section>
+          </div>
+        </section>
+        <h3 class="admin-reports-heading">举报处理</h3>
+        <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
         <p id="admin-status" class="muted" role="status" aria-live="polite"></p>
         <div id="admin-reports"></div>
       </section>

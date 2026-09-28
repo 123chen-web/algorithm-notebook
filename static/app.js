@@ -29,6 +29,7 @@ let orderPollGeneration = 0;
 let forumPost = null;
 let forumSearchQuery = "";
 let forumListGeneration = 0;
+let adminDashboardGeneration = 0;
 let weaknessAnalysis = null;
 let weaknessGeneration = 0;
 let weaknessPending = false;
@@ -162,6 +163,7 @@ function signedOut() {
   $("#forum-compose-form").reset();
   $("#forum-comment-form").reset();
   $("#admin-tab").hidden = true;
+  resetAdminDashboard();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
   $("#problem-form").reset();
@@ -489,7 +491,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   });
 
   if (view === "home") await loadHome({ refreshUser });
-  else if (view === "admin") await loadAdminReports();
+  else if (view === "admin") await loadAdminPage();
   else if (view === "forum") await showForumList();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
@@ -1749,6 +1751,11 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
 
 $("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
 
+$("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
+  message();
+  await loadAdminDashboard();
+}));
+
 $("#problem-zone").addEventListener("change", (event) => {
   applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
 });
@@ -1780,8 +1787,8 @@ $("#refresh").addEventListener("click", () => run(async () => {
   }
   if (view === "admin") {
     message();
-    await loadAdminReports();
-    message("已刷新。");
+    const dashboardLoaded = await loadAdminPage();
+    message(dashboardLoaded ? "已刷新。" : "举报队列已刷新；数据看板加载失败，请重试。", !dashboardLoaded);
     return;
   }
   if (view === "forum") {
@@ -2189,6 +2196,118 @@ function renderForumComments(comments) {
     list.append(renderForumComment(comment));
   }
   $("#forum-comment-form").hidden = user.is_trial;
+}
+
+function resetAdminDashboard() {
+  adminDashboardGeneration += 1;
+  $("#admin-dashboard").setAttribute("aria-busy", "false");
+  $("#admin-dashboard-content").hidden = true;
+  $("#admin-dashboard-cards").replaceChildren();
+  $("#admin-dashboard-zones").replaceChildren();
+  $("#admin-dashboard-zones-empty").hidden = true;
+  $("#admin-dashboard-status").textContent = "";
+  $("#admin-dashboard-status").classList.remove("error");
+  $("#admin-dashboard-updated").textContent = "";
+  $("#admin-dashboard-refresh").textContent = "刷新数据";
+}
+
+function renderAdminDashboard(data) {
+  const count = (value) => {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error("统计数据不完整，请重试");
+    return value.toLocaleString("zh-CN");
+  };
+  const money = (value) => {
+    count(value);
+    return (value / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const definitions = [
+    ["用户总数", data.users.total, "人", [
+      ["体验账号", `${count(data.users.trial)} 人`],
+      ["正式账号", `${count(data.users.registered)} 人`],
+      ["最近 7 天新增", `${count(data.users.new_7_days)} 人`],
+      ["最近 30 天新增", `${count(data.users.new_30_days)} 人`],
+    ], "正式账号指非体验账号，与是否付费订阅无关。"],
+    ["最近 7 天活跃用户", data.activity.active_users_7_days, "人", [],
+      "新增过题目或提交过复习评分的用户；同一人只计算一次。"],
+    ["今天 AI 调用", data.ai_usage.today, "次", [
+      ["最近 7 天调用", `${count(data.ai_usage.last_7_days)} 次`],
+    ]],
+    ["题目总数", data.content.problems, "道", [
+      ["易错点总数", `${count(data.content.mistakes)} 个`],
+      ["讨论区帖子", `${count(data.content.posts)} 篇`],
+    ], "帖子数量不含已删除的帖子。"],
+    ["待处理举报", data.pending_reports, "条", [], "包含讨论区内容举报与头像举报。"],
+    ["当前有效订阅", data.subscriptions.active, "份", [
+      ["已支付订单", `${count(data.subscriptions.paid_orders)} 笔`],
+      ["已支付订单总金额", `${money(data.subscriptions.paid_amount_cents)} 元`],
+    ], "订阅尚未到期；订单与金额为全站累计，仅统计当前状态为已支付的订单。"],
+  ];
+  const cards = definitions.map(([title, value, unit, facts, note]) => {
+    const card = element("article", "", "panel admin-stat-card");
+    const number = element("p", count(value), "admin-stat-value");
+    number.append(element("small", unit));
+    card.append(element("h4", title), number);
+    if (facts.length) {
+      const list = element("dl", "", "admin-stat-facts");
+      for (const [label, text] of facts) list.append(element("dt", label), element("dd", text));
+      card.append(list);
+    }
+    if (note) card.append(element("p", note, "muted admin-dashboard-note"));
+    return card;
+  });
+  const zoneRows = data.zones.map((zone) => {
+    const row = element("li");
+    row.append(element("span", zone.zone), element("strong", `${count(zone.mistake_count)} 个`));
+    return row;
+  });
+  const updated = new Date(data.generated_at);
+  if (Number.isNaN(updated.getTime())) throw new Error("统计时间无效，请重试");
+  $("#admin-dashboard-cards").replaceChildren(...cards);
+  $("#admin-dashboard-zones").replaceChildren(...zoneRows);
+  $("#admin-dashboard-zones-empty").hidden = zoneRows.length > 0;
+  $("#admin-dashboard-updated").textContent = `数据更新于 ${updated.toLocaleString("zh-CN", { timeZone: "UTC", hour12: false })} UTC`;
+  $("#admin-dashboard-content").hidden = false;
+}
+
+async function loadAdminDashboard() {
+  const generation = ++adminDashboardGeneration;
+  const currentUser = user;
+  if (!currentUser?.is_admin) return false;
+  const isCurrent = () => generation === adminDashboardGeneration && user === currentUser && view === "admin";
+  const status = $("#admin-dashboard-status");
+  const refresh = $("#admin-dashboard-refresh");
+  $("#admin-dashboard").setAttribute("aria-busy", "true");
+  $("#admin-dashboard-content").hidden = true;
+  $("#admin-dashboard-updated").textContent = "";
+  status.classList.remove("error");
+  status.textContent = "正在加载全站数据…";
+  refresh.textContent = "加载中…";
+  try {
+    const data = await api("/api/admin/dashboard");
+    if (!isCurrent()) return false;
+    renderAdminDashboard(data);
+    status.textContent = "";
+    return true;
+  } catch (error) {
+    if (!isCurrent()) return false;
+    status.textContent = error.status === 403
+      ? "无权查看数据看板，请使用管理员账号登录。"
+      : "数据看板加载失败，请检查网络后点击「重试加载」。";
+    status.classList.add("error");
+    return false;
+  } finally {
+    if (isCurrent()) {
+      $("#admin-dashboard").setAttribute("aria-busy", "false");
+      refresh.textContent = status.classList.contains("error") ? "重试加载" : "刷新数据";
+    }
+  }
+}
+
+async function loadAdminPage() {
+  // 两个区块独立加载，看板失败不会阻断原有的举报处理。
+  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports()]);
+  if (reports.status === "rejected") throw reports.reason;
+  return dashboard.status === "fulfilled" && dashboard.value;
 }
 
 function removeReportCard(card) {
