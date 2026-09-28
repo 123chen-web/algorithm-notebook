@@ -96,7 +96,7 @@ def test_dashboard_tiles_preserve_destinations_as_named_native_buttons(index_doc
         node for node in index_document.within("home-page")
         if "lobby-tile" in node["attrs"].get("class", "").split()
     ]
-    expected = {"today", "all", "new", "insights", "forum", "leaderboard", "plan"}
+    expected = {"today", "all", "new", "insights", "achievements", "forum", "leaderboard", "plan"}
     assert Counter(tile["attrs"].get("data-view") for tile in tiles) == Counter(expected)
     for tile in tiles:
         assert tile["tag"] == "button"

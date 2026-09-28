@@ -33,7 +33,9 @@ from pydantic import (
 import ai
 import mailer
 import payments
+from achievements import evaluate_achievements
 from db import ROOT, connect, init_db
+from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
 
 logger = logging.getLogger("algorithm_notebook")
@@ -269,20 +271,6 @@ def utc_now():
 
 def today_for(user):
     return today_in_timezone(user["timezone"])
-
-
-def current_streak(review_dates, today):
-    # 今天还没打卡但昨天打卡了，连续天数按"还没断"算，不因为今天没过完就清零。
-    cursor = today
-    if cursor not in review_dates:
-        cursor -= timedelta(days=1)
-        if cursor not in review_dates:
-            return 0
-    streak = 0
-    while cursor in review_dates:
-        streak += 1
-        cursor -= timedelta(days=1)
-    return streak
 
 
 def ai_limit():
@@ -1670,6 +1658,15 @@ def save_variant_result(
 
     # 保存练习结果不会隐式修改原易错点的复习计划。
     return dict(result)
+
+
+@app.get("/api/achievements")
+def get_achievements(user=Depends(current_user)):
+    with connect() as conn:
+        # 多项统计共享只读快照，避免生成/删除记录时跨查询读到不同版本。
+        conn.execute("BEGIN")
+        metrics = learning_metrics(conn, user["id"], user["timezone"], today_for(user))
+    return {"metrics": metrics, "achievements": evaluate_achievements(metrics)}
 
 
 LEADERBOARD_SIZE = 50

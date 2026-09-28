@@ -267,6 +267,39 @@ UPDATE users SET is_banned = 0 WHERE username = 'someone';
 - **忽略举报**（`POST /api/admin/avatar-reports/{id}/resolve`）。
 - **封禁作者**（复用现有的 `POST /api/admin/users/{id}/ban`）。
 
+## 成就徽章
+
+学习大厅的「成就徽章」入口展示当前账号的全部徽章。进入页面或刷新时，
+`GET /api/achievements` 实时返回 `{metrics, achievements}`；需要登录，
+只读现有数据，不调用 AI，不扣额度，不新增数据库表或字段。
+
+`learning_stats.py` 的 `learning_metrics()` 汇总基础指标，
+`achievements.py` 的 `evaluate_achievements()` 只负责阈值和展示文案。
+基础指标不依赖徽章档位，后续学习概览可以复用；它们是当前数据的总量/状态，
+不是某周的增量，周报应另按时间范围统计，不能把总量当作当周成绩。
+
+| metrics 字段 | 口径 | 徽章档位 |
+| --- | --- | --- |
+| `current_streak_days` | 全部评分的复习记录，按用户时区去重日期；复用原 `current_streak()`，今天未复习但昨天复习仍延续 | 3 / 7 / 30 / 100 天 |
+| `mistake_count` | 当前账号题目下仍存在的易错点数量 | 1 / 10 / 50 / 100 条 |
+| `recorded_zone_count` | 当前账号 `problems.zone` 去重数量，同分区多道题只计一次 | 3 / 5 个分区 |
+| `generated_practice_count` | 当前账号已成功保存的 `variants` 题目数量，与练习结果无关 | 2 / 20 / 100 道 |
+| `has_weakness_analysis` | 是否存在该账号的 `weakness_insights` 记录（布尔值），不检查分析质量 | 首次分析 |
+
+`ai_usage.attempts` 包含失败尝试、识图和薄弱点分析，无法表示成功生成练习的
+次数，因此徽章明确按成功落库的题目「道数」计数。当前一次成功生成 2 道题，
+20 道对应 10 次；不按时间戳猜测批次，同一秒内生成的题目也逐道计入。
+
+每枚徽章包含稳定英文 `key`、`category`、`name`、`description`、
+`unlocked` 及 `progress`。`progress` 包含 `metric`（对应基础指标名）、
+`current`（真实当前值，不截断到目标；布尔指标转为 0/1）、`target`、
+`remaining`（最小为 0）、`unit`、`message`（未达成时的具体行动提示）。
+同类别的每档均独立比较 `current >= target`，因此达成高档会同时达成低档。
+例如打卡 4 天时，`streak_7` 的 `remaining` 为 3，提示继续复习 3 天。
+
+徽章反映当前数据，不永久保留解锁状态。断签或删除相关记录后，下次读取会
+重新计算；不保存解锁时间，也没有预留历史解锁字段。
+
 ## 数据结构
 
 - users：账号、密码哈希、邮箱（可为空）、时区、上次提醒发送日期、

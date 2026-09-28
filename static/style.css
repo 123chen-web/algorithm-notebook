@@ -217,6 +217,42 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .weakness-action p { margin: 0; }
 #weakness-status:empty { display: none; }
 #weakness-status.error { color: var(--danger); }
+
+#achievements-page { max-width: 1080px; margin: 0 auto; }
+.achievements-note { max-width: 700px; color: #69655d; font-size: 12px; }
+.achievements-summary { padding: 22px 26px; border: 1px solid #dcccb7; border-radius: var(--radius); background: #f8efe2; }
+.achievements-summary > strong { color: #805222; font-size: 21px; font-variant-numeric: tabular-nums; }
+.achievements-summary > p { margin: 5px 0 0; color: #735f46; font-size: 13px; }
+#achievements-status:empty { display: none; }
+#achievements-status.error { color: var(--danger); }
+.achievement-group { margin-top: 32px; }
+.achievement-group-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+.achievement-group-heading h3 { margin: 0; font-size: 19px; }
+.achievement-group-count { color: #69655d; font-size: 12px; font-variant-numeric: tabular-nums; }
+.achievement-group-description { margin: 7px 0 16px; color: #69655d; font-size: 13px; }
+.achievement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
+.achievement-card { display: flex; flex-direction: column; min-width: 0; padding: 22px; border: 1px solid #dedbd5; border-radius: var(--radius); background: #f0efec; }
+.achievement-card.is-unlocked { border-color: #d9bd8a; background: #fffcf5; box-shadow: inset 0 3px #d9ac5d; }
+.achievement-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.achievement-emblem { display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; width: 65px; height: 65px; border: 1px solid #d5d2cb; border-radius: 50%; background: #e5e3de; color: #65625a; }
+.achievement-emblem > strong { font-size: 24px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.achievement-emblem > span { margin-top: 3px; font-size: 10px; }
+.is-unlocked .achievement-emblem { border-color: #dcb778; background: #f9e8c5; color: #88591d; }
+.achievement-state { color: #65625a; font-size: 12px; font-weight: 650; }
+.is-unlocked .achievement-state { color: #805222; }
+.achievement-card h4 { margin: 18px 0 6px; color: #56534d; font-size: 16px; }
+.is-unlocked h4 { color: #49331c; }
+.achievement-description { margin: 0 0 20px; color: #69655d; font-size: 12px; }
+.achievement-progress-count { margin: auto 0 7px; color: #69655d; font-size: 11px; font-variant-numeric: tabular-nums; }
+.achievement-card progress { display: block; width: 100%; height: 6px; overflow: hidden; border: 0; border-radius: 10px; background: #dedbd5; accent-color: #888277; }
+.achievement-card progress::-webkit-progress-bar { border-radius: 10px; background: #dedbd5; }
+.achievement-card progress::-webkit-progress-value { border-radius: 10px; background: #888277; }
+.achievement-card progress::-moz-progress-bar { border-radius: 10px; background: #888277; }
+.is-unlocked progress { accent-color: #b78434; }
+.is-unlocked progress::-webkit-progress-value { background: #b78434; }
+.is-unlocked progress::-moz-progress-bar { background: #b78434; }
+.achievement-progress-message { margin: 10px 0 0; color: #56534d; font-size: 12px; line-height: 1.7; }
+.is-unlocked .achievement-progress-message { color: #805222; }
 .growth-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
 .growth-zone { padding: 16px 18px; }
 .growth-zone h4 { margin: 0 0 8px; }
@@ -358,7 +394,8 @@ body.home-view { background: radial-gradient(ellipse at 90% 0, #e9e6ff 0, transp
 .lobby-tile-forum { --tile-icon-bg: #e6edf9; --tile-ink: #496f9d; }
 .lobby-tile-leaderboard { --tile-icon-bg: #fff0cf; --tile-ink: #966527; }
 .lobby-tile-plan { --tile-icon-bg: #f8e5df; --tile-ink: #a35f45; }
-.lobby-tile-insights { grid-column: 1 / -1; min-height: 0; --tile-bg: #f1edfa; --tile-ink: #685091; border-color: #d9d0e9; }
+.lobby-tile-insights { grid-column: span 6; min-height: 0; --tile-bg: #f1edfa; --tile-ink: #685091; border-color: #d9d0e9; }
+.lobby-tile-achievements { grid-column: span 6; --tile-bg: #faf2e2; --tile-ink: #946520; --tile-icon-bg: #f3dfb4; border-color: #e8d6b3; }
 .lobby-tile-insights .tile-topline { margin-bottom: 8px; }
 .lobby-tile-insights .tile-tag { color: #685091; background: #e4dcf2; }
 .lobby-tile-insights .tile-footer { flex-wrap: wrap; gap: 8px 24px; }
@@ -481,7 +518,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
   .lobby-refresh { min-height: 42px; padding: 7px 10px; font-size: 11px; }
   .lobby-tile { grid-column: span 6; min-height: 180px; border-radius: 18px; }
   .lobby-tile-review { grid-column: 1 / -1; min-height: 290px; }
-  .lobby-tile-insights { grid-column: 1 / -1; min-height: 0; }
+  .lobby-tile-insights, .lobby-tile-achievements { grid-column: 1 / -1; min-height: 0; }
   .lobby-tile-plan { grid-column: 1 / -1; }
   .tile-title { font-size: 20px; }
   .tile-topline { margin-bottom: 16px; }

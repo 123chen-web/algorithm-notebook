@@ -34,6 +34,7 @@ let weaknessAnalysis = null;
 let weaknessGeneration = 0;
 let weaknessPending = false;
 let weaknessQuotaAvailable = false;
+let achievementsGeneration = 0;
 let growthZones = null;
 let zones = [];
 let codeZones = new Set();
@@ -122,6 +123,7 @@ function showAuthPanels(visibleIds) {
 function signedOut() {
   stopOrderPolling();
   resetWeaknessAnalysis();
+  resetAchievements();
   planPurchase = null;
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
@@ -460,6 +462,7 @@ function fillProblemFormFromPhoto(fields) {
 
 async function enterApp() {
   resetWeaknessAnalysis();
+  resetAchievements();
   user = await api("/api/me");
   $("#auth").hidden = true;
   $("#app").hidden = false;
@@ -480,6 +483,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#plan-page").hidden = view !== "plan";
   $("#leaderboard-page").hidden = view !== "leaderboard";
   $("#weakness-page").hidden = view !== "insights";
+  $("#achievements-page").hidden = view !== "achievements";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
@@ -495,6 +499,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "forum") await showForumList();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
+  else if (view === "achievements") await loadAchievements();
   else if (view === "plan") await loadPlanPage();
   else if (view === "new") renderPhotoQuota();
   else if (view === "today" || view === "all") await loadList();
@@ -593,6 +598,107 @@ async function loadLeaderboard() {
     if (user === currentUser && user && view === "leaderboard") {
       page.setAttribute("aria-busy", "false");
     }
+  }
+}
+
+function resetAchievements() {
+  achievementsGeneration += 1;
+  $("#achievements-page").hidden = true;
+  $("#achievements-page").setAttribute("aria-busy", "false");
+  $("#achievements-list").replaceChildren();
+  $("#achievements-summary").replaceChildren();
+  $("#achievements-summary").hidden = true;
+  $("#achievements-status").textContent = "";
+  $("#achievements-status").classList.remove("error");
+  $("#achievements-retry").hidden = true;
+}
+
+function renderAchievements(achievements) {
+  const groups = [
+    ["streak", "连续打卡", "每天回来复习，让坚持形成习惯。"],
+    ["mistakes", "易错点积累", "把具体错因记下来，让每一次做错都有收获。"],
+    ["zones", "多分区探索", "到不同分区留下记录，拓宽自己的解题视野。"],
+    ["practice", "AI 深度使用", "围绕易错点生成新练习，换一道题检验理解。只统计成功生成的练习题。"],
+    ["analysis", "薄弱点分析", "积累易错点后，完成一次分析，找到下一步练习方向。"],
+  ];
+  const unlockedCount = achievements.filter((badge) => badge.unlocked).length;
+  const summary = $("#achievements-summary");
+  summary.replaceChildren(
+    element("strong", `已解锁 ${unlockedCount} / ${achievements.length} 枚徽章`),
+    element("p", unlockedCount
+      ? "看看下一枚徽章还差多少，把目标变成今天的一小步。"
+      : "从记录第一条易错点开始，点亮你的第一枚徽章。")
+  );
+  summary.hidden = false;
+
+  const list = $("#achievements-list");
+  list.replaceChildren();
+  for (const [category, title, description] of groups) {
+    const badges = achievements.filter((badge) => badge.category === category);
+    if (!badges.length) continue;
+    const group = element("section", "", "achievement-group");
+    const heading = element("div", "", "achievement-group-heading");
+    const groupTitle = element("h3", title);
+    groupTitle.id = `achievement-category-${category}`;
+    group.setAttribute("aria-labelledby", groupTitle.id);
+    heading.append(
+      groupTitle,
+      element("span", `${badges.filter((badge) => badge.unlocked).length} / ${badges.length} 已解锁`, "achievement-group-count")
+    );
+    const grid = element("div", "", "achievement-grid");
+    for (const badge of badges) {
+      const { current, target, unit, message: progressMessage } = badge.progress;
+      const card = element("article", "", `achievement-card ${badge.unlocked ? "is-unlocked" : "is-locked"}`);
+      const top = element("div", "", "achievement-card-top");
+      const emblem = element("span", "", "achievement-emblem");
+      emblem.setAttribute("aria-hidden", "true");
+      emblem.append(element("strong", String(target)), element("span", unit));
+      top.append(emblem, element("span", badge.unlocked ? "✓ 已解锁" : "待解锁", "achievement-state"));
+      const progress = document.createElement("progress");
+      progress.max = target;
+      progress.value = Math.min(Number(current), target);
+      progress.setAttribute("aria-label", `${badge.name}：当前 ${current} ${unit}，目标 ${target} ${unit}`);
+      card.append(
+        top,
+        element("h4", badge.name),
+        element("p", badge.description, "achievement-description"),
+        element("p", `当前 ${current} ${unit} · 目标 ${target} ${unit}`, "achievement-progress-count"),
+        progress,
+        element("p", progressMessage, "achievement-progress-message")
+      );
+      grid.append(card);
+    }
+    group.append(heading, element("p", description, "achievement-group-description"), grid);
+    list.append(group);
+  }
+}
+
+async function loadAchievements() {
+  const generation = ++achievementsGeneration;
+  const userId = user.id;
+  const isCurrent = () => Boolean(user) && user.id === userId
+    && generation === achievementsGeneration && view === "achievements";
+  const page = $("#achievements-page");
+  const status = $("#achievements-status");
+  page.setAttribute("aria-busy", "true");
+  $("#achievements-list").replaceChildren();
+  $("#achievements-summary").replaceChildren();
+  $("#achievements-summary").hidden = true;
+  $("#achievements-retry").hidden = true;
+  status.classList.remove("error");
+  status.textContent = "正在查看你的徽章进度…";
+  try {
+    const data = await api("/api/achievements");
+    if (!isCurrent()) return;
+    renderAchievements(data.achievements);
+    status.textContent = "";
+  } catch (error) {
+    if (!isCurrent()) return;
+    status.classList.add("error");
+    status.textContent = `徽章暂时无法加载：${error.message || "请检查网络后重试"}`;
+    $("#achievements-retry").hidden = false;
+  } finally {
+    if (isCurrent()) page.setAttribute("aria-busy", "false");
   }
 }
 
@@ -1750,6 +1856,7 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
 }));
 
 $("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
+$("#achievements-retry").addEventListener("click", () => run(loadAchievements));
 
 $("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
   message();
@@ -1780,6 +1887,11 @@ $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
 }));
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "achievements") {
+    message();
+    await loadAchievements();
+    return;
+  }
   if (view === "insights") {
     message();
     await loadWeaknessAnalysis();

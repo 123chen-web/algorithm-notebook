@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=22"></script>
+  <script defer src="/static/app.js?v=23"></script>
 </head>
 <body>
   <div class="container">
@@ -314,6 +314,13 @@
             <span class="tile-footer">查看我的分析 <span>主动分析时消耗 1 次 AI 额度 →</span></span>
           </button>
 
+          <button type="button" class="lobby-tile lobby-tile-achievements" data-view="achievements">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">成就徽章</span>
+            <span class="tile-description">从第一条错因到连续打卡，让每一份积累都看得见。</span>
+            <span class="tile-footer">看看下一枚徽章还差多少 <span aria-hidden="true">→</span></span>
+          </button>
+
           <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
             <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
             <span class="tile-title">讨论区</span>
@@ -333,6 +340,19 @@
           </button>
         </nav>
         <div class="lobby-bottom"><p>记录 · 复习 · 真正掌握</p><button id="home-admin" type="button" data-view="admin" hidden>管理后台 <span aria-hidden="true">↗</span></button></div>
+      </section>
+
+      <section id="achievements-page" aria-labelledby="achievements-title" hidden>
+        <div class="page-heading">
+          <p class="eyebrow">给坚持一个看得见的目标</p>
+          <h2 id="achievements-title">成就徽章</h2>
+          <p class="muted">记录、复习、探索，一步步点亮自己的学习里程碑。</p>
+          <p class="achievements-note">徽章随当前记录和连续打卡状态更新；删除记录或中断打卡后，部分徽章可能重新变为待解锁。</p>
+        </div>
+        <div id="achievements-summary" class="achievements-summary" hidden></div>
+        <p id="achievements-status" role="status" aria-live="polite"></p>
+        <button id="achievements-retry" type="button" hidden>重新加载徽章</button>
+        <div id="achievements-list"></div>
       </section>
 
       <section id="weakness-page" aria-labelledby="weakness-title" hidden>
