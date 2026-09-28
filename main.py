@@ -1290,11 +1290,15 @@ def community_weakness_by_zone(conn):
     # 只统计计数，绝不选取用户名、题目标题或任何错题内容——这是唯一一次
     # 跨用户的查询，返回值必须只含数字。样本(全站在这个分区有过记录的
     # 用户数)低于 COMMUNITY_MIN_COHORT 时不给百分比，避免小群体下"占比"
-    # 实质等于点名某个具体的人。
+    # 实质等于点名某个具体的人。体验账号排除在外，跟排行榜"体验账号不
+    # 参与排行榜"是同一个理由：数据可能是随手试用，不代表真实学习样本。
     rows = conn.execute(
         """
         SELECT p.zone, COUNT(*) AS mistake_count
-        FROM mistakes m JOIN problems p ON p.id = m.problem_id
+        FROM mistakes m
+        JOIN problems p ON p.id = m.problem_id
+        JOIN users u ON u.id = p.user_id
+        WHERE u.is_trial = 0
         GROUP BY p.zone, p.user_id
         """
     ).fetchall()

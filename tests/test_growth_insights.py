@@ -141,15 +141,15 @@ def test_requires_authentication(client):
     assert response.status_code == 401
 
 
-def create_background_user_with_mistakes(username, zone, mistake_count):
+def create_background_user_with_mistakes(username, zone, mistake_count, is_trial=False):
     # 直接插库造"别的用户"：这些用户只用来让全站聚合统计有数据，不需要
     # 真的注册登录，密码哈希是占位符，不会被拿来验证任何东西。
     created_at = TODAY.isoformat() + "T00:00:00+00:00"
     with connect(write=True) as conn:
         conn.execute(
-            "INSERT INTO users(username, password_hash, timezone, created_at) "
-            "VALUES (?, 'unused', 'Asia/Shanghai', ?)",
-            (username, created_at),
+            "INSERT INTO users(username, password_hash, timezone, created_at, is_trial) "
+            "VALUES (?, 'unused', 'Asia/Shanghai', ?, ?)",
+            (username, created_at, int(is_trial)),
         )
         user_id = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
@@ -238,3 +238,22 @@ def test_own_growth_fields_unaffected_by_community_addition(client):
     assert zone["days_since_last_mistake"] == 0
     assert zone["recent_30_days"] == 2
     assert zone["prior_30_days"] == 0
+
+
+def test_community_stats_exclude_trial_accounts(client):
+    # 跟排行榜"体验账号不参与排行榜"是同一个理由：随手试用的数据不该
+    # 拉低/拉高其他人看到的群体统计。
+    register(client)
+    add_mistake_on(client, "算法", days_ago=0)
+    for i in range(4):
+        create_background_user_with_mistakes(f"real_user_{i}", "算法", mistake_count=3)
+    # 凑够 5 个"体验账号"，如果没被排除会让样本量看起来达标(5 真实 + 5 体验)。
+    for i in range(5):
+        create_background_user_with_mistakes(
+            f"trial_user_{i}", "算法", mistake_count=5, is_trial=True
+        )
+
+    zone = zones_by_name(client.get("/api/insights/growth"))["算法"]
+    # 只有当前用户(1 条，不算 struggling) + 4 个真实用户 = 5，体验账号不计入。
+    assert zone["community_sample_size"] == 5
+    assert zone["community_struggling_ratio"] == 0.8
