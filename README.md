@@ -420,6 +420,28 @@ AI、不消耗配额**，纯粹是对 `problems`/`mistakes` 表的实时统计�
 `COMMUNITY_MIN_COHORT`（默认 5）时占比返回 `null`，避免小群体下"占比"实质
 等于点名某个具体用户。
 
+### 本周学习战报
+
+学习大厅的「本周战报」展示最近七天的学习记录。需要登录，进入页面或刷新时，
+`GET /api/insights/weekly-recap` 直接返回 `WeeklyRecap` 字典（不套 `recap` 层）。
+本周为用户本地今天及之前六天，`week_start` / `week_end` 是含首尾的 ISO 日期；
+上周为紧邻的前七天，两个窗口连续且不重叠。
+
+- 易错点新增（`mistakes_recorded`）：按所属 `problems.created_at` 计录入时间，
+  与成长趋势、薄弱点分析一致；一道题下的多条易错点分别计数。
+- 复习完成（`reviews_completed`）按 `reviews.reviewed_at` 逐条计数；
+  活跃天数（`active_days`）只计有复习的不同日期，范围为 0–7。
+- 练习生成（`practice_generated`）按 `variants.created_at` 统计成功保存的题目道数，
+  与成就徽章一致，不使用 `ai_usage.attempts`。
+- 涉及分区数（`zones_touched`）取本周新增易错点和复习所在分区的并集。
+  当前连续打卡（`current_streak_days`）复用 `learning_stats.current_streak()`，
+  统计全局连续天数，不受七天窗口限制，今天未复习但昨天复习仍延续。
+
+`previous_week` 只含易错点新增、复习完成、练习生成和活跃天数四项原始数字，
+页面展示「本周 X · 上周 Y」。所有时间戳取出后按用户时区转换为本地日期，
+多个查询共享同一个只读快照。战报随当前数据实时重算，不调用 AI、不消耗配额，
+不新增表或持久化字段，也不发送邮件；没有记录时各项计数均为 0。
+
 ### 拍照识别题目
 
 "新增记录"页可以直接上传一张照片（手写解题过程、代码截图等），代替手动

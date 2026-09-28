@@ -37,6 +37,7 @@ from achievements import evaluate_achievements
 from db import ROOT, connect, init_db
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
+from weekly_recap import weekly_recap
 
 logger = logging.getLogger("algorithm_notebook")
 
@@ -1321,6 +1322,16 @@ def get_growth_insights(user=Depends(current_user)):
         zone["community_sample_size"] = stats["sample_size"]
         zone["community_struggling_ratio"] = stats["struggling_ratio"]
     return {"zones": zones}
+
+
+@app.get("/api/insights/weekly-recap")
+def get_weekly_recap(user=Depends(current_user)):
+    # 纯统计，不调用 AI、不涉及配额。
+    with connect() as conn:
+        # 多项统计共享只读快照，避免生成/删除记录时跨查询读到不同版本。
+        conn.execute("BEGIN")
+        recap = weekly_recap(conn, user["id"], user["timezone"], today_for(user))
+    return recap
 
 
 @app.post("/api/problems/photo")

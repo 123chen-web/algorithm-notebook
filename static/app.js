@@ -35,6 +35,7 @@ let weaknessGeneration = 0;
 let weaknessPending = false;
 let weaknessQuotaAvailable = false;
 let achievementsGeneration = 0;
+let weeklyRecapGeneration = 0;
 let growthZones = null;
 let zones = [];
 let codeZones = new Set();
@@ -124,6 +125,7 @@ function signedOut() {
   stopOrderPolling();
   resetWeaknessAnalysis();
   resetAchievements();
+  resetWeeklyRecap();
   planPurchase = null;
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
@@ -463,6 +465,7 @@ function fillProblemFormFromPhoto(fields) {
 async function enterApp() {
   resetWeaknessAnalysis();
   resetAchievements();
+  resetWeeklyRecap();
   user = await api("/api/me");
   $("#auth").hidden = true;
   $("#app").hidden = false;
@@ -484,6 +487,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#leaderboard-page").hidden = view !== "leaderboard";
   $("#weakness-page").hidden = view !== "insights";
   $("#achievements-page").hidden = view !== "achievements";
+  $("#weekly-recap-page").hidden = view !== "weekly-recap";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
@@ -500,6 +504,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
+  else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "plan") await loadPlanPage();
   else if (view === "new") renderPhotoQuota();
   else if (view === "today" || view === "all") await loadList();
@@ -697,6 +702,83 @@ async function loadAchievements() {
     status.classList.add("error");
     status.textContent = `徽章暂时无法加载：${error.message || "请检查网络后重试"}`;
     $("#achievements-retry").hidden = false;
+  } finally {
+    if (isCurrent()) page.setAttribute("aria-busy", "false");
+  }
+}
+
+function resetWeeklyRecap() {
+  weeklyRecapGeneration += 1;
+  $("#weekly-recap-page").hidden = true;
+  $("#weekly-recap-page").setAttribute("aria-busy", "false");
+  $("#weekly-recap-cards").replaceChildren();
+  $("#weekly-recap-summary").replaceChildren();
+  $("#weekly-recap-summary").hidden = true;
+  $("#weekly-recap-status").textContent = "";
+  $("#weekly-recap-status").classList.remove("error");
+  $("#weekly-recap-retry").hidden = true;
+}
+
+function renderWeeklyRecap(data) {
+  const summary = $("#weekly-recap-summary");
+  summary.replaceChildren(
+    element("strong", `${data.week_start} — ${data.week_end}`),
+    element("p", data.mistakes_recorded || data.reviews_completed || data.practice_generated
+      ? "回看这 7 天的积累，也看看和上周相比，你的学习节奏有什么变化。"
+      : "这 7 天还没有学习记录。从记下一条易错点或完成一次复习开始吧。")
+  );
+  summary.hidden = false;
+
+  const metrics = [
+    ["mistakes_recorded", "易错点新增", "条", "按所属题目的记录日期统计。"],
+    ["reviews_completed", "复习完成", "次", "每完成一次复习评分，计一次复习。"],
+    ["practice_generated", "练习生成", "题", "只统计成功生成的练习题。"],
+    ["active_days", "活跃天数", "天", "这 7 天里有复习的日期，同一天只计一次。"],
+    ["zones_touched", "涉及分区数", "个", "新增易错点或完成复习的分区，同一分区只计一次。"],
+    ["current_streak_days", "当前连续打卡", "天", "按全部复习记录计算，不受本周窗口限制。"],
+  ];
+  const cards = $("#weekly-recap-cards");
+  cards.replaceChildren();
+  for (const [key, title, unit, description] of metrics) {
+    const card = element("article", "", "weekly-recap-card");
+    const value = element("p", "", "weekly-recap-value");
+    value.append(element("strong", String(data[key])), element("span", unit));
+    card.append(
+      element("h3", title),
+      value,
+      element("p", description, "weekly-recap-description")
+    );
+    if (Object.hasOwn(data.previous_week, key)) {
+      card.append(element("p", `本周 ${data[key]} ${unit} · 上周 ${data.previous_week[key]} ${unit}`, "weekly-recap-comparison"));
+    }
+    cards.append(card);
+  }
+}
+
+async function loadWeeklyRecap() {
+  const generation = ++weeklyRecapGeneration;
+  const userId = user.id;
+  const isCurrent = () => Boolean(user) && user.id === userId
+    && generation === weeklyRecapGeneration && view === "weekly-recap";
+  const page = $("#weekly-recap-page");
+  const status = $("#weekly-recap-status");
+  page.setAttribute("aria-busy", "true");
+  $("#weekly-recap-cards").replaceChildren();
+  $("#weekly-recap-summary").replaceChildren();
+  $("#weekly-recap-summary").hidden = true;
+  $("#weekly-recap-retry").hidden = true;
+  status.classList.remove("error");
+  status.textContent = "正在整理你的本周学习战报…";
+  try {
+    const data = await api("/api/insights/weekly-recap");
+    if (!isCurrent()) return;
+    renderWeeklyRecap(data);
+    status.textContent = "";
+  } catch (error) {
+    if (!isCurrent()) return;
+    status.classList.add("error");
+    status.textContent = `战报暂时无法加载：${error.message || "请检查网络后重试"}`;
+    $("#weekly-recap-retry").hidden = false;
   } finally {
     if (isCurrent()) page.setAttribute("aria-busy", "false");
   }
@@ -1857,6 +1939,7 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
 
 $("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
 $("#achievements-retry").addEventListener("click", () => run(loadAchievements));
+$("#weekly-recap-retry").addEventListener("click", () => run(loadWeeklyRecap));
 
 $("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
   message();
@@ -1887,6 +1970,11 @@ $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
 }));
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "weekly-recap") {
+    message();
+    await loadWeeklyRecap();
+    return;
+  }
   if (view === "achievements") {
     message();
     await loadAchievements();

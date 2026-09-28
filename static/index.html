@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=18">
+  <link rel="stylesheet" href="/static/style.css?v=19">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=23"></script>
+  <script defer src="/static/app.js?v=24"></script>
 </head>
 <body>
   <div class="container">
@@ -321,6 +321,13 @@
             <span class="tile-footer">看看下一枚徽章还差多少 <span aria-hidden="true">→</span></span>
           </button>
 
+          <button type="button" class="lobby-tile lobby-tile-weekly-recap" data-view="weekly-recap">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">本周战报</span>
+            <span class="tile-description">回顾最近 7 天的记录、复习与练习，看看每一步积累。</span>
+            <span class="tile-footer">对照上周，找到自己的学习节奏 <span aria-hidden="true">→</span></span>
+          </button>
+
           <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
             <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
             <span class="tile-title">讨论区</span>
@@ -353,6 +360,19 @@
         <p id="achievements-status" role="status" aria-live="polite"></p>
         <button id="achievements-retry" type="button" hidden>重新加载徽章</button>
         <div id="achievements-list"></div>
+      </section>
+
+      <section id="weekly-recap-page" aria-labelledby="weekly-recap-title" hidden>
+        <div class="page-heading">
+          <p class="eyebrow">每一步积累，都值得回看</p>
+          <h2 id="weekly-recap-title">本周学习战报</h2>
+          <p class="muted">用记录、复习与练习，回顾自己的学习节奏。</p>
+          <p class="weekly-recap-note">本周按你的时区统计今天及之前 6 天；上周为紧邻的前 7 天。易错点新增、复习完成、练习生成与活跃天数均展示本周与上周对比。</p>
+        </div>
+        <div id="weekly-recap-summary" class="weekly-recap-summary" hidden></div>
+        <p id="weekly-recap-status" role="status" aria-live="polite"></p>
+        <button id="weekly-recap-retry" type="button" hidden>重新加载战报</button>
+        <div id="weekly-recap-cards" class="weekly-recap-cards"></div>
       </section>
 
       <section id="weakness-page" aria-labelledby="weakness-title" hidden>
