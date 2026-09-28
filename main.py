@@ -37,6 +37,7 @@ from achievements import evaluate_achievements
 from db import ROOT, connect, init_db
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
+from share_card import render_achievement_card
 from weekly_recap import weekly_recap
 
 logger = logging.getLogger("algorithm_notebook")
@@ -1678,6 +1679,18 @@ def get_achievements(user=Depends(current_user)):
         conn.execute("BEGIN")
         metrics = learning_metrics(conn, user["id"], user["timezone"], today_for(user))
     return {"metrics": metrics, "achievements": evaluate_achievements(metrics)}
+
+
+@app.get("/api/achievements/share-card")
+def get_achievement_share_card(user=Depends(current_user)):
+    today = today_for(user)
+    with connect() as conn:
+        # 与成就徽章一致，在同一只读快照内汇总所有指标。
+        conn.execute("BEGIN")
+        metrics = learning_metrics(conn, user["id"], user["timezone"], today)
+    achievements = evaluate_achievements(metrics)
+    png_bytes = render_achievement_card(user["username"], metrics, achievements, today)
+    return Response(content=png_bytes, media_type="image/png")
 
 
 LEADERBOARD_SIZE = 50

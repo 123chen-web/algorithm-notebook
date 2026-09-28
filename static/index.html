@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=19">
+  <link rel="stylesheet" href="/static/style.css?v=20">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=24"></script>
+  <script defer src="/static/app.js?v=25"></script>
 </head>
 <body>
   <div class="container">
@@ -357,6 +357,12 @@
           <p class="achievements-note">徽章随当前记录和连续打卡状态更新；删除记录或中断打卡后，部分徽章可能重新变为待解锁。</p>
         </div>
         <div id="achievements-summary" class="achievements-summary" hidden></div>
+        <div id="achievements-share" class="achievements-share" hidden>
+          <button id="achievements-share-generate" type="button">生成分享卡片</button>
+          <img id="achievements-share-image" class="achievements-share-image" alt="我的学习成就分享卡片" width="1080" height="1350" hidden>
+          <p id="achievements-share-hint" class="muted" hidden>长按或右键图片即可保存</p>
+          <p id="achievements-share-error" role="status" aria-live="polite" hidden></p>
+        </div>
         <p id="achievements-status" role="status" aria-live="polite"></p>
         <button id="achievements-retry" type="button" hidden>重新加载徽章</button>
         <div id="achievements-list"></div>

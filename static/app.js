@@ -606,8 +606,19 @@ async function loadLeaderboard() {
   }
 }
 
+function resetAchievementShareCard() {
+  $("#achievements-share").hidden = true;
+  const image = $("#achievements-share-image");
+  image.hidden = true;
+  image.removeAttribute("src");
+  $("#achievements-share-hint").hidden = true;
+  $("#achievements-share-error").hidden = true;
+  $("#achievements-share-error").textContent = "";
+}
+
 function resetAchievements() {
   achievementsGeneration += 1;
+  resetAchievementShareCard();
   $("#achievements-page").hidden = true;
   $("#achievements-page").setAttribute("aria-busy", "false");
   $("#achievements-list").replaceChildren();
@@ -635,6 +646,7 @@ function renderAchievements(achievements) {
       : "从记录第一条易错点开始，点亮你的第一枚徽章。")
   );
   summary.hidden = false;
+  $("#achievements-share").hidden = false;
 
   const list = $("#achievements-list");
   list.replaceChildren();
@@ -680,6 +692,7 @@ function renderAchievements(achievements) {
 
 async function loadAchievements() {
   const generation = ++achievementsGeneration;
+  resetAchievementShareCard();
   const userId = user.id;
   const isCurrent = () => Boolean(user) && user.id === userId
     && generation === achievementsGeneration && view === "achievements";
@@ -1939,6 +1952,23 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
 
 $("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
 $("#achievements-retry").addEventListener("click", () => run(loadAchievements));
+$("#achievements-share-generate").addEventListener("click", () => {
+  if (!user || view !== "achievements") return;
+  const image = $("#achievements-share-image");
+  $("#achievements-share-error").hidden = true;
+  $("#achievements-share-error").textContent = "";
+  image.src = `/api/achievements/share-card?t=${Date.now()}`;
+  image.hidden = false;
+  $("#achievements-share-hint").hidden = false;
+});
+$("#achievements-share-image").addEventListener("error", (event) => {
+  const image = event.currentTarget;
+  if (!image.hasAttribute("src")) return;
+  image.hidden = true;
+  $("#achievements-share-hint").hidden = true;
+  $("#achievements-share-error").textContent = "分享卡片加载失败，请检查网络后重新生成。";
+  $("#achievements-share-error").hidden = false;
+});
 $("#weekly-recap-retry").addEventListener("click", () => run(loadWeeklyRecap));
 
 $("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
