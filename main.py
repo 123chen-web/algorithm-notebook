@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
@@ -515,7 +516,7 @@ JOIN problems p ON p.id = m.problem_id
 """
 
 
-# notes 只保留在数据库中供旧数据留存，不再读取或返回。
+# 常规练习接口不再读取或返回 notes；数据导出仍保留这部分旧笔记。
 VARIANT_SELECT = """
 SELECT v.id, v.mistake_id, v.description, v.model, v.created_at,
        v.result, v.answer_code, v.answer, v.expected_answer, v.result_updated_at
@@ -878,6 +879,80 @@ def me(user=Depends(current_user)):
         "today": today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
     }
+
+
+@app.get("/api/export")
+def export_data(user=Depends(current_user)):
+    # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
+    with connect() as conn:
+        # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
+        conn.execute("BEGIN")
+        problems = {}
+        for row in conn.execute(
+            """
+            SELECT id, title, zone, language, code, thinking, created_at
+            FROM problems WHERE user_id = ? ORDER BY id
+            """,
+            (user["id"],),
+        ):
+            problems[row["id"]] = {**dict(row), "mistakes": []}
+
+        mistakes = {}
+        for row in conn.execute(
+            """
+            SELECT m.id, m.problem_id, m.description, m.repetitions,
+                   m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY m.id
+            """,
+            (user["id"],),
+        ):
+            mistake = {**dict(row), "reviews": [], "variants": []}
+            problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
+            mistakes[mistake["id"]] = mistake
+
+        for row in conn.execute(
+            """
+            SELECT r.mistake_id, r.quality, r.reviewed_at, r.next_due_date
+            FROM reviews r
+            JOIN mistakes m ON m.id = r.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY r.reviewed_at ASC, r.id ASC
+            """,
+            (user["id"],),
+        ):
+            review = dict(row)
+            mistakes[review.pop("mistake_id")]["reviews"].append(review)
+
+        # 导出完整原始内容，包含未作答的标准答案和旧版 notes。
+        for row in conn.execute(
+            """
+            SELECT v.mistake_id, v.description, v.model, v.created_at, v.result,
+                   v.answer_code, v.answer, v.expected_answer, v.notes,
+                   v.result_updated_at
+            FROM variants v
+            JOIN mistakes m ON m.id = v.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY v.created_at ASC, v.id ASC
+            """,
+            (user["id"],),
+        ):
+            variant = dict(row)
+            mistakes[variant.pop("mistake_id")]["variants"].append(variant)
+
+    payload = {
+        "exported_at": utc_now(),
+        "username": user["username"],
+        "problems": list(problems.values()),
+    }
+    filename = f"算法错题本导出_{user['username']}_{today_for(user).isoformat()}.json"
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
+        },
+    )
 
 
 @app.put("/api/me/email")
