@@ -1936,6 +1936,7 @@ def group_detail(conn, group_id, user_id):
         "is_creator": group["created_by"] == user_id,
         "members": [
             {
+                "id": row["id"],
                 # 小组由熟人邀请，刻意展示真实用户名；全站排行榜仍匿名。
                 "username": row["username"],
                 "current_streak_days": streaks[row["id"]],
@@ -2054,6 +2055,26 @@ def leave_group(group_id: int, user=Depends(current_user)):
             "SELECT 1 FROM study_group_members WHERE group_id = ?", (group_id,)
         ).fetchone() is None:
             conn.execute("DELETE FROM study_groups WHERE id = ?", (group_id,))
+    return {"ok": True}
+
+
+@app.delete("/api/groups/{group_id}/members/{user_id}")
+def remove_group_member(group_id: int, user_id: int, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        group = member_group(conn, group_id, user["id"])
+        if group["created_by"] != user["id"]:
+            raise HTTPException(403, "只有创建者可以移除成员")
+        if user_id == user["id"]:
+            raise HTTPException(400, "请使用退出小组或解散小组")
+        if conn.execute(
+            "SELECT 1 FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group_id, user_id),
+        ).fetchone() is None:
+            raise HTTPException(404, "成员不存在")
+        conn.execute(
+            "DELETE FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group_id, user_id),
+        )
     return {"ok": True}
 
 

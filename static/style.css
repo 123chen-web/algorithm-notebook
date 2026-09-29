@@ -305,6 +305,7 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .groups-summary h3 { overflow-wrap: anywhere; }
 .groups-invite-code { margin: 6px 0; color: #366b68; font: 700 30px/1.4 ui-monospace, monospace; letter-spacing: .12em; user-select: all; overflow-wrap: anywhere; }
 .groups-members, .groups-weakness { margin-top: 24px; }
+.groups-member-actions { text-align: right; white-space: nowrap; }
 #forum-page { max-width: 860px; margin: 0 auto; }
 .forum-list-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 20px; }
 .forum-list-heading h3 { margin: 0; }

@@ -355,10 +355,15 @@ Linux 时需调整字体路径或提供中文字体文件。
 一人退出时删除整个小组；创建者仍在组内时可以解散小组，解散会级联删除
 成员关系。创建者退出不会转移所有权。
 
+创建者还可以单独移除某个成员（不影响小组和其他成员），但不能移除自己——
+移除自己需要用退出或解散。目前没有踢人通知，被移除的成员下次自己查看
+时才会发现小组已经不在列表里，跟主动退出的表现一致；也没有踢人记录。
+
 接口均需要登录：`GET /api/groups` 查看已加入的小组，`POST /api/groups`
 创建小组，`POST /api/groups/join` 用邀请码加入，`GET /api/groups/{group_id}`
 查看详情，`POST /api/groups/{group_id}/leave` 退出，
-`DELETE /api/groups/{group_id}` 由创建者解散。
+`DELETE /api/groups/{group_id}` 由创建者解散，
+`DELETE /api/groups/{group_id}/members/{user_id}` 由创建者移除指定成员。
 
 ## 数据结构
 

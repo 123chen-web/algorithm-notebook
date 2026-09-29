@@ -636,6 +636,7 @@ function resetGroups() {
   $("#groups-detail-content").hidden = true;
   $("#groups-list").replaceChildren();
   $("#groups-members").replaceChildren();
+  $("#groups-member-actions").hidden = true;
   $("#groups-weakness").replaceChildren();
   $("#groups-detail-title").textContent = "";
   $("#groups-invite-code").textContent = "";
@@ -718,6 +719,7 @@ function renderStudyGroup(group) {
   $("#groups-detail-title").textContent = group.name;
   $("#groups-invite-code").textContent = group.invite_code;
   $("#groups-members-title").textContent = `小组成员 · ${group.members.length} 人`;
+  $("#groups-member-actions").hidden = !group.is_creator;
   const members = $("#groups-members");
   members.replaceChildren();
   // 服务端已按连续天数降序、用户名升序排列，保留相同的排序口径。
@@ -727,6 +729,17 @@ function renderStudyGroup(group) {
       element("td", member.username),
       element("td", `${member.current_streak_days} 天`, "leaderboard-days")
     );
+    if (group.is_creator) {
+      const actions = element("td", "", "groups-member-actions");
+      if (member.id !== user.id) {
+        const remove = element("button", "移除", "danger");
+        remove.type = "button";
+        remove.disabled = busy;
+        remove.addEventListener("click", () => run(() => removeStudyGroupMember(member)));
+        actions.append(remove);
+      }
+      row.append(actions);
+    }
     members.append(row);
   }
   const signals = $("#groups-weakness");
@@ -792,6 +805,20 @@ async function leaveStudyGroup(dissolve = false) {
       await loadGroups();
     },
     dissolve ? "正在解散小组…" : "正在退出小组…"
+  );
+}
+
+async function removeStudyGroupMember(member) {
+  if (!user || view !== "groups" || !studyGroup || !studyGroup.is_creator || member.id === user.id) return;
+  if (!confirm(`确定将“${member.username}”移出“${studyGroup.name}”吗？`)) return;
+  const groupId = studyGroup.id;
+  await requestGroups(
+    () => api(`/api/groups/${groupId}/members/${member.id}`, { method: "DELETE" }),
+    async () => {
+      message("已移除成员。");
+      await openStudyGroup(groupId);
+    },
+    "正在移除成员…"
   );
 }
 

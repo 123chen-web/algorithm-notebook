@@ -52,6 +52,7 @@ def add_background_member(group_id, username, mistake_count, zone="算法"):
         ("GET", "/api/groups/1", None),
         ("POST", "/api/groups/1/leave", None),
         ("DELETE", "/api/groups/1", None),
+        ("DELETE", "/api/groups/1/members/2", None),
     ],
 )
 def test_group_endpoints_require_authentication(client, method, path, body):
@@ -66,7 +67,9 @@ def test_creator_automatically_joins_and_receives_group_detail(client):
     assert group["name"] == "一起刷题"
     assert group["is_creator"] is True
     assert group["created_at"]
-    assert group["members"] == [{"username": "alice", "current_streak_days": 0}]
+    assert group["members"] == [
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
+    ]
     assert group["weakness_by_zone"] == {}
     code = group["invite_code"]
     assert len(code) == 8
@@ -113,10 +116,10 @@ def test_invite_code_collision_retries_without_partial_group(client, monkeypatch
 
 
 def test_join_accepts_case_insensitive_code_and_rejects_invalid_or_duplicate(client):
-    register(client)
+    alice = register(client)
     group = create_group(client)
     client.post("/api/auth/logout")
-    register(client, "bob")
+    bob = register(client, "bob")
 
     assert client.post(
         "/api/groups/join", json={"invite_code": "00000000"}
@@ -130,8 +133,8 @@ def test_join_accepts_case_insensitive_code_and_rejects_invalid_or_duplicate(cli
     assert joined["invite_code"] == group["invite_code"]
     assert joined["is_creator"] is False
     assert joined["members"] == [
-        {"username": "alice", "current_streak_days": 0},
-        {"username": "bob", "current_streak_days": 0},
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
+        {"id": bob["id"], "username": "bob", "current_streak_days": 0},
     ]
     assert client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
@@ -212,18 +215,22 @@ def test_join_rate_limit_counts_invalid_codes_and_is_shared_by_client_ip(client,
 
 
 def test_non_member_cannot_probe_detail_leave_or_delete(client):
-    register(client)
+    alice = register(client)
     group = create_group(client)
     client.post("/api/auth/logout")
-    register(client, "bob")
+    bob = register(client, "bob")
     for group_id in (group["id"], group["id"] + 1000):
         assert client.get(f"/api/groups/{group_id}").status_code == 404
         assert client.post(f"/api/groups/{group_id}/leave").status_code == 404
         assert client.delete(f"/api/groups/{group_id}").status_code == 404
+        for user_id in (alice["id"], bob["id"], bob["id"] + 1000):
+            response = client.delete(f"/api/groups/{group_id}/members/{user_id}")
+            assert response.status_code == 404
+            assert response.json() == {"detail": "小组不存在"}
 
 
 def test_members_show_real_usernames_and_streaks_use_each_members_timezone(client):
-    register(client)
+    alice = register(client)
     alice_mistake = new_problem(client)[0]
     # 上海本地都是 09-19，重复打卡只能计作一天。
     insert_review(alice_mistake, "2026-09-18T20:00:00+00:00")
@@ -247,13 +254,13 @@ def test_members_show_real_usernames_and_streaks_use_each_members_timezone(clien
     login(client)
     members = client.get(f"/api/groups/{group['id']}").json()["members"]
     assert members == [
-        {"username": "bob", "current_streak_days": 2},
-        {"username": "alice", "current_streak_days": 1},
+        {"id": bob["id"], "username": "bob", "current_streak_days": 2},
+        {"id": alice["id"], "username": "alice", "current_streak_days": 1},
     ]
 
 
 def test_each_member_uses_own_local_today_even_when_requester_has_next_day(client, monkeypatch):
-    register(client)
+    alice = register(client)
     group = create_group(client)
     client.post("/api/auth/logout")
     bob = register(client, "bob")
@@ -276,28 +283,28 @@ def test_each_member_uses_own_local_today_even_when_requester_has_next_day(clien
     login(client)
     # alice 已是 09-19，bob 仍是 09-18；bob 昨天有打卡，连续两天不能清零。
     assert client.get(f"/api/groups/{group['id']}").json()["members"] == [
-        {"username": "bob", "current_streak_days": 2},
-        {"username": "alice", "current_streak_days": 0},
+        {"id": bob["id"], "username": "bob", "current_streak_days": 2},
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
     ]
 
 
 def test_equal_streak_members_sort_by_username_instead_of_user_id(client):
-    register(client, "bob")
+    bob = register(client, "bob")
     group = create_group(client)
     client.post("/api/auth/logout")
-    register(client)
+    alice = register(client)
     response = client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
     )
     assert response.status_code == 200
     assert response.json()["members"] == [
-        {"username": "alice", "current_streak_days": 0},
-        {"username": "bob", "current_streak_days": 0},
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
+        {"id": bob["id"], "username": "bob", "current_streak_days": 0},
     ]
 
 
 def test_member_can_leave_and_disappears_from_member_list(client):
-    register(client)
+    alice = register(client)
     group = create_group(client)
     client.post("/api/auth/logout")
     register(client, "bob")
@@ -309,24 +316,127 @@ def test_member_can_leave_and_disappears_from_member_list(client):
     assert client.get(f"/api/groups/{group['id']}").status_code == 404
     login(client)
     assert client.get(f"/api/groups/{group['id']}").json()["members"] == [
-        {"username": "alice", "current_streak_days": 0},
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
     ]
 
 
-def test_creator_can_leave_but_cannot_delete_after_leaving_and_last_member_removes_group(client):
+def test_creator_can_remove_member_and_removed_member_cannot_access_group(client):
+    alice = register(client)
+    group = create_group(client)
+    client.post("/api/auth/logout")
+    bob = register(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+    client.post("/api/auth/logout")
+    carol = register(client, "carol")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+
+    login(client)
+    response = client.delete(f"/api/groups/{group['id']}/members/{bob['id']}")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    response = client.get(f"/api/groups/{group['id']}")
+    assert response.status_code == 200
+    assert response.json()["members"] == [
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
+        {"id": carol["id"], "username": "carol", "current_streak_days": 0},
+    ]
+    login(client, "bob")
+    assert client.get("/api/groups").json() == {"groups": []}
+    assert client.get(f"/api/groups/{group['id']}").status_code == 404
+
+
+def test_removing_only_other_member_keeps_group_and_creator_membership(client):
+    alice = register(client)
+    group = create_group(client)
+    client.post("/api/auth/logout")
+    bob = register(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+    login(client)
+    response = client.delete(f"/api/groups/{group['id']}/members/{bob['id']}")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert client.get(f"/api/groups/{group['id']}").json() == group
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT 1 FROM study_groups WHERE id = ?", (group["id"],)
+        ).fetchone() is not None
+        members = conn.execute(
+            "SELECT user_id FROM study_group_members WHERE group_id = ?",
+            (group["id"],),
+        ).fetchall()
+    assert [member["user_id"] for member in members] == [alice["id"]]
+
+
+def test_non_creator_cannot_remove_members_or_probe_target_membership(client):
+    alice = register(client)
+    group = create_group(client)
+    client.post("/api/auth/logout")
+    bob = register(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+    client.post("/api/auth/logout")
+    carol = register(client, "carol")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+    login(client, "bob")
+    detail = client.get(f"/api/groups/{group['id']}").json()
+    for user_id in (alice["id"], bob["id"], carol["id"], carol["id"] + 1000):
+        response = client.delete(f"/api/groups/{group['id']}/members/{user_id}")
+        assert response.status_code == 403
+        assert response.json() == {"detail": "只有创建者可以移除成员"}
+    assert client.get(f"/api/groups/{group['id']}").json() == detail
+
+
+def test_creator_cannot_remove_self(client):
+    alice = register(client)
+    group = create_group(client)
+    response = client.delete(f"/api/groups/{group['id']}/members/{alice['id']}")
+    assert response.status_code == 400
+    assert response.json() == {"detail": "请使用退出小组或解散小组"}
+    assert client.get(f"/api/groups/{group['id']}").json() == group
+
+
+def test_creator_cannot_remove_non_member_or_nonexistent_user(client):
     register(client)
     group = create_group(client)
     client.post("/api/auth/logout")
-    register(client, "bob")
+    bob = register(client, "bob")
+    login(client)
+    for user_id in (bob["id"], bob["id"] + 1000):
+        response = client.delete(f"/api/groups/{group['id']}/members/{user_id}")
+        assert response.status_code == 404
+        assert response.json() == {"detail": "成员不存在"}
+    assert client.get(f"/api/groups/{group['id']}").json() == group
+
+
+def test_creator_can_leave_but_cannot_delete_after_leaving_and_last_member_removes_group(client):
+    alice = register(client)
+    group = create_group(client)
+    client.post("/api/auth/logout")
+    bob = register(client, "bob")
     assert client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
     ).status_code == 200
     login(client)
     assert client.post(f"/api/groups/{group['id']}/leave").json() == {"ok": True}
     assert client.delete(f"/api/groups/{group['id']}").status_code == 404
+    for user_id in (alice["id"], bob["id"]):
+        response = client.delete(f"/api/groups/{group['id']}/members/{user_id}")
+        assert response.status_code == 404
+        assert response.json() == {"detail": "小组不存在"}
     login(client, "bob")
     detail = client.get(f"/api/groups/{group['id']}").json()
-    assert detail["members"] == [{"username": "bob", "current_streak_days": 0}]
+    assert detail["members"] == [
+        {"id": bob["id"], "username": "bob", "current_streak_days": 0},
+    ]
     assert detail["is_creator"] is False
     assert client.post(f"/api/groups/{group['id']}/leave").json() == {"ok": True}
     with connect() as conn:
@@ -376,7 +486,7 @@ def test_trial_account_can_create_a_group_and_is_a_normal_member(client):
     group = create_group(client)
     assert group["is_creator"] is True
     assert group["members"] == [
-        {"username": trial["username"], "current_streak_days": 1},
+        {"id": trial["id"], "username": trial["username"], "current_streak_days": 1},
     ]
     assert group["weakness_by_zone"] == {}
 
@@ -410,7 +520,7 @@ def test_group_weakness_excludes_trial_data_and_outsiders_but_keeps_trial_streak
     below_threshold = response.json()
     assert len(below_threshold["members"]) == 3
     assert below_threshold["members"][0] == {
-        "username": trial["username"], "current_streak_days": 3,
+        "id": trial["id"], "username": trial["username"], "current_streak_days": 3,
     }
     assert below_threshold["weakness_by_zone"]["算法"] == {
         "sample_size": 2, "struggling_ratio": None,
@@ -423,7 +533,7 @@ def test_group_weakness_excludes_trial_data_and_outsiders_but_keeps_trial_streak
     detail = client.get(f"/api/groups/{group['id']}").json()
     assert len(detail["members"]) == 5
     assert detail["members"][0] == {
-        "username": trial["username"], "current_streak_days": 3,
+        "id": trial["id"], "username": trial["username"], "current_streak_days": 3,
     }
     assert detail["weakness_by_zone"] == {
         "算法": {"sample_size": 3, "struggling_ratio": 0.6667},

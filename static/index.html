@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=21">
+  <link rel="stylesheet" href="/static/style.css?v=22">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=27"></script>
+  <script defer src="/static/app.js?v=28"></script>
 </head>
 <body>
   <div class="container">
@@ -597,7 +597,7 @@
               <h3 id="groups-members-title">小组成员</h3>
               <p id="groups-streak-rules" class="muted">按连续打卡天数排序，同分按用户名排序。每天完成复习评分即为打卡，日期按每位成员自己的时区计算。</p>
               <table class="leaderboard-table" aria-labelledby="groups-members-title" aria-describedby="groups-streak-rules">
-                <thead><tr><th scope="col">用户名</th><th scope="col">连续打卡</th></tr></thead>
+                <thead><tr><th scope="col">用户名</th><th scope="col" class="leaderboard-days">连续打卡</th><th id="groups-member-actions" scope="col" hidden>操作</th></tr></thead>
                 <tbody id="groups-members"></tbody>
               </table>
             </section>
