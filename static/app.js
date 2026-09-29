@@ -505,6 +505,17 @@ async function showView(nextView, { refreshUser = true } = {}) {
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
+  const nav = $("#page-nav");
+  const activeTab = nav.querySelector("[data-view].active");
+  if (!nav.hidden && activeTab && nav.scrollWidth > nav.clientWidth) {
+    // Scroll only the navigation horizontally, preserving the page's vertical position.
+    const left = nav.getBoundingClientRect().left + nav.clientLeft;
+    const right = left + nav.clientWidth;
+    const tabRect = activeTab.getBoundingClientRect();
+    if (tabRect.left < left) nav.scrollLeft += tabRect.left - left;
+    else if (tabRect.right > right) nav.scrollLeft += tabRect.right - right;
+  }
+
   if (view === "home") await loadHome({ refreshUser });
   else if (view === "admin") await loadAdminPage();
   else if (view === "forum") await showForumList();
