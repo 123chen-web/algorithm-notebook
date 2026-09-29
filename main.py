@@ -181,6 +181,18 @@ class UsernameUpdate(InputModel):
     ]
 
 
+class NewGroup(InputModel):
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+    ]
+
+
+class JoinGroup(InputModel):
+    invite_code: Annotated[
+        str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=64)
+    ]
+
+
 class ProblemFields(InputModel):
     title: Title
     zone: str
@@ -544,6 +556,8 @@ def owned_problem(conn, problem_id, user_id):
 # 部署到多实例或反向代理之后，需要改用共享存储并校验可信的转发头。
 REGISTER_LIMIT = 5
 REGISTER_WINDOW_SECONDS = 15 * 60
+GROUP_JOIN_LIMIT = 10
+GROUP_JOIN_WINDOW_SECONDS = 15 * 60
 TRIAL_LIMIT = 3
 TRIAL_WINDOW_SECONDS = 60 * 60
 LOGIN_LIMIT = 10
@@ -1274,23 +1288,30 @@ def growth_by_zone(conn, user_id, today):
 
 COMMUNITY_STRUGGLING_THRESHOLD = 3
 COMMUNITY_MIN_COHORT = 5
+GROUP_WEAKNESS_MIN_COHORT = 3
 
 
-def community_weakness_by_zone(conn):
-    # 只统计计数，绝不选取用户名、题目标题或任何错题内容——这是唯一一次
-    # 跨用户的查询，返回值必须只含数字。样本(全站在这个分区有过记录的
-    # 用户数)低于 COMMUNITY_MIN_COHORT 时不给百分比，避免小群体下"占比"
-    # 实质等于点名某个具体的人。体验账号排除在外，跟排行榜"体验账号不
-    # 参与排行榜"是同一个理由：数据可能是随手试用，不代表真实学习样本。
+def weakness_by_zone(conn, user_ids=None, min_cohort=COMMUNITY_MIN_COHORT):
+    # 聚合只返回分区计数，不带用户名或错题内容。体验数据不代表真实学习
+    # 信号，因此全站和小组都排除；这不影响体验账号加入小组和展示打卡天数。
+    # None 表示全站；空集合表示没有成员，不能退回全站统计。
+    params = ()
+    user_filter = ""
+    if user_ids is not None:
+        params = tuple(set(user_ids))
+        if not params:
+            return {}
+        user_filter = f" AND u.id IN ({','.join('?' for _ in params)})"
     rows = conn.execute(
-        """
+        f"""
         SELECT p.zone, COUNT(*) AS mistake_count
         FROM mistakes m
         JOIN problems p ON p.id = m.problem_id
         JOIN users u ON u.id = p.user_id
-        WHERE u.is_trial = 0
+        WHERE u.is_trial = 0{user_filter}
         GROUP BY p.zone, p.user_id
-        """
+        """,
+        params,
     ).fetchall()
     by_zone = {}
     for row in rows:
@@ -1306,10 +1327,14 @@ def community_weakness_by_zone(conn):
             "sample_size": total,
             "struggling_ratio": (
                 round(stats["struggling_users"] / total, 4)
-                if total >= COMMUNITY_MIN_COHORT else None
+                if total >= min_cohort else None
             ),
         }
     return result
+
+
+def community_weakness_by_zone(conn):
+    return weakness_by_zone(conn)
 
 
 @app.get("/api/insights/growth")
@@ -1696,19 +1721,8 @@ def get_achievement_share_card(user=Depends(current_user)):
 LEADERBOARD_SIZE = 50
 
 
-@app.get("/api/leaderboard")
-def leaderboard(user=Depends(current_user)):
-    with connect() as conn:
-        users = conn.execute("SELECT id, timezone, is_trial FROM users").fetchall()
-        review_rows = conn.execute(
-            """
-            SELECT p.user_id AS user_id, r.reviewed_at
-            FROM reviews r
-            JOIN mistakes m ON m.id = r.mistake_id
-            JOIN problems p ON p.id = m.problem_id
-            """
-        ).fetchall()
-
+def review_streaks_by_user(users, review_rows):
+    # 全站排行榜和小组共用：每个人的复习日期和今天都按自己的时区计算。
     timezones = {row["id"]: row["timezone"] for row in users}
     review_dates = defaultdict(set)
     for row in review_rows:
@@ -1724,6 +1738,23 @@ def leaderboard(user=Depends(current_user)):
             review_dates.get(row["id"], set()),
             today_for(row),
         )
+    return streaks
+
+
+@app.get("/api/leaderboard")
+def leaderboard(user=Depends(current_user)):
+    with connect() as conn:
+        users = conn.execute("SELECT id, timezone, is_trial FROM users").fetchall()
+        review_rows = conn.execute(
+            """
+            SELECT p.user_id AS user_id, r.reviewed_at
+            FROM reviews r
+            JOIN mistakes m ON m.id = r.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            """
+        ).fetchall()
+
+    streaks = review_streaks_by_user(users, review_rows)
 
     # 体验账号不参与排行榜——跟体验账号能看 /api/plans 但不能真的下单是
     # 同一种"能看不能上榜"的模式；已排除的账号不占用前 LEADERBOARD_SIZE 名额。
@@ -1759,6 +1790,207 @@ def leaderboard(user=Depends(current_user)):
             "is_trial": user["is_trial"],
         },
     }
+
+
+GROUP_MAX_MEMBERS = 20
+GROUP_MAX_PER_USER = 5
+GROUP_INVITE_CODE_LENGTH = 8
+# 统一大写，省去容易混淆的 0/O、1/I/L。
+GROUP_INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_group_invite_code():
+    return "".join(
+        secrets.choice(GROUP_INVITE_CODE_ALPHABET)
+        for _ in range(GROUP_INVITE_CODE_LENGTH)
+    )
+
+
+def require_group_capacity_for_user(conn, user_id):
+    count = conn.execute(
+        "SELECT COUNT(*) FROM study_group_members WHERE user_id = ?", (user_id,)
+    ).fetchone()[0]
+    if count >= GROUP_MAX_PER_USER:
+        raise HTTPException(403, f"每人最多同时加入 {GROUP_MAX_PER_USER} 个小组")
+
+
+def member_group(conn, group_id, user_id):
+    group = conn.execute(
+        """
+        SELECT g.* FROM study_groups g
+        JOIN study_group_members m ON m.group_id = g.id
+        WHERE g.id = ? AND m.user_id = ?
+        """,
+        (group_id, user_id),
+    ).fetchone()
+    if group is None:
+        # 不区分不存在和未加入，避免枚举 ID 探测私人小组。
+        raise HTTPException(404, "小组不存在")
+    return group
+
+
+def group_detail(conn, group_id, user_id):
+    group = member_group(conn, group_id, user_id)
+    members = conn.execute(
+        """
+        SELECT u.id, u.username, u.timezone FROM users u
+        JOIN study_group_members m ON m.user_id = u.id
+        WHERE m.group_id = ?
+        """,
+        (group_id,),
+    ).fetchall()
+    review_rows = conn.execute(
+        """
+        SELECT p.user_id, r.reviewed_at FROM reviews r
+        JOIN mistakes m ON m.id = r.mistake_id
+        JOIN problems p ON p.id = m.problem_id
+        JOIN study_group_members gm ON gm.user_id = p.user_id
+        WHERE gm.group_id = ?
+        """,
+        (group_id,),
+    ).fetchall()
+    streaks = review_streaks_by_user(members, review_rows)
+    ranked_members = sorted(
+        members, key=lambda row: (-streaks[row["id"]], row["username"])
+    )
+    return {
+        "id": group["id"],
+        "name": group["name"],
+        "invite_code": group["invite_code"],
+        "created_at": group["created_at"],
+        "is_creator": group["created_by"] == user_id,
+        "members": [
+            {
+                # 小组由熟人邀请，刻意展示真实用户名；全站排行榜仍匿名。
+                "username": row["username"],
+                "current_streak_days": streaks[row["id"]],
+            }
+            for row in ranked_members
+        ],
+        "weakness_by_zone": weakness_by_zone(
+            conn, {row["id"] for row in members}, min_cohort=GROUP_WEAKNESS_MIN_COHORT
+        ),
+    }
+
+
+@app.post("/api/groups", status_code=201)
+def create_group(data: NewGroup, user=Depends(current_user)):
+    # 限额检查、建组和加入在同一写事务中，避免并发请求突破限额或留下空组。
+    with connect(write=True) as conn:
+        require_group_capacity_for_user(conn, user["id"])
+        created_at = utc_now()
+        for _ in range(2):
+            try:
+                group_id = conn.execute(
+                    """
+                    INSERT INTO study_groups(name, invite_code, created_by, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (data.name, generate_group_invite_code(), user["id"], created_at),
+                ).lastrowid
+                break
+            except sqlite3.IntegrityError as exc:
+                if "study_groups.invite_code" not in str(exc):
+                    raise
+        else:
+            raise HTTPException(503, "暂时无法生成小组邀请码，请稍后再试")
+        conn.execute(
+            "INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
+            (group_id, user["id"], created_at),
+        )
+        return group_detail(conn, group_id, user["id"])
+
+
+@app.get("/api/groups")
+def list_groups(user=Depends(current_user)):
+    with connect() as conn:
+        groups = conn.execute(
+            """
+            SELECT g.id, g.name, g.created_by, g.created_at,
+                   (SELECT COUNT(*) FROM study_group_members WHERE group_id = g.id)
+                   AS member_count
+            FROM study_groups g
+            JOIN study_group_members m ON m.group_id = g.id
+            WHERE m.user_id = ?
+            ORDER BY g.created_at DESC, g.id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+    return {"groups": [
+        {
+            "id": group["id"],
+            "name": group["name"],
+            "member_count": group["member_count"],
+            "is_creator": group["created_by"] == user["id"],
+            "created_at": group["created_at"],
+        }
+        for group in groups
+    ]}
+
+
+@app.post("/api/groups/join")
+def join_group(data: JoinGroup, request: Request, user=Depends(current_user)):
+    if rate_limited(
+        f"group_join:{client_ip(request)}", GROUP_JOIN_LIMIT, GROUP_JOIN_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "加入尝试次数过多，请稍后再试")
+    with connect(write=True) as conn:
+        group = conn.execute(
+            "SELECT id FROM study_groups WHERE invite_code = ?", (data.invite_code,)
+        ).fetchone()
+        if group is None:
+            raise HTTPException(404, "邀请码对应的小组不存在")
+        group_id = group["id"]
+        if conn.execute(
+            "SELECT 1 FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group_id, user["id"]),
+        ).fetchone():
+            raise HTTPException(409, "你已经加入了这个小组")
+        member_count = conn.execute(
+            "SELECT COUNT(*) FROM study_group_members WHERE group_id = ?", (group_id,)
+        ).fetchone()[0]
+        if member_count >= GROUP_MAX_MEMBERS:
+            raise HTTPException(403, f"小组已达到 {GROUP_MAX_MEMBERS} 人上限")
+        require_group_capacity_for_user(conn, user["id"])
+        conn.execute(
+            "INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
+            (group_id, user["id"], utc_now()),
+        )
+        return group_detail(conn, group_id, user["id"])
+
+
+@app.get("/api/groups/{group_id}")
+def get_group(group_id: int, user=Depends(current_user)):
+    with connect() as conn:
+        # 权限、成员和统计共享只读快照，不混用退出/加入前后的成员集合。
+        conn.execute("BEGIN")
+        return group_detail(conn, group_id, user["id"])
+
+
+@app.post("/api/groups/{group_id}/leave")
+def leave_group(group_id: int, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        member_group(conn, group_id, user["id"])
+        conn.execute(
+            "DELETE FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group_id, user["id"]),
+        )
+        if conn.execute(
+            "SELECT 1 FROM study_group_members WHERE group_id = ?", (group_id,)
+        ).fetchone() is None:
+            conn.execute("DELETE FROM study_groups WHERE id = ?", (group_id,))
+    return {"ok": True}
+
+
+@app.delete("/api/groups/{group_id}")
+def delete_group(group_id: int, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        group = member_group(conn, group_id, user["id"])
+        if group["created_by"] != user["id"]:
+            raise HTTPException(403, "只有创建者可以解散小组")
+        # 成员关系由外键 ON DELETE CASCADE 一并清除。
+        conn.execute("DELETE FROM study_groups WHERE id = ?", (group_id,))
+    return {"ok": True}
 
 
 POST_LIST_LIMIT = 100

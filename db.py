@@ -71,6 +71,24 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry
 ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS study_groups (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    invite_code TEXT NOT NULL UNIQUE,
+    created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS study_group_members (
+    group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_study_group_members_user
+ON study_group_members(user_id);
+
 CREATE TABLE IF NOT EXISTS problems (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

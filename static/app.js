@@ -36,6 +36,9 @@ let weaknessPending = false;
 let weaknessQuotaAvailable = false;
 let achievementsGeneration = 0;
 let weeklyRecapGeneration = 0;
+let groupsGeneration = 0;
+let selectedGroupId = null;
+let studyGroup = null;
 let growthZones = null;
 let zones = [];
 let codeZones = new Set();
@@ -126,6 +129,7 @@ function signedOut() {
   resetWeaknessAnalysis();
   resetAchievements();
   resetWeeklyRecap();
+  resetGroups();
   planPurchase = null;
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
@@ -466,6 +470,7 @@ async function enterApp() {
   resetWeaknessAnalysis();
   resetAchievements();
   resetWeeklyRecap();
+  resetGroups();
   user = await api("/api/me");
   $("#auth").hidden = true;
   $("#app").hidden = false;
@@ -477,6 +482,7 @@ async function enterApp() {
 
 async function showView(nextView, { refreshUser = true } = {}) {
   stopOrderPolling();
+  if (view === "groups" && nextView !== "groups") groupsGeneration += 1;
   view = nextView;
   document.body.classList.toggle("home-view", view === "home");
   $("#home-page").hidden = view !== "home";
@@ -488,6 +494,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#weakness-page").hidden = view !== "insights";
   $("#achievements-page").hidden = view !== "achievements";
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
+  $("#groups-page").hidden = view !== "groups";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
@@ -505,6 +512,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
   else if (view === "weekly-recap") await loadWeeklyRecap();
+  else if (view === "groups") await loadGroups();
   else if (view === "plan") await loadPlanPage();
   else if (view === "new") renderPhotoQuota();
   else if (view === "today" || view === "all") await loadList();
@@ -604,6 +612,176 @@ async function loadLeaderboard() {
       page.setAttribute("aria-busy", "false");
     }
   }
+}
+
+function resetGroups() {
+  groupsGeneration += 1;
+  selectedGroupId = null;
+  studyGroup = null;
+  $("#groups-page").hidden = true;
+  $("#groups-page").setAttribute("aria-busy", "false");
+  $("#groups-overview").hidden = false;
+  $("#groups-detail").hidden = true;
+  $("#groups-detail-content").hidden = true;
+  $("#groups-list").replaceChildren();
+  $("#groups-members").replaceChildren();
+  $("#groups-weakness").replaceChildren();
+  $("#groups-detail-title").textContent = "";
+  $("#groups-invite-code").textContent = "";
+  $("#groups-delete").hidden = true;
+  $("#groups-status").textContent = "";
+  $("#groups-status").classList.remove("error");
+  $("#groups-retry").hidden = true;
+  $("#groups-create-form").reset();
+  $("#groups-join-form").reset();
+}
+
+async function requestGroups(action, onSuccess, loadingText, { retry = false } = {}) {
+  if (!user || view !== "groups") return;
+  const generation = ++groupsGeneration;
+  const userId = user.id;
+  const isCurrent = () => user?.id === userId && view === "groups"
+    && generation === groupsGeneration;
+  const page = $("#groups-page");
+  const status = $("#groups-status");
+  page.setAttribute("aria-busy", "true");
+  status.classList.remove("error");
+  status.textContent = loadingText;
+  $("#groups-retry").hidden = true;
+  try {
+    const data = await action();
+    if (!isCurrent()) return;
+    await onSuccess(data);
+    if (isCurrent()) status.textContent = "";
+  } catch (error) {
+    if (!isCurrent()) return;
+    status.classList.add("error");
+    status.textContent = `暂时无法完成：${error.message || "请检查网络后重试"}`;
+    $("#groups-retry").hidden = !retry;
+  } finally {
+    if (isCurrent()) page.setAttribute("aria-busy", "false");
+  }
+}
+
+function renderGroups(groups) {
+  const list = $("#groups-list");
+  list.replaceChildren();
+  if (!groups.length) {
+    list.append(element("p", "还没有加入小组。创建一个，或用熟人的邀请码加入吧。", "muted"));
+    return;
+  }
+  for (const group of groups) {
+    const button = element("button", "", "record-button");
+    button.type = "button";
+    button.disabled = busy;
+    button.append(
+      element("strong", group.name),
+      element("small", `${group.member_count} 位成员${group.is_creator ? " · 我创建的小组" : ""}`, "muted")
+    );
+    button.addEventListener("click", () => run(() => openStudyGroup(group.id)));
+    list.append(button);
+  }
+}
+
+async function loadGroups() {
+  selectedGroupId = null;
+  studyGroup = null;
+  $("#groups-overview").hidden = false;
+  $("#groups-detail").hidden = true;
+  $("#groups-detail-content").hidden = true;
+  $("#groups-list").replaceChildren();
+  await requestGroups(
+    () => api("/api/groups"),
+    (data) => renderGroups(data.groups),
+    "正在加载你的小组…",
+    { retry: true }
+  );
+}
+
+function renderStudyGroup(group) {
+  studyGroup = group;
+  selectedGroupId = group.id;
+  $("#groups-overview").hidden = true;
+  $("#groups-detail").hidden = false;
+  $("#groups-detail-content").hidden = false;
+  $("#groups-detail-title").textContent = group.name;
+  $("#groups-invite-code").textContent = group.invite_code;
+  $("#groups-members-title").textContent = `小组成员 · ${group.members.length} 人`;
+  const members = $("#groups-members");
+  members.replaceChildren();
+  // 服务端已按连续天数降序、用户名升序排列，保留相同的排序口径。
+  for (const member of group.members) {
+    const row = element("tr");
+    row.append(
+      element("td", member.username),
+      element("td", `${member.current_streak_days} 天`, "leaderboard-days")
+    );
+    members.append(row);
+  }
+  const signals = $("#groups-weakness");
+  signals.replaceChildren();
+  const zones = Object.entries(group.weakness_by_zone);
+  if (!zones.length) {
+    signals.append(element("p", "还没有足够的学习记录，积累一些易错点后再来看看。", "muted"));
+  }
+  for (const [zone, signal] of zones) {
+    const card = element("article", "", "panel growth-zone");
+    card.append(
+      element("h4", zone),
+      element("p", signal.struggling_ratio == null
+        ? "这个分区的有效样本还不够，暂不显示群体挣扎占比。"
+        : `群体挣扎占比 ${Math.round(signal.struggling_ratio * 100)}%`, "growth-headline"),
+      element("p", "统计本组在该分区记录过易错点的非体验成员，不展示个人错题。", "muted growth-community")
+    );
+    signals.append(card);
+  }
+  $("#groups-delete").hidden = !group.is_creator;
+}
+
+async function openStudyGroup(groupId) {
+  selectedGroupId = groupId;
+  studyGroup = null;
+  $("#groups-overview").hidden = true;
+  $("#groups-detail").hidden = false;
+  $("#groups-detail-content").hidden = true;
+  await requestGroups(
+    () => api(`/api/groups/${groupId}`),
+    renderStudyGroup,
+    "正在加载小组成员与学习信号…",
+    { retry: true }
+  );
+}
+
+async function submitStudyGroup(form, path, fieldName) {
+  if (!user || view !== "groups") return;
+  const value = form.elements.namedItem(fieldName).value.trim();
+  if (!value) {
+    $("#groups-status").classList.add("error");
+    $("#groups-status").textContent = fieldName === "name" ? "请输入小组名称。" : "请输入邀请码。";
+    return;
+  }
+  await requestGroups(
+    () => api(path, { method: "POST", body: JSON.stringify({ [fieldName]: value }) }),
+    (data) => {
+      form.reset();
+      renderStudyGroup(data);
+    },
+    fieldName === "name" ? "正在创建小组…" : "正在通过邀请码加入小组…"
+  );
+}
+
+async function leaveStudyGroup(dissolve = false) {
+  if (!user || view !== "groups" || !studyGroup) return;
+  if (dissolve && (!studyGroup.is_creator || !confirm(`确定解散“${studyGroup.name}”吗？所有成员都将退出此小组。`))) return;
+  const groupId = studyGroup.id;
+  await requestGroups(
+    () => api(`/api/groups/${groupId}${dissolve ? "" : "/leave"}`, { method: dissolve ? "DELETE" : "POST" }),
+    async () => {
+      message(dissolve ? "小组已解散。" : "已退出小组。");
+      await loadGroups();
+    },
+    dissolve ? "正在解散小组…" : "正在退出小组…"
+  );
 }
 
 function resetAchievementShareCard() {
@@ -1970,6 +2148,21 @@ $("#achievements-share-image").addEventListener("error", (event) => {
   $("#achievements-share-error").hidden = false;
 });
 $("#weekly-recap-retry").addEventListener("click", () => run(loadWeeklyRecap));
+$("#groups-retry").addEventListener("click", () => run(() => selectedGroupId === null
+  ? loadGroups() : openStudyGroup(selectedGroupId)));
+$("#groups-back").addEventListener("click", () => run(loadGroups));
+$("#groups-create-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(() => submitStudyGroup(form, "/api/groups", "name"));
+});
+$("#groups-join-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(() => submitStudyGroup(form, "/api/groups/join", "invite_code"));
+});
+$("#groups-leave").addEventListener("click", () => run(() => leaveStudyGroup()));
+$("#groups-delete").addEventListener("click", () => run(() => leaveStudyGroup(true)));
 
 $("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
   message();
@@ -2000,6 +2193,12 @@ $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
 }));
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "groups") {
+    message();
+    if (selectedGroupId === null) await loadGroups();
+    else await openStudyGroup(selectedGroupId);
+    return;
+  }
   if (view === "weekly-recap") {
     message();
     await loadWeeklyRecap();

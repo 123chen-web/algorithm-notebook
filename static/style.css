@@ -291,6 +291,20 @@ button.danger:hover:not(:disabled) { color: #852e28; background: #fff0ea; border
 .leaderboard-table th:last-child, .leaderboard-days { text-align: right; }
 .leaderboard-rank { color: var(--accent); font-weight: 650; }
 .leaderboard-table tbody tr:last-child td { border-bottom: 0; }
+#groups-page { max-width: 960px; margin: 0 auto; }
+#groups-status:empty { display: none; }
+#groups-status.error { color: var(--danger); }
+#groups-retry { margin-bottom: 18px; }
+#groups-overview > .panel > h3, .groups-forms h3, .groups-summary h3, .groups-members h3 { margin-top: 0; }
+.groups-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; margin-top: 22px; }
+.groups-forms .panel { min-width: 0; }
+.groups-forms button { margin-top: 16px; }
+#groups-list .record-button:last-child { margin-bottom: 0; }
+#groups-list .record-button small { margin-top: 8px; }
+.groups-summary { margin-top: 20px; border-color: #c6d8d8; background: #edf5f4; }
+.groups-summary h3 { overflow-wrap: anywhere; }
+.groups-invite-code { margin: 6px 0; color: #366b68; font: 700 30px/1.4 ui-monospace, monospace; letter-spacing: .12em; user-select: all; overflow-wrap: anywhere; }
+.groups-members, .groups-weakness { margin-top: 24px; }
 #forum-page { max-width: 860px; margin: 0 auto; }
 .forum-list-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 20px; }
 .forum-list-heading h3 { margin: 0; }
@@ -416,6 +430,7 @@ body.home-view { background: radial-gradient(ellipse at 90% 0, #e9e6ff 0, transp
 .lobby-tile-insights { grid-column: span 6; min-height: 0; --tile-bg: #f1edfa; --tile-ink: #685091; border-color: #d9d0e9; }
 .lobby-tile-achievements { grid-column: span 6; --tile-bg: #faf2e2; --tile-ink: #946520; --tile-icon-bg: #f3dfb4; border-color: #e8d6b3; }
 .lobby-tile-weekly-recap { grid-column: 1 / -1; min-height: 0; --tile-bg: #edf5ef; --tile-ink: #3d7059; --tile-icon-bg: #d7e8dc; border-color: #c5d8ce; }
+.lobby-tile-groups { grid-column: 1 / -1; min-height: 0; --tile-bg: #edf5f4; --tile-ink: #366b68; --tile-icon-bg: #d5e8e5; border-color: #c6d8d8; }
 .lobby-tile-insights .tile-topline { margin-bottom: 8px; }
 .lobby-tile-insights .tile-tag { color: #685091; background: #e4dcf2; }
 .lobby-tile-insights .tile-footer { flex-wrap: wrap; gap: 8px 24px; }
@@ -538,7 +553,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
   .lobby-refresh { min-height: 42px; padding: 7px 10px; font-size: 11px; }
   .lobby-tile { grid-column: span 6; min-height: 180px; border-radius: 18px; }
   .lobby-tile-review { grid-column: 1 / -1; min-height: 290px; }
-  .lobby-tile-insights, .lobby-tile-achievements, .lobby-tile-weekly-recap { grid-column: 1 / -1; min-height: 0; }
+  .lobby-tile-insights, .lobby-tile-achievements, .lobby-tile-weekly-recap, .lobby-tile-groups { grid-column: 1 / -1; min-height: 0; }
   .lobby-tile-plan { grid-column: 1 / -1; }
   .tile-title { font-size: 20px; }
   .tile-topline { margin-bottom: 16px; }

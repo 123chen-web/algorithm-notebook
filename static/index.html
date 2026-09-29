@@ -7,10 +7,10 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=20">
+  <link rel="stylesheet" href="/static/style.css?v=21">
   <link rel="stylesheet" href="/static/intro.css?v=10">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=25"></script>
+  <script defer src="/static/app.js?v=26"></script>
 </head>
 <body>
   <div class="container">
@@ -262,6 +262,7 @@
         <button type="button" data-view="insights">薄弱点分析</button>
         <button type="button" data-view="plan">我的套餐</button>
         <button type="button" data-view="leaderboard">打卡排行榜</button>
+        <button type="button" data-view="groups">学习小组</button>
         <button type="button" data-view="forum">讨论区</button>
         <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
         <button type="button" id="refresh">刷新</button>
@@ -326,6 +327,13 @@
             <span class="tile-title">本周战报</span>
             <span class="tile-description">回顾最近 7 天的记录、复习与练习，看看每一步积累。</span>
             <span class="tile-footer">对照上周，找到自己的学习节奏 <span aria-hidden="true">→</span></span>
+          </button>
+
+          <button type="button" class="lobby-tile lobby-tile-groups" data-view="groups">
+            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg></span><span class="tile-arrow" aria-hidden="true">↗</span></span>
+            <span class="tile-title">学习小组</span>
+            <span class="tile-description">用邀请码约上熟人，一起坚持复习、发现共同薄弱点。</span>
+            <span class="tile-footer">让学习路上多一点陪伴 <span aria-hidden="true">→</span></span>
           </button>
 
           <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
@@ -535,6 +543,73 @@
               </thead>
               <tbody id="leaderboard-entries"></tbody>
             </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="groups-page" aria-labelledby="groups-title" hidden>
+        <div class="page-heading">
+          <p class="eyebrow">和熟悉的人，一起走得更远</p>
+          <h2 id="groups-title">学习小组</h2>
+          <p class="muted">通过邀请码相聚，看看彼此的连续打卡和共同薄弱点。组内展示真实用户名，体验账号也可以参与。</p>
+        </div>
+        <p id="groups-status" class="muted" role="status" aria-live="polite"></p>
+        <button id="groups-retry" type="button" hidden>重新加载小组</button>
+
+        <div id="groups-overview">
+          <section class="panel" aria-labelledby="groups-list-title">
+            <h3 id="groups-list-title">我加入的小组</h3>
+            <div id="groups-list"></div>
+          </section>
+          <div class="groups-forms">
+            <section class="panel" aria-labelledby="groups-create-title">
+              <h3 id="groups-create-title">创建小组</h3>
+              <p class="muted">给小组起个名字，再把邀请码告诉一起学习的人。</p>
+              <form id="groups-create-form">
+                <label for="groups-name">小组名称</label>
+                <input id="groups-name" name="name" required minlength="1" maxlength="40" placeholder="例如：每天进步一点点">
+                <button type="submit" class="primary">创建小组</button>
+              </form>
+            </section>
+            <section class="panel" aria-labelledby="groups-join-title">
+              <h3 id="groups-join-title">通过邀请码加入</h3>
+              <p class="muted">向熟人获取 8 位邀请码，大小写都可以。</p>
+              <form id="groups-join-form">
+                <label for="groups-invite-input">邀请码</label>
+                <input id="groups-invite-input" name="invite_code" required minlength="8" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入 8 位邀请码">
+                <button type="submit" class="primary">加入小组</button>
+              </form>
+            </section>
+          </div>
+        </div>
+
+        <section id="groups-detail" aria-labelledby="groups-detail-title" hidden>
+          <button id="groups-back" type="button">返回我的小组</button>
+          <div id="groups-detail-content" hidden>
+            <div class="panel groups-summary">
+              <h3 id="groups-detail-title"></h3>
+              <p class="muted">邀请码 · 仅小组成员可见</p>
+              <p id="groups-invite-code" class="groups-invite-code"></p>
+              <p class="muted">复制这 8 位邀请码，邀请熟人加入。</p>
+            </div>
+            <section class="panel groups-members" aria-labelledby="groups-members-title">
+              <h3 id="groups-members-title">小组成员</h3>
+              <p id="groups-streak-rules" class="muted">按连续打卡天数排序，同分按用户名排序。每天完成复习评分即为打卡，日期按每位成员自己的时区计算。</p>
+              <table class="leaderboard-table" aria-labelledby="groups-members-title" aria-describedby="groups-streak-rules">
+                <thead><tr><th scope="col">用户名</th><th scope="col">连续打卡</th></tr></thead>
+                <tbody id="groups-members"></tbody>
+              </table>
+            </section>
+            <section class="groups-weakness" aria-labelledby="groups-weakness-title">
+              <h3 id="groups-weakness-title">组内薄弱点信号</h3>
+              <p class="muted">每个分区至少有 3 位非体验成员记录过易错点，才显示群体挣扎占比；其中累计有 3 条及以上易错点视为反复出错。体验账号的学习数据不参与聚合。</p>
+              <div id="groups-weakness" class="growth-zones"></div>
+            </section>
+            <div class="danger-zone">
+              <p class="danger-hint">可以随时退出；最后一位成员退出后，小组会自动删除。</p>
+              <button id="groups-leave" type="button">退出小组</button>
+              <button id="groups-delete" type="button" class="danger" hidden>解散小组</button>
+            </div>
           </div>
         </section>
       </section>
