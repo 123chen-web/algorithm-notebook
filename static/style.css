@@ -10,6 +10,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; }
+.cursor-fx-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; animation: cursor-fx-in 600ms ease-out both; }
+@keyframes cursor-fx-in { from { opacity: 0; } to { opacity: 1; } }
+.container { position: relative; z-index: 1; }
 ::selection { color: #7a3620; background: #f0ded2; }
 a { color: var(--accent); text-underline-offset: 4px; }
 a:hover { color: var(--accent-hover); }
@@ -542,6 +545,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
   .home-view .header { gap: 20px; }
   .home-view .user-meta, .home-view .user-meta:has(.home-quota[hidden]) { grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; padding: 20px; }
   .home-view #my-avatar { width: 48px; height: 48px; font-size: 20px; }
+  .home-view .avatar-actions { flex-direction: column; align-items: center; gap: 4px; }
   .home-greeting { font-size: 10px; }
   .home-username { font-size: 21px; }
   .home-view #logout { grid-column: 3; grid-row: 1; padding: 6px 8px; font-size: 11px; }
@@ -574,4 +578,55 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+@supports (background: color-mix(in srgb, white 50%, transparent)) {
+  html[data-cursor-fx="ripple"] {
+    --fx-panel-opacity: 88%;
+    --fx-home-opacity: 85%;
+  }
+
+  /* Only outer panels reveal the landscape; nested cards and controls stay opaque.
+     The sticky #notice floats over scrolling content, so it must stay opaque too. */
+  html[data-cursor-fx="ripple"] :is(
+    .panel:not(.panel .panel), #detail, .weekly-recap-card, .weekly-recap-summary,
+    .achievement-card, .achievements-summary, .trial-banner
+  ) {
+    background: color-mix(in srgb, var(--fx-panel-color, var(--surface)) var(--fx-panel-opacity), transparent);
+  }
+  html[data-cursor-fx="ripple"] #email-prompt { --fx-panel-color: #faf1e6; }
+  html[data-cursor-fx="ripple"] .weakness-overview { --fx-panel-color: #fcf6ef; }
+  html[data-cursor-fx="ripple"] .leaderboard-personal,
+  html[data-cursor-fx="ripple"] .trial-banner { --fx-panel-color: var(--soft); }
+  html[data-cursor-fx="ripple"] .groups-summary { --fx-panel-color: #edf5f4; }
+  html[data-cursor-fx="ripple"] .growth-zone-quiet { --fx-panel-color: #f2f8f0; }
+  html[data-cursor-fx="ripple"] .weekly-recap-card { --fx-panel-color: #fffdf8; }
+  html[data-cursor-fx="ripple"] .weekly-recap-summary { --fx-panel-color: #edf5ef; }
+  html[data-cursor-fx="ripple"] .achievements-summary { --fx-panel-color: #f8efe2; }
+  html[data-cursor-fx="ripple"] .achievement-card { --fx-panel-color: #f0efec; }
+  html[data-cursor-fx="ripple"] .achievement-card.is-unlocked { --fx-panel-color: #fffcf5; }
+
+  /* Preserve the home cards at 85%; the dark review card stays opaque. */
+  html[data-cursor-fx="ripple"] body.home-view .lobby-tile:not(.lobby-tile-review),
+  html[data-cursor-fx="ripple"] body.home-view .lobby-tile:not(.lobby-tile-review):hover:not(:disabled) {
+    background: color-mix(in srgb, var(--tile-bg) var(--fx-home-opacity), transparent);
+  }
+  html[data-cursor-fx="ripple"] body.home-view .user-meta {
+    background: color-mix(in srgb, #fff var(--fx-home-opacity), transparent);
+  }
+
+  @media (hover: none), (pointer: coarse) {
+    html[data-cursor-fx="ripple"] { --fx-panel-opacity: 92%; --fx-home-opacity: 92%; }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    html[data-cursor-fx="ripple"] :is(
+      .panel:not(.panel .panel), #detail, .weekly-recap-card, .weekly-recap-summary,
+      .achievement-card, .achievements-summary, .trial-banner
+    ),
+    html[data-cursor-fx="ripple"] body.home-view .lobby-tile:not(.lobby-tile-review),
+    html[data-cursor-fx="ripple"] body.home-view .user-meta {
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
+  }
 }

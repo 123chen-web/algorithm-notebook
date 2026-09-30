@@ -283,6 +283,70 @@ JSON 文件（`GET /api/export`）。所有套餐及体验账号均可使用；�
 支付记录、AI 用量、论坛帖子或其他用户的数据。此功能仅导出 JSON，
 不会删除账号或学习内容。
 
+## 鼠标特效
+
+全站统一使用水墨山水涟漪（RippleDistortion），包括未登录的介绍、登录页面、
+学习大厅和所有登录后的页面。山水纹理由程序生成，无外部图片、远程资源或额外依赖。
+桌面端随鼠标轨迹和点击产生涟漪；触屏端保留点按、拖动涟漪，并在进入页面后
+约 0.7–1.3 秒落下首滴微涟漪，之后每隔 4.5–8 秒在随机位置轻轻落下一滴。
+自动水滴优先落在露出山水的位置，完全被面板盖住时跳过这一滴。
+连续 60 秒没有点按、触摸、键盘或滚动输入时，自动微涟漪停止；再次操作后恢复。
+自动水滴只用于无悬停或粗指针设备，桌面端不会自动落点。
+
+介绍页底部和登录后的顶部头像区各有一个「山水涟漪：开/关」按钮，两处状态同步，
+支持键盘操作，并通过 `aria-pressed` 发布开关状态。偏好保存在当前浏览器的
+`localStorage.cursorFx`（`off` 表示关闭）；本地存储不可用时默认开启。
+系统启用 `prefers-reduced-motion`（减少动态效果）时自动关闭，并实时响应设置变化。
+WebGL2 不可用或图形上下文丢失时，自动回退到普通、不透明的页面。
+画布不接收指针事件，不影响点击、输入或选择文字；切换页面时山水常驻。
+
+特效实际运行时，直接位于山水背景上的外层面板使用原色半透明背景，内部按钮、
+输入框、代码块等控件保持原样。桌面细指针设备添加轻微背景模糊；触屏面板提高至
+92% 不透明度，且不使用 `backdrop-filter`，减轻持续变化的背景带来的绘制开销。
+不支持 `color-mix()`、关闭特效或自动回退时，保留原来的不透明样式。
+
+性能保护：1600×1000 山水纹理以固定种子在离屏 2D canvas 中生成并缓存，
+按需提亮至线性相对亮度均值至少 0.82；提亮采用 256 项通道查表，结果与逐像素计算一致。
+首次初始化推迟到页面首帧绘制之后。原生 WebGL2 实例化绘制最多 100 个波，
+每个波自带多层同心环，位移场默认为 CSS 尺寸的 0.7 倍。
+只在有涟漪时持续渲染，调整尺寸、恢复及波纹消失时按需绘制静态山水，随后停止动画循环。
+波纹低于 `RIPPLE_MIN_OPACITY` 后停止渲染，减少尾巴上的空转。
+页面隐藏时暂停渲染和自动水滴调度，显示后恢复；关闭时释放图形资源、定时器和监听器。
+桌面 DPR 上限为 1.5，触屏上限为 1.25；触屏相邻绘制帧至少间隔 12ms，
+使 120Hz 屏幕约封顶 60fps，波纹仍按真实时间演化。画布尺寸和触点坐标取自实际边界，
+适应手机地址栏伸缩。
+
+可调参数集中在 `static/cursor-fx.js` 顶部的 `RIPPLE_*` 常量：
+
+- 波纹形态：`RIPPLE_BRUSH_SIZE`、`RIPPLE_STRENGTH`、`RIPPLE_SWIRL`、`RIPPLE_RINGS`、
+  `RIPPLE_SPREAD`、`RIPPLE_FADE`、`RIPPLE_SPACING`、`RIPPLE_CLICK_STRENGTH`、
+  `RIPPLE_START_SCALE`、`RIPPLE_LIFE_CONSTANT`。
+- 渲染截断：`RIPPLE_MIN_OPACITY` 是停止绘制不可见波纹尾巴的不透明度下限。
+- 色彩与反光：`RIPPLE_DISPERSION`、`RIPPLE_GRAYSCALE`、`RIPPLE_TINT`、
+  `RIPPLE_TINT_AMOUNT`、`RIPPLE_GLINT`、`RIPPLE_HIGHLIGHT`。
+- 画质与纹理：`RIPPLE_QUALITY`、`RIPPLE_QUALITY_SCALE`、`RIPPLE_MAX_WAVES`、
+  `RIPPLE_MAX_DPR`、`RIPPLE_TEXTURE_WIDTH`、`RIPPLE_TEXTURE_HEIGHT`、
+  `RIPPLE_TEXTURE_SEED`、`RIPPLE_MIN_LUMINANCE`。
+- 自动微涟漪：`RIPPLE_AMBIENT_FIRST_DELAY`（首滴延迟，ms）、
+  `RIPPLE_AMBIENT_INTERVAL`（两滴间隔，ms）、`RIPPLE_AMBIENT_POWER`（相对普通涟漪的大小）、
+  `RIPPLE_AMBIENT_OPACITY`（起始强度，位移与其平方成正比）、
+  `RIPPLE_AMBIENT_MARGIN`（离视口边缘的比例）、`RIPPLE_AMBIENT_IDLE_MS`（无输入停用时间，ms）。
+  `RIPPLE_AMBIENT_PROBES` 是每滴自动水滴寻找露出山水位置的候选点数量上限。
+- 触屏保护：`RIPPLE_TOUCH_MAX_DPR`（DPR 上限）、`RIPPLE_TOUCH_MIN_FRAME_MS`（最短绘制间隔，ms）。
+
+`window.CursorFX.getState()` 可查看实际模式、目标模式、用户开关及停用原因；
+管理器仅接受 `ripple` / `off` 模式。
+
+### 第三方授权说明
+
+鼠标特效改写自 [React Bits](https://github.com/DavidHDev/react-bits) 的
+Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，采用
+**MIT + Commons Clause License Condition v1.0**。该授权允许将代码作为应用、网站或产品的一部分
+使用（包括商业用途），但不得出售、转授权或重新分发组件本身，无论是独立
+组件、组件集合还是移植版本。本文件仅作为本网站的一部分使用，不得单独
+抽出作为组件发布或分发。复制或实质性改写代码时，必须保留源码顶部完整的
+版权、许可及免责声明；完整声明见 `static/cursor-fx.js` 文件头。
+
 ## 成就徽章
 
 学习大厅的「成就徽章」入口展示当前账号的全部徽章。进入页面或刷新时，

@@ -7,10 +7,11 @@
   <title>算法错题本 · 把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=22">
-  <link rel="stylesheet" href="/static/intro.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=29">
+  <link rel="stylesheet" href="/static/intro.css?v=11">
   <script defer src="/static/intro.js?v=10"></script>
-  <script defer src="/static/app.js?v=28"></script>
+  <script defer src="/static/cursor-fx.js?v=15"></script>
+  <script defer src="/static/app.js?v=30"></script>
 </head>
 <body>
   <div class="container">
@@ -33,6 +34,7 @@
             </label>
             <button id="remove-avatar-btn" type="button" hidden>移除</button>
             <a class="link-button" href="/api/export">导出我的数据</a>
+            <button type="button" class="link-button fx-toggle" id="fx-toggle"></button>
           </div>
         </div>
         <div id="user-info-wrap" class="muted"></div>
@@ -140,7 +142,11 @@
           <p class="intro-small">代码仅用于记录，不运行、不自动判题；数学练习会比对最终答案，并展示参考答案供你核对。到期记录会显示在「今日复习」中。</p>
         </div>
       </div>
-      <p class="intro-invitation"><span class="intro-dot" aria-hidden="true"></span>目前处于内部测试阶段，暂不对外开放。</p>
+      <p class="intro-invitation">
+        <span class="intro-dot" aria-hidden="true"></span>
+        <span>目前处于内部测试阶段，暂不对外开放。</span>
+        <button type="button" class="link-button fx-toggle" id="fx-toggle-intro"></button>
+      </p>
     </section>
 
     <p id="notice" role="status" aria-live="polite"></p>

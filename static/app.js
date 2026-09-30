@@ -345,7 +345,16 @@ function renderUserInfo() {
   readOnly();
 }
 
+function updateCursorFxToggle() {
+  const enabled = window.CursorFX?.isEnabled() ?? false;
+  document.querySelectorAll(".fx-toggle").forEach((button) => {
+    button.textContent = `山水涟漪：${enabled ? "开" : "关"}`;
+    button.setAttribute("aria-pressed", String(enabled));
+  });
+}
+
 function updateUserInfo() {
+  updateCursorFxToggle();
   renderUserInfo();
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
@@ -2210,6 +2219,14 @@ $("#admin-dashboard-refresh").addEventListener("click", () => run(async () => {
 $("#problem-zone").addEventListener("change", (event) => {
   applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
 });
+
+document.querySelectorAll(".fx-toggle").forEach((button) => {
+  button.addEventListener("click", () => {
+    window.CursorFX?.setEnabled(!window.CursorFX?.isEnabled());
+    updateCursorFxToggle();
+  });
+});
+updateCursorFxToggle();
 
 $("#avatar-file-input").addEventListener("change", (event) => {
   const file = event.currentTarget.files[0];

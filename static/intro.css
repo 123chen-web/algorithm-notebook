@@ -311,6 +311,7 @@
 
 .intro .intro-invitation {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   margin: 0;
@@ -318,6 +319,17 @@
   border-top: 1px solid #e7e3da;
   color: #7a766d;
   font-size: 12px;
+}
+
+.intro .intro-invitation > span:not(.intro-dot) {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.intro .intro-invitation .fx-toggle {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 @media (max-width: 960px) {
@@ -344,4 +356,51 @@
 
 @media (prefers-reduced-motion: reduce) {
   .intro .intro-cta { transition: none; }
+}
+
+/* Add paper only while the landscape runs; the example and its code stay opaque. */
+@supports (background: color-mix(in srgb, white 50%, transparent)) {
+  html[data-cursor-fx="ripple"] .intro :is(
+    .intro-hero .intro-copy, .intro-step, .intro-difference, .intro-invitation
+  ) {
+    min-width: 0;
+    padding: 26px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--paper) var(--fx-panel-opacity, 88%), transparent);
+  }
+  html[data-cursor-fx="ripple"] .intro .intro-steps {
+    gap: 24px;
+    padding: 0 0 28px;
+    border-top: 0;
+    border-bottom: 0;
+  }
+  html[data-cursor-fx="ripple"] .intro .intro-difference { margin-bottom: 24px; }
+
+  @media (hover: none), (pointer: coarse) {
+    html[data-cursor-fx="ripple"] .intro :is(
+      .intro-hero .intro-copy, .intro-step, .intro-difference, .intro-invitation
+    ) {
+      background: color-mix(in srgb, var(--paper) 92%, transparent);
+    }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    html[data-cursor-fx="ripple"] .intro :is(
+      .intro-hero .intro-copy, .intro-step, .intro-difference, .intro-invitation
+    ) {
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
+  }
+  @media (max-width: 780px) {
+    html[data-cursor-fx="ripple"] .intro :is(
+      .intro-hero .intro-copy, .intro-step, .intro-difference, .intro-invitation
+    ) { padding: 18px; }
+    html[data-cursor-fx="ripple"] .intro .intro-steps { gap: 18px; }
+  }
+  @media (max-width: 380px) {
+    html[data-cursor-fx="ripple"] .intro :is(
+      .intro-hero .intro-copy, .intro-step, .intro-difference, .intro-invitation
+    ) { padding: 16px; }
+  }
 }
