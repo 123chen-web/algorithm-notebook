@@ -370,7 +370,14 @@ def decode_uploaded_image(content: bytes) -> Image.Image:
         Image.open(io.BytesIO(content)).verify()
         image = Image.open(io.BytesIO(content))
         image.load()
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+    ):
+        # SyntaxError: Pillow reports broken PNG checksums with this exception.
         # DecompressionBombError：Pillow 按文件头声明的像素数提前拒绝，
         # 不会真的去解码一个几万乘几万像素的图片撑爆内存；这里只是把它
         # 也归为"文件不是有效的图片"，不让它变成一个裸的 500。
@@ -876,6 +883,7 @@ def me(user=Depends(current_user)):
     return {
         **user,
         **quota,
+        "has_avatar": avatar_path(user["id"]).is_file(),
         "today": today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
     }
@@ -1013,7 +1021,7 @@ async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)
         avatar_version = conn.execute(
             "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
         ).fetchone()["avatar_version"]
-    return {"ok": True, "avatar_version": avatar_version}
+    return {"ok": True, "avatar_version": avatar_version, "has_avatar": True}
 
 
 @app.delete("/api/me/avatar")
@@ -1027,7 +1035,7 @@ def delete_own_avatar(user=Depends(current_user)):
         avatar_version = conn.execute(
             "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
         ).fetchone()["avatar_version"]
-    return {"ok": True, "avatar_version": avatar_version}
+    return {"ok": True, "avatar_version": avatar_version, "has_avatar": False}
 
 
 @app.get("/api/users/{user_id}/avatar")
@@ -2161,7 +2169,12 @@ def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
             """,
             params,
         ).fetchall()
-    return {"posts": [dict(row) for row in rows]}
+    return {
+        "posts": [
+            {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
+            for row in rows
+        ]
+    }
 
 
 @app.post("/api/posts", status_code=201)
@@ -2196,7 +2209,7 @@ def get_post(post_id: int, user=Depends(current_user)):
         ).fetchone()
         if row is None:
             raise HTTPException(404, "帖子不存在")
-        post = dict(row)
+        post = {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
         comments = conn.execute(
             """
             SELECT c.id, c.user_id, c.body, c.created_at, c.updated_at,
@@ -2208,7 +2221,10 @@ def get_post(post_id: int, user=Depends(current_user)):
             """,
             (post_id,),
         ).fetchall()
-    post["comments"] = [dict(row) for row in comments]
+    post["comments"] = [
+        {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
+        for row in comments
+    ]
     return post
 
 
@@ -2519,7 +2535,14 @@ def list_reports(user=Depends(current_user)):
             """
         ).fetchall()
     reports = [{"type": ("post" if row["post_id"] is not None else "comment"), **dict(row)} for row in rows]
-    reports += [{"type": "avatar", **dict(row)} for row in avatar_rows]
+    reports += [
+        {
+            "type": "avatar",
+            **dict(row),
+            "avatar_owner_has_avatar": avatar_path(row["avatar_owner_id"]).is_file(),
+        }
+        for row in avatar_rows
+    ]
     reports.sort(key=lambda report: report["created_at"])
     return {"reports": reports}
 
@@ -2593,7 +2616,7 @@ def admin_clear_avatar(user_id: int, user=Depends(current_user)):
             """,
             (utc_now(), user_id),
         )
-    return {"ok": True}
+    return {"ok": True, "has_avatar": False}
 
 
 @app.post("/api/admin/users/{user_id}/ban")
