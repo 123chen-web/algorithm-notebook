@@ -45,7 +45,7 @@
   const RIPPLE_DISPERSION = 0;
   const RIPPLE_CLICK_STRENGTH = 2;
   const RIPPLE_GRAYSCALE = false;
-  const RIPPLE_TINT = "#bc5b3a";
+  const RIPPLE_TINT = "#c23a2b";
   const RIPPLE_TINT_AMOUNT = 0.08;
   const RIPPLE_GLINT = 0.25;
   const RIPPLE_HIGHLIGHT = "#ffffff";
@@ -187,7 +187,8 @@
   }
 
   // Effect factory contract: ({ canvas, gl, fail }) =>
-  // { pause(), resume(), destroy(), isActive() }. The manager owns the canvas
+  // { pause(), resume(), destroy(), isActive(), drop(x, y, power, opacity) }.
+  // The manager owns the canvas
   // and context; destroy must cancel all callbacks/listeners and free GL objects.
   // fail(reason) disables this effect for the rest of this page session.
   function registerEffect(name, factory) {
@@ -209,6 +210,11 @@
       reconcile();
     },
     isEnabled() { return enabled; },
+    drop(x, y, power, opacity) {
+      // A settled landscape has no render loop, but can still accept a drop.
+      if (!enabled || mode !== "ripple" || current?.name !== "ripple") return false;
+      return current.effect.drop?.(x, y, power, opacity) ?? false;
+    },
     getState() {
       // mode is the available effect; active means it currently has a render loop.
       return { mode, wanted, enabled, active: Boolean(current?.effect.isActive()), reason };
@@ -245,9 +251,9 @@
       ctx.lineTo(x + 1 + random() * 5, y + random() * 2 - 1); ctx.stroke();
     }
     const sun = ctx.createRadialGradient(w * 0.72, h * 0.27, 0, w * 0.72, h * 0.27, h * 0.08);
-    sun.addColorStop(0, "rgba(188,91,58,0.62)");
-    sun.addColorStop(0.65, "rgba(188,91,58,0.30)");
-    sun.addColorStop(1, "rgba(188,91,58,0)");
+    sun.addColorStop(0, "rgba(194,58,43,0.62)");
+    sun.addColorStop(0.65, "rgba(194,58,43,0.30)");
+    sun.addColorStop(1, "rgba(194,58,43,0)");
     ctx.fillStyle = sun; ctx.fillRect(0, 0, w, h);
     for (let layer = 0; layer < 5; layer++) {
       const t = layer / 4, base = h * (0.46 + 0.28 * t);
@@ -298,8 +304,8 @@
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 40 + random() * 120, y); ctx.stroke();
     }
     const reflection = ctx.createRadialGradient(w * 0.72, h * 0.88, 0, w * 0.72, h * 0.88, 90);
-    reflection.addColorStop(0, "rgba(188,91,58,0.08)");
-    reflection.addColorStop(1, "rgba(188,91,58,0)");
+    reflection.addColorStop(0, "rgba(194,58,43,0.08)");
+    reflection.addColorStop(1, "rgba(194,58,43,0)");
     ctx.save(); ctx.translate(w * 0.72, 0); ctx.scale(0.25, 1);
     ctx.translate(-w * 0.72, 0); ctx.fillStyle = reflection;
     ctx.fillRect(0, h * 0.78, w * 4, h * 0.22); ctx.restore();
@@ -512,6 +518,10 @@
       wave.size = Math.max(1, RIPPLE_BRUSH_SIZE); wave.opacity = opacity;
       wake(); return wave;
     }
+    function drop(clientX, clientY, power = 1.1, opacity = 1) {
+      if (paused || destroyed || document.hidden || reducedMotion.matches) return false;
+      return Boolean(newWave({ clientX, clientY }, power, opacity, canvas.getBoundingClientRect()));
+    }
     function pointerWave(event, power) {
       const wave = newWave(event, power);
       if (wave) { previousX = wave.x; previousY = wave.y; }
@@ -642,7 +652,7 @@
       } catch (_) { fail("effect-error"); }
     }
     try {
-      if (reducedMotion.matches) return { pause, resume() {}, destroy, isActive() { return false; } };
+      if (reducedMotion.matches) return { pause, resume() {}, destroy, drop, isActive() { return false; } };
       waveProgram = program(rippleWaveVertex, rippleWaveFragment);
       screenProgram = program(rippleScreenVertex, rippleCompositeFragment);
       waveArray = allocate(arrays, gl.createVertexArray()); gl.bindVertexArray(waveArray);
@@ -695,6 +705,7 @@
         scheduleAmbient(true);
       },
       destroy,
+      drop,
       isActive() { return Boolean(raf) && !paused && !destroyed; },
     };
   }

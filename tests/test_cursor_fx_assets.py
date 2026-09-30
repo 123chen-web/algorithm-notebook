@@ -84,6 +84,32 @@ def css_selectors(selector_list):
     yield selector_list[start:].strip()
 
 
+def test_visual_style_defines_red_pen_and_system_font_tokens():
+    stylesheet = (STATIC / "style.css").read_text(encoding="utf-8")
+    root_tokens = {}
+    for blocks, declaration in css_declarations(stylesheet):
+        if len(blocks) != 1 or ":root" not in css_selectors(blocks[0]):
+            continue
+        name, separator, value = declaration.partition(":")
+        if separator and name.startswith("--"):
+            root_tokens[name.strip()] = value.strip()
+    assert root_tokens.get("--accent", "").lower() == "#c23a2b"
+    assert root_tokens.get("--serif")
+    assert root_tokens.get("--kai")
+
+
+def test_lobby_has_no_decorative_tile_arrows(index_document):
+    assert all(
+        "tile-arrow" not in node["attrs"].get("class", "").split()
+        for node in index_document.elements
+    )
+
+
+@pytest.mark.parametrize("filename", ["style.css", "intro.css"])
+def test_visual_styles_do_not_use_previous_terracotta_accent(filename):
+    assert "#bc5b3a" not in (STATIC / filename).read_text(encoding="utf-8").lower()
+
+
 def test_cursor_effect_preserves_third_party_license(cursor_source):
     header = re.match(r"/\*[\s\S]*?\*/", cursor_source)
     assert header, "The cursor effect must start with its license notice"

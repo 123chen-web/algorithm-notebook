@@ -43,6 +43,218 @@ let growthZones = null;
 let zones = [];
 let codeZones = new Set();
 
+const sealMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const sealStamps = [];
+const achievementStampTimers = new Set();
+let homeOpeningPlayed = false;
+let finishHomeOpening = null;
+
+function sealAnchorPoint(anchor) {
+  if (anchor && typeof anchor.getBoundingClientRect === "function") {
+    const rect = anchor.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+  return {
+    x: Number.isFinite(anchor?.x) ? anchor.x : window.innerWidth / 2,
+    y: Number.isFinite(anchor?.y) ? anchor.y : window.innerHeight * .35,
+  };
+}
+
+function stampSeal(text, options = {}) {
+  const layer = $("#seal-layer");
+  if (!layer || document.hidden || !/^[\u3400-\u9fff]{2,4}$/u.test(text)) return;
+  const tone = options.tone === "gamboge" ? "gamboge" : "cinnabar";
+  const stamp = document.createElement("span");
+  stamp.className = `seal-stamp seal-stamp--${tone}`;
+  stamp.setAttribute("aria-hidden", "true");
+  stamp.textContent = text;
+  stamp.style.setProperty("--rot", `${-12 + Math.random() * 8}deg`);
+  stamp.style.setProperty("--seal-height", `${78 + (Array.from(text).length - 2) * 30}px`);
+  const timers = new Set();
+  const entry = { remove };
+  function remove() {
+    for (const timer of timers) window.clearTimeout(timer);
+    timers.clear();
+    stamp.remove();
+    const index = sealStamps.indexOf(entry);
+    if (index !== -1) sealStamps.splice(index, 1);
+  }
+  function later(callback, delay) {
+    const timer = window.setTimeout(() => {
+      timers.delete(timer);
+      callback();
+    }, delay);
+    timers.add(timer);
+  }
+  while (sealStamps.length >= 3) sealStamps[0].remove();
+  layer.append(stamp);
+  sealStamps.push(entry);
+
+  const point = sealAnchorPoint(options.anchor);
+  const animated = !sealMotion.matches;
+  const scale = window.matchMedia("(max-width: 560px)").matches ? .8 : 1;
+  // Reserve the rotated landing's full footprint, including the initial large stamp.
+  const angle = 18 * Math.PI / 180;
+  const reach = scale * (animated ? 2.3 : 1);
+  const halfWidth = Math.min(window.innerWidth / 2,
+    (stamp.offsetWidth * Math.cos(angle) + stamp.offsetHeight * Math.sin(angle)) * reach / 2 + 10);
+  const halfHeight = Math.min(window.innerHeight / 2,
+    (stamp.offsetHeight * Math.cos(angle) + stamp.offsetWidth * Math.sin(angle)) * reach / 2 + 10);
+  const x = Math.max(halfWidth, Math.min(window.innerWidth - halfWidth, point.x));
+  const y = Math.max(halfHeight, Math.min(window.innerHeight - halfHeight, point.y));
+  stamp.style.left = `${x}px`;
+  stamp.style.top = `${y}px`;
+
+  if (animated) {
+    stamp.classList.add("seal-stamp--animated");
+    later(() => {
+      if (!sealMotion.matches && !document.hidden) window.CursorFX?.drop?.(x, y, 1.1);
+    }, 300);
+    later(() => stamp.classList.add("seal-stamp--fading"), 1550);
+    later(remove, 1900);
+  } else {
+    window.CursorFX?.drop?.(x, y, 1.1);
+    later(remove, 1200);
+  }
+}
+
+function cancelAchievementStamps() {
+  for (const timer of achievementStampTimers) window.clearTimeout(timer);
+  achievementStampTimers.clear();
+}
+
+function queueAchievementStamps(achievements, emblems, isCurrent) {
+  cancelAchievementStamps();
+  // This is a per-user presentation history, never an authority for unlocking badges.
+  try {
+    const key = `achievementsSeen:${user.id}`;
+    const unlocked = achievements.filter((badge) => badge.unlocked).map((badge) => badge.key);
+    const previous = window.localStorage.getItem(key);
+    if (previous === null) {
+      window.localStorage.setItem(key, JSON.stringify(unlocked));
+      return;
+    }
+    const saved = JSON.parse(previous);
+    if (!Array.isArray(saved)) {
+      window.localStorage.setItem(key, JSON.stringify(unlocked));
+      return;
+    }
+    const seen = new Set(saved);
+    unlocked.filter((id) => !seen.has(id)).slice(0, 3).forEach((id, index) => {
+      const timer = window.setTimeout(() => {
+        achievementStampTimers.delete(timer);
+        if (!isCurrent() || document.hidden) return;
+        const emblem = emblems.get(id);
+        if (!emblem?.isConnected) return;
+        // A badge below the fold would push the seal onto unrelated content: stamp the summary card instead.
+        const box = emblem.getBoundingClientRect();
+        const summary = $("#achievements-summary");
+        if (box.bottom > 0 && box.top < window.innerHeight || summary.hidden) {
+          stampSeal("达成", { anchor: emblem, tone: "gamboge" });
+        } else {
+          const card = summary.getBoundingClientRect();
+          stampSeal("达成", {
+            anchor: { x: card.left + card.width * (0.18 + 0.14 * index), y: card.top + card.height / 2 },
+            tone: "gamboge",
+          });
+        }
+      }, index * 400);
+      achievementStampTimers.add(timer);
+    });
+    window.localStorage.setItem(key, JSON.stringify(unlocked));
+  } catch (_) {
+    cancelAchievementStamps();
+  }
+}
+
+function startHomeOpening() {
+  if (homeOpeningPlayed || sealMotion.matches || document.hidden || view !== "home"
+    || $("#app").hidden || $("#home-page").hidden) return;
+  const title = $(".home-username");
+  if (!title) return;
+  homeOpeningPlayed = true;
+  const text = title.textContent;
+  const label = title.getAttribute("aria-label");
+  const original = Array.from(title.childNodes);
+  title.setAttribute("aria-label", text);
+  const letters = Array.from(text);
+  const animatedCount = Math.min(letters.length, 16);
+  const fragment = document.createDocumentFragment();
+  letters.slice(0, animatedCount).forEach((letter, index) => {
+    const span = document.createElement("span");
+    span.className = "home-ink-char";
+    span.setAttribute("aria-hidden", "true");
+    span.style.setProperty("--ink-delay", `${index * 50}ms`);
+    span.textContent = letter;
+    fragment.append(span);
+  });
+  if (letters.length > animatedCount) {
+    const rest = document.createElement("span");
+    rest.setAttribute("aria-hidden", "true");
+    rest.textContent = letters.slice(animatedCount).join("");
+    fragment.append(rest);
+  }
+  title.replaceChildren(fragment);
+  document.body.classList.add("home-anim");
+  const timer = window.setTimeout(finish, Math.max(1300, 700 + (animatedCount - 1) * 50));
+  function finish() {
+    window.clearTimeout(timer);
+    document.body.classList.remove("home-anim");
+    title.replaceChildren(...original);
+    if (label === null) title.removeAttribute("aria-label");
+    else title.setAttribute("aria-label", label);
+    finishHomeOpening = null;
+  }
+  finishHomeOpening = finish;
+}
+
+function initReviewSpotlight() {
+  const card = $(".lobby-tile-review");
+  const pointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+  if (!card) return;
+  let frame = 0;
+  let point = null;
+  const cancel = () => {
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    point = null;
+  };
+  const move = (event) => {
+    if (sealMotion.matches || !pointer.matches || document.hidden || view !== "home") return;
+    point = { x: event.clientX, y: event.clientY };
+    if (frame) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = 0;
+      if (!point || sealMotion.matches || !pointer.matches || document.hidden || view !== "home") return;
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty("--mx", `${point.x - rect.left}px`);
+      card.style.setProperty("--my", `${point.y - rect.top}px`);
+    });
+  };
+  card.addEventListener("pointerenter", move, { passive: true });
+  card.addEventListener("pointermove", move, { passive: true });
+  card.addEventListener("pointerleave", cancel);
+  sealMotion.addEventListener("change", cancel);
+  pointer.addEventListener("change", cancel);
+  document.addEventListener("visibilitychange", cancel);
+}
+
+sealMotion.addEventListener("change", () => {
+  if (sealMotion.matches) finishHomeOpening?.();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    finishHomeOpening?.();
+    cancelAchievementStamps();
+    for (const entry of [...sealStamps]) entry.remove();
+  }
+});
+window.addEventListener("pagehide", () => {
+  finishHomeOpening?.();
+  cancelAchievementStamps();
+  for (const entry of [...sealStamps]) entry.remove();
+});
+
 const ORDER_POLL_INTERVAL = 3000;
 const ORDER_POLL_DURATION = 5 * 60 * 1000;
 
@@ -125,6 +337,8 @@ function showAuthPanels(visibleIds) {
 }
 
 function signedOut() {
+  finishHomeOpening?.();
+  for (const entry of [...sealStamps]) entry.remove();
   stopOrderPolling();
   resetWeaknessAnalysis();
   resetAchievements();
@@ -147,6 +361,7 @@ function signedOut() {
   $("#app").hidden = true;
   $("#logout").hidden = true;
   $("#user-info-wrap").replaceChildren();
+  closeAccountMenu();
   $("#my-avatar-wrap").hidden = true;
   $("#avatar-file-input").value = "";
   $("#email-prompt").hidden = true;
@@ -300,7 +515,8 @@ function renderUserInfo() {
       );
     } else {
       wrap.replaceChildren(
-        element("span", `${user.username} · ${user.timezone} · ${user.today}`)
+        element("strong", user.username, "user-name"),
+        element("span", `${user.timezone} · ${user.today}`, "user-context")
       );
     }
     if (!user.is_trial) {
@@ -363,8 +579,8 @@ function updateUserInfo() {
   renderHomeQuota();
 
   $("#my-avatar-wrap").hidden = false;
-  $("#my-avatar").replaceWith(
-    Object.assign(avatarElement(user.id, user.username, user.avatar_version), { id: "my-avatar" })
+  $("#my-avatar").replaceChildren(
+    avatarElement(user.id, user.username, user.avatar_version)
   );
   $(".avatar-upload-label").hidden = user.is_trial;
   $("#remove-avatar-btn").hidden = user.is_trial || !(user.avatar_version > 0);
@@ -491,6 +707,11 @@ async function enterApp() {
 
 async function showView(nextView, { refreshUser = true } = {}) {
   stopOrderPolling();
+  if (view !== nextView) {
+    finishHomeOpening?.();
+    cancelAchievementStamps();
+    if (view === "achievements") achievementsGeneration += 1;
+  }
   if (view === "groups" && nextView !== "groups") groupsGeneration += 1;
   view = nextView;
   document.body.classList.toggle("home-view", view === "home");
@@ -539,6 +760,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
 }
 
 function resetHomeSummary() {
+  $("#home-due-count").closest(".tile-count-wrap").classList.remove("has-due");
   $("#home-due-count").hidden = true;
   $("#home-due-count").textContent = "";
   $("#home-due-caption").textContent = "正在读取待复习记录…";
@@ -561,6 +783,8 @@ function renderHomeQuota() {
 }
 
 async function loadHome({ refreshUser = true } = {}) {
+  // A refresh during the opening must not restart the count's pen animation.
+  finishHomeOpening?.();
   const currentUser = user;
   resetHomeSummary();
   // 大厅统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
@@ -576,6 +800,7 @@ async function loadHome({ refreshUser = true } = {}) {
   }
   if (reviews.status === "fulfilled") {
     const count = reviews.value.items.length;
+    $("#home-due-count").closest(".tile-count-wrap").classList.toggle("has-due", count > 0);
     $("#home-due-count").textContent = String(count);
     $("#home-due-count").hidden = false;
     $("#home-due-caption").textContent = count
@@ -583,6 +808,7 @@ async function loadHome({ refreshUser = true } = {}) {
   } else {
     $("#home-due-caption").textContent = "暂时无法读取数量，可进入复习重试";
   }
+  if (profile.status === "fulfilled" && reviews.status === "fulfilled") startHomeOpening();
 }
 
 async function loadLeaderboard() {
@@ -842,6 +1068,7 @@ function resetAchievementShareCard() {
 }
 
 function resetAchievements() {
+  cancelAchievementStamps();
   achievementsGeneration += 1;
   resetAchievementShareCard();
   $("#achievements-page").hidden = true;
@@ -855,6 +1082,7 @@ function resetAchievements() {
 }
 
 function renderAchievements(achievements) {
+  const emblems = new Map();
   const groups = [
     ["streak", "连续打卡", "每天回来复习，让坚持形成习惯。"],
     ["mistakes", "易错点积累", "把具体错因记下来，让每一次做错都有收获。"],
@@ -893,6 +1121,7 @@ function renderAchievements(achievements) {
       const card = element("article", "", `achievement-card ${badge.unlocked ? "is-unlocked" : "is-locked"}`);
       const top = element("div", "", "achievement-card-top");
       const emblem = element("span", "", "achievement-emblem");
+      emblems.set(badge.key, emblem);
       emblem.setAttribute("aria-hidden", "true");
       emblem.append(element("strong", String(target)), element("span", unit));
       top.append(emblem, element("span", badge.unlocked ? "✓ 已解锁" : "待解锁", "achievement-state"));
@@ -913,9 +1142,11 @@ function renderAchievements(achievements) {
     group.append(heading, element("p", description, "achievement-group-description"), grid);
     list.append(group);
   }
+  return emblems;
 }
 
 async function loadAchievements() {
+  cancelAchievementStamps();
   const generation = ++achievementsGeneration;
   resetAchievementShareCard();
   const userId = user.id;
@@ -933,8 +1164,9 @@ async function loadAchievements() {
   try {
     const data = await api("/api/achievements");
     if (!isCurrent()) return;
-    renderAchievements(data.achievements);
+    const emblems = renderAchievements(data.achievements);
     status.textContent = "";
+    queueAchievementStamps(data.achievements, emblems, isCurrent);
   } catch (error) {
     if (!isCurrent()) return;
     status.classList.add("error");
@@ -1939,14 +2171,18 @@ function renderDetail(item) {
     button.dataset.quality = String(quality);
     button.dataset.blocked = due ? "0" : "1";
     button.disabled = !due;
-    button.addEventListener("click", () => run(async () => {
-      const state = await api(`/api/mistakes/${item.id}/review`, {
-        method: "POST",
-        body: JSON.stringify({ quality, version: item.version }),
+    button.addEventListener("click", () => {
+      const anchor = sealAnchorPoint(button);
+      run(async () => {
+        const state = await api(`/api/mistakes/${item.id}/review`, {
+          method: "POST",
+          body: JSON.stringify({ quality, version: item.version }),
+        });
+        stampSeal({ 0: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality], { anchor });
+        await loadList();
+        message(`评分已保存。${state.due_date} 再来复习这条易错点。`);
       });
-      await loadList();
-      message(`评分已保存。${state.due_date} 再来复习这条易错点。`);
-    }));
+    });
     reviewButtons.append(button);
   }
   reviewSection.append(reviewButtons);
@@ -2220,6 +2456,59 @@ $("#problem-zone").addEventListener("change", (event) => {
   applyZoneFieldMode($("#problem-form"), event.currentTarget.value);
 });
 
+function initAccountMenu() {
+  const menu = $(".account-menu");
+  const summary = menu.querySelector("summary");
+  const panel = menu.querySelector(".account-menu-panel");
+
+  function close(restoreFocus = false) {
+    menu.open = false;
+    document.removeEventListener("click", onOutsideClick);
+    document.removeEventListener("keydown", onKeydown);
+    if (restoreFocus) summary.focus();
+  }
+  function onOutsideClick(event) {
+    if (!menu.contains(event.target)) close();
+  }
+  function onKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+    }
+  }
+  // Global listeners exist only while open; repeated toggles reuse the same callbacks.
+  menu.addEventListener("toggle", () => {
+    if (menu.open) {
+      document.addEventListener("click", onOutsideClick);
+      document.addEventListener("keydown", onKeydown);
+    } else {
+      close();
+    }
+  });
+  panel.addEventListener("keydown", (event) => {
+    const upload = event.target.closest(".avatar-upload-label");
+    const exportLink = event.target.closest('a[href="/api/export"]');
+    if (upload && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      if (!event.repeat) $("#avatar-file-input").click();
+    } else if (exportLink && event.key === " ") {
+      event.preventDefault();
+      if (!event.repeat) exportLink.click();
+    }
+  });
+  panel.addEventListener("click", (event) => {
+    // The toggle's own handler updates its text before this bubbling close handler.
+    if (event.target.closest('a[href="/api/export"], #fx-toggle, #remove-avatar-btn')) {
+      close(true);
+    }
+  });
+  $("#avatar-file-input").addEventListener("change", () => close(true));
+  window.addEventListener("pagehide", () => close());
+  return close;
+}
+
+const closeAccountMenu = initAccountMenu();
+
 document.querySelectorAll(".fx-toggle").forEach((button) => {
   button.addEventListener("click", () => {
     window.CursorFX?.setEnabled(!window.CursorFX?.isEnabled());
@@ -2229,13 +2518,14 @@ document.querySelectorAll(".fx-toggle").forEach((button) => {
 updateCursorFxToggle();
 
 $("#avatar-file-input").addEventListener("change", (event) => {
-  const file = event.currentTarget.files[0];
+  const input = event.currentTarget;
+  const file = input.files[0];
   if (!file) return;
   run(async () => {
     const result = await uploadAvatarFile(file);
     user.avatar_version = result.avatar_version;
     updateUserInfo();
-    event.currentTarget.value = "";
+    input.value = "";
     message("头像已更新。");
   });
 });
@@ -2353,6 +2643,7 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
 $("#problem-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const anchor = sealAnchorPoint(event.submitter || form.querySelector('[type="submit"]:not([hidden])'));
   const cameFromPhoto = Boolean(photoRecognition);
 
   run(async () => {
@@ -2368,6 +2659,7 @@ $("#problem-form").addEventListener("submit", (event) => {
         mistakes: data.getAll("mistake"),
       }),
     });
+    stampSeal("已录", { anchor });
 
     form.reset();
     applyZoneFieldMode(form, form.zone.value);
@@ -3005,6 +3297,7 @@ $("#timezone").value =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 
 addMistakeInput();
+initReviewSpotlight();
 
 const resetToken = new URLSearchParams(location.search).get("reset_token");
 
