@@ -1,3 +1,20 @@
+/* Landscape tokens never replace the ink used inside paper or glass surfaces. */
+html[data-theme="qixi"] {
+  --scene-shade-rgb: 13,25,26;
+  --scene-caption-ink: var(--ink-2);
+  --scene-caption-surface: var(--paper);
+}
+html[data-theme="qixi"][data-scene-tone="dark"] {
+  --scene-ink: #fffaf0;
+  --scene-ink-2: #f2f7f0;
+  --scene-footer-ink: #fff;
+  --scene-line: #eff7f0;
+}
+html[data-theme="ink"][data-scene-tone="dark"] {
+  --scene-caption-ink: var(--ink-2);
+  --scene-caption-surface: var(--paper);
+}
+
 .public-preferences { display: none; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
 html[data-view="welcome"] .public-preferences { display: flex; }
 .public-preferences > label { flex-shrink: 0; margin: 0; color: var(--ink-2); font-size: var(--text-xs); font-weight: 400; }
@@ -9,6 +26,28 @@ html[data-theme="qixi"] .home-view .header { margin-top: 16px; padding: 16px 20p
 .account-menu-panel > .account-preference { display: grid; gap: 6px; cursor: default; }
 .account-preference select { margin: 0; font-size: var(--text-sm); }
 html[data-theme="qixi"] .scene-backdrop { display: block; }
+/* Paint after the ripple canvas, below the content; keep the right window clear. */
+html[data-theme="qixi"]:where([data-view="welcome"], [data-view="auth"]) body::after,
+html[data-theme="qixi"] body:where(.home-view)::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(var(--scene-shade-rgb),1) 0%, rgba(var(--scene-shade-rgb),1) 35%, rgba(var(--scene-shade-rgb),0) 68%);
+  opacity: var(--scene-veil, 0);
+}
+html[data-theme="qixi"] .auth-grid .auth-trial { position: relative; isolation: isolate; }
+html[data-theme="qixi"] .auth-grid .auth-trial::before {
+  content: "";
+  position: absolute;
+  inset: -6px -14px;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  background: rgba(var(--scene-shade-rgb),1);
+  opacity: 0;
+}
+html[data-theme="qixi"][data-scene-tone="dark"] .auth-grid .auth-trial::before { opacity: .38; }
 html[data-theme="qixi"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
 html[data-theme="qixi"] .intro .intro-copy { padding: 32px; }
 html[data-theme="qixi"] .intro .intro-example::before { background: var(--soft); }
@@ -68,6 +107,27 @@ html[data-theme="qixi"] .intro .intro-example { margin-top: 128px; padding: 0; }
 html[data-theme="qixi"] .intro .intro-example::before { display: none; }
 html[data-theme="qixi"] .intro .sample-note { padding: 24px 24px 0; background: var(--surface); box-shadow: none; }
 html[data-theme="qixi"] .intro .sample-bottomline { margin: 0 -24px; padding: 14px 24px; }
+html[data-theme="qixi"][data-scene-tone="dark"] :is(#intro-title, .intro-lead, .lobby-heading h2, #auth-trial-start) { color: var(--scene-ink); }
+html[data-theme="qixi"][data-scene-tone="dark"] :is(#trial-start, .intro-trial-note, .auth-heading a) { color: var(--scene-ink-2); }
+html[data-theme="qixi"] .intro .intro-example figcaption {
+  width: fit-content;
+  margin-right: auto;
+  margin-left: auto;
+  color: var(--scene-caption-ink);
+  background: var(--scene-caption-surface);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 4px var(--scene-caption-surface);
+}
+html[data-theme="ink"][data-scene-tone="dark"] .intro .intro-example figcaption { color: var(--scene-caption-ink); background: var(--scene-caption-surface); border-radius: var(--radius-xs); }
+html[data-theme="ink"][data-scene-tone="dark"] .intro .intro-copy > .eyebrow { color: var(--accent-hover); }
+
+html[data-theme="qixi"][data-scene-tone="dark"][data-view="welcome"] .header :is(.brand-copy h1, .brand-mark),
+html[data-theme="qixi"][data-scene-tone="dark"] .home-view .header :is(.brand-copy h1, .brand-mark, .account-summary-name, .home-quota-heading label) { color: var(--scene-ink); }
+html[data-theme="qixi"][data-scene-tone="dark"][data-view="welcome"] .header .public-preferences > label,
+html[data-theme="qixi"][data-scene-tone="dark"] .home-view .header :is(.home-quota-heading span, .home-quota-hint) { color: var(--scene-ink-2); }
+html[data-theme="qixi"][data-scene-tone="dark"][data-view="welcome"] .header :is(.brand-mark, .public-preferences > select, .scene-capsule),
+html[data-theme="qixi"][data-scene-tone="dark"] .home-view .header :is(.brand-mark, .home-quota) { border-color: var(--scene-line); }
+html[data-theme="qixi"][data-scene-tone="dark"] .home-view .account-menu-arrow { border-top-color: var(--scene-line); }
 
 /* The existing navigation stays intact; only Qixi lays its review beside the title. */
 html[data-theme="qixi"] .lobby { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 36px; padding-top: 64px; }
@@ -90,6 +150,42 @@ html[data-theme="qixi"] .lobby-tile-review :is(.tile-description, .tile-review-s
 html[data-theme="qixi"] .lobby-tile-review .tile-count { color: var(--ink); }
 html[data-theme="qixi"] .lobby-tile-review .tile-cta { color: var(--on-accent); }
 html[data-theme="qixi"] .lobby .lobby-bottom { grid-column: 1 / -1; margin-top: 0; padding: 16px 0; border: 0; background: transparent; }
+html[data-theme="qixi"][data-scene-tone="dark"] .lobby :is(.lobby-heading p, .lobby-refresh) { color: var(--scene-ink-2); }
+html[data-theme="qixi"][data-scene-tone="dark"] .lobby .lobby-bottom p { color: var(--scene-footer-ink); }
+
+/* Only rings outside a surface use the landscape line; menu items keep their ink ring. */
+html[data-theme="qixi"][data-scene-tone="dark"][data-view="welcome"] .public-preferences > select:focus-visible,
+html[data-theme="qixi"][data-scene-tone="dark"] :is(.intro-links > a, #trial-start, .auth-heading a, #auth-trial-start, .lobby-refresh, .lobby-bottom button):focus-visible,
+html[data-theme="qixi"][data-scene-tone="dark"] .home-view .account-menu > summary:focus-visible { outline-color: var(--scene-line); }
+
+/* Match the scenery fade in both directions; static scenery never animates ink. */
+@media (min-width: 721px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html[data-theme="qixi"] body::after,
+  html[data-theme="qixi"] .auth-grid .auth-trial::before { transition: opacity 1200ms ease; }
+  html[data-theme="qixi"][data-view="welcome"] .header :is(.brand-copy h1, .brand-mark, .public-preferences > label, .public-preferences > select, .scene-capsule),
+  html[data-theme="qixi"] .home-view .header :is(.brand-copy h1, .brand-mark, .account-summary-name, .account-menu-arrow, .home-quota, .home-quota-heading label, .home-quota-heading span, .home-quota-hint),
+  html[data-theme="qixi"] :is(#intro-title, .intro-lead, #trial-start, .intro-trial-note, .intro-example figcaption, .auth-heading a, #auth-trial-start, .lobby-heading h2, .lobby-heading p, .lobby-refresh, .lobby-bottom p),
+  html[data-theme="ink"] .intro .intro-example figcaption { transition: color 1200ms ease, border-color 1200ms ease, outline-color 1200ms ease; }
+}
+
+@media (max-width: 720px), (hover: none), (pointer: coarse) {
+  /* The single column keeps its veil above the example and review cards. */
+  html[data-theme="qixi"] body::after {
+    background: linear-gradient(to bottom, rgba(var(--scene-shade-rgb),1) 0px, rgba(var(--scene-shade-rgb),1) 430px, rgba(var(--scene-shade-rgb),0) 680px);
+  }
+  html[data-theme="qixi"][data-view="auth"] body::after {
+    background: linear-gradient(to bottom, rgba(var(--scene-shade-rgb),1) 0px, rgba(var(--scene-shade-rgb),1) 520px, rgba(var(--scene-shade-rgb),0) 950px);
+  }
+  html[data-theme="qixi"][data-scene-tone="dark"] .lobby .lobby-bottom p { position: relative; isolation: isolate; }
+  html[data-theme="qixi"][data-scene-tone="dark"] .lobby .lobby-bottom p::before {
+    content: "";
+    position: absolute;
+    inset: -4px -8px;
+    z-index: -1;
+    border-radius: var(--radius-pill);
+    background: rgba(var(--scene-shade-rgb),.38);
+  }
+}
 
 @media (hover: hover) and (pointer: fine) {
   @supports (backdrop-filter: blur(12px)) {

@@ -3,10 +3,10 @@
 (() => {
   // Replace only this array when licensed photographs become available.
   const SCENES = [
-    { id: "ink", name: "水墨山水", src: "/static/scenes/ink-landscape.svg", accent: "#32645b" },
-    { id: "snow", name: "雪山夜窗", src: "/static/scenes/snow-window.svg", accent: "#365e79" },
-    { id: "lake", name: "雾湖森林", src: "/static/scenes/mist-lake.svg", accent: "#296357" },
-    { id: "rain", name: "雨夜暖灯", src: "/static/scenes/rain-study.svg", accent: "#85562b" },
+    { id: "ink", name: "水墨山水", src: "/static/scenes/ink-landscape.svg", accent: "#32645b", tone: "light", veil: 0 },
+    { id: "snow", name: "雪山夜窗", src: "/static/scenes/snow-window.svg", accent: "#365e79", tone: "dark", veil: 0.38 },
+    { id: "lake", name: "雾湖森林", src: "/static/scenes/mist-lake.svg", accent: "#296357", tone: "light", veil: 0 },
+    { id: "rain", name: "雨夜暖灯", src: "/static/scenes/rain-study.svg", accent: "#85562b", tone: "dark", veil: 0.28 },
   ];
   const root = document.documentElement;
   const backdrop = document.getElementById("scene-backdrop");
@@ -151,7 +151,9 @@
     if (animate) startTransition(request);
     else finishTransition();
     root.dataset.scene = scene.id;
+    root.dataset.sceneTone = scene.tone;
     root.style.setProperty("--scene-accent", scene.accent);
+    root.style.setProperty("--scene-veil", scene.veil);
     document.getElementById("scene-name").textContent = scene.name;
     document.getElementById("scene-count").textContent = `${index + 1}/${SCENES.length}`;
     document.querySelectorAll("[data-scene-select]").forEach((select) => { select.value = scene.id; });

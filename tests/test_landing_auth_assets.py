@@ -631,3 +631,133 @@ def test_component_colors_and_radii_are_driven_by_shared_variables(filename):
             assert re.fullmatch(r"(?:var\(--radius[\w-]*\)\s*)+", value.strip()), (
                 f"Component radius must use shared tokens in {filename}: {declaration}"
             )
+
+
+def test_every_scene_declares_its_background_tone(scene_source):
+    array = re.search(r"\bconst\s+SCENES\s*=\s*\[([\s\S]*?)\]\s*;", scene_source)
+    assert array, "Scene tones must belong to the shared scene configuration"
+    entries = re.findall(r"\{([^{}]*)\}", array[1])
+    expected = {"ink": "light", "snow": "dark", "lake": "light", "rain": "dark"}
+    configured = {}
+    for entry in entries:
+        ids = re.findall(r'\bid\s*:\s*(["\'])(.*?)\1', entry)
+        tones = re.findall(r'\btone\s*:\s*(["\'])(.*?)\1', entry)
+        assert len(ids) == len(tones) == 1, "Every scene needs one id and one tone"
+        scene_id, tone = ids[0][1], tones[0][1]
+        assert tone in {"light", "dark"}, f"Unsupported tone for {scene_id}: {tone}"
+        assert scene_id not in configured, f"Duplicate scene id: {scene_id}"
+        configured[scene_id] = tone
+    assert configured == expected
+
+
+def test_scene_selection_exposes_tone_on_the_html_root(scene_source):
+    assert re.search(r"\broot\s*=\s*document\.documentElement\b", scene_source)
+    select = function_body(scene_source, "selectScene")
+    assert re.search(
+        r'root\.(?:dataset\.sceneTone\s*=\s*scene\.tone\b|'
+        r'setAttribute\(\s*["\']data-scene-tone["\']\s*,\s*scene\.tone\s*\))',
+        select,
+    ), "A scene selection must update data-scene-tone with the selected scene tone"
+
+
+def test_qixi_dark_scene_colors_use_css_variables():
+    source = (STATIC / "themes.css").read_text(encoding="utf-8")
+    dark_declarations = [
+        declaration
+        for blocks, declaration in css_declarations(source)
+        if any(
+            re.search(r'html\[data-theme\s*=\s*["\']qixi["\']\]', block)
+            and re.search(r'\[data-scene-tone\s*=\s*["\']dark["\']\]', block)
+            for block in blocks
+        )
+    ]
+    assert dark_declarations, "Qixi needs rules scoped to dark scenery"
+    assert any(
+        re.search(r"\bvar\(\s*--[\w-]+", declaration)
+        for declaration in dark_declarations
+    ), "Dark scene rules must use shared CSS color variables"
+
+
+def test_intro_swipe_surface_preserves_pan_y_and_pinch_zoom():
+    declarations = [
+        declaration
+        for filename in ("style.css", "intro.css", "scenes.css", "themes.css")
+        for blocks, declaration in css_declarations(
+            (STATIC / filename).read_text(encoding="utf-8")
+        )
+        if any(
+            re.search(r"\.intro-hero\s*$", selector.strip())
+            for block in blocks for selector in block.split(",")
+        )
+    ]
+    assert any(
+        re.fullmatch(r"touch-action\s*:\s*pan-y\s+pinch-zoom\s*", declaration)
+        for declaration in declarations
+    ), "The scenery swipe surface must retain vertical scrolling and pinch zoom"
+
+
+def test_every_scene_configures_a_bounded_numeric_veil(scene_source, scene_config):
+    array = re.search(r"\bconst\s+SCENES\s*=\s*\[([\s\S]*?)\]\s*;", scene_source)
+    assert array, "Scene veil strengths must belong to the shared configuration"
+    entries = re.findall(r"\{([^{}]*)\}", array[1])
+    strengths = {}
+    for entry in entries:
+        ids = re.findall(r'\bid\s*:\s*(["\'])(.*?)\1', entry)
+        veils = re.findall(r"\bveil\s*:\s*([^,}]+)", entry)
+        assert len(ids) == len(veils) == 1, "Every scene needs one id and one veil strength"
+        scene_id = ids[0][1]
+        value = veils[0].strip()
+        assert re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value), (
+            f"Veil strength for {scene_id} must be a numeric value"
+        )
+        assert scene_id not in strengths, f"Duplicate scene id: {scene_id}"
+        strengths[scene_id] = float(value)
+        assert 0 <= strengths[scene_id] <= 0.4, f"Veil strength out of range for {scene_id}"
+    assert set(strengths) == {scene["id"] for scene in scene_config}
+
+
+def test_scene_veil_is_exposed_to_css_and_used_by_a_component(scene_source):
+    select = function_body(scene_source, "selectScene")
+    assert re.search(
+        r'root\.style\.setProperty\(\s*(["\'])--scene-veil\1\s*,\s*'
+        r'(?:String\(\s*)?scene\.veil\b',
+        select,
+    ), "Selecting a scene must expose its configured veil strength on the root"
+    declarations = [
+        declaration
+        for filename in ("style.css", "intro.css", "scenes.css", "themes.css")
+        for _, declaration in css_declarations(
+            (STATIC / filename).read_text(encoding="utf-8")
+        )
+        if not declaration.startswith("--")
+    ]
+    assert any(
+        re.search(r"\bvar\(\s*--scene-veil\s*(?:,|\))", declaration)
+        for declaration in declarations
+    ), "The scenery veil must use its configuration variable in component CSS"
+
+
+def test_qixi_example_caption_has_a_surface_in_both_scene_tones():
+    covered_tones = set()
+    source = (STATIC / "themes.css").read_text(encoding="utf-8")
+    for blocks, declaration in css_declarations(source):
+        name, separator, value = declaration.partition(":")
+        if not separator or name.strip() not in {"background", "background-color"}:
+            continue
+        if value.strip() in {"transparent", "none"}:
+            continue
+        for block in blocks:
+            for selector in block.split(","):
+                if not (
+                    re.search(r'html\[data-theme\s*=\s*["\']qixi["\']\]', selector)
+                    and re.search(r"\.intro-example\s+figcaption\b", selector)
+                ):
+                    continue
+                tone = re.search(r'\[data-scene-tone\s*=\s*["\'](light|dark)["\']\]', selector)
+                if tone:
+                    covered_tones.add(tone[1])
+                elif not re.search(r"\[data-scene(?:[=\]])", selector):
+                    covered_tones.update(("light", "dark"))
+    assert covered_tones == {"light", "dark"}, (
+        "The Qixi example caption needs a background in every scenery tone"
+    )

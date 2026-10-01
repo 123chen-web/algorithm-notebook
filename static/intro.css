@@ -4,6 +4,7 @@
 }
 
 .intro .intro-hero {
+  touch-action: pan-y pinch-zoom;
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
   align-items: center;
