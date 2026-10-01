@@ -14,7 +14,7 @@ html[data-theme="qixi"] .intro .intro-copy { padding: 32px; }
 html[data-theme="qixi"] .intro .intro-example::before { background: var(--soft); }
 html[data-theme="qixi"] :is(.page-heading, .lobby-heading, .lobby-bottom, .tabs) { padding: 16px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 html[data-theme="qixi"] .lobby-bottom { flex-wrap: wrap; }
-html[data-theme="qixi"] :is(.intro-copy, .intro-steps, .intro-difference, .scene-toolbar, .auth-switch) { background: var(--paper); }
+html[data-theme="qixi"] :is(.intro-copy, .intro-steps, .intro-difference, .auth-switch) { background: var(--paper); }
 html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { background: var(--surface); }
 
 /* Touch and unsupported devices use the opaque surfaces above. */
@@ -22,7 +22,7 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
   @supports (backdrop-filter: blur(12px)) {
     html[data-theme="qixi"] :is(
       .header, .page-heading, .lobby-heading, .lobby-bottom, .tabs,
-      .intro-copy, .intro-steps, .intro-difference, .scene-toolbar, .auth-switch,
+      .intro-copy, .intro-steps, .intro-difference, .auth-switch,
       .panel:not(.panel .panel), #cards, #detail
     ) {
       background: var(--glass-surface);
@@ -32,10 +32,20 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
   }
 }
 @media (max-width: 780px) {
-  .public-preferences { flex-wrap: wrap; gap: 6px; }
+  .public-preferences { gap: 6px; }
   html[data-view="welcome"] .header, html[data-theme="qixi"] .header { padding: 16px; }
   html[data-theme="qixi"] .home-view .header { margin-top: 12px; padding: 14px 16px; }
   html[data-theme="qixi"] .intro .intro-copy { padding: 20px; }
+}
+@media (max-width: 700px) {
+  html[data-view="welcome"] .header { flex-wrap: nowrap; align-items: center; gap: 6px; padding: 10px 8px; }
+  html[data-view="welcome"] .brand { gap: 0; }
+  html[data-view="welcome"] .brand-mark { display: none; }
+  html[data-view="welcome"] .brand-copy h1 { font-size: 12px; letter-spacing: normal; white-space: nowrap; }
+  html[data-view="welcome"] .brand-copy > p { display: none; }
+  .public-preferences { flex-wrap: nowrap; gap: 6px; }
+  .public-preferences > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .public-preferences > select { width: 78px; padding: 8px 4px; font-size: 11px; }
 }
 @media (max-width: 380px) {
   .public-preferences { margin-left: 0; }

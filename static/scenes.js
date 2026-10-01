@@ -12,7 +12,9 @@
   const backdrop = document.getElementById("scene-backdrop");
   const dots = document.getElementById("scene-dots");
   const play = document.getElementById("scene-play");
-  if (!backdrop || !dots || !play) return;
+  const previous = document.getElementById("scene-prev");
+  const next = document.getElementById("scene-next");
+  if (!backdrop || !dots || !play || !previous || !next) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const mobile = window.matchMedia("(max-width: 720px), (hover: none), (pointer: coarse)");
   const layers = [0, 1].map(() => {
@@ -119,8 +121,13 @@
     previousView = root.dataset.view;
     window.clearTimeout(timer);
     timer = null;
-    play.hidden = mobile.matches || reducedMotion.matches;
-    play.textContent = paused ? "自动轮播" : "暂停轮播";
+    play.disabled = mobile.matches || reducedMotion.matches;
+    // The app's busy-state restoration must preserve static scenery controls.
+    play.dataset.blocked = play.disabled ? "1" : "0";
+    const playLabel = play.disabled ? "自动轮播已关闭：静态风景模式" : paused ? "自动轮播" : "暂停轮播";
+    play.setAttribute("aria-label", playLabel);
+    play.title = playLabel;
+    play.firstElementChild.textContent = paused || play.disabled ? "▶" : "Ⅱ";
     play.setAttribute("aria-pressed", String(paused));
     if (canPlay()) timer = window.setTimeout(() => selectScene((index + 1) % SCENES.length), 9000);
     schedulePreload();
@@ -146,27 +153,18 @@
     root.dataset.scene = scene.id;
     root.style.setProperty("--scene-accent", scene.accent);
     document.getElementById("scene-name").textContent = scene.name;
-    dots.querySelectorAll("button").forEach((button, i) => {
-      button.setAttribute("aria-pressed", String(i === index));
-    });
+    document.getElementById("scene-count").textContent = `${index + 1}/${SCENES.length}`;
     document.querySelectorAll("[data-scene-select]").forEach((select) => { select.value = scene.id; });
     reconcile();
   }
 
-  SCENES.forEach((scene, i) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("aria-label", `切换风景：${scene.name}`);
-    button.setAttribute("aria-pressed", String(i === index));
-    button.addEventListener("click", () => selectScene(i));
-    dots.append(button);
-  });
+  previous.addEventListener("click", () => selectScene((index - 1 + SCENES.length) % SCENES.length));
+  next.addEventListener("click", () => selectScene((index + 1) % SCENES.length));
   dots.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const next = event.key === "Home" ? 0 : event.key === "End" ? SCENES.length - 1
       : (index + (event.key === "ArrowLeft" ? -1 : 1) + SCENES.length) % SCENES.length;
-    dots.children[next].focus();
     selectScene(next);
   });
   play.addEventListener("click", () => { paused = !paused; reconcile(); });

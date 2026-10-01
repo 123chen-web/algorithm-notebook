@@ -343,20 +343,26 @@ def test_scene_svgs_are_well_formed_self_contained_and_script_free(scene_config)
 def test_scene_controls_are_accessible_and_manually_selectable(document, scene_source):
     _, backdrop = document.by_id("scene-backdrop")
     assert backdrop["attrs"].get("aria-hidden") == "true"
-    intro_index, _ = document.by_id("intro")
-    _, dots = document.by_id("scene-dots")
-    assert intro_index in dots["ancestors"]
+    dots_index, dots = document.by_id("scene-dots")
+    assert any(document.elements[index]["tag"] == "header" for index in dots["ancestors"])
     assert dots["attrs"].get("role") == "group"
     assert dots["attrs"].get("aria-label")
     _, play = document.by_id("scene-play")
     assert play["tag"] == "button"
     assert play["attrs"].get("type") == "button"
     assert play["attrs"].get("aria-pressed") == "false"
+    for control_id in ("scene-prev", "scene-next", "scene-play"):
+        _, control = document.by_id(control_id)
+        assert dots_index in control["ancestors"]
+        assert control["tag"] == "button"
+        assert control["attrs"].get("type") == "button"
+        assert control["attrs"].get("aria-label")
+    _, name = document.by_id("scene-name")
+    assert dots_index in name["ancestors"]
     for contract in (
-        'document.createElement("button")', 'button.type = "button"',
-        'button.setAttribute("aria-label"', 'button.setAttribute("aria-pressed"',
-        'button.addEventListener("click"', 'dots.addEventListener("keydown"',
-        "ArrowLeft", "ArrowRight", "Home", "End", ".focus()",
+        'previous.addEventListener("click"', 'next.addEventListener("click"',
+        'play.addEventListener("click"', 'play.setAttribute("aria-pressed", String(paused))',
+        'dots.addEventListener("keydown"', "ArrowLeft", "ArrowRight", "Home", "End",
     ):
         assert contract in scene_source
 

@@ -10,9 +10,9 @@
   <script src="/static/themes.js?v=1"></script>
   <link rel="stylesheet" href="/static/style.css?v=42">
   <link rel="stylesheet" href="/static/intro.css?v=16">
-  <link rel="stylesheet" href="/static/scenes.css?v=4">
-  <link rel="stylesheet" href="/static/themes.css?v=5">
-  <script defer src="/static/scenes.js?v=2"></script>
+  <link rel="stylesheet" href="/static/scenes.css?v=5">
+  <link rel="stylesheet" href="/static/themes.css?v=6">
+  <script defer src="/static/scenes.js?v=4"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/app.js?v=41"></script>
@@ -29,6 +29,12 @@
         </div>
       </div>
       <div class="public-preferences" id="welcome-preferences">
+        <div id="scene-dots" class="scene-capsule" role="group" aria-label="选择风景">
+          <button id="scene-prev" type="button" aria-label="上一张风景">‹</button>
+          <span class="scene-readout"><span id="scene-count" aria-hidden="true">1/4</span> <span id="scene-name" class="scene-name" aria-live="polite"></span></span>
+          <button id="scene-next" type="button" aria-label="下一张风景">›</button>
+          <button id="scene-play" type="button" aria-label="暂停轮播" aria-pressed="false"><span aria-hidden="true">Ⅱ</span></button>
+        </div>
         <label for="welcome-theme">风格</label>
         <select id="welcome-theme" data-theme-select aria-label="介绍页风格">
           <option value="ink">水墨红笔</option>
@@ -95,12 +101,6 @@
     </form>
 
     <section id="intro" class="intro" aria-labelledby="intro-title" hidden>
-      <div class="scene-toolbar" aria-label="风景轮播">
-        <span id="scene-name" class="scene-name"></span>
-        <div id="scene-dots" class="scene-dots" role="group" aria-label="选择风景"></div>
-        <button id="scene-play" type="button" class="link-button" aria-pressed="false">暂停轮播</button>
-      </div>
-
       <div class="intro-hero">
         <div class="intro-copy">
           <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>邀请内测中</p>
