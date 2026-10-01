@@ -21,10 +21,11 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
 @media (hover: hover) and (pointer: fine) {
   @supports (backdrop-filter: blur(12px)) {
     html[data-theme="qixi"] :is(
-      .header, .page-heading, .lobby-heading, .lobby-bottom, .tabs,
-      .intro-copy, .intro-steps, .intro-difference, .auth-switch,
+      .page-heading, .tabs,
+      .intro-steps, .intro-difference, .auth-switch,
       .panel:not(.panel .panel), #cards, #detail
-    ) {
+    ),
+    html[data-theme="qixi"]:not([data-view="welcome"]) body:not(.home-view) .header {
       background: var(--glass-surface);
       -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
@@ -50,4 +51,77 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
 @media (max-width: 380px) {
   .public-preferences { margin-left: 0; }
   html[data-theme="qixi"] .intro .intro-copy { padding: 20px 16px; }
+}
+
+/* Qixi leaves the landscape around one example or review panel. */
+html[data-theme="qixi"][data-view="welcome"] .header,
+html[data-theme="qixi"] .home-view .header { padding: 20px 0; border: 0; background: transparent; }
+html[data-theme="qixi"][data-view="welcome"] .brand-copy > p,
+html[data-theme="qixi"] .home-view .brand-copy > p { display: none; }
+html[data-theme="qixi"] .intro .intro-hero { grid-template-columns: minmax(0, 520px) minmax(0, 360px); gap: 80px; padding: 80px 0 120px; }
+html[data-theme="qixi"] .intro .intro-hero .intro-copy { max-width: 520px; margin-top: 32px; padding: 0; border: 0; background: transparent; }
+html[data-theme="qixi"] .intro .intro-copy > :is(.eyebrow, .intro-audience) { display: none; }
+html[data-theme="qixi"] .intro #intro-title { font-size: clamp(36px, 4.1vw, 52px); line-height: 1.4; }
+html[data-theme="qixi"] .intro .intro-lead { margin-top: 30px; }
+html[data-theme="qixi"] .intro .intro-links { gap: 28px; margin-top: 40px; }
+html[data-theme="qixi"] .intro .intro-example { margin-top: 128px; padding: 0; }
+html[data-theme="qixi"] .intro .intro-example::before { display: none; }
+html[data-theme="qixi"] .intro .sample-note { padding: 24px 24px 0; background: var(--surface); box-shadow: none; }
+html[data-theme="qixi"] .intro .sample-bottomline { margin: 0 -24px; padding: 14px 24px; }
+
+/* The existing navigation stays intact; only Qixi lays its review beside the title. */
+html[data-theme="qixi"] .lobby { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 36px; padding-top: 64px; }
+html[data-theme="qixi"] .lobby .lobby-heading { grid-column: 1 / span 3; grid-row: 1; flex-direction: column; align-items: flex-start; align-self: center; gap: 24px; margin: 0; padding: 0; border: 0; background: transparent; }
+html[data-theme="qixi"] .lobby-heading h2 { max-width: 560px; margin: 0; font-size: clamp(36px, 3.8vw, 48px); line-height: 1.5; }
+html[data-theme="qixi"] .lobby-heading p { margin-top: 20px; font-size: 15px; line-height: 1.8; }
+html[data-theme="qixi"] .lobby-refresh { min-height: 32px; padding: 4px 0; border: 0; background: transparent; font-size: 11px; }
+html[data-theme="qixi"] .lobby-grid { display: contents; }
+html[data-theme="qixi"] .lobby .lobby-tile { --tile-bg: var(--paper-2); display: flex; grid-column: span 2; grid-row: auto; min-height: 172px; padding: 20px; border-color: transparent; box-shadow: none; }
+html[data-theme="qixi"] .lobby .lobby-tile:hover:not(:disabled) { border-color: var(--line); }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-icon { width: 30px; height: 30px; background: transparent; }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-icon svg { width: 22px; height: 22px; }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-topline { margin-bottom: 14px; }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-tag { display: none; }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-title { margin-bottom: 8px; font-size: 20px; }
+html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-footer { margin-top: auto; padding-top: 16px; font-size: 11px; }
+html[data-theme="qixi"] .lobby .lobby-tile-review { --tile-bg: var(--surface); --tile-ink: var(--accent); --tile-icon-bg: var(--soft); grid-column: 5 / span 2; grid-row: 1; justify-self: end; width: 100%; max-width: 360px; min-height: 312px; padding: 28px; border: 1px solid var(--line); color: var(--ink); background: var(--surface); }
+html[data-theme="qixi"] .lobby-tile-review .tile-tag { border: 0; color: var(--ink-2); background: var(--soft); }
+html[data-theme="qixi"] .lobby-tile-review :is(.tile-description, .tile-review-status, .tile-footnote) { color: var(--ink-2); }
+html[data-theme="qixi"] .lobby-tile-review .tile-count { color: var(--ink); }
+html[data-theme="qixi"] .lobby-tile-review .tile-cta { color: var(--on-accent); }
+html[data-theme="qixi"] .lobby .lobby-bottom { grid-column: 1 / -1; margin-top: 0; padding: 16px 0; border: 0; background: transparent; }
+
+@media (hover: hover) and (pointer: fine) {
+  @supports (backdrop-filter: blur(12px)) {
+    html[data-theme="qixi"][data-view="welcome"] .header,
+    html[data-theme="qixi"] .home-view .header,
+    html[data-theme="qixi"] .intro .intro-hero .intro-copy,
+    html[data-theme="qixi"] .lobby .lobby-heading,
+    html[data-theme="qixi"] .lobby .lobby-bottom { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    html[data-theme="qixi"] .intro .sample-note,
+    html[data-theme="qixi"] .lobby .lobby-tile-review { background: var(--glass-surface); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  }
+}
+@media (max-width: 1099px) {
+  html[data-theme="qixi"] .intro .intro-hero { grid-template-columns: minmax(0, 1fr); }
+  html[data-theme="qixi"] .intro .intro-example { margin-top: 0; }
+  html[data-theme="qixi"] .lobby { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; padding-top: 48px; }
+  html[data-theme="qixi"] .lobby .lobby-heading { grid-column: 1 / span 2; }
+  html[data-theme="qixi"] .lobby .lobby-tile-review { grid-column: 3 / span 2; }
+}
+@media (max-width: 700px) {
+  html[data-theme="qixi"][data-view="welcome"] .header { padding: 10px 0; }
+  html[data-theme="qixi"] .home-view .header { margin-top: 12px; padding: 14px 0; }
+  html[data-theme="qixi"] .intro .intro-hero { gap: 72px; padding-top: 28px; }
+  html[data-theme="qixi"] .intro .intro-hero .intro-copy { margin-top: 12px; }
+  html[data-theme="qixi"] .intro #intro-title { font-size: 32px; }
+  html[data-theme="qixi"] .intro .intro-lead { margin-top: 24px; }
+  html[data-theme="qixi"] .intro .intro-links { gap: 24px; margin-top: 30px; }
+  html[data-theme="qixi"] .lobby { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding-top: 28px; }
+  html[data-theme="qixi"] .lobby .lobby-heading { grid-column: 1 / -1; gap: 12px; }
+  html[data-theme="qixi"] .lobby-heading h2 { font-size: 30px; }
+  html[data-theme="qixi"] .lobby-heading p { margin-top: 12px; font-size: 13px; }
+  html[data-theme="qixi"] .lobby .lobby-tile-review { grid-column: 1 / -1; grid-row: 2; justify-self: start; max-width: none; min-height: 260px; padding: 24px; }
+  html[data-theme="qixi"] .lobby .lobby-tile:not(.lobby-tile-review) { grid-column: span 1; min-height: 160px; padding: 16px 12px; }
+  html[data-theme="qixi"] .lobby-tile:not(.lobby-tile-review) .tile-title { font-size: 17px; }
 }
