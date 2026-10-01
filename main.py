@@ -643,7 +643,7 @@ async def request_protection(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "connect-src 'self'; img-src 'self'; "
+        "connect-src 'self'; img-src 'self' blob:; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     )
     if request.url.path.startswith("/api/"):
