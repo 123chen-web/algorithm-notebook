@@ -102,6 +102,16 @@
 @media (max-width: 599px) {
   #new-page .form-card { padding: var(--space-4); }
   #new-page .form-section-progress { position: sticky; top: 0; z-index: 10; }
+  #new-page .form-footer {
+    position: sticky; bottom: var(--form-keyboard-inset, 0px); z-index: 9;
+    padding: var(--space-5) 0 calc(var(--space-4) + env(safe-area-inset-bottom));
+    background: var(--paper);
+  }
+  #new-page .form-footer > .primary { flex: 1; min-height: 46px; }
+  #new-page .form-footer > #add-mistake { font-size: var(--text-xs); }
+  @supports (background: linear-gradient(to bottom, transparent, var(--paper))) {
+    #new-page .form-footer { background: linear-gradient(to bottom, transparent, var(--paper) var(--space-5)); }
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   #new-page *, #new-page *::before, #new-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

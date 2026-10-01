@@ -129,4 +129,43 @@
     });
   }, true);
   syncFoldStatus();
+
+  const viewport = window.visualViewport;
+  const footer = recordForm.querySelector(".form-footer");
+  let focusFrame = 0;
+  let viewportSettleTimer = 0;
+
+  function keepFocusVisible() {
+    if (page.hidden || !matchMedia("(max-width: 599px)").matches || focusFrame) return;
+    focusFrame = requestAnimationFrame(() => {
+      focusFrame = 0;
+      const field = document.activeElement;
+      if (page.hidden || !recordForm.contains(field) || !field.matches("input, select, textarea")) return;
+      const visualTop = viewport?.offsetTop || 0;
+      const visualBottom = visualTop + (viewport?.height || innerHeight);
+      const progressRect = page.querySelector("#form-section-progress").getBoundingClientRect();
+      const top = Math.max(visualTop, progressRect.top <= visualTop + 1 ? progressRect.bottom : visualTop) + 8;
+      const bottom = Math.min(visualBottom, footer.getBoundingClientRect().top) - 8;
+      const rect = (field.closest("label") || field).getBoundingClientRect();
+      let delta = 0;
+      if (rect.height > bottom - top) {
+        if (rect.top < top || rect.top > bottom - 44) delta = rect.top - top;
+      } else if (rect.top < top) delta = rect.top - top;
+      else if (rect.bottom > bottom) delta = rect.bottom - bottom;
+      if (Math.abs(delta) > 1) scrollBy({ top: delta, behavior: "auto" });
+    });
+  }
+  function syncViewport() {
+    const keyboardInset = viewport ? Math.max(0, innerHeight - viewport.height - viewport.offsetTop) : 0;
+    page.style.setProperty("--form-keyboard-inset", `${keyboardInset}px`);
+    keepFocusVisible();
+    // Native keyboard panning can finish after the first viewport resize frame.
+    clearTimeout(viewportSettleTimer);
+    viewportSettleTimer = setTimeout(keepFocusVisible, 200);
+  }
+  recordForm.addEventListener("focusin", keepFocusVisible);
+  addEventListener("resize", syncViewport);
+  viewport?.addEventListener("resize", syncViewport);
+  viewport?.addEventListener("scroll", syncViewport);
+  syncViewport();
 })();
