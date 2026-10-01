@@ -88,19 +88,12 @@
     else startOpening();
   }
 
-  // 只跟随现有界面的显示状态，不读 Cookie，也不调用认证接口。
-  const sync = () => {
-    intro.hidden = !app.hidden;
-    reconcileOpening();
-  };
-  const observer = new MutationObserver((records) => {
-    if (records.some((record) => record.target === app)) sync();
-    else reconcileOpening();
-  });
+  // 路由负责视图可见性；这里仅管理一次性开场动画。
+  const observer = new MutationObserver(reconcileOpening);
   observer.observe(app, { attributes: true, attributeFilter: ["hidden"] });
   observer.observe(intro, { attributes: true, attributeFilter: ["hidden"] });
   document.addEventListener("visibilitychange", reconcileOpening);
   motionQuery.addEventListener("change", reconcileOpening);
   window.addEventListener("pagehide", finishOpening);
-  sync();
+  reconcileOpening();
 })();

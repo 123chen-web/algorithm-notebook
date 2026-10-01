@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-view="pending">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,9 +9,9 @@
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <link rel="stylesheet" href="/static/style.css?v=36">
   <link rel="stylesheet" href="/static/intro.css?v=14">
-  <script defer src="/static/intro.js?v=11"></script>
+  <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=17"></script>
-  <script defer src="/static/app.js?v=35"></script>
+  <script defer src="/static/app.js?v=36"></script>
 </head>
 <body>
   <div class="container">
@@ -73,15 +73,15 @@
       <button type="submit" class="primary">绑定邮箱</button>
     </form>
 
-    <section id="intro" class="intro" aria-labelledby="intro-title">
+    <section id="intro" class="intro" aria-labelledby="intro-title" hidden>
       <div class="intro-hero">
         <div class="intro-copy">
           <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>邀请内测中</p>
           <h2 id="intro-title">让做错的题，<br>成为下次的把握。</h2>
           <p class="intro-lead">刷过的题会忘，犯过的错值得记住。<br>留下真实错因，按时回来复习，再用两道新题检查自己是否真的理解。</p>
           <div class="intro-links">
-            <a class="intro-cta" href="#login-form">进入我的错题本</a>
-            <a class="intro-secondary" href="#register-form">我有邀请码，注册</a>
+            <a class="intro-cta" href="#/auth">开始使用</a>
+            <a class="intro-secondary" href="#/auth">我有邀请码，注册</a>
             <button type="button" id="trial-start" class="intro-secondary intro-trial">
               免注册体验
             </button>
@@ -159,7 +159,8 @@
 
     <p id="notice" role="status" aria-live="polite"></p>
 
-    <section id="auth" class="auth-grid" aria-label="账号登录与注册">
+    <section id="auth" class="auth-grid" aria-label="账号登录与注册" hidden>
+      <div class="auth-heading"><a href="#/welcome">← 返回介绍</a></div>
       <form id="login-form" class="panel">
         <div class="form-heading">
           <p class="eyebrow">已有账号</p>

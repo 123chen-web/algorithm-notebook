@@ -17,6 +17,8 @@ const resultLabels = {
 };
 
 let user = null;
+let sessionReady = false;
+let resetToken = new URLSearchParams(location.search).get("reset_token");
 let view = "today";
 // 上一次拍照识别成功的结果；非空时说明表单当前内容来自 AI 识别，
 // 保存记录后要顺带自动生成练习题。手动编辑无关字段不会清空它，
@@ -332,6 +334,23 @@ function setBusy(value) {
 
 const AUTH_PANELS = ["login-form", "register-form", "forgot-form", "reset-form"];
 
+function renderPageRoute() {
+  if (!sessionReady) return;
+  const next = user ? "app" : resetToken || location.hash === "#/auth" ? "auth" : "welcome";
+  document.documentElement.dataset.view = next;
+  $("#intro").hidden = next !== "welcome";
+  $("#auth").hidden = next !== "auth";
+  $("#app").hidden = next !== "app";
+  if (location.hash !== `#/${next}`) {
+    history.replaceState(null, "", `${location.pathname}${location.search}#/${next}`);
+  }
+}
+
+window.addEventListener("hashchange", () => {
+  message();
+  renderPageRoute();
+});
+
 function showAuthPanels(visibleIds) {
   for (const id of AUTH_PANELS) {
     $(`#${id}`).hidden = !visibleIds.includes(id);
@@ -359,8 +378,8 @@ function signedOut() {
   $("#home-page").hidden = true;
   $("#home-admin").hidden = true;
   resetHomeSummary();
-  $("#auth").hidden = false;
-  $("#app").hidden = true;
+  sessionReady = true;
+  renderPageRoute();
   $("#logout").hidden = true;
   $("#user-info-wrap").replaceChildren();
   closeAccountMenu();
@@ -368,7 +387,7 @@ function signedOut() {
   $("#avatar-file-input").value = "";
   $("#email-prompt").hidden = true;
   $("#trial-banner").hidden = true;
-  showAuthPanels(["login-form", "register-form"]);
+  showAuthPanels(resetToken ? ["reset-form"] : ["login-form", "register-form"]);
   $("#cards").replaceChildren();
   $("#detail").replaceChildren();
   $("#leaderboard-me").replaceChildren();
@@ -699,8 +718,8 @@ async function enterApp() {
   resetWeeklyRecap();
   resetGroups();
   user = await api("/api/me");
-  $("#auth").hidden = true;
-  $("#app").hidden = false;
+  sessionReady = true;
+  renderPageRoute();
   $("#logout").hidden = false;
   updateUserInfo();
   await loadZones();
@@ -2374,7 +2393,8 @@ $("#reset-form").addEventListener("submit", (event) => {
       });
     } catch (error) {
       if (error.status === 400) {
-        history.replaceState(null, "", location.pathname);
+        resetToken = null;
+        history.replaceState(null, "", `${location.pathname}#/auth`);
         showAuthPanels(["forgot-form"]);
         message("重置链接无效或已过期，请重新申请。", true);
         return;
@@ -2382,7 +2402,8 @@ $("#reset-form").addEventListener("submit", (event) => {
       throw error;
     }
     form.reset();
-    history.replaceState(null, "", location.pathname);
+    resetToken = null;
+    history.replaceState(null, "", `${location.pathname}#/auth`);
     showAuthPanels(["login-form", "register-form"]);
     message("密码已重置，请用新密码登录。");
   });
@@ -2405,6 +2426,7 @@ $("#email-prompt").addEventListener("submit", (event) => {
 
 $("#logout").addEventListener("click", () => run(async () => {
   await api("/api/auth/logout", { method: "POST" });
+  history.replaceState(null, "", `${location.pathname}#/welcome`);
   signedOut();
   message("已退出登录。");
 }));
@@ -3321,18 +3343,21 @@ $("#timezone").value =
 addMistakeInput();
 initReviewSpotlight();
 
-const resetToken = new URLSearchParams(location.search).get("reset_token");
-
 if (resetToken) {
   // 从密码重置邮件点进来的，不管当前是否登录，先处理重置。
   showAuthPanels(["reset-form"]);
+  sessionReady = true;
+  renderPageRoute();
 } else {
   run(async () => {
     try {
       await enterApp();
     } catch (error) {
-      if (error.status !== 401) throw error;
-      message("已有账号可以直接登录；首次使用，请准备好邀请码。");
+      if (error.status !== 401) {
+        sessionReady = true;
+        renderPageRoute();
+        throw error;
+      }
     }
   });
 }
