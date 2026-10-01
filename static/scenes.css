@@ -1,0 +1,28 @@
+.scene-backdrop { display: none; position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--paper); }
+html[data-view="welcome"] .scene-backdrop { display: block; }
+.scene-layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1200ms ease; }
+.scene-layer.is-active { opacity: 1; }
+html[data-view="welcome"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
+.intro .intro-copy { min-width: 0; padding: 32px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.intro .intro-hero { gap: 48px; padding: 64px 0 32px; }
+.intro .intro-lead { margin-top: 20px; }
+.scene-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; margin: 0 0 32px; padding: 8px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.scene-name { margin-right: auto; color: var(--ink-2); font-size: var(--text-sm); }
+.scene-dots { display: flex; flex-wrap: wrap; gap: 0; }
+.scene-dots button { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
+.scene-dots button::after { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink-2); background: var(--paper); }
+.scene-dots button[aria-pressed="true"]::after { background: var(--accent); border-color: var(--accent); }
+.scene-toolbar .link-button { font-size: var(--text-xs); }
+@media (max-width: 720px) {
+  .scene-layer { transition: none; }
+  .intro .intro-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; padding-top: 32px; }
+  .intro .intro-copy { padding: 24px; }
+  .scene-toolbar { justify-content: center; gap: 0 8px; padding: 8px; }
+}
+@media (max-width: 380px) {
+  .intro .intro-copy { padding: 20px 16px; }
+  .scene-name { width: 100%; margin: 4px 0 0; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-layer { transition: none; }
+}

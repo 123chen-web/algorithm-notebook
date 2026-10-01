@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000" aria-labelledby="title desc" role="img">
+  <title id="title">雾湖森林</title>
+  <desc id="desc">清晨薄雾覆盖湖面，青绿森林围绕远山，水中倒影和岸边芦苇安静地延伸。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#e3ece6"/><stop offset=".55" stop-color="#c4dcd2"/><stop offset="1" stop-color="#93b6ad"/></linearGradient>
+    <linearGradient id="lake" x2="0" y2="1"><stop stop-color="#b6d1c8"/><stop offset=".65" stop-color="#d1dfd4"/><stop offset="1" stop-color="#a3c3b4"/></linearGradient>
+    <linearGradient id="fog" x2="1" y2="0"><stop stop-color="#e8eee5" stop-opacity=".7"/><stop offset=".6" stop-color="#e8eee5" stop-opacity=".9"/><stop offset="1" stop-color="#e8eee5" stop-opacity=".2"/></linearGradient>
+    <linearGradient id="reflection" x2="0" y2="1"><stop stop-color="#496c63" stop-opacity=".28"/><stop offset="1" stop-color="#496c63" stop-opacity="0"/></linearGradient>
+    <g id="pine"><path d="M-4 18h8v54h-8zM0-91l-24 47h12L-38-7h18l-31 42H51L20-7h18L12-44h12z"/></g>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1600v1000H0z"/>
+  <circle cx="1133" cy="238" r="93" fill="#eff2df" opacity=".25"/>
+  <circle cx="1133" cy="238" r="49" fill="#f2f0d9" opacity=".63"/>
+  <path d="M0 578c198-39 313-18 476-73s241-12 366-69 161-118 250-102 170 142 244 122 175-61 264-42v260H0z" fill="#93b2a6" opacity=".42"/>
+  <path d="M512 581c125-48 198-8 299-62s145-129 246-116 112 110 185 119 206-64 358-43v231H512z" fill="#6c998a" opacity=".42"/>
+  <path d="M827 645c124-31 195-67 292-50s193-65 286-82 132 48 195 26v183H827z" fill="#578578" opacity=".5"/>
+  <g fill="#658e80" opacity=".75"><use href="#pine" transform="translate(956 598) scale(.38)"/><use href="#pine" transform="translate(997 603) scale(.5)"/><use href="#pine" transform="translate(1041 611) scale(.41)"/><use href="#pine" transform="translate(1090 619) scale(.59)"/><use href="#pine" transform="translate(1141 618) scale(.51)"/><use href="#pine" transform="translate(1185 613) scale(.65)"/><use href="#pine" transform="translate(1237 605) scale(.59)"/><use href="#pine" transform="translate(1294 587) scale(.79)"/><use href="#pine" transform="translate(1343 571) scale(.71)"/><use href="#pine" transform="translate(1394 579) scale(.86)"/><use href="#pine" transform="translate(1451 597) scale(.76)"/><use href="#pine" transform="translate(1506 593) scale(.94)"/><use href="#pine" transform="translate(1566 584) scale(.82)"/></g>
+  <path d="M0 631c299-35 425-4 675-18s447 22 925-8v102H0z" fill="url(#fog)"/>
+  <path d="M0 690c262-19 504-1 701-17s439 6 899-21v348H0z" fill="url(#lake)"/>
+  <path d="M896 677c221-10 358-18 704-27v249c-106-26-138-12-196-34l-63 32-75-49-63 16-57-61-67 13-28-49-73-8-31-49z" fill="url(#reflection)"/>
+  <path d="M0 703c188-7 361 16 568-3s486 11 691-9 242-15 341-10" fill="none" stroke="#edf1e7" stroke-width="18" opacity=".58"/>
+  <g fill="none" stroke="#edf1e8" stroke-linecap="round" opacity=".48"><path d="M377 767h405m176-30h273m-157 67h423M541 869h435m137 43h213" stroke-width="3"/><path d="M212 802h246m395 36h198M67 931h278m413 19h312" stroke-width="2"/></g>
+  <path d="M1276 717c140-17 211-14 324-36v69c-87 10-186 6-324-33" fill="#3f6b5c"/>
+  <g fill="#335c4f"><use href="#pine" transform="translate(1425 657) scale(.78)"/><use href="#pine" transform="translate(1483 653) scale(1.08)"/><use href="#pine" transform="translate(1558 640) scale(1.35)"/></g>
+  <g fill="#9fc0ad" opacity=".32"><path d="m1483 555-15 31h10l-23 36h19l-28 38h21l14-44 10 3-13-33z"/><path d="m1558 518-20 37h13l-30 45h21l-30 43h24l18-61 12-3-11-24z"/></g>
+  <path d="M1600 879c-139 28-228 45-365 121h365z" fill="#5b8070" opacity=".76"/>
+  <path d="M1600 937c-112-10-167 20-245 63h245z" fill="#2f5747" opacity=".83"/>
+  <g fill="none" stroke="#456b53" stroke-width="3" stroke-linecap="round"><path d="M1428 1000c13-89 19-136 17-174m25 174c0-56 3-111 18-151m-16 151c27-77 47-111 74-136m-63 136c-7-50-16-79-39-111m69 111c7-81 15-128 40-164"/></g>
+  <g fill="#52755a"><ellipse cx="1444" cy="824" rx="4" ry="22" transform="rotate(-4 1444 824)"/><ellipse cx="1489" cy="848" rx="4" ry="21" transform="rotate(19 1489 848)"/><ellipse cx="1545" cy="865" rx="4" ry="18" transform="rotate(44 1545 865)"/><ellipse cx="1553" cy="836" rx="4" ry="20" transform="rotate(29 1553 836)"/></g>
+  <g fill="none" stroke="#608578" stroke-width="2" stroke-linecap="round" opacity=".65"><path d="m931 268 8-4 8 4m29 18 7-4 7 4m-69-28 5-3 5 3"/></g>
+</svg>

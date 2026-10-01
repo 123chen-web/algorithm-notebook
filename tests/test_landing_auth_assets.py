@@ -3,6 +3,7 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
+from xml.etree import ElementTree
 
 import pytest
 
@@ -281,3 +282,143 @@ def test_both_trial_entries_are_native_buttons_in_their_views(document, app_sour
     assert re.search(r'method\s*:\s*["\']POST["\']', trial)
     assert "timezone:" in trial
     assert "enterApp()" in trial
+
+
+@pytest.fixture(scope="module")
+def scene_source():
+    return (STATIC / "scenes.js").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def scene_config(scene_source):
+    arrays = re.findall(r"\bconst\s+SCENES\s*=\s*\[([\s\S]*?)\]\s*;", scene_source)
+    assert len(arrays) == 1, "All scene choices must come from one configuration array"
+    entries = re.findall(r"\{([^{}]*)\}", arrays[0])
+    assert 3 <= len(entries) <= 4
+    scenes = []
+    for entry in entries:
+        fields = re.findall(r'\b(id|name|src|accent)\s*:\s*(["\'])(.*?)\2', entry)
+        assert len(fields) == 4
+        scene = {name: value for name, _, value in fields}
+        assert set(scene) == {"id", "name", "src", "accent"}
+        assert all(scene.values())
+        scenes.append(scene)
+    return scenes
+
+
+def test_scene_configuration_contains_unique_local_svg_assets(scene_config):
+    assert len({scene["id"] for scene in scene_config}) == len(scene_config)
+    assert len({scene["src"] for scene in scene_config}) == len(scene_config)
+    for scene in scene_config:
+        assert re.fullmatch(r"/static/scenes/[a-z0-9-]+\.svg", scene["src"])
+        assert re.fullmatch(r"#[0-9a-fA-F]{6}", scene["accent"])
+        assert (STATIC / scene["src"].removeprefix("/static/")).is_file()
+
+
+def test_scene_svgs_are_well_formed_self_contained_and_script_free(scene_config):
+    for scene in scene_config:
+        source = (STATIC / scene["src"].removeprefix("/static/")).read_text(encoding="utf-8")
+        assert "<!DOCTYPE" not in source.upper()
+        assert "<!ENTITY" not in source.upper()
+        svg = ElementTree.fromstring(source)
+        assert svg.tag == "{http://www.w3.org/2000/svg}svg"
+        assert svg.get("viewBox")
+        assert svg.find("{http://www.w3.org/2000/svg}title") is not None
+        assert svg.find("{http://www.w3.org/2000/svg}desc") is not None
+        for element in svg.iter():
+            tag = element.tag.rsplit("}", 1)[-1].lower()
+            assert tag not in {"script", "foreignobject"}
+            for key, value in element.attrib.items():
+                name = key.rsplit("}", 1)[-1].lower()
+                assert not name.startswith("on"), "SVG scene must not contain event handlers"
+                if name in {"href", "src"}:
+                    assert value.startswith("#"), "SVG references must remain within the scene"
+                assert not re.search(r"(?:https?:|//|data:|javascript:)", value, re.IGNORECASE)
+                for reference in re.findall(r"url\(([^)]*)\)", value):
+                    assert reference.strip(" '\"").startswith("#")
+            if tag == "style":
+                assert not re.search(r"@import|https?:|data:|javascript:", element.text or "", re.IGNORECASE)
+
+
+def test_scene_controls_are_accessible_and_manually_selectable(document, scene_source):
+    _, backdrop = document.by_id("scene-backdrop")
+    assert backdrop["attrs"].get("aria-hidden") == "true"
+    intro_index, _ = document.by_id("intro")
+    _, dots = document.by_id("scene-dots")
+    assert intro_index in dots["ancestors"]
+    assert dots["attrs"].get("role") == "group"
+    assert dots["attrs"].get("aria-label")
+    _, play = document.by_id("scene-play")
+    assert play["tag"] == "button"
+    assert play["attrs"].get("type") == "button"
+    assert play["attrs"].get("aria-pressed") == "false"
+    for contract in (
+        'document.createElement("button")', 'button.type = "button"',
+        'button.setAttribute("aria-label"', 'button.setAttribute("aria-pressed"',
+        'button.addEventListener("click"', 'dots.addEventListener("keydown"',
+        "ArrowLeft", "ArrowRight", "Home", "End", ".focus()",
+    ):
+        assert contract in scene_source
+
+
+def test_mobile_scene_swipes_preserve_controls_and_vertical_scrolling(scene_source):
+    for event in ("pointerdown", "pointerup", "pointercancel"):
+        assert re.search(rf'addEventListener\(["\']{event}["\']', scene_source)
+    assert re.search(r'pointerType\s*!==\s*["\']touch["\']', scene_source)
+    assert 'closest("a, button, input, select")' in scene_source
+    assert "Math.abs(dx) > Math.abs(dy)" in scene_source
+    assert "selectScene((index" in scene_source
+
+
+def test_scene_autoplay_requires_desktop_visible_welcome_without_reduced_motion(scene_source):
+    gate = re.search(r"\bconst\s+canPlay\s*=\s*\(\)\s*=>\s*([^;]+);", scene_source)
+    assert gate
+    for condition in ("pageActive", "!document.hidden", "!reducedMotion.matches", "!mobile.matches"):
+        assert condition in gate[1]
+    assert re.search(r'dataset\.view\s*===\s*["\']welcome["\']', gate[1])
+    for query in ("prefers-reduced-motion: reduce", "max-width: 720px", "hover: none", "pointer: coarse"):
+        assert query in scene_source
+    reconcile = function_body(scene_source, "reconcile")
+    assert re.search(r"if\s*\(\s*canPlay\(\)\s*\)\s*timer\s*=", reconcile)
+    assert re.search(r"setTimeout\([\s\S]*,\s*9000\s*\)", reconcile)
+    assert "window.clearTimeout(timer)" in reconcile
+    assert "timer = null" in reconcile
+    for listener in (
+        'reducedMotion.addEventListener("change", reconcile)',
+        'mobile.addEventListener("change", reconcile)',
+        'document.addEventListener("visibilitychange", reconcile)',
+    ):
+        assert listener in scene_source
+    assert re.search(r'addEventListener\(["\']pagehide["\'],[^\n]*pageActive\s*=\s*false[^\n]*reconcile\(\)', scene_source)
+    assert re.search(r'addEventListener\(["\']pageshow["\'],[^\n]*pageActive\s*=\s*true[^\n]*reconcile\(\)', scene_source)
+
+
+def test_scene_assets_have_an_original_artwork_declaration():
+    readme = (STATIC.parent / "README.md").read_text(encoding="utf-8")
+    assert re.search(r"原创[^\n]*SVG|SVG[^\n]*原创", readme)
+    assert "static/scenes/" in readme
+
+
+def test_app_navigation_click_handlers_cannot_include_the_route_root(document, app_source):
+    app_index, _ = document.by_id("app")
+    navigation_buttons = [
+        node for node in document.elements
+        if "data-view" in node["attrs"] and node["tag"] != "html"
+    ]
+    assert navigation_buttons
+    assert all(
+        node["tag"] == "button" and app_index in node["ancestors"]
+        for node in navigation_buttons
+    )
+    bindings = re.findall(
+        r'(?m)^document\.querySelectorAll\((["\'])([^"\']+)\1\)\.forEach\(\(button\)\s*=>\s*\{([\s\S]*?)^\}\);',
+        app_source,
+    )
+    navigation_selectors = [
+        selector for _, selector, body in bindings
+        if re.search(r'button\.addEventListener\(["\']click["\']', body)
+        and "showView(button.dataset.view)" in body
+    ]
+    assert navigation_selectors == ["#app button[data-view]"], (
+        "The html data-view route root must never receive app navigation click handlers"
+    )

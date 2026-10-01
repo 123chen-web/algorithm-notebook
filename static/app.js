@@ -792,7 +792,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   renderUserInfo();
   renderHomeQuota();
 
-  document.querySelectorAll("[data-view]").forEach((button) => {
+  document.querySelectorAll("#app button[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
@@ -2465,7 +2465,7 @@ $("#logout").addEventListener("click", () => run(async () => {
   message("已退出登录。");
 }));
 
-document.querySelectorAll("[data-view]").forEach((button) => {
+document.querySelectorAll("#app button[data-view]").forEach((button) => {
   button.addEventListener("click", () => run(async () => {
     message();
     await showView(button.dataset.view);

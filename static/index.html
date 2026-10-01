@@ -9,11 +9,14 @@
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <link rel="stylesheet" href="/static/style.css?v=37">
   <link rel="stylesheet" href="/static/intro.css?v=14">
+  <link rel="stylesheet" href="/static/scenes.css?v=1">
+  <script defer src="/static/scenes.js?v=1"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=17"></script>
-  <script defer src="/static/app.js?v=37"></script>
+  <script defer src="/static/app.js?v=38"></script>
 </head>
 <body>
+  <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
   <div class="container">
     <header class="header">
       <div class="brand">
@@ -78,18 +81,14 @@
         <div class="intro-copy">
           <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>邀请内测中</p>
           <h2 id="intro-title">让做错的题，<br>成为下次的把握。</h2>
-          <p class="intro-lead">刷过的题会忘，犯过的错值得记住。<br>留下真实错因，按时回来复习，再用两道新题检查自己是否真的理解。</p>
+          <p class="intro-lead">记下错因，按时复习，用新题验证理解。</p>
           <div class="intro-links">
             <a class="intro-cta" href="#/auth">开始使用</a>
-            <a class="intro-secondary" href="#/auth">我有邀请码，注册</a>
-            <button type="button" id="trial-start" class="intro-secondary intro-trial">
+            <button type="button" id="trial-start" class="intro-secondary intro-trial" title="体验数据可能定期清理，长期保存请注册。">
               免注册体验
             </button>
           </div>
           <p class="intro-audience">给正在自学算法、准备编程面试的你。</p>
-          <p class="intro-trial-note">
-            没有邀请码也能先试试：体验账号不用注册，数据可能会被定期清理，不建议长期依赖。
-          </p>
         </div>
 
         <figure class="intro-example">
@@ -119,24 +118,30 @@
         </figure>
       </div>
 
+      <div class="scene-toolbar" aria-label="风景轮播">
+        <span id="scene-name" class="scene-name"></span>
+        <div id="scene-dots" class="scene-dots" role="group" aria-label="选择风景"></div>
+        <button id="scene-play" type="button" class="link-button" aria-pressed="false">暂停轮播</button>
+      </div>
+
       <div class="intro-steps" aria-label="如何使用算法错题本">
         <article class="intro-step">
           <span class="intro-step-number" aria-hidden="true">01</span>
           <span class="intro-step-label" aria-hidden="true">记录</span>
           <h3>记下「为什么错」</h3>
-          <p>代码、当时的思路、具体的易错点放在一起。下次打开，还能想起自己卡在哪一步。</p>
+          <p>留下代码、思路和易错点，让复习有迹可循。</p>
         </article>
         <article class="intro-step">
           <span class="intro-step-number" aria-hidden="true">02</span>
           <span class="intro-step-label" aria-hidden="true">复习</span>
           <h3>今天该看什么，一目了然</h3>
-          <p>每条易错点独立安排复习。按这次的掌握程度评分，系统会计算下一次复习日期。</p>
+          <p>每个错因单独安排复习，今天该看什么一目了然。</p>
         </article>
         <article class="intro-step">
           <span class="intro-step-number" aria-hidden="true">03</span>
           <span class="intro-step-label" aria-hidden="true">练习</span>
           <h3>练两道新题，检查理解</h3>
-          <p>让 AI 围绕同一个薄弱点生成两道有实质差异的变体题。编程题参考样例自评，数学题提交答案后查看系统判定。</p>
+          <p>围绕薄弱点换两道题，检查自己是否真正掌握。</p>
         </article>
       </div>
 
@@ -146,8 +151,8 @@
           <h3>比记住答案，<br>多走一步。</h3>
         </div>
         <div class="intro-difference-copy">
-          <p>普通 flashcard 帮你回忆知识结论。这里还会保留你写错的代码和当时的想法，让复习围绕具体的错误模式展开。新练习也针对你选中的薄弱点生成，不从随机题库抽题。</p>
-          <p class="intro-small">代码仅用于记录，不运行、不自动判题；数学练习会比对最终答案，并展示参考答案供你核对。到期记录会显示在「今日复习」中。</p>
+          <p>从真实错误出发，走过「错因 → 到期复习 → 换题验证」，让每次练习都有方向。</p>
+          <p class="intro-small">编程题参考样例自评；数学题核对答案。</p>
         </div>
         <p class="intro-invitation">
           <span class="intro-dot" aria-hidden="true"></span>
