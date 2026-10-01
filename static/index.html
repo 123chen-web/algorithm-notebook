@@ -8,14 +8,14 @@
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=39">
+  <link rel="stylesheet" href="/static/style.css?v=40">
   <link rel="stylesheet" href="/static/intro.css?v=15">
   <link rel="stylesheet" href="/static/scenes.css?v=2">
   <link rel="stylesheet" href="/static/themes.css?v=3">
   <script defer src="/static/scenes.js?v=1"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=17"></script>
-  <script defer src="/static/app.js?v=39"></script>
+  <script defer src="/static/app.js?v=40"></script>
 </head>
 <body>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
@@ -40,6 +40,9 @@
           <details class="account-menu">
             <summary aria-label="账号菜单">
               <span id="my-avatar" class="avatar"></span>
+              <span id="trial-banner" class="trial-banner" role="status" hidden
+                    title="这是体验账号，数据可能会被定期清理，注册正式账号才能长期保存。"
+                    aria-label="体验账号，数据可能会被定期清理，注册正式账号才能长期保存。">体验</span>
               <span class="account-menu-arrow" aria-hidden="true"></span>
             </summary>
             <div class="account-menu-panel">
@@ -75,10 +78,6 @@
         <button id="logout" type="button" hidden>退出登录</button>
       </div>
     </header>
-
-    <p id="trial-banner" class="trial-banner" role="status" hidden>
-      这是体验账号，数据可能会被定期清理，注册正式账号才能长期保存。
-    </p>
 
     <form id="email-prompt" class="panel" hidden>
       <div class="form-heading">

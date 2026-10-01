@@ -2389,7 +2389,7 @@ function startTrial() {
       }),
     });
     await enterApp();
-    message("已进入体验账号，随便试试看吧——数据可能会被定期清理。");
+    message();
   });
 }
 $("#trial-start").addEventListener("click", startTrial);
