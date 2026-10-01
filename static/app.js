@@ -336,7 +336,8 @@ const AUTH_PANELS = ["login-form", "register-form", "forgot-form", "reset-form"]
 
 function renderPageRoute() {
   if (!sessionReady) return;
-  const next = user ? "app" : resetToken || location.hash === "#/auth" ? "auth" : "welcome";
+  const next = user ? "app" : location.hash === "#/welcome" ? "welcome"
+    : resetToken || location.hash === "#/auth" ? "auth" : "welcome";
   document.documentElement.dataset.view = next;
   $("#intro").hidden = next !== "welcome";
   $("#auth").hidden = next !== "auth";
@@ -357,6 +358,7 @@ function showAuthPanels(visibleIds) {
   }
   const tabs = $("#auth-switch");
   tabs.hidden = !visibleIds.some((id) => id === "login-form" || id === "register-form");
+  $("#auth-trial-start").hidden = tabs.hidden;
   tabs.querySelectorAll("[data-auth-panel]").forEach((tab) => {
     const selected = visibleIds.includes(tab.dataset.authPanel);
     tab.setAttribute("aria-selected", String(selected));
@@ -742,6 +744,12 @@ async function enterApp() {
   resetWeeklyRecap();
   resetGroups();
   user = await api("/api/me");
+  if (resetToken) {
+    resetToken = null;
+    const url = new URL(location.href);
+    url.searchParams.delete("reset_token");
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
   sessionReady = true;
   renderPageRoute();
   $("#logout").hidden = false;

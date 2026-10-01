@@ -27,7 +27,7 @@
   flex: 0 0 6px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
 }
 
@@ -63,9 +63,9 @@
   justify-content: center;
   padding: 13px 20px;
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-compact);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
@@ -88,7 +88,7 @@
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-flat);
   background: none;
   color: var(--accent-hover);
   font: inherit;
@@ -133,7 +133,7 @@
   position: absolute;
   inset: 0 0 50px;
   z-index: 0;
-  border-radius: 24px;
+  border-radius: var(--radius-large);
   background: var(--soft);
 }
 
@@ -146,10 +146,10 @@
   border-radius: var(--radius);
   background-color: var(--paper-2);
   background-image:
-    linear-gradient(#e6ddc9 1px, transparent 1px),
-    linear-gradient(90deg, #e6ddc9 1px, transparent 1px);
+    linear-gradient(var(--note-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--note-grid) 1px, transparent 1px);
   background-size: 22px 22px;
-  box-shadow: 0 10px 32px rgba(28,27,25,.04), 0 2px 4px rgba(28,27,25,.02);
+  box-shadow: 0 10px 32px rgba(var(--shadow-rgb),.04), 0 2px 4px rgba(var(--shadow-rgb),.02);
 }
 
 .intro .sample-topline,
@@ -179,7 +179,7 @@
   height: 52px;
   padding: 3px;
   border: 3px solid var(--accent);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--accent);
   font-family: var(--kai);
   font-size: 18px;

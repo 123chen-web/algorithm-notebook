@@ -422,3 +422,206 @@ def test_app_navigation_click_handlers_cannot_include_the_route_root(document, a
     assert navigation_selectors == ["#app button[data-view]"], (
         "The html data-view route root must never receive app navigation click handlers"
     )
+
+
+@pytest.fixture(scope="module")
+def theme_source():
+    return (STATIC / "themes.js").read_text(encoding="utf-8")
+
+
+def css_declarations(source):
+    """Track nested media/support blocks when inspecting theme enhancements."""
+    source = re.sub(r"/\*[\s\S]*?\*/", "", source)
+    blocks = []
+    for match in re.finditer(r"([^{};]*)([{};])", source):
+        text, delimiter = match.groups()
+        text = text.strip()
+        if delimiter == "{":
+            blocks.append(text)
+        else:
+            if text:
+                yield tuple(blocks), text
+            if delimiter == "}":
+                assert blocks, "Unexpected closing CSS brace"
+                blocks.pop()
+    assert not blocks, "Unclosed CSS block"
+
+
+def test_default_ink_theme_is_restored_before_styles_and_session_rendering(document):
+    root = next(node for node in document.elements if node["tag"] == "html")
+    assert root["attrs"].get("data-theme") == "ink"
+    assert root["attrs"].get("data-view") == "pending"
+    heads = [(index, node) for index, node in enumerate(document.elements) if node["tag"] == "head"]
+    assert len(heads) == 1
+    head_index, _ = heads[0]
+    scripts = [
+        (index, node) for index, node in enumerate(document.elements)
+        if node["tag"] == "script"
+        and node["attrs"].get("src", "").split("?", 1)[0] == "/static/themes.js"
+    ]
+    assert len(scripts) == 1
+    script_index, script = scripts[0]
+    assert head_index in script["ancestors"]
+    assert "defer" not in script["attrs"]
+    assert "async" not in script["attrs"]
+    assert re.fullmatch(r"/static/themes\.js\?v=\d+", script["attrs"]["src"])
+    styles = [
+        index for index, node in enumerate(document.elements)
+        if node["tag"] == "link" and node["attrs"].get("rel") == "stylesheet"
+    ]
+    assert styles and script_index < min(styles)
+
+
+def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document):
+    selectors = [
+        (index, node) for index, node in enumerate(document.elements)
+        if "data-theme-select" in node["attrs"]
+    ]
+    assert len(selectors) == 2
+    assert {node["attrs"].get("id") for _, node in selectors} == {"welcome-theme", "account-theme"}
+    for index, select in selectors:
+        assert select["tag"] == "select"
+        assert select["attrs"].get("aria-label")
+        options = [
+            node["attrs"].get("value") for node in document.elements
+            if index in node["ancestors"] and node["tag"] == "option"
+        ]
+        assert options == ["ink", "qixi"]
+        assert any(
+            node["tag"] == "label" and node["attrs"].get("for") == select["attrs"]["id"]
+            for node in document.elements
+        )
+    welcome_index, welcome = document.by_id("welcome-preferences")
+    _, public_select = document.by_id("welcome-theme")
+    assert welcome_index in public_select["ancestors"]
+    assert any(document.elements[index]["tag"] == "header" for index in welcome["ancestors"])
+    _, account_select = document.by_id("account-theme")
+    assert any(
+        "account-menu-panel" in document.elements[index]["attrs"].get("class", "").split()
+        for index in account_select["ancestors"]
+    )
+
+
+def test_theme_storage_reads_and_writes_are_guarded_and_validate_both_choices(theme_source):
+    assert re.search(r'\blet\s+theme\s*=\s*["\']ink["\']\s*;', theme_source)
+    guards = re.findall(r"\btry\s*\{([\s\S]*?)\}\s*catch\s*\([^)]*\)\s*\{", theme_source)
+    assert any("localStorage.getItem(STORAGE_KEY)" in body for body in guards)
+    assert any("localStorage.setItem(STORAGE_KEY, theme)" in body for body in guards)
+    assert re.search(r'saved\s*===\s*["\']ink["\']\s*\|\|\s*saved\s*===\s*["\']qixi["\']', theme_source)
+    assert re.search(r'select\.value\s*!==\s*["\']ink["\']\s*&&\s*select\.value\s*!==\s*["\']qixi["\']', theme_source)
+    assert "root.dataset.theme = theme" in theme_source
+    assert 'document.addEventListener("DOMContentLoaded"' in theme_source
+    assert "syncControls()" in theme_source
+
+
+def test_theme_switches_cannot_reload_route_or_replay_opening_feedback(theme_source):
+    assert not re.search(r"\blocation\.(?:reload|assign|replace)\s*\(", theme_source)
+    assert not re.search(r"\blocation(?:\.href|\.hash)?\s*=", theme_source)
+    assert not re.search(r"\.dataset\.view\s*=", theme_source)
+    for forbidden in ("intro-anim", "home-anim", "startOpening(", "stampSeal(", "enterApp(", "renderPageRoute("):
+        assert forbidden not in theme_source
+
+
+def test_account_scenery_selection_uses_the_shared_configuration(document, scene_source, theme_source):
+    index, select = document.by_id("account-scene")
+    assert select["tag"] == "select"
+    assert "data-scene-select" in select["attrs"]
+    assert select["attrs"].get("aria-label")
+    assert any(
+        "account-menu-panel" in document.elements[ancestor]["attrs"].get("class", "").split()
+        for ancestor in select["ancestors"]
+    )
+    assert not any(
+        node["tag"] == "option" and index in node["ancestors"]
+        for node in document.elements
+    ), "Account scenery choices must be generated from SCENES"
+    assert re.search(r'SCENES\.forEach\(\(scene\)\s*=>\s*select\.add\(new Option\(scene\.name,\s*scene\.id\)\)', scene_source)
+    assert 'select.addEventListener("change", () => selectScene(' in scene_source
+    assert 'select.value = scene.id' in scene_source
+    assert re.search(r'label\.hidden\s*=\s*theme\s*!==\s*["\']qixi["\']', theme_source)
+
+
+def test_qixi_glass_has_opaque_fallback_and_requires_fine_hover_support():
+    source = (STATIC / "themes.css").read_text(encoding="utf-8")
+    blur_rules = 0
+    for blocks, declaration in css_declarations(source):
+        if not re.match(r"(?:-webkit-)?backdrop-filter\s*:", declaration):
+            continue
+        blur_rules += 1
+        assert any(
+            block.startswith("@media")
+            and re.search(r"\(\s*hover\s*:\s*hover\s*\)", block)
+            and re.search(r"\(\s*pointer\s*:\s*fine\s*\)", block)
+            for block in blocks
+        )
+        assert any(block.startswith("@supports") and "backdrop-filter" in block for block in blocks)
+    assert blur_rules
+    assert re.search(r'html\[data-theme=["\']qixi["\']\][^{]+\{\s*background:\s*var\(--paper\);', source)
+    assert re.search(r'html\[data-theme=["\']qixi["\']\][^{]+\{\s*background:\s*var\(--surface\);', source)
+
+
+def test_reset_links_can_return_to_welcome_without_losing_the_reset_token(app_source):
+    route = function_body(app_source, "renderPageRoute")
+    explicit_welcome = re.search(r'location\.hash\s*===\s*["\']#/welcome["\']\s*\?\s*["\']welcome["\']', route)
+    reset = re.search(r"\bresetToken\b", route)
+    assert explicit_welcome and reset and explicit_welcome.end() < reset.start()
+    assert not re.search(r"\bresetToken\s*=", route)
+
+
+def test_reset_and_forgot_panels_hide_trial_and_signin_clears_reset_query(app_source):
+    panels = function_body(app_source, "showAuthPanels")
+    assert re.search(r'\$\(["\']#auth-trial-start["\']\)\.hidden\s*=\s*tabs\.hidden', panels)
+    assert 'id === "login-form" || id === "register-form"' in panels
+    enter = function_body(app_source, "enterApp")
+    assert "resetToken = null" in enter
+    assert 'url.searchParams.delete("reset_token")' in enter
+    assert "history.replaceState" in enter
+    assert enter.index('url.searchParams.delete("reset_token")') < enter.index("renderPageRoute()")
+
+
+def test_ink_and_qixi_define_matching_visual_token_sets():
+    source = (STATIC / "style.css").read_text(encoding="utf-8")
+    tokens = {"ink": {}, "qixi": {}}
+    for blocks, declaration in css_declarations(source):
+        if len(blocks) != 1:
+            continue
+        match = re.fullmatch(r'html\[data-theme=["\'](ink|qixi)["\']\]', blocks[0])
+        if not match:
+            continue
+        name, separator, value = declaration.partition(":")
+        if separator and name.startswith("--"):
+            assert name not in tokens[match[1]], f"Duplicate {match[1]} token: {name}"
+            tokens[match[1]][name] = value.strip()
+    assert tokens["ink"] and tokens["qixi"]
+    assert tokens["ink"].keys() == tokens["qixi"].keys()
+    required = {
+        "--paper", "--paper-2", "--surface", "--ink", "--ink-2", "--muted",
+        "--accent", "--accent-hover", "--soft", "--line", "--glass-surface",
+        "--radius", "--radius-sm", "--radius-round",
+    }
+    assert required <= tokens["ink"].keys()
+    assert all(tokens[theme][name] for theme in tokens for name in tokens[theme])
+    assert tokens["ink"]["--accent"].lower() == "#c23a2b"
+    assert "var(--scene-accent" in tokens["qixi"]["--accent"]
+    assert tokens["ink"]["--paper"] != tokens["qixi"]["--paper"]
+    assert tokens["ink"]["--radius"] != tokens["qixi"]["--radius"]
+
+
+@pytest.mark.parametrize("filename", ("style.css", "intro.css", "scenes.css", "themes.css"))
+def test_component_colors_and_radii_are_driven_by_shared_variables(filename):
+    source = (STATIC / filename).read_text(encoding="utf-8")
+    for blocks, declaration in css_declarations(source):
+        name, separator, value = declaration.partition(":")
+        name = name.strip()
+        if not separator or name.startswith("--"):
+            continue
+        assert not re.search(r"#[0-9a-fA-F]{3,8}\b", value), (
+            f"Literal component color in {filename}: {blocks}: {declaration}"
+        )
+        assert not re.search(r"\b(?:rgba?|hsla?)\(\s*[\d.]", value), (
+            f"Literal component color channels in {filename}: {blocks}: {declaration}"
+        )
+        if name.endswith("-radius"):
+            assert re.fullmatch(r"(?:var\(--radius[\w-]*\)\s*)+", value.strip()), (
+                f"Component radius must use shared tokens in {filename}: {declaration}"
+            )

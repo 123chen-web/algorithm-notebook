@@ -9,8 +9,8 @@ html[data-view="welcome"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
 .scene-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; margin: 0 0 32px; padding: 8px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .scene-name { margin-right: auto; color: var(--ink-2); font-size: var(--text-sm); }
 .scene-dots { display: flex; flex-wrap: wrap; gap: 0; }
-.scene-dots button { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
-.scene-dots button::after { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink-2); background: var(--paper); }
+.scene-dots button { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: var(--radius-round); background: transparent; }
+.scene-dots button::after { content: ""; width: 8px; height: 8px; border-radius: var(--radius-round); border: 1px solid var(--ink-2); background: var(--paper); }
 .scene-dots button[aria-pressed="true"]::after { background: var(--accent); border-color: var(--accent); }
 .scene-toolbar .link-button { font-size: var(--text-xs); }
 @media (max-width: 720px) {
