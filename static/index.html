@@ -7,11 +7,11 @@
   <title>算法错题本：把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=34">
+  <link rel="stylesheet" href="/static/style.css?v=35">
   <link rel="stylesheet" href="/static/intro.css?v=14">
   <script defer src="/static/intro.js?v=11"></script>
   <script defer src="/static/cursor-fx.js?v=17"></script>
-  <script defer src="/static/app.js?v=34"></script>
+  <script defer src="/static/app.js?v=35"></script>
 </head>
 <body>
   <div class="container">
@@ -270,17 +270,21 @@
 
     <main id="app" hidden>
       <nav id="page-nav" class="tabs" aria-label="页面">
-        <button type="button" data-view="home">学习大厅</button>
-        <button type="button" data-view="today">今日复习</button>
-        <button type="button" data-view="all">全部记录</button>
-        <button type="button" data-view="new">新增记录</button>
-        <button type="button" data-view="insights">薄弱点分析</button>
-        <button type="button" data-view="plan">我的套餐</button>
-        <button type="button" data-view="leaderboard">打卡排行榜</button>
-        <button type="button" data-view="groups">学习小组</button>
-        <button type="button" data-view="forum">讨论区</button>
-        <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
+        <button type="button" class="nav-back" data-view="home"><span aria-hidden="true">←</span> 学习大厅</button>
+        <span id="nav-current" class="nav-current"></span>
+        <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu">切换页面 <span aria-hidden="true">▾</span></button>
         <button type="button" id="refresh">刷新</button>
+        <div id="nav-menu" class="nav-menu" hidden>
+          <button type="button" data-view="today">今日复习</button>
+          <button type="button" data-view="all">全部记录</button>
+          <button type="button" data-view="new">新增记录</button>
+          <button type="button" data-view="insights">薄弱点分析</button>
+          <button type="button" data-view="plan">我的套餐</button>
+          <button type="button" data-view="leaderboard">打卡排行榜</button>
+          <button type="button" data-view="groups">学习小组</button>
+          <button type="button" data-view="forum">讨论区</button>
+          <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
+        </div>
       </nav>
 
       <section id="home-page" class="lobby" aria-labelledby="home-title" hidden>

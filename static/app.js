@@ -707,6 +707,23 @@ async function enterApp() {
   await showView("home", { refreshUser: false });
 }
 
+function closeNavMenu() {
+  $("#nav-menu").hidden = true;
+  $("#nav-toggle").setAttribute("aria-expanded", "false");
+}
+
+$("#nav-toggle").addEventListener("click", () => {
+  const open = $("#nav-menu").hidden;
+  $("#nav-menu").hidden = !open;
+  $("#nav-toggle").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#page-nav")) closeNavMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeNavMenu();
+});
+
 async function showView(nextView, { refreshUser = true } = {}) {
   stopOrderPolling();
   if (view !== nextView) {
@@ -737,16 +754,9 @@ async function showView(nextView, { refreshUser = true } = {}) {
     button.setAttribute("aria-pressed", String(button.dataset.view === view));
   });
 
-  const nav = $("#page-nav");
-  const activeTab = nav.querySelector("[data-view].active");
-  if (!nav.hidden && activeTab && nav.scrollWidth > nav.clientWidth) {
-    // Scroll only the navigation horizontally, preserving the page's vertical position.
-    const left = nav.getBoundingClientRect().left + nav.clientLeft;
-    const right = left + nav.clientWidth;
-    const tabRect = activeTab.getBoundingClientRect();
-    if (tabRect.left < left) nav.scrollLeft += tabRect.left - left;
-    else if (tabRect.right > right) nav.scrollLeft += tabRect.right - right;
-  }
+  closeNavMenu();
+  const activeTab = $("#nav-menu").querySelector("[data-view].active");
+  $("#nav-current").textContent = activeTab ? activeTab.textContent : "";
 
   if (view === "home") await loadHome({ refreshUser });
   else if (view === "admin") await loadAdminPage();
