@@ -32,7 +32,7 @@
   --seal-gamboge: #c8901a; --review-pen: #ee6a52;
   --shadow-rgb: 28,27,25; --menu-shadow-rgb: 60,40,20; --pointer-glow-rgb: 238,106,82;
   --radius-xs: 6px; --radius-compact: 4px; --radius-badge: 7px; --radius-muted: 8px;
-  --radius-option: 12px; --radius-home: 16px; --radius-large: 24px; --radius-chip: 20px;
+  --radius-option: 12px; --radius-field: 12px; --radius-home: 16px; --radius-large: 24px; --radius-chip: 20px;
   --radius-pill: 999px; --radius-round: 50%; --radius-flat: 0;
   --radius-book: 8px 15px 15px 8px;
   --motion-fast: 150ms; --motion-enter: 220ms; --motion-ease: cubic-bezier(.2, .7, .25, 1);
@@ -356,32 +356,9 @@ button.danger:hover:not(:disabled) { color: var(--danger-hover); background: var
 :where(#weakness-page, #achievements-page, #leaderboard-page, #groups-page,
   #forum-page, #weekly-recap-page, #plan-page, #admin-page) p:where(.muted, .field-hint, .multiline),
 .weakness-action p, .weakness-evidence p { max-width: var(--measure); line-height: var(--lh-prose); }
-#new-page > .panel { padding: var(--space-5); }
-#new-page .form-section-intro > h3 { margin: 0 0 var(--space-4); }
-#new-page .form-section-intro > p { margin: 0 0 var(--space-4); }
-#new-page .form-section > label, #new-page .form-grid label { margin-bottom: var(--space-4); }
-#new-page .form-grid { gap: 0 var(--space-4); grid-template-columns: minmax(0, 1fr); }
-#new-page .form-footer { margin: var(--space-5) 0 0; gap: var(--space-4); }
-@media (min-width: 600px) {
-  #new-page .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #new-page .form-grid > label:first-child { grid-column: 1 / -1; }
-  #new-page .form-grid:has([data-role="language-field"][hidden]) > label:first-child { grid-column: auto; }
-}
 @media (min-width: 1024px) {
   .workspace { grid-template-columns: var(--record-list-width) minmax(0, 1fr); }
   #cards { position: sticky; top: var(--space-4); max-height: calc(100vh - var(--space-5) * 2); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-  #new-page > .panel { padding: var(--space-6); }
-  #new-page .form-section { display: grid; grid-template-columns: var(--form-aside-width) minmax(0, 1fr); column-gap: var(--space-6); row-gap: var(--space-4); }
-  #new-page .form-section-intro { grid-column: 1; grid-row: 1 / span 2; position: sticky; top: var(--space-4); align-self: start; }
-  #new-page .form-section-intro > p { margin: 0; }
-  #new-page .form-section > :is(.form-grid, label, #mistake-inputs) { grid-column: 2; min-width: 0; }
-  #new-page .form-grid { grid-row: 1; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); }
-  #new-page .form-grid > label:first-child { grid-column: auto; }
-  #new-page .form-grid:has([data-role="language-field"][hidden]) { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-  #new-page .form-section > label { grid-row: 1 / span 2; }
-  #new-page .form-section:has(.form-grid) > label { grid-row: 2; }
-  #new-page #mistake-inputs { grid-row: 1 / span 2; }
-  #new-page .form-footer { margin-left: calc(var(--form-aside-width) + var(--space-6)); }
 }
 .weakness-controls > h3, .weakness-empty > h3, .weakness-overview > h3 { margin-top: 0; }
 .weakness-count { font-weight: 600; }

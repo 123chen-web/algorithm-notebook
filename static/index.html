@@ -8,14 +8,16 @@
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=42">
+  <link rel="stylesheet" href="/static/style.css?v=43">
   <link rel="stylesheet" href="/static/intro.css?v=16">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=7">
+  <link rel="stylesheet" href="/static/new-record.css?v=1">
   <script defer src="/static/scenes.js?v=4"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/app.js?v=41"></script>
+  <script defer src="/static/new-record.js?v=1"></script>
 </head>
 <body>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
@@ -490,69 +492,99 @@
             <p class="muted">保留当时的想法，尤其是出错的那一步。</p>
           </div>
         </div>
-        <div class="panel">
-          <form id="problem-photo-form" class="photo-input" aria-labelledby="problem-photo-title">
-            <h3 id="problem-photo-title">拍照 / 上传图片</h3>
-            <p class="muted">上传手写解题过程或代码截图，AI 会提取题目和原始解法，填入下方表单供你核对。</p>
-            <label for="problem-photo-file">选择图片
-              <input id="problem-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-describedby="problem-photo-hint">
-            </label>
-            <p id="problem-photo-hint" class="field-hint">支持 JPEG、PNG、WebP，最大 8 MiB。照片识别和生成练习各使用 1 次 AI 额度，AI 调用失败也计入次数。</p>
-            <p id="problem-photo-quota" class="muted"></p>
-            <img id="problem-photo-preview" class="photo-preview" alt="所选题目照片预览" hidden>
-            <div class="actions">
-              <button id="problem-photo-recognize" type="submit" data-blocked="1" disabled>识别并填入表单</button>
-              <button id="problem-photo-clear" type="button" hidden>移除图片</button>
+        <div id="form-section-progress" class="form-section-progress" aria-hidden="true">
+          <span data-form-progress="photo" class="is-current"></span>
+          <span data-form-progress="basics"></span>
+          <span data-form-progress="thinking"></span>
+          <span data-form-progress="mistakes"></span>
+        </div>
+        <div class="form-stack">
+          <form id="problem-photo-form" class="photo-input form-card" aria-labelledby="problem-photo-title" data-form-section="photo">
+            <div class="form-card-heading">
+              <span class="form-number" aria-hidden="true">AI</span>
+              <div>
+                <h3 id="problem-photo-title">拍照 / 上传图片</h3>
+                <p class="form-card-description">拍下解题过程，识别后核对下方内容。</p>
+              </div>
             </div>
-            <p id="problem-photo-status" class="field-hint" role="status" aria-live="polite"></p>
+            <div class="form-fields">
+              <label for="problem-photo-file">选择图片
+                <input id="problem-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-describedby="problem-photo-hint">
+              </label>
+              <p id="problem-photo-hint" class="field-hint">支持 JPEG、PNG、WebP，最大 8 MiB。照片识别和生成练习各使用 1 次 AI 额度，AI 调用失败也计入次数。</p>
+              <p id="problem-photo-quota" class="muted"></p>
+              <img id="problem-photo-preview" class="photo-preview" alt="所选题目照片预览" hidden>
+              <div class="actions">
+                <button id="problem-photo-recognize" type="submit" data-blocked="1" disabled>识别并填入表单</button>
+                <button id="problem-photo-clear" type="button" hidden>移除图片</button>
+              </div>
+              <p id="problem-photo-status" class="field-hint" role="status" aria-live="polite"></p>
+            </div>
           </form>
-          <form id="problem-form">
-            <section class="form-section" aria-labelledby="problem-basics-title">
-              <div class="form-section-intro">
-                <h3 id="problem-basics-title">01 / 题目和代码</h3>
-                <p id="code-hint" class="field-hint">代码会保存在记录中，不会被运行。</p>
+          <form id="problem-form" class="form-stack">
+            <section class="form-section form-card" aria-labelledby="problem-basics-title" data-form-section="basics">
+              <div class="form-card-heading">
+                <span class="form-number" aria-hidden="true">01</span>
+                <div>
+                  <h3 id="problem-basics-title">题目和代码</h3>
+                  <p id="code-hint" class="form-card-description">代码会保存在记录中，不会被运行。</p>
+                </div>
               </div>
-              <div class="form-grid">
+              <div class="form-fields">
+                <div class="form-grid">
+                  <label>
+                    题目名
+                    <input name="title" required maxlength="200"
+                           placeholder="例如：A + B、迷宫可达性判断">
+                  </label>
+                  <label>
+                    分区
+                    <select name="zone" id="problem-zone" required></select>
+                  </label>
+                  <label data-role="language-field">
+                    编程语言
+                    <input name="language" maxlength="40" value="Python">
+                  </label>
+                </div>
                 <label>
-                  题目名
-                  <input name="title" required maxlength="200"
-                         placeholder="例如：A + B、迷宫可达性判断">
-                </label>
-                <label>
-                  分区
-                  <select name="zone" id="problem-zone" required></select>
-                </label>
-                <label data-role="language-field">
-                  编程语言
-                  <input name="language" maxlength="40" value="Python">
+                  <span data-role="code-label">当时的代码</span>
+                  <textarea name="code" required maxlength="40000" rows="10"
+                            spellcheck="false" class="code"
+                            aria-describedby="code-hint"
+                            placeholder="粘贴当时的代码，保留错误也没关系。"></textarea>
                 </label>
               </div>
-              <label>
-                <span data-role="code-label">当时的代码</span>
-                <textarea name="code" required maxlength="40000" rows="10"
-                          spellcheck="false" class="code"
-                          aria-describedby="code-hint"
-                          placeholder="粘贴当时的代码，保留错误也没关系。"></textarea>
-              </label>
             </section>
 
-            <section class="form-section" aria-labelledby="problem-thinking-title">
-              <div class="form-section-intro">
-                <h3 id="problem-thinking-title">02 / 回想当时的思路</h3>
+            <section class="form-section form-card" aria-labelledby="problem-thinking-title" data-form-section="thinking">
+              <div class="form-card-heading">
+                <span class="form-number" aria-hidden="true">02</span>
+                <div>
+                  <h3 id="problem-thinking-title">回想当时的思路</h3>
+                  <p class="form-card-description">记下当时的判断，找到偏离预期的那一步。</p>
+                </div>
               </div>
-              <label>
-                当时的思路
-                <textarea name="thinking" required maxlength="8000" rows="4"
-                          placeholder="当时准备怎么做？在哪一步偏离了预期？"></textarea>
-              </label>
+              <div class="form-fields">
+                <label>
+                  当时的思路
+                  <textarea name="thinking" required maxlength="8000" rows="4"
+                            placeholder="当时准备怎么做？在哪一步偏离了预期？"></textarea>
+                </label>
+              </div>
             </section>
 
-            <section class="form-section" aria-labelledby="problem-mistakes-title">
-              <div class="form-section-intro">
-                <h3 id="problem-mistakes-title">03 / 拆出具体的易错点</h3>
-                <p id="mistake-hint" class="muted">说不清也没关系，可以留空——生成练习题时 AI 会从代码和思路里自动诊断。每条会独立安排复习，最多添加 10 条。</p>
+            <section class="form-section form-card" aria-labelledby="problem-mistakes-title" data-form-section="mistakes">
+              <div class="form-card-heading">
+                <span class="form-number" aria-hidden="true">03</span>
+                <div>
+                  <h3 id="problem-mistakes-title">拆出具体的易错点</h3>
+                  <p class="form-card-description">每条易错点都会独立安排复习。</p>
+                </div>
               </div>
-              <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
+              <div class="form-fields">
+                <p id="mistake-hint" class="field-hint">可留空，生成练习时 AI 会自动诊断；最多添加 10 条。</p>
+                <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
+              </div>
             </section>
             <div class="actions form-footer">
               <button id="add-mistake" type="button">再加一个易错点</button>
