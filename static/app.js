@@ -172,7 +172,7 @@ function queueAchievementStamps(achievements, emblems, isCurrent) {
 function startHomeOpening() {
   if (homeOpeningPlayed || sealMotion.matches || document.hidden || view !== "home"
     || $("#app").hidden || $("#home-page").hidden) return;
-  const title = $(".home-username");
+  const title = $("#account-summary-name");
   if (!title) return;
   homeOpeningPlayed = true;
   const text = title.textContent;
@@ -554,6 +554,9 @@ function renderUserInfo() {
   const wrap = $("#user-info-wrap");
 
   function readOnly() {
+    finishHomeOpening?.();
+    $("#account-summary-name").textContent = user.username;
+    $("#account-summary-name").title = user.username;
     if (view === "home") {
       wrap.replaceChildren(
         element("span", "欢迎回来，继续积累你的解题力", "home-greeting"),
@@ -2544,7 +2547,8 @@ function initAccountMenu() {
     if (restoreFocus) summary.focus();
   }
   function onOutsideClick(event) {
-    if (!menu.contains(event.target)) close();
+    // Editing replaces the clicked control before this event reaches document.
+    if (!event.composedPath().includes(menu)) close();
   }
   function onKeydown(event) {
     if (event.key === "Escape") {

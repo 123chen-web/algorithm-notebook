@@ -5,6 +5,7 @@ html[data-view="welcome"] .public-preferences { display: flex; }
 html[data-view="welcome"] .header > .user-meta { display: none; }
 html[data-view="welcome"] .header,
 html[data-theme="qixi"] .header { padding: 20px 24px; margin-top: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+html[data-theme="qixi"] .home-view .header { margin-top: 16px; padding: 16px 20px; }
 .account-menu-panel > .account-preference { display: grid; gap: 6px; cursor: default; }
 .account-preference select { margin: 0; font-size: var(--text-sm); }
 html[data-theme="qixi"] .scene-backdrop { display: block; }
@@ -14,7 +15,7 @@ html[data-theme="qixi"] .intro .intro-example::before { background: var(--soft);
 html[data-theme="qixi"] :is(.page-heading, .lobby-heading, .lobby-bottom, .tabs) { padding: 16px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 html[data-theme="qixi"] .lobby-bottom { flex-wrap: wrap; }
 html[data-theme="qixi"] :is(.intro-copy, .intro-steps, .intro-difference, .scene-toolbar, .auth-switch) { background: var(--paper); }
-html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail, .home-view .user-meta) { background: var(--surface); }
+html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { background: var(--surface); }
 
 /* Touch and unsupported devices use the opaque surfaces above. */
 @media (hover: hover) and (pointer: fine) {
@@ -22,7 +23,7 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail, .home-vi
     html[data-theme="qixi"] :is(
       .header, .page-heading, .lobby-heading, .lobby-bottom, .tabs,
       .intro-copy, .intro-steps, .intro-difference, .scene-toolbar, .auth-switch,
-      .panel:not(.panel .panel), #cards, #detail, .home-view .user-meta
+      .panel:not(.panel .panel), #cards, #detail
     ) {
       background: var(--glass-surface);
       -webkit-backdrop-filter: blur(12px);
@@ -33,6 +34,7 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail, .home-vi
 @media (max-width: 780px) {
   .public-preferences { flex-wrap: wrap; gap: 6px; }
   html[data-view="welcome"] .header, html[data-theme="qixi"] .header { padding: 16px; }
+  html[data-theme="qixi"] .home-view .header { margin-top: 12px; padding: 14px 16px; }
   html[data-theme="qixi"] .intro .intro-copy { padding: 28px; }
 }
 @media (max-width: 380px) {
