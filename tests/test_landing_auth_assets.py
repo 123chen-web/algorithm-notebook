@@ -146,3 +146,138 @@ def test_intro_opening_does_not_override_route_visibility():
     source = (STATIC / "intro.js").read_text(encoding="utf-8")
     assert not re.search(r"\bintro\.hidden\s*=", source)
     assert "MutationObserver" in source
+
+
+def test_login_and_registration_have_one_selected_accessible_tab(document):
+    switch_index, switch = document.by_id("auth-switch")
+    assert switch["attrs"].get("role") == "tablist"
+    assert switch["attrs"].get("aria-label")
+    for tab_id, form_id, selected in (
+        ("auth-login-tab", "login-form", True),
+        ("auth-register-tab", "register-form", False),
+    ):
+        _, tab = document.by_id(tab_id)
+        assert switch_index in tab["ancestors"]
+        assert tab["tag"] == "button"
+        assert tab["attrs"].get("type") == "button"
+        assert tab["attrs"].get("role") == "tab"
+        assert tab["attrs"].get("aria-controls") == form_id
+        assert tab["attrs"].get("aria-selected") == str(selected).lower()
+        assert tab["attrs"].get("tabindex", "0") == ("0" if selected else "-1")
+        _, form = document.by_id(form_id)
+        assert form["attrs"].get("role") == "tabpanel"
+        assert form["attrs"].get("aria-labelledby") == tab_id
+    visible_forms = [
+        form_id for form_id in AUTH_FORMS
+        if "hidden" not in document.by_id(form_id)[1]["attrs"]
+    ]
+    assert visible_forms == ["login-form"]
+
+
+def test_authentication_view_removes_eyebrow_labels(document):
+    auth_index, _ = document.by_id("auth")
+    assert not any(
+        auth_index in node["ancestors"]
+        and "eyebrow" in node["attrs"].get("class", "").split()
+        for node in document.elements
+    )
+
+
+@pytest.mark.parametrize(
+    "form_id,field_name,required_attributes",
+    [
+        ("login-form", "username", {"maxlength": "32", "autocomplete": "username"}),
+        ("login-form", "password", {
+            "type": "password", "minlength": "6", "maxlength": "128",
+            "autocomplete": "current-password",
+        }),
+        ("register-form", "username", {"maxlength": "32", "autocomplete": "username"}),
+        ("register-form", "password", {
+            "type": "password", "minlength": "6", "maxlength": "128",
+            "autocomplete": "new-password",
+        }),
+        ("register-form", "email", {
+            "type": "email", "maxlength": "254", "autocomplete": "email",
+        }),
+        ("register-form", "invite_code", {"maxlength": "256", "autocomplete": "off"}),
+        ("register-form", "timezone", {"maxlength": "64"}),
+        ("forgot-form", "email", {
+            "type": "email", "maxlength": "254", "autocomplete": "email",
+        }),
+        ("reset-form", "password", {
+            "type": "password", "minlength": "6", "maxlength": "128",
+            "autocomplete": "new-password",
+        }),
+    ],
+)
+def test_authentication_input_validation_is_preserved(
+    document, form_id, field_name, required_attributes,
+):
+    form_index, _ = document.by_id(form_id)
+    fields = [
+        node for node in document.elements
+        if form_index in node["ancestors"]
+        and node["tag"] == "input"
+        and node["attrs"].get("name") == field_name
+    ]
+    assert len(fields) == 1
+    attributes = fields[0]["attrs"]
+    assert "required" in attributes
+    for name, value in required_attributes.items():
+        assert attributes.get(name) == value
+
+
+@pytest.mark.parametrize(
+    "form_id,endpoint,payload_fields",
+    [
+        ("login-form", "/api/auth/login", ("formObject(form)",)),
+        ("register-form", "/api/auth/register", ("formObject(form)",)),
+        ("forgot-form", "/api/auth/forgot-password", ("email: form.email.value",)),
+        ("reset-form", "/api/auth/reset-password", ("token: resetToken", "password: form.password.value")),
+    ],
+)
+def test_authentication_submit_handlers_preserve_the_api_contract(
+    app_source, form_id, endpoint, payload_fields,
+):
+    handler = re.search(
+        rf'(?m)^\$\(["\']#{re.escape(form_id)}["\']\)\.addEventListener\(["\']submit["\'],[\s\S]*?^\}}\);',
+        app_source,
+    )
+    assert handler, f"Missing submit handler for #{form_id}"
+    body = handler.group()
+    assert "event.preventDefault()" in body
+    assert re.search(rf'\bapi\(["\']{re.escape(endpoint)}["\']', body)
+    assert re.search(r'method\s*:\s*["\']POST["\']', body)
+    for field in payload_fields:
+        assert field in body
+
+
+def test_aria_descriptions_keep_existing_hint_targets(document):
+    original_hints = (
+        "login-username-hint", "register-username-hint", "register-password-hint",
+        "register-email-hint", "timezone-hint", "forgot-email-hint", "reset-password-hint",
+    )
+    described_ids = set()
+    for node in document.elements:
+        for element_id in node["attrs"].get("aria-describedby", "").split():
+            document.by_id(element_id)
+            described_ids.add(element_id)
+    assert set(original_hints) <= described_ids
+
+
+def test_both_trial_entries_are_native_buttons_in_their_views(document, app_source):
+    for button_id, parent_id in (("trial-start", "intro"), ("auth-trial-start", "auth")):
+        parent_index, _ = document.by_id(parent_id)
+        _, button = document.by_id(button_id)
+        assert button["tag"] == "button"
+        assert button["attrs"].get("type") == "button"
+        assert parent_index in button["ancestors"]
+        assert re.search(
+            rf'\$\(["\']#{re.escape(button_id)}["\']\)\.addEventListener\(["\']click["\'],\s*startTrial\)',
+            app_source,
+        )
+    trial = function_body(app_source, "startTrial")
+    assert re.search(r'\bapi\(["\']/api/auth/trial["\']', trial)
+    assert re.search(r'method\s*:\s*["\']POST["\']', trial)
+    assert "timezone:" in trial
+    assert "enterApp()" in trial

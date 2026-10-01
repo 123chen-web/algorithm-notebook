@@ -7,11 +7,11 @@
   <title>算法错题本：把错误变成掌握</title>
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <link rel="stylesheet" href="/static/style.css?v=36">
+  <link rel="stylesheet" href="/static/style.css?v=37">
   <link rel="stylesheet" href="/static/intro.css?v=14">
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=17"></script>
-  <script defer src="/static/app.js?v=36"></script>
+  <script defer src="/static/app.js?v=37"></script>
 </head>
 <body>
   <div class="container">
@@ -161,11 +161,13 @@
 
     <section id="auth" class="auth-grid" aria-label="账号登录与注册" hidden>
       <div class="auth-heading"><a href="#/welcome">← 返回介绍</a></div>
-      <form id="login-form" class="panel">
+      <div id="auth-switch" class="auth-switch" role="tablist" aria-label="选择登录或注册">
+        <button id="auth-login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-form" data-auth-panel="login-form">登录</button>
+        <button id="auth-register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-form" tabindex="-1" data-auth-panel="register-form">注册</button>
+      </div>
+      <form id="login-form" class="panel" role="tabpanel" aria-labelledby="auth-login-tab">
         <div class="form-heading">
-          <p class="eyebrow">已有账号</p>
           <h2>欢迎回来</h2>
-          <p class="muted">接着上次的记录，继续今天的复习。</p>
         </div>
         <label>
           用户名
@@ -173,7 +175,7 @@
                  autocomplete="username" aria-describedby="login-username-hint"
                  placeholder="注册时使用的用户名">
         </label>
-        <p id="login-username-hint" class="field-hint">使用用户名登录，不是邮箱。</p>
+        <p id="login-username-hint" class="field-hint" hidden>请使用注册时的用户名登录。</p>
         <label>
           密码
           <input name="password" type="password" required minlength="6"
@@ -186,11 +188,9 @@
         </div>
       </form>
 
-      <form id="register-form" class="panel">
+      <form id="register-form" class="panel" role="tabpanel" aria-labelledby="auth-register-tab" hidden>
         <div class="form-heading">
-          <p class="eyebrow">仅限受邀用户</p>
           <h2>创建你的错题本</h2>
-          <p class="muted">用邀请码加入内测，从第一条错因开始。</p>
         </div>
         <div class="form-grid">
           <div>
@@ -199,7 +199,7 @@
               <input name="username" required maxlength="32"
                      autocomplete="username" aria-describedby="register-username-hint">
             </label>
-            <p id="register-username-hint" class="field-hint">最多 32 个字符。</p>
+            <p id="register-username-hint" class="field-hint" hidden>最多 32 个字符。</p>
           </div>
           <div>
             <label>
@@ -208,7 +208,7 @@
                      maxlength="128" autocomplete="new-password"
                      aria-describedby="register-password-hint">
             </label>
-            <p id="register-password-hint" class="field-hint">至少 6 个字符。</p>
+            <p id="register-password-hint" class="field-hint" hidden>至少 6 个字符。</p>
           </div>
         </div>
         <label>
@@ -217,7 +217,7 @@
                  autocomplete="email" aria-describedby="register-email-hint"
                  placeholder="你常用的邮箱">
         </label>
-        <p id="register-email-hint" class="field-hint">用于找回密码和接收复习提醒。</p>
+        <p id="register-email-hint" class="field-hint" hidden>用于找回密码和接收复习提醒。</p>
         <div class="form-grid">
           <label>
             邀请码
@@ -230,22 +230,20 @@
                    value="Asia/Shanghai" aria-describedby="timezone-hint">
           </label>
         </div>
-        <p id="timezone-hint" class="field-hint">已自动填写浏览器时区，复习日期以此为准；注册后暂不支持修改。</p>
+        <p id="timezone-hint" class="field-hint" hidden>复习日期以此时区为准，注册后暂不支持修改。</p>
         <button type="submit" class="primary">注册并登录</button>
       </form>
 
       <form id="forgot-form" class="panel" hidden>
         <div class="form-heading">
-          <p class="eyebrow">账号帮助</p>
           <h2>找回密码</h2>
-          <p class="muted">通过绑定的邮箱，重新回到你的错题本。</p>
         </div>
         <label>
           注册时填写的邮箱
           <input name="email" type="email" required maxlength="254"
                  autocomplete="email" aria-describedby="forgot-email-hint">
         </label>
-        <p id="forgot-email-hint" class="field-hint">如果这个邮箱注册过账号，会收到一封重置密码的邮件，30 分钟内有效。</p>
+        <p id="forgot-email-hint" class="field-hint" hidden>重置邮件 30 分钟内有效。</p>
         <div class="form-footer">
           <button type="submit" class="primary">发送重置邮件</button>
           <a href="#login-form" id="back-to-login-link">返回登录</a>
@@ -254,9 +252,7 @@
 
       <form id="reset-form" class="panel" hidden>
         <div class="form-heading">
-          <p class="eyebrow">账号帮助</p>
           <h2>设置新密码</h2>
-          <p class="muted">设置后，就可以用新密码登录。</p>
         </div>
         <label>
           新密码
@@ -264,9 +260,10 @@
                  maxlength="128" autocomplete="new-password"
                  aria-describedby="reset-password-hint">
         </label>
-        <p id="reset-password-hint" class="field-hint">至少 6 个字符。</p>
+        <p id="reset-password-hint" class="field-hint" hidden>至少 6 个字符。</p>
         <button type="submit" class="primary">保存新密码</button>
       </form>
+      <button id="auth-trial-start" type="button" class="link-button auth-trial" title="体验数据可能定期清理，长期保存请注册。">免注册体验</button>
     </section>
 
     <main id="app" hidden>

@@ -355,7 +355,31 @@ function showAuthPanels(visibleIds) {
   for (const id of AUTH_PANELS) {
     $(`#${id}`).hidden = !visibleIds.includes(id);
   }
+  const tabs = $("#auth-switch");
+  tabs.hidden = !visibleIds.some((id) => id === "login-form" || id === "register-form");
+  tabs.querySelectorAll("[data-auth-panel]").forEach((tab) => {
+    const selected = visibleIds.includes(tab.dataset.authPanel);
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
 }
+
+$("#auth-switch").addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-auth-panel]");
+  if (!tab) return;
+  message();
+  showAuthPanels([tab.dataset.authPanel]);
+});
+$("#auth-switch").addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const tabs = [...event.currentTarget.querySelectorAll("[data-auth-panel]")];
+  const current = tabs.indexOf(document.activeElement);
+  const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+    : (current + (event.key === "ArrowLeft" ? -1 : 1) + tabs.length) % tabs.length;
+  tabs[index].click();
+  tabs[index].focus();
+});
 
 function signedOut() {
   finishHomeOpening?.();
@@ -387,7 +411,7 @@ function signedOut() {
   $("#avatar-file-input").value = "";
   $("#email-prompt").hidden = true;
   $("#trial-banner").hidden = true;
-  showAuthPanels(resetToken ? ["reset-form"] : ["login-form", "register-form"]);
+  showAuthPanels(resetToken ? ["reset-form"] : ["login-form"]);
   $("#cards").replaceChildren();
   $("#detail").replaceChildren();
   $("#leaderboard-me").replaceChildren();
@@ -2318,10 +2342,16 @@ $("#login-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   run(async () => {
-    await api("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify(formObject(form)),
-    });
+    $("#login-username-hint").hidden = true;
+    try {
+      await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(formObject(form)),
+      });
+    } catch (error) {
+      $("#login-username-hint").hidden = !form.username.value.includes("@");
+      throw error;
+    }
     form.reset();
     await enterApp();
     message("已登录，今天的复习已经准备好了。");
@@ -2342,16 +2372,20 @@ $("#register-form").addEventListener("submit", (event) => {
   });
 });
 
-$("#trial-start").addEventListener("click", () => run(async () => {
-  await api("/api/auth/trial", {
-    method: "POST",
-    body: JSON.stringify({
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
-    }),
+function startTrial() {
+  return run(async () => {
+    await api("/api/auth/trial", {
+      method: "POST",
+      body: JSON.stringify({
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
+      }),
+    });
+    await enterApp();
+    message("已进入体验账号，随便试试看吧——数据可能会被定期清理。");
   });
-  await enterApp();
-  message("已进入体验账号，随便试试看吧——数据可能会被定期清理。");
-}));
+}
+$("#trial-start").addEventListener("click", startTrial);
+$("#auth-trial-start").addEventListener("click", startTrial);
 
 $("#forgot-link").addEventListener("click", (event) => {
   event.preventDefault();
@@ -2362,7 +2396,7 @@ $("#forgot-link").addEventListener("click", (event) => {
 $("#back-to-login-link").addEventListener("click", (event) => {
   event.preventDefault();
   message();
-  showAuthPanels(["login-form", "register-form"]);
+  showAuthPanels(["login-form"]);
 });
 
 $("#forgot-form").addEventListener("submit", (event) => {
@@ -2374,7 +2408,7 @@ $("#forgot-form").addEventListener("submit", (event) => {
       body: JSON.stringify({ email: form.email.value }),
     });
     form.reset();
-    showAuthPanels(["login-form", "register-form"]);
+    showAuthPanels(["login-form"]);
     message("如果这个邮箱注册过账号，重置邮件已经发出，请查收（包括垃圾邮件文件夹）。");
   });
 });
@@ -2404,7 +2438,7 @@ $("#reset-form").addEventListener("submit", (event) => {
     form.reset();
     resetToken = null;
     history.replaceState(null, "", `${location.pathname}#/auth`);
-    showAuthPanels(["login-form", "register-form"]);
+    showAuthPanels(["login-form"]);
     message("密码已重置，请用新密码登录。");
   });
 });
