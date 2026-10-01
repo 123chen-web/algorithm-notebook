@@ -125,7 +125,7 @@
   position: relative;
   min-width: 0;
   margin: 0;
-  padding: 24px 20px 0;
+  padding: 16px 12px 0;
 }
 
 .intro .intro-example::before {
@@ -140,7 +140,7 @@
 .intro .sample-note {
   position: relative;
   z-index: 1;
-  padding: 25px 28px 0;
+  padding: 20px 20px 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -171,18 +171,18 @@
 .intro .sample-status {
   position: absolute;
   top: 22px;
-  right: 24px;
+  right: 16px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   padding: 3px;
   border: 3px solid var(--accent);
   border-radius: var(--radius-xs);
   color: var(--accent);
   font-family: var(--kai);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 1;
   transform: rotate(-7deg);
@@ -200,7 +200,7 @@
   margin: 0;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: clamp(22px, 2.4vw, 28px);
+  font-size: 22px;
   font-weight: 500;
   line-height: 1.55;
   letter-spacing: -.025em;
@@ -268,8 +268,8 @@
 .intro .sample-check { color: var(--accent); }
 
 .intro .sample-bottomline {
-  margin: 0 -28px;
-  padding: 13px 28px;
+  margin: 0 -20px;
+  padding: 12px 20px;
   border-top: 1px solid var(--line);
   color: var(--ink-2);
   font-size: 11px;

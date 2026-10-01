@@ -6,7 +6,10 @@ html[data-view="welcome"] .scene-backdrop { display: block; }
 .scene-layer.is-transitioning { transition: opacity 1200ms ease; will-change: opacity; }
 html[data-view="welcome"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
 .intro .intro-copy { min-width: 0; padding: 32px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
-.intro .intro-hero { gap: 48px; padding: 64px 0 32px; }
+.intro .intro-hero { grid-template-columns: minmax(0, 480px) minmax(0, 360px); align-items: start; justify-content: space-between; gap: 48px; padding: 48px 0 96px; }
+.intro .intro-copy { align-self: start; }
+.intro #intro-title { font-size: clamp(32px, 3.5vw, 44px); }
+.intro .intro-example { width: 100%; max-width: 360px; margin-top: 112px; justify-self: end; }
 .intro .intro-lead { margin-top: 20px; }
 .scene-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; margin: 0 0 32px; padding: 8px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .scene-name { margin-right: auto; color: var(--ink-2); font-size: var(--text-sm); }
@@ -15,10 +18,19 @@ html[data-view="welcome"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
 .scene-dots button::after { content: ""; width: 8px; height: 8px; border-radius: var(--radius-round); border: 1px solid var(--ink-2); background: var(--paper); }
 .scene-dots button[aria-pressed="true"]::after { background: var(--accent); border-color: var(--accent); }
 .scene-toolbar .link-button { font-size: var(--text-xs); }
+@media (max-width: 1099px) {
+  /* Reserve a landscape opening before the example enters the next screen. */
+  .intro .intro-hero { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(calc(100svh - 80px), auto) auto; gap: 64px; }
+  .intro .intro-copy { width: 100%; max-width: 480px; }
+  .intro .intro-example { margin: 0; justify-self: end; }
+}
 @media (max-width: 720px) {
   .scene-layer.is-transitioning { transition: none; will-change: auto; }
-  .intro .intro-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; padding-top: 32px; }
-  .intro .intro-copy { padding: 24px; }
+  .intro .intro-hero { gap: 48px; padding-top: 24px; }
+  .intro .intro-copy { padding: 20px; }
+  .intro .eyebrow { margin-bottom: 14px; }
+  .intro .intro-lead { margin-top: 14px; }
+  .intro .intro-links { margin-top: 20px; gap: 16px; }
   .scene-toolbar { justify-content: center; gap: 0 8px; padding: 8px; }
 }
 @media (max-width: 380px) {

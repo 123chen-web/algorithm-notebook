@@ -10,7 +10,7 @@ html[data-theme="qixi"] .home-view .header { margin-top: 16px; padding: 16px 20p
 .account-preference select { margin: 0; font-size: var(--text-sm); }
 html[data-theme="qixi"] .scene-backdrop { display: block; }
 html[data-theme="qixi"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
-html[data-theme="qixi"] .intro .intro-copy { padding: 40px; }
+html[data-theme="qixi"] .intro .intro-copy { padding: 32px; }
 html[data-theme="qixi"] .intro .intro-example::before { background: var(--soft); }
 html[data-theme="qixi"] :is(.page-heading, .lobby-heading, .lobby-bottom, .tabs) { padding: 16px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 html[data-theme="qixi"] .lobby-bottom { flex-wrap: wrap; }
@@ -35,9 +35,9 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
   .public-preferences { flex-wrap: wrap; gap: 6px; }
   html[data-view="welcome"] .header, html[data-theme="qixi"] .header { padding: 16px; }
   html[data-theme="qixi"] .home-view .header { margin-top: 12px; padding: 14px 16px; }
-  html[data-theme="qixi"] .intro .intro-copy { padding: 28px; }
+  html[data-theme="qixi"] .intro .intro-copy { padding: 20px; }
 }
 @media (max-width: 380px) {
   .public-preferences { margin-left: 0; }
-  html[data-theme="qixi"] .intro .intro-copy { padding: 24px 18px; }
+  html[data-theme="qixi"] .intro .intro-copy { padding: 20px 16px; }
 }
