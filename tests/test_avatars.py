@@ -35,9 +35,11 @@ def test_upload_and_serve_round_trip(client):
     response = upload_avatar(client, make_image_bytes())
     assert response.status_code == 200
     assert response.json()["avatar_version"] == 1
+    assert response.json()["has_avatar"] is True
 
     me = client.get("/api/me").json()
     assert me["avatar_version"] == 1
+    assert me["has_avatar"] is True
 
     fetched = client.get(f"/api/users/{me['id']}/avatar")
     assert fetched.status_code == 200
@@ -99,6 +101,29 @@ def test_rejects_disallowed_but_valid_image_format(client):
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize("damage", ["crc", "truncated"])
+@pytest.mark.parametrize("endpoint", ["/api/me/avatar", "/api/problems/photo"])
+def test_rejects_damaged_png_as_invalid_image(client, damage, endpoint):
+    register(client)
+    content = bytearray(make_image_bytes(fmt="PNG"))
+    if damage == "crc":
+        chunk_start = content.index(b"IDAT") - 4
+        chunk_length = int.from_bytes(content[chunk_start:chunk_start + 4], "big")
+        content[chunk_start + 8 + chunk_length] ^= 1
+    else:
+        content = content[:-20]
+
+    response = client.post(
+        endpoint, files={"file": ("damaged.png", bytes(content), "image/png")}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "文件不是有效的图片"
+    me = client.get("/api/me").json()
+    assert me["avatar_version"] == 0
+    assert me["ai_daily_used"] == 0
+    assert not main.avatar_path(me["id"]).exists()
+
+
 def test_rejects_oversized_upload(client, monkeypatch):
     monkeypatch.setattr(main, "AVATAR_MAX_BYTES", 100)
     register(client)
@@ -133,6 +158,7 @@ def test_viewing_avatar_requires_login(client):
 def test_user_without_avatar_returns_404(client):
     register(client)
     me = client.get("/api/me").json()
+    assert me["has_avatar"] is False
     assert client.get(f"/api/users/{me['id']}/avatar").status_code == 404
 
 
@@ -144,7 +170,47 @@ def test_delete_own_avatar(client):
     deleted = client.delete("/api/me/avatar")
     assert deleted.status_code == 200
     assert deleted.json()["avatar_version"] == 2
+    assert deleted.json()["has_avatar"] is False
     assert client.get(f"/api/users/{me['id']}/avatar").status_code == 404
+    assert client.get("/api/me").json()["has_avatar"] is False
+
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "alice", "password": "a-test-password-123"},
+    ).status_code == 200
+    me = client.get("/api/me").json()
+    assert me["avatar_version"] == 2
+    assert me["has_avatar"] is False
+
+    reuploaded = upload_avatar(client, make_image_bytes())
+    assert reuploaded.status_code == 200
+    assert reuploaded.json()["avatar_version"] == 3
+    assert reuploaded.json()["has_avatar"] is True
+    me = client.get("/api/me").json()
+    assert me["avatar_version"] == 3
+    assert me["has_avatar"] is True
+    assert client.get(f"/api/users/{me['id']}/avatar").status_code == 200
+
+
+def test_discussion_avatar_state_tracks_upload_and_delete(client):
+    register(client)
+    post = client.post("/api/posts", json={"title": "t", "body": "b"}).json()
+    comment = client.post(
+        f"/api/posts/{post['id']}/comments", json={"body": "c"}
+    )
+    assert comment.status_code == 201
+
+    for has_avatar, version in [(False, 0), (True, 1), (False, 2)]:
+        listed = client.get("/api/posts").json()["posts"][0]
+        details = client.get(f"/api/posts/{post['id']}").json()
+        for author in (listed, details, details["comments"][0]):
+            assert author["has_avatar"] is has_avatar
+            assert author["avatar_version"] == version
+        if version == 0:
+            assert upload_avatar(client, make_image_bytes()).status_code == 200
+        elif version == 1:
+            assert client.delete("/api/me/avatar").status_code == 200
 
 
 def test_reupload_reuses_same_user_scoped_path_no_leftover_files(client, tmp_path):
@@ -186,8 +252,30 @@ def test_report_avatar_creates_pending_report_visible_to_admin(client, monkeypat
     assert reports[0]["type"] == "avatar"
     assert reports[0]["avatar_owner_id"] == alice_id
     assert reports[0]["avatar_owner_username"] == "alice"
+    assert reports[0]["avatar_owner_has_avatar"] is True
     assert reports[0]["reporter_username"] == "bob"
     assert reports[0]["reason"] == "违规图片"
+
+
+def test_pending_avatar_report_tracks_deleted_avatar(client, monkeypatch):
+    register(client, "alice")
+    upload_avatar(client, make_image_bytes())
+    alice_id = client.get("/api/me").json()["id"]
+    client.post("/api/auth/logout")
+
+    register(client, "bob")
+    assert report_avatar(client, alice_id).status_code == 201
+    client.post("/api/auth/logout")
+
+    client.post(
+        "/api/auth/login",
+        json={"username": "alice", "password": "a-test-password-123"},
+    )
+    assert client.delete("/api/me/avatar").status_code == 200
+    become_admin(monkeypatch, "alice")
+    report = client.get("/api/admin/reports").json()["reports"][0]
+    assert report["avatar_owner_has_avatar"] is False
+    assert report["avatar_owner_avatar_version"] == 2
 
 
 def test_reports_of_different_types_are_merged_and_sorted(client, monkeypatch):
@@ -279,8 +367,17 @@ def test_admin_clear_avatar_removes_file_and_resolves_reports(client, monkeypatc
 
     cleared = client.delete(f"/api/admin/users/{alice_id}/avatar")
     assert cleared.status_code == 200
+    assert cleared.json()["has_avatar"] is False
     assert client.get(f"/api/users/{alice_id}/avatar").status_code == 404
     assert client.get("/api/admin/reports").json()["reports"] == []
+    client.post("/api/auth/logout")
+    client.post(
+        "/api/auth/login",
+        json={"username": "alice", "password": "a-test-password-123"},
+    )
+    me = client.get("/api/me").json()
+    assert me["has_avatar"] is False
+    assert me["avatar_version"] == 2
 
 
 def test_non_admin_cannot_resolve_or_clear_avatar(client):

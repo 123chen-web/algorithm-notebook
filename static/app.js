@@ -271,20 +271,22 @@ function avatarHue(username) {
   return hash % 360;
 }
 
-// avatarVersion > 0 时用户上传过头像，走真实图片；否则用用户名首字母的
-// 纯色圆形占位，颜色由用户名哈希决定——同一个人每次看到的颜色都一样。
-function avatarElement(userId, username, avatarVersion, { small = false } = {}) {
+// 版本号只用于刷新缓存；头像不存在或加载失败时，显示用户名首字母。
+function avatarElement(userId, username, avatarVersion, {
+  small = false, hasAvatar = avatarVersion > 0,
+} = {}) {
   const className = small ? "avatar avatar-sm" : "avatar";
-  if (avatarVersion > 0) {
+  const fallback = element("span", (username || "?").slice(0, 1).toUpperCase(), className);
+  fallback.style.background = `hsl(${avatarHue(username || "")}, 55%, 45%)`;
+  fallback.setAttribute("aria-hidden", "true");
+  if (hasAvatar) {
     const img = document.createElement("img");
     img.className = className;
+    img.addEventListener("error", () => img.replaceWith(fallback), { once: true });
     img.src = `/api/users/${userId}/avatar?v=${avatarVersion}`;
     img.alt = `${username} 的头像`;
     return img;
   }
-  const fallback = element("span", (username || "?").slice(0, 1).toUpperCase(), className);
-  fallback.style.background = `hsl(${avatarHue(username || "")}, 55%, 45%)`;
-  fallback.setAttribute("aria-hidden", "true");
   return fallback;
 }
 
@@ -580,10 +582,10 @@ function updateUserInfo() {
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
-    avatarElement(user.id, user.username, user.avatar_version)
+    avatarElement(user.id, user.username, user.avatar_version, { hasAvatar: user.has_avatar })
   );
   $(".avatar-upload-label").hidden = user.is_trial;
-  $("#remove-avatar-btn").hidden = user.is_trial || !(user.avatar_version > 0);
+  $("#remove-avatar-btn").hidden = user.is_trial || !user.has_avatar;
 }
 
 async function loadZones() {
@@ -2524,6 +2526,7 @@ $("#avatar-file-input").addEventListener("change", (event) => {
   run(async () => {
     const result = await uploadAvatarFile(file);
     user.avatar_version = result.avatar_version;
+    user.has_avatar = result.has_avatar;
     updateUserInfo();
     input.value = "";
     message("头像已更新。");
@@ -2533,6 +2536,7 @@ $("#avatar-file-input").addEventListener("change", (event) => {
 $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
   const result = await api("/api/me/avatar", { method: "DELETE" });
   user.avatar_version = result.avatar_version;
+  user.has_avatar = result.has_avatar;
   updateUserInfo();
   message("头像已移除。");
 }));
@@ -2719,7 +2723,9 @@ async function loadForumPosts() {
     row.type = "button";
     const authorLine = element("div", "", "author-line muted");
     authorLine.append(
-      avatarElement(post.user_id, post.username, post.avatar_version, { small: true }),
+      avatarElement(post.user_id, post.username, post.avatar_version, {
+        small: true, hasAvatar: post.has_avatar,
+      }),
       element(
         "small",
         `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`
@@ -2754,7 +2760,9 @@ function renderForumPost(post) {
     root.replaceChildren();
     const authorLine = element("p", "", "muted author-line");
     authorLine.append(
-      avatarElement(post.user_id, post.username, post.avatar_version, { small: true }),
+      avatarElement(post.user_id, post.username, post.avatar_version, {
+        small: true, hasAvatar: post.has_avatar,
+      }),
       element(
         "span",
         `${post.username} · ${timestamp(post.created_at)}` +
@@ -2867,7 +2875,9 @@ function renderForumComment(comment) {
     wrap.replaceChildren();
     const meta = element("p", "", "muted forum-comment-meta author-line");
     meta.append(
-      avatarElement(comment.user_id, comment.username, comment.avatar_version, { small: true }),
+      avatarElement(comment.user_id, comment.username, comment.avatar_version, {
+        small: true, hasAvatar: comment.has_avatar,
+      }),
       element(
         "span",
         `${comment.username} · ${timestamp(comment.created_at)}` +
@@ -3189,19 +3199,21 @@ function renderAdminAvatarReport(report) {
   if (report.reason) {
     card.append(element("p", `举报原因：${report.reason}`));
   }
-  const preview = avatarElement(authorId, authorName, report.avatar_owner_avatar_version);
+  const preview = avatarElement(authorId, authorName, report.avatar_owner_avatar_version, {
+    hasAvatar: report.avatar_owner_has_avatar,
+  });
   preview.style.width = "96px";
   preview.style.height = "96px";
   preview.style.fontSize = "36px";
   card.append(preview);
-  if (!(report.avatar_owner_avatar_version > 0)) {
+  if (!report.avatar_owner_has_avatar) {
     card.append(element("p", "该用户目前没有自定义头像（可能已被清除或本人移除），只能忽略这条举报。", "muted"));
   }
 
   const actions = element("div", "", "actions");
   const clearBtn = element("button", "清除该头像", "danger");
   clearBtn.type = "button";
-  clearBtn.disabled = !(report.avatar_owner_avatar_version > 0);
+  clearBtn.disabled = !report.avatar_owner_has_avatar;
   clearBtn.addEventListener("click", () => run(async () => {
     if (!confirm(`清除「${authorName}」的头像？无法恢复，关联的举报会一并标记为已处理。`)) return;
     await api(`/api/admin/users/${authorId}/avatar`, { method: "DELETE" });
