@@ -61,6 +61,28 @@
 #new-page .form-section-progress { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin-bottom: var(--space-4); padding: var(--space-3) 0; background: var(--paper); }
 #new-page .form-section-progress > span { height: 3px; border-radius: var(--radius-pill); background: var(--line); }
 #new-page .form-section-progress > .is-current { background: var(--accent); }
+#new-page .form-fold { display: block; }
+#new-page .form-fold-heading { position: relative; min-height: 36px; }
+#new-page .form-fold-heading .form-card-heading { align-items: center; margin: 0; padding-right: 88px; }
+#new-page .form-fold-heading h3 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#new-page .form-fold-toggle {
+  position: absolute; inset: 0; display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2);
+  width: 100%; min-height: 36px; padding: 0; border: 0; border-radius: var(--radius-badge); background: transparent;
+}
+#new-page .form-fold-toggle:hover:not(:disabled) { background: transparent; }
+#new-page .form-fold-toggle:focus-visible { outline-offset: 6px; }
+#new-page .form-fold-state { padding: var(--space-1) var(--space-2); border-radius: var(--radius-badge); color: var(--muted); background: var(--paper-2); font-size: var(--text-meta); font-weight: 500; }
+#new-page .form-fold-state.is-filled { color: var(--accent); background: var(--soft); }
+#new-page .form-fold-arrow { width: 16px; color: var(--muted); font-size: var(--text-lg); transition: transform 200ms var(--motion-ease); }
+#new-page .form-fold-toggle[aria-expanded="true"] .form-fold-arrow { transform: rotate(180deg); }
+/* F3's explicit height transition is the sole layout-property exception. */
+#new-page .form-fold-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--motion-ease); }
+#new-page .form-fold-inner { min-height: 0; overflow: hidden; display: grid; gap: var(--space-4); opacity: 0; transition: opacity 180ms var(--motion-ease); }
+#new-page .form-fold-inner > :first-child { margin-top: var(--space-4); }
+#new-page .form-fold-inner > .form-fields { padding: var(--space-1); margin: 0 calc(-1 * var(--space-1)); }
+#new-page .form-fold[data-expanded="true"] > .form-fold-content { grid-template-rows: 1fr; }
+#new-page .form-fold[data-expanded="true"] .form-fold-inner { opacity: 1; }
+#new-page .form-fold-instant :is(.form-fold-content, .form-fold-inner) { transition: none; }
 @media (min-width: 600px) {
   #new-page .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #new-page .form-grid > label:first-child { grid-column: 1 / -1; }
@@ -69,6 +91,10 @@
 @media (min-width: 1024px) {
   #new-page .form-card { display: grid; grid-template-columns: var(--form-aside-width) minmax(0, 1fr); gap: var(--space-6); padding: var(--space-6); }
   #new-page .form-card-heading { margin-bottom: 0; align-self: start; }
+  #new-page .form-fold { display: block; }
+  #new-page .form-fold-heading .form-card-heading { width: var(--form-aside-width); padding-right: 0; }
+  #new-page .form-fold-inner { grid-template-columns: var(--form-aside-width) minmax(0, 1fr); gap: var(--space-6); }
+  #new-page .form-fold-inner > .form-fields { margin-top: var(--space-4); }
   #new-page .form-grid { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); }
   #new-page .form-grid > label:first-child { grid-column: auto; }
   #new-page .form-grid:has([data-role="language-field"][hidden]) { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }

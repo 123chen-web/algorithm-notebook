@@ -12,12 +12,12 @@
   <link rel="stylesheet" href="/static/intro.css?v=16">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=7">
-  <link rel="stylesheet" href="/static/new-record.css?v=2">
+  <link rel="stylesheet" href="/static/new-record.css?v=3">
   <script defer src="/static/scenes.js?v=4"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/app.js?v=41"></script>
-  <script defer src="/static/new-record.js?v=2"></script>
+  <script defer src="/static/new-record.js?v=3"></script>
 </head>
 <body>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
@@ -565,34 +565,50 @@
               </div>
             </section>
 
-            <section class="form-section form-card" aria-labelledby="problem-thinking-title" data-form-section="thinking">
-              <div class="form-card-heading">
-                <span class="form-number" aria-hidden="true">02</span>
-                <div>
-                  <h3 id="problem-thinking-title">回想当时的思路</h3>
-                  <p class="form-card-description">记下当时的判断，找到偏离预期的那一步。</p>
+            <section class="form-section form-card form-fold" aria-labelledby="problem-thinking-title" data-form-section="thinking" data-expanded="false">
+              <div class="form-fold-heading">
+                <div class="form-card-heading">
+                  <span class="form-number" aria-hidden="true">02</span>
+                  <div><h3 id="problem-thinking-title">回想当时的思路</h3></div>
                 </div>
+                <button class="form-fold-toggle" type="button" aria-expanded="false" aria-controls="problem-thinking-content" aria-labelledby="problem-thinking-title problem-thinking-state">
+                  <span id="problem-thinking-state" class="form-fold-state">待填写</span>
+                  <span class="form-fold-arrow" aria-hidden="true">⌄</span>
+                </button>
               </div>
-              <div class="form-fields">
-                <label>
-                  当时的思路
-                  <textarea name="thinking" required maxlength="8000" rows="4"
-                            placeholder="当时准备怎么做？在哪一步偏离了预期？"></textarea>
-                </label>
+              <div id="problem-thinking-content" class="form-fold-content" inert>
+                <div class="form-fold-inner">
+                  <p class="form-card-description">记下当时的判断，找到偏离预期的那一步。</p>
+                  <div class="form-fields">
+                    <label>
+                      当时的思路
+                      <textarea name="thinking" required maxlength="8000" rows="4"
+                                placeholder="当时准备怎么做？在哪一步偏离了预期？"></textarea>
+                    </label>
+                  </div>
+                </div>
               </div>
             </section>
 
-            <section class="form-section form-card" aria-labelledby="problem-mistakes-title" data-form-section="mistakes">
-              <div class="form-card-heading">
-                <span class="form-number" aria-hidden="true">03</span>
-                <div>
-                  <h3 id="problem-mistakes-title">拆出具体的易错点</h3>
-                  <p class="form-card-description">每条易错点都会独立安排复习。</p>
+            <section class="form-section form-card form-fold" aria-labelledby="problem-mistakes-title" data-form-section="mistakes" data-expanded="false">
+              <div class="form-fold-heading">
+                <div class="form-card-heading">
+                  <span class="form-number" aria-hidden="true">03</span>
+                  <div><h3 id="problem-mistakes-title">拆出具体的易错点</h3></div>
                 </div>
+                <button class="form-fold-toggle" type="button" aria-expanded="false" aria-controls="problem-mistakes-content" aria-labelledby="problem-mistakes-title problem-mistakes-state">
+                  <span id="problem-mistakes-state" class="form-fold-state">待填写</span>
+                  <span class="form-fold-arrow" aria-hidden="true">⌄</span>
+                </button>
               </div>
-              <div class="form-fields">
-                <p id="mistake-hint" class="field-hint">可留空，生成练习时 AI 会自动诊断；最多添加 10 条。</p>
-                <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
+              <div id="problem-mistakes-content" class="form-fold-content" inert>
+                <div class="form-fold-inner">
+                  <p class="form-card-description">每条易错点都会独立安排复习。</p>
+                  <div class="form-fields">
+                    <p id="mistake-hint" class="field-hint">可留空，生成练习时 AI 会自动诊断；最多添加 10 条。</p>
+                    <div id="mistake-inputs" role="group" aria-describedby="mistake-hint"></div>
+                  </div>
+                </div>
               </div>
             </section>
             <div class="actions form-footer">
