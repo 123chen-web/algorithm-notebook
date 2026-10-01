@@ -12,12 +12,12 @@
   <link rel="stylesheet" href="/static/intro.css?v=16">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=7">
-  <link rel="stylesheet" href="/static/new-record.css?v=1">
+  <link rel="stylesheet" href="/static/new-record.css?v=2">
   <script defer src="/static/scenes.js?v=4"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/app.js?v=41"></script>
-  <script defer src="/static/new-record.js?v=1"></script>
+  <script defer src="/static/new-record.js?v=2"></script>
 </head>
 <body>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
@@ -508,15 +508,24 @@
               </div>
             </div>
             <div class="form-fields">
-              <label for="problem-photo-file">选择图片
+              <label for="problem-photo-file" class="photo-dropzone">
                 <input id="problem-photo-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-describedby="problem-photo-hint">
+                <span class="photo-dropzone-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8" cy="9" r="1.5"></circle><path d="m3 17 5-4 4 3 4-6 5 7"></path></svg>
+                </span>
+                <strong>点这里选一张图片</strong>
+                <span class="photo-dropzone-format">JPEG / PNG / WebP · 最大 8 MiB</span>
+                <span class="photo-dropzone-button">选择图片</span>
+                <img id="problem-photo-preview" class="photo-preview" alt="所选题目照片预览" hidden>
+                <span id="problem-photo-filename" class="photo-dropzone-filename" hidden></span>
               </label>
-              <p id="problem-photo-hint" class="field-hint">支持 JPEG、PNG、WebP，最大 8 MiB。照片识别和生成练习各使用 1 次 AI 额度，AI 调用失败也计入次数。</p>
-              <p id="problem-photo-quota" class="muted"></p>
-              <img id="problem-photo-preview" class="photo-preview" alt="所选题目照片预览" hidden>
               <div class="actions">
-                <button id="problem-photo-recognize" type="submit" data-blocked="1" disabled>识别并填入表单</button>
+                <button id="problem-photo-recognize" type="submit" class="primary" data-blocked="1" disabled>识别并填入表单</button>
                 <button id="problem-photo-clear" type="button" hidden>移除图片</button>
+              </div>
+              <div class="form-photo-meta">
+                <p id="problem-photo-quota" class="muted"></p>
+                <p id="problem-photo-hint" class="field-hint">识别与生成练习各用 1 次额度，失败也计次。</p>
               </div>
               <p id="problem-photo-status" class="field-hint" role="status" aria-live="polite"></p>
             </div>
