@@ -29,31 +29,120 @@
   let timer = null;
   let paused = false;
   let pageActive = true;
+  let hasScene = false;
+  let previousView = root.dataset.view;
+  let transitionFrame = 0;
+  let transitionTimer = null;
+  let transitionEnd = null;
+  let preloadIdle = null;
+  let preloadTimer = null;
+  let preloadSource = null;
+  let preloadImage = null;
 
   const canPlay = () => pageActive && !document.hidden && root.dataset.view === "welcome"
     && !reducedMotion.matches && !mobile.matches && !paused;
+  const canTransition = () => pageActive && !document.hidden && !reducedMotion.matches && !mobile.matches
+    && (root.dataset.view === "welcome" || root.dataset.theme === "qixi");
+  const canPreload = () => hasScene && canTransition() && root.dataset.view === "welcome"
+    && !transitionFrame && !transitionEnd;
+
+  function cancelPreload() {
+    if (preloadIdle !== null) window.cancelIdleCallback(preloadIdle);
+    preloadIdle = null;
+    window.clearTimeout(preloadTimer);
+    preloadTimer = null;
+    preloadSource = null;
+    preloadImage = null;
+  }
+
+  function schedulePreload() {
+    if (!canPreload()) { cancelPreload(); return; }
+    const source = SCENES[(index + 1) % SCENES.length].src;
+    if (preloadSource === source) return;
+    cancelPreload();
+    preloadSource = source;
+    const prepare = () => {
+      preloadIdle = null;
+      preloadTimer = null;
+      if (!canPreload() || preloadSource !== source) return;
+      // Keep only the next decoded image, without inserting or promoting a layer.
+      const image = new Image();
+      image.decoding = "async";
+      preloadImage = image;
+      image.src = source;
+      image.decode().catch(() => {
+        if (preloadImage === image) { preloadImage = null; preloadSource = null; }
+      });
+    };
+    if (window.requestIdleCallback) preloadIdle = window.requestIdleCallback(prepare, { timeout: 1500 });
+    else preloadTimer = window.setTimeout(prepare, 250);
+  }
+
+  function finishTransition() {
+    window.cancelAnimationFrame(transitionFrame);
+    transitionFrame = 0;
+    window.clearTimeout(transitionTimer);
+    transitionTimer = null;
+    layers.forEach((img, i) => {
+      if (transitionEnd) img.removeEventListener("transitionend", transitionEnd);
+      img.classList.remove("is-transitioning", "is-incoming");
+      img.classList.toggle("is-active", hasScene && i === activeLayer);
+    });
+    transitionEnd = null;
+    schedulePreload();
+  }
+
+  function startTransition(request) {
+    const incoming = layers[activeLayer];
+    incoming.classList.add("is-incoming", "is-transitioning");
+    // Only the incoming image needs promotion; the opaque outgoing image stays below.
+    transitionFrame = window.requestAnimationFrame(() => {
+      transitionFrame = window.requestAnimationFrame(() => {
+        transitionFrame = 0;
+        if (request !== generation) return;
+        if (!canTransition()) { finishTransition(); return; }
+        transitionEnd = (event) => {
+          if (event.propertyName === "opacity" && event.target === incoming && request === generation) {
+            finishTransition();
+          }
+        };
+        incoming.addEventListener("transitionend", transitionEnd);
+        incoming.classList.add("is-active");
+        // Also release the layers if a transition event is interrupted or omitted.
+        transitionTimer = window.setTimeout(finishTransition, 1400);
+      });
+    });
+  }
 
   function reconcile() {
+    if (root.dataset.view !== previousView || !canTransition()) finishTransition();
+    previousView = root.dataset.view;
     window.clearTimeout(timer);
     timer = null;
     play.hidden = mobile.matches || reducedMotion.matches;
     play.textContent = paused ? "自动轮播" : "暂停轮播";
     play.setAttribute("aria-pressed", String(paused));
     if (canPlay()) timer = window.setTimeout(() => selectScene((index + 1) % SCENES.length), 9000);
+    schedulePreload();
   }
 
   async function selectScene(nextIndex) {
     const request = ++generation;
     const scene = SCENES[nextIndex];
     if (!scene) return;
+    // A rapid selection can reuse the outgoing image only after its old fade ends.
+    finishTransition();
     const nextLayer = index === nextIndex && layers[activeLayer].src ? activeLayer : 1 - activeLayer;
     const layer = layers[nextLayer];
     layer.src = scene.src;
     try { await layer.decode(); } catch (_) { return; }
     if (request !== generation) return;
+    const animate = hasScene && index !== nextIndex && canTransition();
     index = nextIndex;
     activeLayer = nextLayer;
-    layers.forEach((img, i) => img.classList.toggle("is-active", i === activeLayer));
+    hasScene = true;
+    if (animate) startTransition(request);
+    else finishTransition();
     root.dataset.scene = scene.id;
     root.style.setProperty("--scene-accent", scene.accent);
     document.getElementById("scene-name").textContent = scene.name;
@@ -103,7 +192,7 @@
     SCENES.forEach((scene) => select.add(new Option(scene.name, scene.id)));
     select.addEventListener("change", () => selectScene(SCENES.findIndex((scene) => scene.id === select.value)));
   });
-  new MutationObserver(reconcile).observe(root, { attributes: true, attributeFilter: ["data-view"] });
+  new MutationObserver(reconcile).observe(root, { attributes: true, attributeFilter: ["data-view", "data-theme"] });
   reducedMotion.addEventListener("change", reconcile);
   mobile.addEventListener("change", reconcile);
   document.addEventListener("visibilitychange", reconcile);

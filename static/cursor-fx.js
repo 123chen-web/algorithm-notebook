@@ -50,7 +50,7 @@
   const RIPPLE_GLINT = 0.25;
   const RIPPLE_HIGHLIGHT = "#ffffff";
   const RIPPLE_QUALITY = "medium";
-  const RIPPLE_QUALITY_SCALE = { low: 0.4, medium: 0.7, high: 1 };
+  const RIPPLE_QUALITY_SCALE = { low: 0.4, medium: 0.55, high: 1 };
   const RIPPLE_MAX_WAVES = 100;
   const RIPPLE_START_SCALE = 1.5;
   const RIPPLE_LIFE_CONSTANT = Math.log(500);

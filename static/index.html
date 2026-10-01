@@ -10,11 +10,11 @@
   <script src="/static/themes.js?v=1"></script>
   <link rel="stylesheet" href="/static/style.css?v=42">
   <link rel="stylesheet" href="/static/intro.css?v=15">
-  <link rel="stylesheet" href="/static/scenes.css?v=2">
+  <link rel="stylesheet" href="/static/scenes.css?v=3">
   <link rel="stylesheet" href="/static/themes.css?v=4">
-  <script defer src="/static/scenes.js?v=1"></script>
+  <script defer src="/static/scenes.js?v=2"></script>
   <script defer src="/static/intro.js?v=12"></script>
-  <script defer src="/static/cursor-fx.js?v=17"></script>
+  <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/app.js?v=41"></script>
 </head>
 <body>
@@ -95,6 +95,12 @@
     </form>
 
     <section id="intro" class="intro" aria-labelledby="intro-title" hidden>
+      <div class="scene-toolbar" aria-label="风景轮播">
+        <span id="scene-name" class="scene-name"></span>
+        <div id="scene-dots" class="scene-dots" role="group" aria-label="选择风景"></div>
+        <button id="scene-play" type="button" class="link-button" aria-pressed="false">暂停轮播</button>
+      </div>
+
       <div class="intro-hero">
         <div class="intro-copy">
           <p class="eyebrow"><span class="intro-dot" aria-hidden="true"></span>邀请内测中</p>
@@ -134,12 +140,6 @@
           </div>
           <figcaption>介绍示例，不会写入你的错题本。</figcaption>
         </figure>
-      </div>
-
-      <div class="scene-toolbar" aria-label="风景轮播">
-        <span id="scene-name" class="scene-name"></span>
-        <div id="scene-dots" class="scene-dots" role="group" aria-label="选择风景"></div>
-        <button id="scene-play" type="button" class="link-button" aria-pressed="false">暂停轮播</button>
       </div>
 
       <div class="intro-steps" aria-label="如何使用算法错题本">
