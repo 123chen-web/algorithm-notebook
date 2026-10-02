@@ -775,7 +775,14 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest("#page-nav")) closeNavMenu();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeNavMenu();
+  if (event.key !== "Escape" || $("#nav-menu").hidden) return;
+  const restoreFocus = document.activeElement === $("#nav-toggle")
+    || $("#nav-menu").contains(document.activeElement);
+  closeNavMenu();
+  if (restoreFocus) $("#nav-toggle").focus();
+});
+$("#page-nav").addEventListener("focusout", (event) => {
+  if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) closeNavMenu();
 });
 
 async function showView(nextView, { refreshUser = true } = {}) {

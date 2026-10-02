@@ -313,3 +313,34 @@ def test_transitions_are_bounded_and_fold_height_is_the_only_layout_exception(fo
         for number, unit in times:
             milliseconds = float(number) * (1000 if unit == "s" else 1)
             assert 150 <= milliseconds <= 220, declaration
+
+
+def test_qixi_progress_is_transparent_on_desktop_and_a_guarded_pill_on_mobile():
+    stylesheet = (STATIC / "themes.css").read_text(encoding="utf-8")
+    selector = r'html\[data-theme\s*=\s*(["\'])qixi\1\]\s+#new-page\s+\.form-section-progress'
+    progress = [
+        (blocks, declaration) for blocks, declaration in css_declarations(stylesheet)
+        if blocks and any(re.fullmatch(selector, item) for item in css_selectors(blocks[-1]))
+    ]
+    assert progress, "Missing Qixi progress overrides"
+    base = [declaration for blocks, declaration in progress if len(blocks) == 1]
+    assert any(re.fullmatch(r'background\s*:\s*transparent', declaration) for declaration in base)
+    mobile = [
+        (blocks, declaration) for blocks, declaration in progress
+        if any(block.startswith("@media") and re.search(r'\(\s*max-width\s*:', block) for block in blocks)
+    ]
+    fallback = [
+        declaration for blocks, declaration in mobile
+        if not any(block.startswith("@supports") for block in blocks)
+    ]
+    assert any(re.fullmatch(r'border-radius\s*:\s*var\(\s*--radius-pill\s*\)', declaration) for declaration in fallback)
+    assert any(re.fullmatch(r'background\s*:\s*var\(\s*--paper\s*\)', declaration) for declaration in fallback)
+    mixes = [(blocks, declaration) for blocks, declaration in mobile if "color-mix(" in declaration]
+    assert mixes, "Missing supported mobile progress gradient"
+    for blocks, declaration in mixes:
+        assert any(block.startswith("@supports") and "color-mix(" in block for block in blocks)
+        assert "linear-gradient(" in declaration
+        assert re.search(r'var\(\s*--paper\s*\)', declaration)
+        assert re.search(r'var\(\s*--paper-2\s*\)', declaration)
+        assert not re.search(r'\btransparent\b', declaration), "Mobile sticky progress must conceal the scrolling content"
+    assert all("!important" not in declaration for _, declaration in progress)

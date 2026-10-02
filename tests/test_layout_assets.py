@@ -181,3 +181,101 @@ def test_intro_steps_share_a_panel_and_invitation_is_its_difference_footer():
     ]
     assert len(intro_toggle) == 1
     assert invitation_index in intro_toggle[0]["ancestors"]
+
+
+def test_page_menu_follows_its_toggle_before_refresh_in_keyboard_order():
+    elements = layout_document()
+    controls = {}
+    for element_id in ("page-nav", "nav-toggle", "nav-menu", "refresh"):
+        matches = [
+            (index, node) for index, node in enumerate(elements)
+            if node["attrs"].get("id") == element_id
+        ]
+        assert len(matches) == 1, element_id
+        controls[element_id] = matches[0]
+    nav_index, _ = controls["page-nav"]
+    toggle_index, toggle = controls["nav-toggle"]
+    menu_index, menu = controls["nav-menu"]
+    refresh_index, refresh = controls["refresh"]
+    assert nav_index in toggle["ancestors"]
+    assert toggle["ancestors"] == menu["ancestors"] == refresh["ancestors"]
+    siblings = [
+        index for index, node in enumerate(elements)
+        if node["ancestors"] == toggle["ancestors"]
+    ]
+    assert siblings[siblings.index(toggle_index) + 1] == menu_index
+    assert siblings.index(menu_index) < siblings.index(refresh_index)
+    assert toggle["tag"] == "button"
+    assert toggle["attrs"].get("aria-controls") == "nav-menu"
+    assert toggle["attrs"].get("aria-expanded") == "false"
+    assert "hidden" in menu["attrs"]
+
+
+def navigation_listener_body(source, event_name, receiver):
+    """Read a listener block without depending on indentation or line breaks."""
+    opening = re.search(
+        rf'{receiver}\s*\.addEventListener\(\s*'
+        rf'(?P<quote>["\']){re.escape(event_name)}(?P=quote)\s*,\s*'
+        r'\(?\s*(?P<event>[A-Za-z_$][\w$]*)\s*\)?\s*=>\s*\{',
+        source,
+    )
+    assert opening, f"Missing page navigation {event_name} listener"
+    # Skip strings and comments so their braces do not change the block depth.
+    tokens = r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`|//[^\n]*|/\*[\s\S]*?\*/|[{}]'
+    depth = 1
+    for token in re.finditer(tokens, source[opening.end():]):
+        if token.group() == "{":
+            depth += 1
+        elif token.group() == "}":
+            depth -= 1
+            if depth == 0:
+                return opening["event"], source[opening.end():opening.end() + token.start()]
+    raise AssertionError(f"Unclosed page navigation {event_name} listener")
+
+
+def test_page_menu_escape_closes_and_restores_toggle_focus():
+    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    event, body = navigation_listener_body(source, "keydown", r'\bdocument')
+    assert re.search(rf'\b{re.escape(event)}\.key\s*(?:===?|!==?)\s*(["\'])Escape\1', body)
+    assert re.search(r'\$\(\s*(["\'])#nav-menu\1\s*\)\.hidden\b', body)
+    assert not re.search(rf'\b{re.escape(event)}\.target\b', body), "Escape must also close from outside the navigation"
+    restore = re.search(
+        r'\b(?:const|let)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*'
+        r'document\.activeElement\s*===?\s*\$\(\s*(["\'])#nav-toggle\2\s*\)\s*\|\|\s*'
+        r'\$\(\s*(["\'])#nav-menu\3\s*\)\.contains\(\s*document\.activeElement\s*\)',
+        body,
+    )
+    assert restore, "Restore focus only when it started on the toggle or inside the menu"
+    close = re.search(r'\bcloseNavMenu\s*\(\s*\)', body)
+    focus = re.search(
+        rf'\bif\s*\(\s*{re.escape(restore["name"])}\s*\)\s*(?:\{{\s*)?'
+        r'\$\(\s*(["\'])#nav-toggle\1\s*\)\.focus\s*\(\s*\)',
+        body,
+    )
+    assert close and focus and restore.end() < close.start() < focus.start()
+
+
+def test_page_menu_focusout_ignores_unknown_focus_destinations():
+    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    receiver = r'\$\(\s*(?P<selector_quote>["\'])#page-nav(?P=selector_quote)\s*\)'
+    event, body = navigation_listener_body(source, "focusout", receiver)
+    event = re.escape(event)
+    assert re.search(
+        rf'\bif\s*\(\s*{event}\.relatedTarget\s*&&\s*'
+        rf'!\s*{event}\.currentTarget\.contains\(\s*{event}\.relatedTarget\s*\)\s*\)\s*'
+        r'(?:\{\s*)?closeNavMenu\s*\(\s*\)',
+        body,
+    ), "Only a known focus destination outside page-nav should close the menu"
+
+
+def test_qixi_page_navigation_has_top_spacing_without_changing_its_bottom_gap():
+    from test_cursor_fx_assets import css_declarations, css_selectors
+
+    stylesheet = (STATIC / "themes.css").read_text(encoding="utf-8")
+    selector = r'html\[data-theme\s*=\s*(["\'])qixi\1\]\s+#page-nav\.tabs'
+    declarations = [
+        declaration for blocks, declaration in css_declarations(stylesheet)
+        if blocks and any(re.fullmatch(selector, item) for item in css_selectors(blocks[-1]))
+    ]
+    assert any(re.fullmatch(r'margin-top\s*:\s*var\(\s*--space-3\s*\)', declaration) for declaration in declarations)
+    assert not any(re.match(r'margin(?:-bottom)?\s*:', declaration) for declaration in declarations)

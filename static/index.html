@@ -11,12 +11,12 @@
   <link rel="stylesheet" href="/static/style.css?v=43">
   <link rel="stylesheet" href="/static/intro.css?v=18">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
-  <link rel="stylesheet" href="/static/themes.css?v=9">
+  <link rel="stylesheet" href="/static/themes.css?v=10">
   <link rel="stylesheet" href="/static/new-record.css?v=4">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
-  <script defer src="/static/app.js?v=41"></script>
+  <script defer src="/static/app.js?v=42"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
 <body>
@@ -296,7 +296,6 @@
         <button type="button" class="nav-back" data-view="home"><span aria-hidden="true">←</span> 学习大厅</button>
         <span id="nav-current" class="nav-current"></span>
         <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu">切换页面 <span aria-hidden="true">▾</span></button>
-        <button type="button" id="refresh">刷新</button>
         <div id="nav-menu" class="nav-menu" hidden>
           <button type="button" data-view="today">今日复习</button>
           <button type="button" data-view="all">全部记录</button>
@@ -308,6 +307,7 @@
           <button type="button" data-view="forum">讨论区</button>
           <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
         </div>
+        <button type="button" id="refresh">刷新</button>
       </nav>
 
       <section id="home-page" class="lobby" aria-labelledby="home-title" hidden>

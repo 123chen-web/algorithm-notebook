@@ -52,9 +52,20 @@ html[data-theme="qixi"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
 html[data-theme="qixi"] .intro .intro-copy { padding: 32px; }
 html[data-theme="qixi"] .intro .intro-example::before { background: var(--soft); }
 html[data-theme="qixi"] :is(.page-heading, .lobby-heading, .lobby-bottom, .tabs) { padding: 16px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+html[data-theme="qixi"] #page-nav.tabs { margin-top: var(--space-3); }
+html[data-theme="qixi"] #new-page .form-section-progress { background: transparent; }
 html[data-theme="qixi"] .lobby-bottom { flex-wrap: wrap; }
 html[data-theme="qixi"] :is(.intro-copy, .intro-steps, .intro-difference, .auth-switch) { background: var(--paper); }
 html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { background: var(--surface); }
+
+@media (max-width: 599px) {
+  html[data-theme="qixi"] #new-page .form-section-progress { border-radius: var(--radius-pill); background: var(--paper); }
+  @supports (color: color-mix(in srgb, white, transparent)) {
+    html[data-theme="qixi"] #new-page .form-section-progress {
+      background: linear-gradient(to right, color-mix(in srgb, var(--paper) 96%, var(--paper-2)), color-mix(in srgb, var(--paper) 98%, var(--paper-2)), color-mix(in srgb, var(--paper) 96%, var(--paper-2)));
+    }
+  }
+}
 
 /* Touch and unsupported devices use the opaque surfaces above. */
 @media (hover: hover) and (pointer: fine) {
