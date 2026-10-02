@@ -69,6 +69,9 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
 
 /* Touch and unsupported devices use the opaque surfaces above. */
 @media (hover: hover) and (pointer: fine) {
+  /* Raise open menus above sibling glass surfaces without changing closed-state painting. */
+  html[data-theme="qixi"] .header:has(.account-menu[open]) { position: relative; z-index: 30; }
+  html[data-theme="qixi"] #page-nav.tabs:has(#nav-menu:not([hidden])) { z-index: 20; }
   @supports (backdrop-filter: blur(12px)) {
     html[data-theme="qixi"] :is(
       .page-heading, .tabs,

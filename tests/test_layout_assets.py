@@ -279,3 +279,30 @@ def test_qixi_page_navigation_has_top_spacing_without_changing_its_bottom_gap():
     ]
     assert any(re.fullmatch(r'margin-top\s*:\s*var\(\s*--space-3\s*\)', declaration) for declaration in declarations)
     assert not any(re.match(r'margin(?:-bottom)?\s*:', declaration) for declaration in declarations)
+
+
+def test_qixi_menu_ancestors_have_explicit_ordered_stacking_levels():
+    from test_cursor_fx_assets import css_declarations, css_selectors
+
+    stylesheet = (STATIC / "themes.css").read_text(encoding="utf-8")
+    theme = r'html\[data-theme\s*=\s*(?:["\']qixi["\']|qixi)\]\s+'
+    selectors = {
+        "header": theme + r'\.header(?::has\(\s*\.account-menu\[\s*open\s*\]\s*\))?',
+        "navigation": theme + r'(?:#page-nav\.tabs|\.tabs#page-nav)'
+        r'(?::has\(\s*#nav-menu:not\(\s*\[\s*hidden\s*\]\s*\)\s*\))?',
+    }
+    levels = {}
+    for blocks, declaration in css_declarations(stylesheet):
+        if not blocks:
+            continue
+        z_index = re.fullmatch(r'z-index\s*:\s*([+-]?\d+)\s*', declaration)
+        if not z_index:
+            continue
+        for name, selector in selectors.items():
+            if any(re.fullmatch(selector, item) for item in css_selectors(blocks[-1])):
+                levels[name] = int(z_index[1])
+
+    assert set(levels) == set(selectors), "Qixi menu ancestors need explicit numeric z-index values"
+    assert levels["header"] > levels["navigation"] > 0, (
+        "The account menu header must stack above page navigation, and both above content"
+    )
