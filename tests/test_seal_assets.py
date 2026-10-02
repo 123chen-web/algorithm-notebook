@@ -100,9 +100,9 @@ def test_opening_initial_hidden_content_requires_motion_gate(sources, filename):
             continue
         assert blocks and not blocks[-1].startswith("@")
         for selector in css_selectors(blocks[-1]):
-            # The primary card's empty light overlay is decoration, not opening
+            # The vermilion review tile's empty light overlay is decoration, not opening
             # content. It may be transparent until the pointer enters the card.
-            if re.search(r"\.lobby-tile-review(?=[\s.:#\[]|$)", selector) and "::after" in selector:
+            if re.search(r"\.ov-tile-review(?=[\s.:#\[]|$)", selector) and "::after" in selector:
                 continue
             hidden_rules += 1
             assert re.search(r"\.(?:intro|home)-anim\b", selector), (

@@ -1,0 +1,112 @@
+/* 复习热力图：大图（磁贴里，深墨底变体）与侧栏 5 周日历。颜色全部走主题变量。 */
+
+.heatmap { min-width: 0; }
+.heatmap[aria-busy="true"] .heatmap-cell, .heatmap[aria-busy="true"] .cal-cell { animation: none; }
+
+/* ---------- 大图 ---------- */
+.heatmap-figure { display: grid; gap: 3px; min-width: 0; }
+.heatmap-months, .heatmap-grid { display: grid; grid-template-columns: repeat(var(--weeks, 26), minmax(0, 1fr)); gap: 3px; }
+.heatmap-grid { grid-template-rows: repeat(7, auto); grid-auto-flow: column; }
+.heatmap-months { min-height: 14px; }
+.heatmap-month { min-width: 0; overflow: visible; font-size: 10px; line-height: 14px; white-space: nowrap; }
+.heatmap-cell {
+  --hm-empty: var(--paper);
+  --hm-1: var(--soft);
+  --hm-2: var(--soft);
+  --hm-3: var(--accent);
+  --hm-4: var(--accent-hover);
+  display: block;
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 3px;
+  background: var(--hm-empty);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+@supports (background: color-mix(in srgb, white, black)) {
+  .heatmap-cell {
+    --hm-1: color-mix(in srgb, var(--accent) 22%, var(--surface));
+    --hm-2: color-mix(in srgb, var(--accent) 42%, var(--surface));
+    --hm-3: color-mix(in srgb, var(--accent) 68%, var(--surface));
+  }
+}
+.heatmap-cell[data-level="1"] { background: var(--hm-1); box-shadow: none; }
+.heatmap-cell[data-level="2"] { background: var(--hm-2); box-shadow: none; }
+.heatmap-cell[data-level="3"] { background: var(--hm-3); box-shadow: none; }
+.heatmap-cell[data-level="4"] { background: var(--hm-4); box-shadow: none; }
+.heatmap-cell.is-future { visibility: hidden; }
+.heatmap-cell.is-today { outline: 2px solid var(--ink); outline-offset: 1px; }
+.heatmap-legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: var(--space-2); color: inherit; font-size: 10px; }
+.heatmap-legend .heatmap-cell { width: 11px; flex: 0 0 11px; }
+.heatmap-legend span:first-child { margin-right: var(--space-1); }
+.heatmap-legend span:last-child { margin-left: var(--space-1); }
+
+/* 深墨底磁贴：浅色系 5 档，最热的一档用藤黄点亮。 */
+.ov-tile-heat .heatmap-cell {
+  --hm-empty: var(--ink);
+  --hm-1: var(--paper-2);
+  --hm-2: var(--paper-2);
+  --hm-3: var(--paper-2);
+  --hm-4: var(--gamboge);
+  box-shadow: inset 0 0 0 1px var(--ink-2);
+}
+@supports (background: color-mix(in srgb, white, black)) {
+  .ov-tile-heat .heatmap-cell {
+    --hm-empty: color-mix(in srgb, var(--paper) 12%, var(--ink));
+    --hm-1: color-mix(in srgb, var(--paper) 34%, var(--ink));
+    --hm-2: color-mix(in srgb, var(--paper) 56%, var(--ink));
+    --hm-3: color-mix(in srgb, var(--paper) 82%, var(--ink));
+  }
+}
+.ov-tile-heat .heatmap-cell[data-level="0"] { box-shadow: none; }
+.ov-tile-heat .heatmap-cell.is-today { outline-color: var(--paper); }
+
+.heatmap-error { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.heatmap-retry { min-height: 36px; padding: 0 var(--space-3); border-color: currentColor; background: transparent; color: inherit; font-size: var(--text-sm); }
+.heatmap-retry:hover:not(:disabled) { background: transparent; border-color: currentColor; }
+.ov-tile-heat .heatmap-retry:focus-visible { outline-color: var(--paper); }
+
+/* ---------- 侧栏日历 ---------- */
+.heatmap--calendar { margin-top: var(--space-2); }
+.cal-head, .cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cal-head { margin-bottom: 3px; color: var(--ink-2); font-size: 10px; line-height: 14px; text-align: center; }
+.cal-grid { display: grid; gap: 3px; }
+.cal-cell {
+  --cal-bg: var(--paper);
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--cal-bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 1;
+}
+.cal-cell[data-level="1"] { --cal-bg: var(--soft); color: var(--ink); box-shadow: none; }
+.cal-cell[data-level="2"] { --cal-bg: var(--soft); color: var(--ink); box-shadow: none; }
+.cal-cell[data-level="3"] { --cal-bg: var(--accent); color: var(--on-accent); box-shadow: none; }
+.cal-cell[data-level="4"] { --cal-bg: var(--accent-hover); color: var(--on-accent); box-shadow: none; }
+@supports (background: color-mix(in srgb, white, black)) {
+  .cal-cell[data-level="1"] { --cal-bg: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+  .cal-cell[data-level="2"] { --cal-bg: color-mix(in srgb, var(--accent) 36%, var(--surface)); }
+  .cal-cell[data-level="3"] { --cal-bg: color-mix(in srgb, var(--accent) 56%, var(--surface)); color: var(--ink); }
+}
+.cal-cell.is-future { opacity: .45; box-shadow: none; background: transparent; }
+.cal-cell.is-skeleton { background: var(--paper); box-shadow: none; }
+.cal-cell.is-today { outline: 2px solid var(--ink); outline-offset: -2px; font-weight: 700; }
+button.cal-cell { cursor: pointer; }
+button.cal-cell:hover:not(:disabled) { transform: none; border-color: transparent; background: var(--cal-bg); filter: brightness(.94); }
+button.cal-cell:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; position: relative; z-index: 1; }
+button.cal-cell:disabled { opacity: 1; }
+
+/* 触屏：日历格更高，并把点击范围向四周多扩一点。 */
+@media (pointer: coarse) {
+  .cal-cell { min-height: 34px; }
+  button.cal-cell { position: relative; }
+  button.cal-cell::after { content: ""; position: absolute; inset: -2px; }
+}

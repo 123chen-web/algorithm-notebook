@@ -52,6 +52,53 @@ def _timestamp(value):
     return timestamp
 
 
+class GroupPointsAccumulator:
+    """Score streamed activity once, with separate joining windows/day caps.
+
+    A user has one timezone but can have a different joining instant in each
+    group. Optional review_days retains full-history local dates for streaks.
+    """
+
+    def __init__(self, members_by_group, review_days=None):
+        self.totals = {}
+        self.timezones = {}
+        self.memberships = defaultdict(list)
+        self.days = defaultdict(lambda: [0, 0])
+        self.review_days = review_days
+        for group_id, members in members_by_group.items():
+            membership = {row["id"]: row for row in members}
+            self.totals[group_id] = dict.fromkeys(membership, 0)
+            for row in membership.values():
+                user_id = row["id"]
+                self.timezones[user_id] = row["timezone"]
+                self.memberships[user_id].append((group_id, _timestamp(row["joined_at"])))
+
+    def _add(self, row, time_key, index, points, cap):
+        user_id = row["user_id"]
+        memberships = self.memberships.get(user_id)
+        if not memberships:
+            return
+        occurred_at = _timestamp(row[time_key])
+        day = today_in_timezone(self.timezones[user_id], occurred_at)
+        if index == 0 and self.review_days is not None:
+            self.review_days.setdefault(user_id, set()).add(day)
+        for group_id, joined_at in memberships:
+            if occurred_at < joined_at:
+                continue
+            bucket = self.days[(group_id, user_id, day)]
+            previous = bucket[index]
+            bucket[index] = min(cap, previous + points)
+            self.totals[group_id][user_id] += bucket[index] - previous
+            if index == 0 and previous == 0:
+                self.totals[group_id][user_id] += CHECKIN_BONUS
+
+    def add_review(self, row):
+        self._add(row, "reviewed_at", 0, REVIEW_POINTS, REVIEW_DAILY_CAP)
+
+    def add_problem(self, row):
+        self._add(row, "created_at", 1, RECORD_POINTS, RECORD_DAILY_CAP)
+
+
 def points_by_user(members, review_rows, problem_rows):
     """Return every current member's score, with inclusive joining boundaries.
 
@@ -59,35 +106,12 @@ def points_by_user(members, review_rows, problem_rows):
     problems expose user_id/created_at. Both dictionaries and sqlite rows work.
     Rows from former members and activity before joining are ignored.
     """
-    membership = {
-        row["id"]: (row["timezone"], _timestamp(row["joined_at"]))
-        for row in members
-    }
-    totals = dict.fromkeys(membership, 0)
-    # Each bucket stores review points and record points, already capped.
-    days = defaultdict(lambda: [0, 0])
-    for rows, time_key, index, points, cap in (
-        (review_rows, "reviewed_at", 0, REVIEW_POINTS, REVIEW_DAILY_CAP),
-        (problem_rows, "created_at", 1, RECORD_POINTS, RECORD_DAILY_CAP),
-    ):
-        for row in rows:
-            user_id = row["user_id"]
-            member = membership.get(user_id)
-            if member is None:
-                continue
-            member_timezone, joined_at = member
-            occurred_at = _timestamp(row[time_key])
-            if occurred_at < joined_at:
-                continue
-            day = today_in_timezone(member_timezone, occurred_at)
-            bucket = days[(user_id, day)]
-            bucket[index] = min(cap, bucket[index] + points)
-
-    for (user_id, _), (review_points, record_points) in days.items():
-        totals[user_id] += review_points + record_points
-        if review_points:
-            totals[user_id] += CHECKIN_BONUS
-    return totals
+    accumulator = GroupPointsAccumulator({None: members})
+    for row in review_rows:
+        accumulator.add_review(row)
+    for row in problem_rows:
+        accumulator.add_problem(row)
+    return accumulator.totals[None]
 
 
 def level_summary(points):

@@ -11,13 +11,13 @@ import time
 import unicodedata
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,13 +33,21 @@ from pydantic import (
 )
 
 import ai
+import clusters
 import mailer
 import payments
 from achievements import evaluate_achievements
+from activity import activity_summary, day_counts
 from db import ROOT, connect, init_db
-from group_levels import LEVELS, RULES, level_summary, points_by_user
+from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
+from mastery import mastery_report
+from search import search_all
+from tags import (
+    SUGGESTED_TAGS, TAG_MAX_LENGTH, TAGS_PER_MISTAKE, TagError, normalize_tags,
+    replace_tags, tags_for_mistakes, user_tag_counts,
+)
 from share_card import render_achievement_card
 from weekly_recap import weekly_recap
 
@@ -239,6 +247,12 @@ class ProblemEdit(ProblemFields):
 class MistakeEdit(InputModel):
     description: MistakeText
     version: int = Field(strict=True, ge=0)
+
+
+class MistakeTags(InputModel):
+    # 单个标签的字数和每条的个数上限在 tags.normalize_tags 里统一校验并给出中文提示；
+    # 这里只挡掉明显离谱的请求体大小。
+    tags: list[str] = Field(max_length=50)
 
 
 class ReviewInput(InputModel):
@@ -918,9 +932,22 @@ def export_data(user=Depends(current_user)):
             """,
             (user["id"],),
         ):
-            mistake = {**dict(row), "reviews": [], "variants": []}
+            mistake = {**dict(row), "reviews": [], "variants": [], "tags": []}
             problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
             mistakes[mistake["id"]] = mistake
+
+        # 错因标签：只导出标签文字，按用户排好的顺序。
+        for row in conn.execute(
+            """
+            SELECT t.mistake_id, t.tag
+            FROM mistake_tags t
+            JOIN mistakes m ON m.id = t.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY t.rowid
+            """,
+            (user["id"],),
+        ):
+            mistakes[row["mistake_id"]]["tags"].append(row["tag"])
 
         for row in conn.execute(
             """
@@ -1326,6 +1353,17 @@ def create_weakness_analysis(user=Depends(current_user)):
         return weakness_analysis_state(conn, user["id"])
 
 
+@app.get("/api/insights/clusters")
+def get_mistake_clusters(user=Depends(current_user)):
+    with connect() as conn:
+        return clusters.cluster_state(conn, user["id"], today_for(user).isoformat())
+
+
+@app.post("/api/insights/clusters")
+def create_mistake_clusters(user=Depends(current_user)):
+    return clusters.create_clusters(user, today_for(user).isoformat(), ai_quota)
+
+
 GROWTH_RECENT_WINDOW_DAYS = 30
 GROWTH_QUIET_THRESHOLD_DAYS = 60
 
@@ -1446,6 +1484,152 @@ def get_weekly_recap(user=Depends(current_user)):
     return recap
 
 
+@app.get("/api/stats/activity")
+def get_activity_stats(
+    weeks: Annotated[int, Query(ge=1, le=52)] = 26, user=Depends(current_user)
+):
+    # 热力图用：按用户本地日汇总复习/新增记录；只返回有活动的日子，前端补零。
+    # 纯统计，不调用 AI、不涉及配额。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        reviews, records, _ = day_counts(conn, user["id"], user["timezone"])
+    return activity_summary(reviews, records, today_for(user), weeks)
+
+
+@app.get("/api/stats/mastery")
+def get_mastery(
+    weeks: Annotated[int, Query(ge=4, le=26)] = 12, user=Depends(current_user)
+):
+    # 掌握度趋势：按分区估算保持率的变化曲线；纯统计，不调用 AI、不占额度。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return mastery_report(conn, user["id"], user["timezone"], today_for(user), weeks)
+
+
+def window_total(counter, first, last):
+    return sum(count for day, count in counter.items() if first <= day <= last)
+
+
+@app.get("/api/overview")
+def get_overview(user=Depends(current_user)):
+    # 侧栏角标和"总览"页一次取齐，避免首页并发十几个请求。纯统计，不调用 AI。
+    today = today_for(user)
+    day = today.isoformat()
+    with connect() as conn:
+        conn.execute("BEGIN")
+        counts = conn.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(m.due_date <= :day), 0) AS due,
+                   COALESCE(SUM(m.due_date < :day), 0) AS overdue
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = :user_id
+            """,
+            {"day": day, "user_id": user["id"]},
+        ).fetchone()
+        zone_rows = conn.execute(
+            """
+            SELECT p.zone, COUNT(*) AS total,
+                   COALESCE(SUM(m.due_date <= ?), 0) AS due
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ?
+            GROUP BY p.zone ORDER BY total DESC, p.zone
+            """,
+            (day, user["id"]),
+        ).fetchall()
+        preview_rows = conn.execute(
+            MISTAKE_SELECT
+            + " WHERE p.user_id = ? AND m.due_date <= ?"
+            " ORDER BY m.due_date ASC, m.id ASC LIMIT 5",
+            (user["id"], day),
+        ).fetchall()
+        review_days, _, mistake_days = day_counts(conn, user["id"], user["timezone"])
+        weakness = weakness_analysis_state(conn, user["id"])
+        hot = conn.execute(
+            """
+            SELECT p.id, p.title, p.created_at, u.username,
+                   (SELECT COUNT(*) FROM post_comments c
+                    WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count
+            FROM posts p JOIN users u ON u.id = p.user_id
+            WHERE p.deleted_at IS NULL AND p.created_at >= ?
+            ORDER BY comment_count DESC, p.created_at DESC, p.id DESC LIMIT 1
+            """,
+            ((datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds"),),
+        ).fetchone()
+    groups = list_groups(user)["groups"]
+    groups.sort(key=lambda group: (-group["level"]["points"], group["id"]))
+    top_pattern = None
+    if weakness["status"] == "ready" and weakness["insight"]["content"].get("patterns"):
+        pattern = weakness["insight"]["content"]["patterns"][0]
+        top_pattern = {"title": pattern["title"], "confidence": pattern["confidence"]}
+    return {
+        "today": day,
+        "due_count": counts["due"],
+        "overdue_count": counts["overdue"],
+        "total_mistakes": counts["total"],
+        "streak_days": current_streak(set(review_days), today),
+        "last7": [(today - timedelta(days=6 - offset)) in review_days for offset in range(7)],
+        "zones": [dict(row) for row in zone_rows],
+        # 与"本周战报"同一口径：含今天的最近 7 天 vs 紧邻的前 7 天；新增的是易错点条数。
+        "week": {
+            "reviews": window_total(review_days, today - timedelta(days=6), today),
+            "prev_reviews": window_total(review_days, today - timedelta(days=13), today - timedelta(days=7)),
+            "records": window_total(mistake_days, today - timedelta(days=6), today),
+        },
+        "due_preview": [
+            {
+                "id": row["id"],
+                "problem_id": row["problem_id"],
+                "title": row["title"],
+                "zone": row["zone"],
+                "description": row["description"],
+                "due_date": row["due_date"],
+                "overdue_days": max(0, (today - datetime.fromisoformat(row["due_date"]).date()).days),
+                "repetitions": row["repetitions"],
+            }
+            for row in preview_rows
+        ],
+        "group_count": len(groups),
+        "groups_preview": [
+            {
+                "id": group["id"],
+                "name": group["name"],
+                "member_count": group["member_count"],
+                "member_limit": group["member_limit"],
+                "level": group["level"],
+            }
+            for group in groups[:3]
+        ],
+        "weakness": {
+            "status": weakness["status"],
+            "mistake_count": weakness["mistake_count"],
+            "minimum_mistakes": weakness["minimum_mistakes"],
+            "top": top_pattern,
+        },
+        "hot_post": (
+            {
+                "id": hot["id"],
+                "title": hot["title"],
+                "comment_count": hot["comment_count"],
+                "username": hot["username"],
+                "created_at": hot["created_at"],
+            }
+            if hot is not None and hot["comment_count"] > 0 else None
+        ),
+    }
+
+
+@app.get("/api/search")
+def global_search(
+    q: PostSearchQuery = "", limit: Annotated[int, Query(ge=1, le=20)] = 8,
+    user=Depends(current_user),
+):
+    # Ctrl K 命令面板用：我自己的题目/错因 + 讨论区帖子；纯 LIKE 查询，不调用 AI、不占额度。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return search_all(conn, user["id"], q, limit)
+
+
 @app.post("/api/problems/photo")
 async def recognize_problem_photo(user=Depends(current_user), file: UploadFile = File(...)):
     # 只识别、不落库：返回结构化字段供前端预填新增记录表单，用户确认后
@@ -1514,7 +1698,11 @@ def delete_problem(problem_id: int, user=Depends(current_user)):
 
 
 @app.get("/api/mistakes")
-def list_mistakes(due_only: bool = True, zone: str | None = None, user=Depends(current_user)):
+def list_mistakes(
+    due_only: bool = True, zone: str | None = None, created_on: date | None = None,
+    tag: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None,
+    user=Depends(current_user),
+):
     if zone is not None and zone not in PROBLEM_ZONES:
         raise HTTPException(400, "分区不存在")
     day = today_for(user).isoformat()
@@ -1526,11 +1714,56 @@ def list_mistakes(due_only: bool = True, zone: str | None = None, user=Depends(c
     if zone is not None:
         sql += " AND p.zone = ?"
         params.append(zone)
-    sql += " ORDER BY m.due_date ASC, m.id ASC"
+    if tag:
+        sql += " AND EXISTS (SELECT 1 FROM mistake_tags t WHERE t.mistake_id = m.id AND t.tag = ?)"
+        params.append(tag)
 
     with connect() as conn:
+        if created_on is not None:
+            # 侧栏日历按用户本地日筛选"这一天新增的记录"：时区换算只能在 Python 里做。
+            problem_ids = [
+                row["id"]
+                for row in conn.execute(
+                    "SELECT id, created_at FROM problems WHERE user_id = ?", (user["id"],)
+                )
+                if today_in_timezone(user["timezone"], datetime.fromisoformat(row["created_at"]))
+                == created_on
+            ]
+            sql += " AND p.id IN (SELECT value FROM json_each(?))"
+            params.append(json.dumps(problem_ids))
+        sql += " ORDER BY m.due_date ASC, m.id ASC"
         rows = conn.execute(sql, params).fetchall()
-    return {"today": day, "items": [dict(row) for row in rows]}
+        tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
+    return {
+        "today": day,
+        "items": [{**dict(row), "tags": tags_by_id[row["id"]]} for row in rows],
+    }
+
+
+@app.get("/api/tags")
+def list_tags(user=Depends(current_user)):
+    with connect() as conn:
+        counts = user_tag_counts(conn, user["id"])
+    return {
+        "tags": counts,
+        "suggestions": list(SUGGESTED_TAGS),
+        "limits": {"per_mistake": TAGS_PER_MISTAKE, "length": TAG_MAX_LENGTH},
+    }
+
+
+@app.put("/api/mistakes/{mistake_id}/tags")
+def set_mistake_tags(mistake_id: int, data: MistakeTags, user=Depends(current_user)):
+    try:
+        tags = normalize_tags(data.tags)
+    except TagError as error:
+        raise HTTPException(422, str(error)) from None
+    with connect(write=True) as conn:
+        owned_mistake(conn, mistake_id, user["id"])
+        try:
+            replace_tags(conn, user["id"], mistake_id, tags)
+        except TagError as error:
+            raise HTTPException(422, str(error)) from None
+    return {"tags": tags}
 
 
 @app.get("/api/mistakes/{mistake_id}")
@@ -1551,6 +1784,7 @@ def get_mistake(mistake_id: int, user=Depends(current_user)):
                 (mistake_id,),
             )
         ]
+        item["tags"] = tags_for_mistakes(conn, [mistake_id])[mistake_id]
     item["today"] = today_for(user).isoformat()
     return item
 
@@ -1937,47 +2171,41 @@ def group_members_by_id(conn, group_ids):
     return members
 
 
-def group_points_by_id(conn, members_by_group):
-    """Batch two activity queries for all groups, rather than per member.
+def group_points_by_id(conn, members_by_group, *, review_days=None):
+    """Stream two activity queries over distinct members, regardless of groups.
 
-    A member can join several groups at different times. Keep group_id on each
-    row so the same activity is independently filtered/scored for each group.
-    Reviews of older problems count when the review itself is after joining.
+    Parse each activity once, then apply each membership's inclusive joining
+    instant and separate daily caps. SQL must not compare ISO strings: offsets
+    and precision can differ for equal instants. Reviews of older problems count.
     """
-    group_ids = tuple(members_by_group)
-    if not group_ids:
-        return {}
-    placeholders = ",".join("?" for _ in group_ids)
+    accumulator = GroupPointsAccumulator(members_by_group, review_days)
+    user_ids = tuple(accumulator.memberships)
+    if not user_ids:
+        return accumulator.totals
+    placeholders = ",".join("?" for _ in user_ids)
     review_rows = conn.execute(
         f"""
-        SELECT gm.group_id, p.user_id, r.reviewed_at
-        FROM study_group_members gm
-        JOIN problems p ON p.user_id = gm.user_id
+        SELECT p.user_id, r.reviewed_at
+        FROM problems p
         JOIN mistakes m ON m.problem_id = p.id
         JOIN reviews r ON r.mistake_id = m.id
-        WHERE gm.group_id IN ({placeholders}) AND r.reviewed_at >= gm.joined_at
+        WHERE p.user_id IN ({placeholders})
         """,
-        group_ids,
-    ).fetchall()
+        user_ids,
+    )
+    for row in review_rows:
+        accumulator.add_review(row)
     problem_rows = conn.execute(
         f"""
-        SELECT gm.group_id, p.user_id, p.created_at
-        FROM study_group_members gm
-        JOIN problems p ON p.user_id = gm.user_id
-        WHERE gm.group_id IN ({placeholders}) AND p.created_at >= gm.joined_at
+        SELECT p.user_id, p.created_at
+        FROM problems p
+        WHERE p.user_id IN ({placeholders})
         """,
-        group_ids,
-    ).fetchall()
-    reviews = defaultdict(list)
-    problems = defaultdict(list)
-    for row in review_rows:
-        reviews[row["group_id"]].append(row)
+        user_ids,
+    )
     for row in problem_rows:
-        problems[row["group_id"]].append(row)
-    return {
-        group_id: points_by_user(members, reviews[group_id], problems[group_id])
-        for group_id, members in members_by_group.items()
-    }
+        accumulator.add_problem(row)
+    return accumulator.totals
 
 
 def group_member_avatar(member):
@@ -1993,20 +2221,16 @@ def group_detail(conn, group_id, user_id):
     group = member_group(conn, group_id, user_id)
     members_by_group = group_members_by_id(conn, (group_id,))
     members = members_by_group[group_id]
-    review_rows = conn.execute(
-        """
-        SELECT p.user_id, r.reviewed_at FROM reviews r
-        JOIN mistakes m ON m.id = r.mistake_id
-        JOIN problems p ON p.id = m.problem_id
-        JOIN study_group_members gm ON gm.user_id = p.user_id
-        WHERE gm.group_id = ?
-        """,
-        (group_id,),
-    ).fetchall()
     # Streaks retain their full-history meaning; growth counts only activity
-    # since joining this group and includes trial accounts like group streaks.
-    streaks = review_streaks_by_user(members, review_rows)
-    member_points = group_points_by_id(conn, members_by_group)[group_id]
+    # since joining. Reuse the streamed reviews for both, including trial users.
+    review_days = {}
+    member_points = group_points_by_id(
+        conn, members_by_group, review_days=review_days,
+    )[group_id]
+    streaks = {
+        row["id"]: current_streak(review_days.get(row["id"], set()), today_for(row))
+        for row in members
+    }
     points = sum(member_points.values())
     ranked_members = sorted(
         members, key=lambda row: (-streaks[row["id"]], row["username"])
@@ -2238,6 +2462,38 @@ def owned_comment(conn, comment_id, user_id):
     return comment
 
 
+ZERO_WIDTH_JOINER = "\u200d"
+
+
+def _joins_previous_character(character):
+    """肤色、变体选择符、零宽连接符、标签字符和各类组合符号，都和前一个字符是一个整体。"""
+    code = ord(character)
+    return (
+        character in (ZERO_WIDTH_JOINER, "\ufe0e", "\ufe0f")
+        or 0x1F3FB <= code <= 0x1F3FF
+        or 0xE0020 <= code <= 0xE007F
+        or unicodedata.category(character) in ("Mn", "Me", "Mc")
+    )
+
+
+def truncate_text(text, limit):
+    """按字符数截断，但不把一个表情（肤色、👩‍💻 这样的连接序列、国旗、键帽）劈成两半。
+
+    返回 (截断后的文本, 是否被截断)。前端 app.js 里有一份同样逻辑的 truncateExcerpt。
+    """
+    if len(text) <= limit:
+        return text, False
+    cut = limit
+    while cut > 0 and (_joins_previous_character(text[cut]) or text[cut - 1] == ZERO_WIDTH_JOINER):
+        cut -= 1
+    regional = 0
+    while regional < cut and 0x1F1E6 <= ord(text[cut - 1 - regional]) <= 0x1F1FF:
+        regional += 1
+    if regional % 2:
+        cut -= 1  # 国旗由两个区域指示符组成，不能只留一个
+    return text[:cut], True
+
+
 def comment_reply_to(target, floor):
     if target is None:
         return None
@@ -2247,10 +2503,10 @@ def comment_reply_to(target, floor):
         "deleted": target["deleted_at"] is not None,
     }
     if not reply_to["deleted"]:
-        excerpt = " ".join(target["body"].split())
+        shortened, was_cut = truncate_text(" ".join(target["body"].split()), 60)
         reply_to.update(
             username=target["username"],
-            excerpt=excerpt[:60] + ("…" if len(excerpt) > 60 else ""),
+            excerpt=shortened + ("…" if was_cut else ""),
         )
     return reply_to
 

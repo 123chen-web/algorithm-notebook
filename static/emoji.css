@@ -1,0 +1,64 @@
+/* 表情选择面板（讨论区的评论、回复、发帖、编辑共用）。颜色全部走主题变量。 */
+
+.emoji-trigger, .emoji-item, .emoji-glyph {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+}
+.emoji-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+.emoji-trigger:hover:not(:disabled) { border-color: var(--ink-2); background: var(--paper-2); }
+.emoji-trigger[aria-expanded="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent-hover); }
+.emoji-trigger .emoji-label { font-family: inherit; }
+.emoji-trigger .emoji-glyph { font-size: 17px; line-height: 1; }
+.emoji-bar { display: flex; margin: calc(-1 * var(--space-3)) 0 var(--space-4); }
+
+.emoji-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 45;
+  width: min(344px, calc(100vw - 16px));
+  max-height: min(360px, 64dvh);
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(var(--shadow-rgb), .18);
+}
+.emoji-popover[hidden] { display: none; }
+.emoji-group + .emoji-group { margin-top: var(--space-3); }
+.emoji-group-title { margin: 0 0 var(--space-1); color: var(--ink-2); font-family: inherit; font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
+.emoji-item {
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-muted);
+  background: transparent;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+.emoji-item:hover:not(:disabled) { background: var(--soft); transform: none; }
+.emoji-item:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.emoji-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (pointer: coarse) {
+  .emoji-item { min-height: 44px; }
+  .emoji-trigger { min-height: 44px; }
+}
+@media (max-width: 420px) {
+  .emoji-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

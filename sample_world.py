@@ -93,6 +93,12 @@ MAIN_PROBLEMS = (
     ("泰勒展开的余项", "高等数学", "", ["把拉格朗日余项和佩亚诺余项的适用条件混用"], 3, [(1, 3)]),
     ("特征值的几何意义", "线性代数", "", ["把特征向量当成了所有被变换后方向不变的向量，漏掉零向量的约定"], 78, [(70, 3), (52, 3)]),
 )
+# 很久没复习的记录：让"掌握度趋势"里有一个快被遗忘的分区（概率统计），总览和趋势页都能看到提醒。
+# 最后一项是每次复习排定的间隔天数；之后再没复习过，所以一直逾期。
+FADING_PROBLEMS = (
+    ("条件概率与贝叶斯公式", "概率统计", "", ["把 P(A|B) 与 P(B|A) 混为一谈，先验和后验写反"], 41, [(38, 4)], 3),
+    ("二项分布的期望与方差", "概率统计", "", ["期望写成 np(1-p)、方差写成 np，两个公式记反了"], 33, [(30, 3), (24, 3)], 3),
+)
 NEWCOMER_PROBLEMS = (
     ("冒泡排序的终止条件", "算法", "Python", ["没有加“本轮无交换就提前结束”的优化", "内层循环边界多比较了一次"], 6, [(3, 3)]),
     ("CSS 盒模型", "前端", "JavaScript", ["不清楚 box-sizing 对宽度的影响", "忘了 margin 折叠只发生在垂直方向"], 3, [(1, 4)]),
@@ -164,6 +170,11 @@ class Builder:
         self.due_step = 0
         main.init_db()
 
+    @staticmethod
+    def local_date(moment):
+        """样本账号都在 Asia/Shanghai（固定 UTC+8）：排期日期要按本地日算，凌晨生成时才不会差一天。"""
+        return moment.astimezone(timezone(timedelta(hours=8))).date()
+
     def ts(self, days=0, hours=0, minutes=0):
         return (self.now - timedelta(days=days, hours=hours, minutes=minutes)).isoformat()
 
@@ -178,7 +189,7 @@ class Builder:
         self.clients[name] = client
         self.user_ids[name] = client.get("/api/me").json()["id"]
 
-    def problem(self, name, title, zone, language, mistakes, days_ago, reviews, schedule_due=False):
+    def problem(self, name, title, zone, language, mistakes, days_ago, reviews, schedule_due=False, interval=None):
         response = self.clients[name].post("/api/problems", json={
             "title": title, "zone": zone, "language": language,
             "code": SNIPPETS[language], "thinking": THINKING, "mistakes": mistakes,
@@ -189,21 +200,34 @@ class Builder:
         with self.connect(write=True) as conn:
             conn.execute("UPDATE problems SET created_at = ? WHERE id = ?", (self.ts(days_ago, 2), problem_id))
             for index, mistake_id in enumerate(created["mistake_ids"]):
-                last = None
-                for offset, quality in reviews:
-                    last = self.ts(max(offset - index, 0), 1)
-                    conn.execute(
-                        "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, ?, ?, ?)",
-                        (mistake_id, quality, last, (self.now + timedelta(days=2)).date().isoformat()),
-                    )
                 if schedule_due:
                     offset_days = DUE_CYCLE[self.due_step % len(DUE_CYCLE)]
                     self.due_step += 1
                 else:
                     offset_days = (index % 3) - 1
+                due_day = self.local_date(self.now + timedelta(days=offset_days))
+                stamps = [self.now - timedelta(days=max(offset - index, 0), hours=1) for offset, _ in reviews]
+                if interval is not None and stamps:
+                    # 固定间隔：每次复习都排定 interval 天后再复习，之后再没复习过 → 一直逾期。
+                    due_day = self.local_date(stamps[-1]) + timedelta(days=interval)
+                last = None
+                for position, (offset, quality) in enumerate(reviews):
+                    last = stamps[position].isoformat()
+                    if interval is not None:
+                        next_day = self.local_date(stamps[position]) + timedelta(days=interval)
+                    elif position + 1 < len(stamps):
+                        # 按时复习：下一次复习日就是这次排定的日期，掌握度趋势才有合理的历史。
+                        next_day = self.local_date(stamps[position + 1])
+                    else:
+                        next_day = due_day
+                    next_day = max(next_day, self.local_date(stamps[position]) + timedelta(days=1))
+                    conn.execute(
+                        "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, ?, ?, ?)",
+                        (mistake_id, quality, last, next_day.isoformat()),
+                    )
                 conn.execute(
                     "UPDATE mistakes SET repetitions = ?, interval_days = ?, last_reviewed_at = ?, due_date = ? WHERE id = ?",
-                    (len(reviews), 2, last, (self.now + timedelta(days=offset_days)).date().isoformat(), mistake_id),
+                    (len(reviews), interval or 2, last, due_day.isoformat(), mistake_id),
                 )
         self.first_mistake.setdefault(name, created["mistake_ids"][0])
         return problem_id, created["mistake_ids"]
@@ -212,9 +236,10 @@ class Builder:
         """One review per day for the last `days` days: a visible check-in streak."""
         with self.connect(write=True) as conn:
             for day in range(days):
+                reviewed = self.now - timedelta(days=day, minutes=30)
                 conn.execute(
                     "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, ?, ?, ?)",
-                    (self.first_mistake[name], quality, self.ts(day, 0, 30), (self.now + timedelta(days=3)).date().isoformat()),
+                    (self.first_mistake[name], quality, reviewed.isoformat(), (self.local_date(reviewed) + timedelta(days=1)).isoformat()),
                 )
 
     def pump(self, name, days, reviews_per_day, problems_per_day):
@@ -223,9 +248,10 @@ class Builder:
         with self.connect(write=True) as conn:
             for day in range(days):
                 for k in range(reviews_per_day):
+                    reviewed = self.now - timedelta(days=day, hours=2 + (k % 8) * 0.1)
                     conn.execute(
                         "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, 4, ?, ?)",
-                        (self.first_mistake[name], self.ts(day, 2 + (k % 8) * 0.1), (self.now + timedelta(days=3)).date().isoformat()),
+                        (self.first_mistake[name], reviewed.isoformat(), (self.local_date(reviewed) + timedelta(days=1)).isoformat()),
                     )
                 for k in range(problems_per_day):
                     conn.execute(
@@ -273,8 +299,22 @@ def build(password):
 
     # ---- the main account: plenty of mistakes with varied review histories -----------------------
     main_problem_ids, main_mistakes = {}, {}
+    # 错因标签：几种常见的，让侧栏的标签筛选和详情页的编辑器一开始就有东西可看。
+    algorithm_tags = (["边界"], ["边界", "粗心"], ["复杂度"], ["思路错误"], ["概念混淆"], ["没读清题"], [])
+    math_tags = (["公式记错"], ["概念混淆"], ["粗心"], [])
+    tag_position = 0
     for title, zone, language, mistakes, days_ago, reviews in MAIN_PROBLEMS:
         problem_id, mistake_ids = world.problem(MAIN, title, zone, language, mistakes, days_ago, reviews, schedule_due=True)
+        main_problem_ids[title], main_mistakes[title] = problem_id, mistake_ids
+        pool = math_tags if zone in ("高等数学", "线性代数", "概率统计") else algorithm_tags
+        for mistake_id in mistake_ids:
+            tags = pool[tag_position % len(pool)]
+            tag_position += 1
+            if tags:
+                response = world.clients[MAIN].put(f"/api/mistakes/{mistake_id}/tags", json={"tags": tags})
+                assert response.status_code == 200, response.text
+    for title, zone, language, mistakes, days_ago, reviews, interval in FADING_PROBLEMS:
+        problem_id, mistake_ids = world.problem(MAIN, title, zone, language, mistakes, days_ago, reviews, interval=interval)
         main_problem_ids[title], main_mistakes[title] = problem_id, mistake_ids
     world.streak(MAIN, 12)
 
@@ -338,6 +378,59 @@ def build(password):
             (world.user_ids[MAIN], json.dumps(report, ensure_ascii=False), world.ts(1)),
         )
 
+        # The saved topic cards also work when the sample site's AI key is blank.
+        cluster_rows = conn.execute(
+            "SELECT m.id AS mistake_id, p.id AS problem_id, p.title, p.zone, "
+            "m.description, p.thinking, m.due_date FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+            "WHERE p.user_id = ? ORDER BY p.created_at DESC, m.id DESC LIMIT 60",
+            (world.user_ids[MAIN],),
+        ).fetchall()
+        cluster_members = {
+            row["mistake_id"]: {
+                "mistake_id": row["mistake_id"], "title": row["title"][:200], "zone": row["zone"],
+                "problem_id": row["problem_id"], "description": (row["description"] or row["thinking"])[:300],
+                "due_date": row["due_date"],
+            }
+            for row in cluster_rows
+        }
+        cluster_order = {row["mistake_id"]: index for index, row in enumerate(cluster_rows)}
+
+        def members(*choices):
+            ids = [main_mistakes[title][index] for title, index in choices]
+            return [cluster_members[mistake_id] for mistake_id in sorted(ids, key=cluster_order.__getitem__)]
+
+        cluster_report = {
+            "summary": "【样本报告】这些错因可以先按三个共同根因一起复习：区间的边界没有先定下来、相近概念的含义混用，以及状态改变后漏掉同步更新。专题横跨不同题目和分区，先练到期的条目，再用一个小例子解释自己这次为什么不会再犯。",
+            "clusters": [
+                {
+                    "title": "区间边界没想清",
+                    "explanation": "二分的相等情况、窗口的长度和连续重复元素的处理，都依赖先说清区间里到底包含哪些元素。只凭熟悉的代码模板调整循环，容易漏掉最后一个元素或少算一步。",
+                    "tip": "在纸上写下区间是否包含左右端点，用长度为 1、2 和全是重复元素的数组各走一遍，逐步核对循环结束时还剩哪些候选。",
+                    "members": members(("二分查找：搜索插入位置", 0), ("二分查找：搜索插入位置", 1),
+                                       ("滑动窗口：最长无重复子串", 1), ("双指针：三数之和去重", 0)),
+                },
+                {
+                    "title": "相近概念的含义混淆",
+                    "explanation": "状态的定义、读到的数据现象、余项条件和条件概率方向，都是外形相似但含义不同的概念。把名称记住以后，仍需要用具体情景辨认它指的是什么。",
+                    "tip": "给每对概念写一个最小例子，再写一句只有其中一个概念成立的条件；盖住名称，尝试从例子反推出正确的定义。",
+                    "members": members(("动态规划：最长递增子序列", 0), ("事务隔离级别", 0),
+                                       ("泰勒展开的余项", 0), ("条件概率与贝叶斯公式", 0)),
+                },
+                {
+                    "title": "状态变更后漏掉同步更新",
+                    "explanation": "移动窗口、反转链表、撤销回溯选择和积分换元，都改变了当前状态，却还沿用旧的辅助记录或边界。操作本身做对了，依赖它的另一部分没有一起更新。",
+                    "tip": "为每次操作列一张“改变了什么／还要同步改什么”的两列表，按先前状态、操作、操作后三行手动核对一次。",
+                    "members": members(("滑动窗口：最长无重复子串", 0), ("链表反转", 0),
+                                       ("回溯：N 皇后", 1), ("定积分换元", 0)),
+                },
+            ],
+            "sample": {"mistake_count": len(cluster_rows)},
+        }
+        conn.execute(
+            "INSERT OR REPLACE INTO mistake_clusters(user_id, content, created_at) VALUES (?, ?, ?)",
+            (world.user_ids[MAIN], json.dumps(cluster_report, ensure_ascii=False), world.ts(1)),
+        )
+
     # ---- people who only exist to fill study groups ---------------------------------------------
     for name in (*SPRINTERS, *CLUB):
         world.newcomer_with_first_problem(name)
@@ -361,14 +454,14 @@ def build(password):
         "body": "最近三道二分题都栽在边界上：有时候死循环，有时候漏掉最后一个元素。\n\n我现在的做法是先写出区间定义，再写循环，但写到 mid 更新那一步还是容易凭感觉改。\n\n想听听大家有没有固定的检查清单，或者能一眼看出区间到底是开还是闭的小技巧。",
     }).json()
     script = [
-        (MAIN, "我也踩过这个坑。我的办法是：动笔前先写下“[left, right) 里是还没判断的区间”，然后所有更新都围绕这句话。", 300, None),
-        ("苏晚", "补充一个检查清单：\n1. 区间是开还是闭，写在注释里；\n2. 循环条件是否和区间一致；\n3. mid 更新后区间是否一定缩小；\n4. 用长度 1、2 的数组各手动走一遍。\n基本能挡住 90% 的边界错误。", 260, None),
-        ("陈一鸣", "+1，长度为 2 的数组特别容易暴露死循环。", 200, None),
-        ("周知远", "谢谢！我今晚就按苏晚这份清单重做那三道题，再回来更新。", 150, None),
-        ("何以安", "有没有可能把二分封装成一个模板函数，只改判定条件？这样边界只需要对一次。", 90, None),
-        (MAIN, "可以的，不过模板里的区间定义也要先固定，不然换题时还是会混。@何以安", 50, 5),
-        ("周知远", "清单我收下了，今晚就按它复盘。", 30, 2),
-        ("苏晚", "长度为 2 的数组确实最容易暴露问题，附议。", 15, 3),
+        (MAIN, "我也踩过这个坑 😅。我的办法是：动笔前先写下“[left, right) 里是还没判断的区间”，然后所有更新都围绕这句话。", 300, None),
+        ("苏晚", "补充一个检查清单：\n1. 区间是开还是闭，写在注释里；\n2. 循环条件是否和区间一致；\n3. mid 更新后区间是否一定缩小；\n4. 用长度 1、2 的数组各手动走一遍。\n基本能挡住 90% 的边界错误 👍", 260, None),
+        ("陈一鸣", "+1，长度为 2 的数组特别容易暴露死循环 🔥", 200, None),
+        ("周知远", "谢谢！我今晚就按苏晚这份清单重做那三道题，再回来更新 🙏", 150, None),
+        ("何以安", "有没有可能把二分封装成一个模板函数，只改判定条件？这样边界只需要对一次 🤔", 90, None),
+        (MAIN, "可以的，不过模板里的区间定义也要先固定，不然换题时还是会混 💡 @何以安", 50, 5),
+        ("周知远", "清单我收下了，今晚就按它复盘 ✅", 30, 2),
+        ("苏晚", "长度为 2 的数组确实最容易暴露问题，附议 🙌", 15, 3),
     ]
     comment_ids = []
     for who, body, _, reply_floor in script:
@@ -377,8 +470,8 @@ def build(password):
         "title": "我整理了一份二分查找自查清单", "body": "动笔前写不变量、用长度 1 和 2 的数组各走一遍、确认每次循环区间都在缩小。欢迎补充。",
     }).json()
     own_comments = [
-        world.comment(own["id"], "苏晚", "第三条很关键，我之前就因为区间没缩小死循环过。"),
-        world.comment(own["id"], "周知远", "已收藏，今晚按这份清单复盘。"),
+        world.comment(own["id"], "苏晚", "第三条很关键，我之前就因为区间没缩小死循环过 😭"),
+        world.comment(own["id"], "周知远", "已收藏，今晚按这份清单复盘 📌"),
     ]
     quiet = world.clients["苏晚"].post("/api/posts", json={
         "title": "整理了一份数据库索引失效的清单", "body": "函数、隐式类型转换、联合索引最左前缀……整理在这里，欢迎补充。",

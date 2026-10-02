@@ -222,7 +222,7 @@ function startHomeOpening() {
 }
 
 function initReviewSpotlight() {
-  const card = $(".lobby-tile-review");
+  const card = $(".ov-tile-review");
   const pointer = window.matchMedia("(hover: hover) and (pointer: fine)");
   if (!card) return;
   let frame = 0;
@@ -329,6 +329,11 @@ function avatarReportForm(userId, onCancel) {
   return form;
 }
 
+// 复习、新增、删除之后告诉各个小部件（侧栏角标、热力图……）重新取数。
+function notifyDataChanged(reason) {
+  document.dispatchEvent(new CustomEvent("app:data-changed", { detail: { reason } }));
+}
+
 function message(text = "", error = false) {
   $("#notice").textContent = text;
   $("#notice").classList.toggle("error", error);
@@ -410,11 +415,14 @@ function signedOut() {
   $("#plan-order-details").replaceChildren();
   $("#plan-order-status").textContent = "";
   $("#plan-order").hidden = true;
+  window.FocusReview?.close();
   user = null;
+  window.EmojiPicker?.close();
+  window.CommandPalette?.close({ restore: false });
   document.body.classList.remove("home-view");
   $("#home-page").hidden = true;
-  $("#home-admin").hidden = true;
   resetHomeSummary();
+  window.AppShell?.reset(); // 侧栏角标、日历、热力图缓存都属于上一位用户
   sessionReady = true;
   renderPageRoute();
   $("#logout").hidden = true;
@@ -446,7 +454,7 @@ function signedOut() {
   $("#forum-comments").replaceChildren();
   $("#forum-compose-form").reset();
   $("#forum-comment-form").reset();
-  $("#admin-tab").hidden = true;
+  document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = true; });
   resetAdminDashboard();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
@@ -558,10 +566,13 @@ function textarea(value, maxLength, rows, code = false) {
 
 function timestamp(value) {
   if (!value) return "尚无";
-  return new Date(value).toLocaleString("zh-CN", {
-    timeZone: user.timezone,
-    hour12: false,
-  });
+  const date = new Date(value);
+  try {
+    return date.toLocaleString("zh-CN", { timeZone: user.timezone, hour12: false });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return `${date.toLocaleString("zh-CN", { timeZone: "UTC", hour12: false })}（UTC）`;
+  }
 }
 
 function renderUserInfo() {
@@ -571,18 +582,10 @@ function renderUserInfo() {
     finishHomeOpening?.();
     $("#account-summary-name").textContent = user.username;
     $("#account-summary-name").title = user.username;
-    if (view === "home") {
-      wrap.replaceChildren(
-        element("span", "欢迎回来，继续积累你的解题力", "home-greeting"),
-        element("strong", user.username, "home-username"),
-        element("span", `${user.timezone} · ${user.today}`, "home-user-context")
-      );
-    } else {
-      wrap.replaceChildren(
-        element("strong", user.username, "user-name"),
-        element("span", `${user.timezone} · ${user.today}`, "user-context")
-      );
-    }
+    wrap.replaceChildren(
+      element("strong", user.username, "user-name"),
+      element("span", `${user.timezone} · ${user.today}`, "user-context")
+    );
     if (!user.is_trial) {
       const editBtn = element("button", "改用户名", "link-button");
       editBtn.type = "button";
@@ -638,8 +641,8 @@ function updateUserInfo() {
   renderUserInfo();
   $("#email-prompt").hidden = Boolean(user.email) || Boolean(user.is_trial);
   $("#trial-banner").hidden = !user.is_trial;
-  $("#admin-tab").hidden = !user.is_admin;
-  $("#home-admin").hidden = !user.is_admin;
+  document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = !user.is_admin; });
+  window.AppShell?.setUser(user.username);
   renderHomeQuota();
 
   $("#my-avatar-wrap").hidden = false;
@@ -775,30 +778,6 @@ async function enterApp() {
   await showView("home", { refreshUser: false });
 }
 
-function closeNavMenu() {
-  $("#nav-menu").hidden = true;
-  $("#nav-toggle").setAttribute("aria-expanded", "false");
-}
-
-$("#nav-toggle").addEventListener("click", () => {
-  const open = $("#nav-menu").hidden;
-  $("#nav-menu").hidden = !open;
-  $("#nav-toggle").setAttribute("aria-expanded", String(open));
-});
-document.addEventListener("click", (event) => {
-  if (!event.target.closest("#page-nav")) closeNavMenu();
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || $("#nav-menu").hidden) return;
-  const restoreFocus = document.activeElement === $("#nav-toggle")
-    || $("#nav-menu").contains(document.activeElement);
-  closeNavMenu();
-  if (restoreFocus) $("#nav-toggle").focus();
-});
-$("#page-nav").addEventListener("focusout", (event) => {
-  if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) closeNavMenu();
-});
-
 async function showView(nextView, { refreshUser = true } = {}) {
   stopOrderPolling();
   if (view !== nextView) {
@@ -807,10 +786,10 @@ async function showView(nextView, { refreshUser = true } = {}) {
     if (view === "achievements") achievementsGeneration += 1;
   }
   if (view === "groups" && nextView !== "groups") groupsGeneration += 1;
+  const changedView = view !== nextView;
   view = nextView;
   document.body.classList.toggle("home-view", view === "home");
   $("#home-page").hidden = view !== "home";
-  $("#page-nav").hidden = view === "home";
   $("#new-page").hidden = view !== "new";
   $("#list-page").hidden = view !== "today" && view !== "all";
   $("#plan-page").hidden = view !== "plan";
@@ -818,20 +797,18 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#weakness-page").hidden = view !== "insights";
   $("#achievements-page").hidden = view !== "achievements";
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
+  $("#mastery-page").hidden = view !== "mastery";
+  $("#clusters-page").hidden = view !== "clusters";
+  $("#print-page").hidden = view !== "print";
   $("#groups-page").hidden = view !== "groups";
   $("#forum-page").hidden = view !== "forum";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
   renderHomeQuota();
 
-  document.querySelectorAll("#app button[data-view]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === view);
-    button.setAttribute("aria-pressed", String(button.dataset.view === view));
-  });
-
-  closeNavMenu();
-  const activeTab = $("#nav-menu").querySelector("[data-view].active");
-  $("#nav-current").textContent = activeTab ? activeTab.textContent : "";
+  // 侧栏/底栏/抽屉的当前页高亮由 shell.js 监听这个事件完成。
+  if (changedView) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  document.dispatchEvent(new CustomEvent("app:view-changed", { detail: { view } }));
 
   if (view === "home") await loadHome({ refreshUser });
   else if (view === "admin") await loadAdminPage();
@@ -840,6 +817,9 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
   else if (view === "weekly-recap") await loadWeeklyRecap();
+  else if (view === "mastery") await window.Mastery.load();
+  else if (view === "clusters") await window.Clusters.load();
+  else if (view === "print") await window.PrintNotebook.load();
   else if (view === "groups") await loadGroups();
   else if (view === "plan") await loadPlanPage();
   else if (view === "new") renderPhotoQuota();
@@ -847,10 +827,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
 }
 
 function resetHomeSummary() {
-  $("#home-due-count").closest(".tile-count-wrap").classList.remove("has-due");
-  $("#home-due-count").hidden = true;
-  $("#home-due-count").textContent = "";
-  $("#home-due-caption").textContent = "正在读取待复习记录…";
+  window.Overview?.reset();
   $("#home-quota").hidden = true;
   $("#home-quota-text").textContent = "";
   $("#home-quota-progress").value = 0;
@@ -860,7 +837,7 @@ function resetHomeSummary() {
 function renderHomeQuota() {
   const limit = user?.ai_daily_limit;
   const remaining = user?.ai_daily_remaining;
-  const available = view === "home" && Number.isInteger(limit) && limit > 0
+  const available = Number.isInteger(limit) && limit > 0
     && Number.isInteger(remaining) && remaining >= 0 && remaining <= limit;
   $("#home-quota").hidden = !available;
   if (!available) return;
@@ -874,28 +851,36 @@ async function loadHome({ refreshUser = true } = {}) {
   finishHomeOpening?.();
   const currentUser = user;
   resetHomeSummary();
-  // 大厅统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
+  // 总览统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
   // 两份数据独立降级，读取失败不显示旧值或假定的零值。
-  const [profile, reviews] = await Promise.allSettled([
+  const [profile, overview] = await Promise.allSettled([
     refreshUser ? api("/api/me") : Promise.resolve(user),
-    api("/api/mistakes?due_only=true"),
+    api("/api/overview"),
   ]);
   if (!user || user !== currentUser || view !== "home") return;
   if (profile.status === "fulfilled") {
     user = profile.value;
     updateUserInfo();
   }
-  if (reviews.status === "fulfilled") {
-    const count = reviews.value.items.length;
-    $("#home-due-count").closest(".tile-count-wrap").classList.toggle("has-due", count > 0);
-    $("#home-due-count").textContent = String(count);
-    $("#home-due-count").hidden = false;
-    $("#home-due-caption").textContent = count
-      ? "条易错点，等你来巩固" : "今日暂无待复习，去记录新的发现吧";
+  if (overview.status === "fulfilled") {
+    window.Overview.render(overview.value, {
+      username: user.username,
+      onOpenRecord: (id) => run(async () => {
+        message();
+        await showView("today");
+        await openMistake(id);
+      }),
+      onOpenPost: (id) => run(async () => {
+        message();
+        await showView("forum");
+        await openForumPost(id);
+      }),
+      onFocus: () => window.FocusReview?.start({}),
+    });
   } else {
-    $("#home-due-caption").textContent = "暂时无法读取数量，可进入复习重试";
+    window.Overview.renderError();
   }
-  if (profile.status === "fulfilled" && reviews.status === "fulfilled") startHomeOpening();
+  if (profile.status === "fulfilled" && overview.status === "fulfilled") startHomeOpening();
 }
 
 async function loadLeaderboard() {
@@ -1088,6 +1073,16 @@ async function loadGroups() {
   );
 }
 
+function formatGroupDate(value, timeZone) {
+  const date = new Date(value);
+  try {
+    return date.toLocaleDateString("zh-CN", { timeZone });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return `${date.toLocaleDateString("zh-CN", { timeZone: "UTC" })}（UTC）`;
+  }
+}
+
 function renderStudyGroup(group) {
   studyGroup = group;
   selectedGroupId = group.id;
@@ -1103,7 +1098,7 @@ function renderStudyGroup(group) {
   const meta = $("#groups-detail-meta");
   meta.replaceChildren(element("span", `Lv.${group.level.number} ${group.level.name} · 成员 ${group.members.length}/${group.member_limit}`));
   if (group.members.length >= group.member_limit) meta.append(element("span", "已满员", "groups-full-tag"));
-  meta.append(element("span", ` · 创建于 ${new Date(group.created_at).toLocaleDateString("zh-CN", { timeZone: user.timezone })}`));
+  meta.append(element("span", ` · 创建于 ${formatGroupDate(group.created_at, user.timezone)}`));
   setGroupProgress($("#groups-level-progress"), group.level);
   $("#groups-level-caption").textContent = group.level.next_points == null
     ? `${group.level.floor}+ 分 · 已满级`
@@ -1234,7 +1229,7 @@ async function loadGroupLevelRules() {
 
 function rememberGroupLevel(group) {
   try {
-    const key = `groupLevelSeen:${user.id}:${group.id}`;
+    const key = `groupLevelSeen:${user.id}:${group.id}:${group.created_at}`;
     const previous = localStorage.getItem(key);
     localStorage.setItem(key, String(group.level.number));
     if (previous !== null && Number.isInteger(Number(previous)) && Number(previous) >= 1
@@ -2159,8 +2154,20 @@ async function loadPlanPage() {
 
 async function loadList() {
   const zoneParam = $("#zone-filter").value;
-  const query = `due_only=${view === "today"}` + (zoneParam ? `&zone=${encodeURIComponent(zoneParam)}` : "");
+  const tagParam = $("#tag-filter").value;
+  if (view !== "all") listCreatedOn = "";
+  $("#list-focus").hidden = true;
+  window.TagFilters?.setSelected(tagParam);
+  const query = `due_only=${view === "today"}` + (zoneParam ? `&zone=${encodeURIComponent(zoneParam)}` : "")
+    + (tagParam ? `&tag=${encodeURIComponent(tagParam)}` : "")
+    + (listCreatedOn ? `&created_on=${encodeURIComponent(listCreatedOn)}` : "");
   const data = await api(`/api/mistakes?${query}`);
+  $("#list-focus").hidden = !(view === "today" && data.items.length && window.FocusReview);
+  $("#list-filter").hidden = !listCreatedOn;
+  if (listCreatedOn) {
+    const [, month, day] = listCreatedOn.split("-").map(Number);
+    $("#list-filter-text").textContent = `只看 ${month} 月 ${day} 日新增的记录`;
+  }
   user.today = data.today;
   updateUserInfo();
 
@@ -2198,6 +2205,7 @@ async function loadList() {
       element("span", item.description || "错因待 AI 诊断", "record-description"),
       element("small", `${item.zone} · ${item.due_date <= data.today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted")
     );
+    if (item.tags?.length && window.TagEditor) button.append(window.TagEditor.chips(item.tags));
     button.addEventListener("click", () => run(() => openMistake(item.id)));
     $("#cards").append(button);
   }
@@ -2497,7 +2505,10 @@ function renderDetail(item) {
   root.append(
     heading,
     element("h3", "这次需要记住的错因", "section-label"),
-    mistakeTextNode,
+    mistakeTextNode
+  );
+  if (window.TagEditor) root.append(window.TagEditor.render(item));
+  root.append(
     element(
       "p",
       `下次复习：${item.due_date} · 连续成功：${item.repetitions} 次`,
@@ -2527,6 +2538,7 @@ function renderDetail(item) {
     await api(`/api/mistakes/${item.id}`, { method: "DELETE" });
     clearDetail();
     await loadList();
+    notifyDataChanged("delete");
     message("已删除这条易错点。");
   }));
 
@@ -2543,6 +2555,7 @@ function renderDetail(item) {
     await api(`/api/problems/${item.problem_id}`, { method: "DELETE" });
     clearDetail();
     await loadList();
+    notifyDataChanged("delete");
     message("已删除整道题。");
   }));
 
@@ -2582,6 +2595,7 @@ function renderDetail(item) {
         });
         stampSeal({ 0: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality], { anchor });
         await loadList();
+        notifyDataChanged("review");
         message(`评分已保存。${state.due_date} 再来复习这条易错点。`);
       });
     });
@@ -2812,14 +2826,93 @@ $("#logout").addEventListener("click", () => run(async () => {
   message("已退出登录。");
 }));
 
-document.querySelectorAll("#app button[data-view]").forEach((button) => {
-  button.addEventListener("click", () => run(async () => {
+// 侧栏、底栏、"更多"抽屉和页面里的入口都带 data-view；用事件委托，总览里动态渲染的入口也生效。
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-view]");
+  if (!button || button.disabled) return;
+  run(async () => {
     message();
+    listCreatedOn = "";
     await showView(button.dataset.view);
-  }));
+  });
 });
 
+// 命令面板选中后的跳转：页面、某条记录（在"全部记录"里打开）、某个帖子。
+document.addEventListener("app:navigate", (event) => {
+  const { view: target, recordId, postId } = event.detail || {};
+  run(async () => {
+    message();
+    listCreatedOn = "";
+    if (recordId) {
+      $("#zone-filter").value = "";
+      await showView("all");
+      await openMistake(recordId);
+    } else if (postId) {
+      await showView("forum");
+      await openForumPost(postId);
+    } else if (target) {
+      await showView(target);
+    }
+  });
+});
+
+// 侧栏的分区列表和复习日历：切到"全部记录"并按分区/新增日期筛选。
+let listCreatedOn = "";
+document.addEventListener("records:filter", (event) => {
+  const { zone = "", tag = "", created_on: createdOn = "" } = event.detail || {};
+  run(async () => {
+    message();
+    listCreatedOn = createdOn;
+    const select = $("#zone-filter");
+    select.value = [...select.options].some((option) => option.value === zone) ? zone : "";
+    const tagSelect = $("#tag-filter");
+    if (tag && ![...tagSelect.options].some((option) => option.value === tag)) {
+      const extra = document.createElement("option");
+      extra.value = tag;
+      extra.textContent = tag;
+      tagSelect.append(extra);
+    }
+    tagSelect.value = tag;
+    await showView("all");
+  });
+});
+$("#list-focus").addEventListener("click", () => window.FocusReview?.start({ zone: $("#zone-filter").value, tag: $("#tag-filter").value }));
+
+// 专注复习关闭后：要求跳转就跳转，否则（评过分的话）重新加载当前页，让数字和列表跟上。
+document.addEventListener("focus:closed", (event) => {
+  const { graded, view: target } = event.detail || {};
+  if (!user) return;
+  run(async () => {
+    message();
+    if (target) {
+      await showView(target);
+    } else if (graded && view === "home") {
+      await loadHome({ refreshUser: false });
+    } else if (graded && (view === "today" || view === "all")) {
+      await loadList();
+    } else if (graded && view === "mastery") {
+      await window.Mastery.load();
+    } else if (graded && view === "clusters") {
+      await window.Clusters.load();
+    }
+  });
+});
+$("#list-filter-clear").addEventListener("click", () => run(async () => {
+  listCreatedOn = "";
+  await loadList();
+}));
+
 $("#zone-filter").addEventListener("change", () => run(loadList));
+$("#tag-filter").addEventListener("change", () => run(loadList));
+
+// 详情页里改了标签：同步更新列表里那张卡片上的小标签。
+document.addEventListener("mistake:tags-changed", (event) => {
+  const { id, tags } = event.detail || {};
+  const card = document.querySelector(`#cards .record-button[data-id="${id}"]`);
+  if (!card) return;
+  card.querySelector(".record-tags")?.remove();
+  if (tags.length && window.TagEditor) card.append(window.TagEditor.chips(tags));
+});
 
 $("#home-refresh").addEventListener("click", () => run(async () => {
   message();
@@ -2958,6 +3051,11 @@ $("#remove-avatar-btn").addEventListener("click", () => run(async () => {
 }));
 
 $("#refresh").addEventListener("click", () => run(async () => {
+  if (view === "home") {
+    message();
+    await loadHome();
+    return;
+  }
   if (view === "groups") {
     message();
     if (selectedGroupId === null) await loadGroups();
@@ -2967,6 +3065,24 @@ $("#refresh").addEventListener("click", () => run(async () => {
   if (view === "weekly-recap") {
     message();
     await loadWeeklyRecap();
+    return;
+  }
+  if (view === "mastery") {
+    message();
+    await window.Mastery.load();
+    message("已刷新。");
+    return;
+  }
+  if (view === "clusters") {
+    message();
+    await window.Clusters.load();
+    message("已刷新。");
+    return;
+  }
+  if (view === "print") {
+    message();
+    await window.PrintNotebook.load();
+    message("已刷新。");
     return;
   }
   if (view === "achievements") {
@@ -3080,6 +3196,7 @@ $("#problem-form").addEventListener("submit", (event) => {
       }),
     });
     stampSeal("已录", { anchor });
+    notifyDataChanged("create");
 
     form.reset();
     applyZoneFieldMode(form, form.zone.value);
@@ -3255,6 +3372,25 @@ function scrollToForumComment(commentId) {
   }
 }
 
+// 与服务器的 truncate_text 同一套规则：按字符截断，但不把一个表情（肤色、连接序列、国旗、键帽）劈成两半。
+function truncateExcerpt(text, limit) {
+  const chars = Array.from(text);
+  if (chars.length <= limit) return text;
+  const joins = (character) => {
+    const code = character.codePointAt(0);
+    return character === "\u200d" || character === "\ufe0e" || character === "\ufe0f"
+      || (code >= 0x1F3FB && code <= 0x1F3FF) || (code >= 0xE0020 && code <= 0xE007F)
+      || /\p{M}/u.test(character);
+  };
+  let cut = limit;
+  while (cut > 0 && (joins(chars[cut]) || chars[cut - 1] === "\u200d")) cut -= 1;
+  let regional = 0;
+  const isRegional = (character) => character.codePointAt(0) >= 0x1F1E6 && character.codePointAt(0) <= 0x1F1FF;
+  while (regional < cut && isRegional(chars[cut - 1 - regional])) regional += 1;
+  if (regional % 2) cut -= 1;
+  return `${chars.slice(0, cut).join("")}…`;
+}
+
 function updateForumCommentCount() {
   const count = $("#forum-comment-body").value.length;
   $("#forum-comment-count").textContent = `${count}/2000`;
@@ -3360,6 +3496,7 @@ function renderForumPost(post) {
     const form = document.createElement("form");
     form.className = "forum-inline-form";
     form.append(field("标题", title), field("正文", body), save, cancel);
+    window.EmojiPicker?.attach(body); // 表情面板：编辑帖子正文
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
@@ -3537,6 +3674,7 @@ function renderForumComment(comment) {
     const form = document.createElement("form");
     form.className = "forum-inline-form";
     form.append(field("评论内容", body), save, cancel);
+    window.EmojiPicker?.attach(body); // 表情面板：编辑评论
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
@@ -3545,8 +3683,8 @@ function renderForumComment(comment) {
           body: JSON.stringify({ body: body.value }),
         });
         Object.assign(comment, updated);
-        const normalized = Array.from(comment.body.replace(/[\s\u001c-\u001f\u0085]+/gu, " ").trim());
-        const excerpt = normalized.slice(0, 60).join("") + (normalized.length > 60 ? "…" : "");
+        const normalized = comment.body.replace(/[\s\u001c-\u001f\u0085]+/gu, " ").trim();
+        const excerpt = truncateExcerpt(normalized, 60);
         for (const item of post.comments) {
           if (item.reply_to?.id === comment.id && !item.reply_to.deleted) item.reply_to.excerpt = excerpt;
         }
@@ -3996,6 +4134,9 @@ $("#forum-reply-cancel").addEventListener("click", () => {
 });
 
 $("#forum-comment-body").addEventListener("input", updateForumCommentCount);
+// 表情面板：评论/回复框的按钮放在页脚（和字数并排），发新帖的正文按钮放在输入框下面。
+window.EmojiPicker?.attach($("#forum-comment-body"), { container: $(".forum-composer-footer") });
+window.EmojiPicker?.attach($("#forum-compose-form textarea[name=body]"));
 
 $("#forum-comment-form").addEventListener("submit", (event) => {
   event.preventDefault();

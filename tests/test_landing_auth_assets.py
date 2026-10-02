@@ -406,28 +406,29 @@ def test_scene_assets_have_an_original_artwork_declaration():
 
 
 def test_app_navigation_click_handlers_cannot_include_the_route_root(document, app_source):
-    app_index, _ = document.by_id("app")
     navigation_buttons = [
         node for node in document.elements
         if "data-view" in node["attrs"] and node["tag"] != "html"
     ]
     assert navigation_buttons
-    assert all(
-        node["tag"] == "button" and app_index in node["ancestors"]
-        for node in navigation_buttons
-    )
-    bindings = re.findall(
-        r'(?m)^document\.querySelectorAll\((["\'])([^"\']+)\1\)\.forEach\(\(button\)\s*=>\s*\{([\s\S]*?)^\}\);',
+    # 只有 button 才带 data-view；<html data-view> 是路由根，永远不是导航入口。
+    assert all(node["tag"] == "button" for node in navigation_buttons)
+    # 一个挂在 document 上的委托处理器，只认 button[data-view]。
+    delegated = re.search(
+        r'(?m)^document\.addEventListener\("click", \(event\) => \{\n'
+        r'  const button = event\.target\.closest\("button\[data-view\]"\);\n'
+        r'  if \(!button \|\| button\.disabled\) return;[\s\S]*?showView\(button\.dataset\.view\)',
         app_source,
     )
-    navigation_selectors = [
-        selector for _, selector, body in bindings
-        if re.search(r'button\.addEventListener\(["\']click["\']', body)
-        and "showView(button.dataset.view)" in body
-    ]
-    assert navigation_selectors == ["#app button[data-view]"], (
-        "The html data-view route root must never receive app navigation click handlers"
+    assert delegated, "Navigation must be one delegated handler restricted to button[data-view]"
+    bare_selectors = re.findall(
+        r'querySelector(?:All)?\((["\'])((?!button)[^"\']*\[data-view\][^"\']*)\1\)', app_source,
     )
+    assert bare_selectors == [], "The html data-view route root must never match a navigation selector"
+    assert not re.search(
+        r'querySelectorAll\((["\'])[^"\']*button\[data-view\][^"\']*\1\)\.forEach\(\(button\)\s*=>\s*\{\s*button\.addEventListener',
+        app_source,
+    ), "Per-button navigation listeners would miss dynamically rendered entries"
 
 
 @pytest.fixture(scope="module")

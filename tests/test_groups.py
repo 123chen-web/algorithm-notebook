@@ -1,18 +1,38 @@
 """邀请码学习小组：成员权限、名额、各自时区的打卡及群体信号。"""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 
+import ai
 import main
 from db import connect
 from scheduler import today_in_timezone
-from test_app import client, new_problem, register
+from test_app import new_problem, register
 from test_growth_insights import (
     add_mistake_on,
     create_background_user_with_mistakes,
 )
 from test_leaderboard import insert_review
 from group_levels import level_summary
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("INVITE_CODE", "test-invite")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COOKIE_SECURE", "0")
+    monkeypatch.setenv("AI_DAILY_LIMIT", "2")
+    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
+    main.reset_rate_limits()
+
+    def unexpected_ai(*args, **kwargs):
+        pytest.fail("Group tests must not call AI")
+
+    monkeypatch.setattr(ai, "generate", unexpected_ai)
+    with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
+        yield instance
 
 
 @pytest.fixture(autouse=True)
@@ -23,8 +43,13 @@ def isolate_group_avatars(tmp_path, monkeypatch):
 
 
 def legacy_member_fields(members):
-    # Preserve the original streak/order assertions. test_group_levels covers
-    # the full expanded member schema and precise post-joining contributions.
+    # Preserve the original streak/order assertions while protecting the full
+    # response whitelist for every member, including trial accounts.
+    for member in members:
+        assert set(member) == {
+            "id", "username", "current_streak_days", "points", "is_creator",
+            "avatar_version", "has_avatar",
+        }
     return [
         {key: member[key] for key in ("id", "username", "current_streak_days")}
         for member in members
@@ -204,6 +229,45 @@ def test_join_rejects_full_group_without_adding_membership(client, monkeypatch):
     assert response.status_code == 403
     assert response.json() == {"detail": "小组已达到 1 人上限"}
     assert client.get("/api/groups").json() == {"groups": []}
+
+
+def test_legacy_twelve_member_group_accepts_join_only_after_reaching_nine(client):
+    register(client)
+    group = create_group(client)
+    legacy_ids = [
+        add_background_member(group["id"], f"legacy-{index}", mistake_count=0)
+        for index in range(11)
+    ]
+    assert len(legacy_member_fields(client.get(f"/api/groups/{group['id']}").json()["members"])) == 12
+    client.post("/api/auth/logout")
+    register(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 403
+
+    login(client)
+    for member_id in legacy_ids[:2]:
+        assert client.delete(
+            f"/api/groups/{group['id']}/members/{member_id}"
+        ).status_code == 200
+    assert len(legacy_member_fields(client.get(f"/api/groups/{group['id']}").json()["members"])) == 10
+    login(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 403
+    assert client.get("/api/groups").json() == {"groups": []}
+
+    login(client)
+    assert client.delete(
+        f"/api/groups/{group['id']}/members/{legacy_ids[2]}"
+    ).status_code == 200
+    assert len(legacy_member_fields(client.get(f"/api/groups/{group['id']}").json()["members"])) == 9
+    login(client, "bob")
+    response = client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    )
+    assert response.status_code == 200
+    assert len(legacy_member_fields(response.json()["members"])) == 10
 
 
 def test_personal_group_limit_applies_to_creating_and_joining(client, monkeypatch):
@@ -478,6 +542,60 @@ def test_creator_can_leave_but_cannot_delete_after_leaving_and_last_member_remov
     assert client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
     ).status_code == 404
+
+
+def test_creator_rejoin_refreshes_joined_at_and_restores_creator_flags(client, monkeypatch):
+    alice = register(client)
+    first_join = "2026-09-19T00:00:00+00:00"
+    monkeypatch.setattr(main, "utc_now", lambda: first_join)
+    group = create_group(client)
+    client.post("/api/auth/logout")
+    bob = register(client, "bob")
+    assert client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    ).status_code == 200
+
+    login(client)
+    assert client.post(f"/api/groups/{group['id']}/leave").status_code == 200
+    assert client.get(f"/api/groups/{group['id']}").status_code == 404
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT joined_at FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group["id"], alice["id"]),
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT created_by FROM study_groups WHERE id = ?", (group["id"],)
+        ).fetchone()["created_by"] == alice["id"]
+    login(client, "bob")
+    remaining = client.get(f"/api/groups/{group['id']}").json()
+    assert remaining["is_creator"] is False
+    assert legacy_member_fields(remaining["members"]) == [
+        {"id": bob["id"], "username": "bob", "current_streak_days": 0},
+    ]
+    assert remaining["members"][0]["is_creator"] is False
+
+    login(client)
+    rejoined_at = "2026-09-20T00:00:00+00:00"
+    monkeypatch.setattr(main, "utc_now", lambda: rejoined_at)
+    response = client.post(
+        "/api/groups/join", json={"invite_code": group["invite_code"]}
+    )
+    assert response.status_code == 200
+    rejoined = response.json()
+    assert rejoined["is_creator"] is True
+    assert rejoined["created_at"] == first_join
+    assert legacy_member_fields(rejoined["members"]) == [
+        {"id": alice["id"], "username": "alice", "current_streak_days": 0},
+        {"id": bob["id"], "username": "bob", "current_streak_days": 0},
+    ]
+    assert {member["id"]: member["is_creator"] for member in rejoined["members"]} == {
+        alice["id"]: True, bob["id"]: False,
+    }
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT joined_at FROM study_group_members WHERE group_id = ? AND user_id = ?",
+            (group["id"], alice["id"]),
+        ).fetchone()["joined_at"] == rejoined_at
 
 
 def test_only_creator_can_dissolve_and_memberships_are_cascade_deleted(client):

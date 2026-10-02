@@ -16,8 +16,8 @@ from group_levels import (
     level_summary,
     points_by_user,
 )
-from test_app import client, register
-from test_groups import create_group, login
+from test_app import register
+from test_groups import client, create_group, login
 
 
 EXPECTED_LEVELS = [
@@ -171,6 +171,16 @@ def test_points_by_user_accepts_utc_datetime_values_and_legacy_naive_timestamps(
         [member(joined_at=joined)],
         [review(at=joined)], [problem(at="2026-09-19T00:00:00")],
     ) == {1: 9}
+
+
+def test_points_by_user_accepts_single_pass_iterables_and_latest_membership():
+    members = iter([
+        member(joined_at="2026-09-19T00:00:00+00:00"),
+        member(joined_at="2026-09-19T02:00:00+00:00"),
+    ])
+    reviews = iter([review(), review(at="2026-09-19T02:00:00+00:00")])
+    records = iter([problem(), problem(at="2026-09-19T02:00:00+00:00")])
+    assert points_by_user(members, reviews, records) == {1: 9}
 
 
 @pytest.fixture

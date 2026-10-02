@@ -121,6 +121,19 @@ ON mistakes(problem_id);
 CREATE INDEX IF NOT EXISTS idx_mistakes_due
 ON mistakes(due_date);
 
+-- 错因标签：属于某个用户的某条易错点；user_id 冗余存一份，列标签/计数不用联表。
+-- tag 不区分大小写（英文标签），删除易错点或账号时级联删除。
+CREATE TABLE IF NOT EXISTS mistake_tags (
+    mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL COLLATE NOCASE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (mistake_id, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mistake_tags_user_tag
+ON mistake_tags(user_id, tag);
+
 CREATE TABLE IF NOT EXISTS reviews (
     id INTEGER PRIMARY KEY,
     mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
@@ -159,6 +172,12 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 
 -- 新表随 SCHEMA 的幂等执行同时迁移旧库；每个用户只保留最近一次分析。
 CREATE TABLE IF NOT EXISTS weakness_insights (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mistake_clusters (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TEXT NOT NULL

@@ -8,23 +8,88 @@
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=47">
+  <link rel="stylesheet" href="/static/style.css?v=49">
   <link rel="stylesheet" href="/static/intro.css?v=18">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
-  <link rel="stylesheet" href="/static/themes.css?v=11">
+  <link rel="stylesheet" href="/static/themes.css?v=13">
   <link rel="stylesheet" href="/static/new-record.css?v=4">
   <link rel="stylesheet" href="/static/weakness.css?v=3">
   <link rel="stylesheet" href="/static/groups.css?v=2">
-  <link rel="stylesheet" href="/static/forum.css?v=2">
+  <link rel="stylesheet" href="/static/forum.css?v=3">
+  <link rel="stylesheet" href="/static/shell.css?v=2">
+  <link rel="stylesheet" href="/static/overview.css?v=2">
+  <link rel="stylesheet" href="/static/activity.css?v=2">
+  <link rel="stylesheet" href="/static/emoji.css?v=2">
+  <link rel="stylesheet" href="/static/palette.css?v=2">
+  <link rel="stylesheet" href="/static/focus.css?v=2">
+  <link rel="stylesheet" href="/static/tags.css?v=2">
+  <link rel="stylesheet" href="/static/mastery.css?v=2">
+  <link rel="stylesheet" href="/static/clusters.css?v=2">
+  <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
-  <script defer src="/static/app.js?v=48"></script>
+  <script defer src="/static/activity.js?v=2"></script>
+  <script defer src="/static/emoji.js?v=2"></script>
+  <script defer src="/static/palette.js?v=2"></script>
+  <script defer src="/static/focus.js?v=2"></script>
+  <script defer src="/static/tags.js?v=2"></script>
+  <script defer src="/static/mastery.js?v=2"></script>
+  <script defer src="/static/clusters.js?v=3"></script>
+  <script defer src="/static/print.js?v=2"></script>
+  <script defer src="/static/shell.js?v=3"></script>
+  <script defer src="/static/overview.js?v=2"></script>
+  <script defer src="/static/app.js?v=52"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
 <body>
+  <a class="skip-link" href="#app">跳到主要内容</a>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
   <div class="container">
+    <aside id="app-sidebar" class="app-sidebar" aria-label="侧栏">
+      <div class="sidebar-brand">
+        <span class="brand-mark" aria-hidden="true">错</span>
+        <span class="sidebar-brand-copy"><span class="sidebar-brand-name">算法错题本</span><span id="sidebar-username" class="sidebar-username"></span></span>
+      </div>
+      <nav class="sidebar-nav" aria-label="主导航">
+        <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-learn">
+          <p class="sidebar-heading" id="sidebar-g-learn">学习</p>
+          <button type="button" class="nav-item" data-view="home"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="nav-label">总览</span></button>
+          <button type="button" class="nav-item" data-view="today"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M13 3h8v8M21 3 11 13"/><path d="m7 13 4 4 5-5"/></svg><span class="nav-label">今日复习</span><span class="nav-badge" data-badge="today" hidden></span></button>
+          <button type="button" class="nav-item" data-view="all"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg><span class="nav-label">全部记录</span><span class="nav-badge" data-badge="all" hidden></span></button>
+          <button type="button" class="nav-item" data-view="print"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg><span class="nav-label">考前打印版</span></button>
+          <button type="button" class="nav-item" data-view="new"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg><span class="nav-label">新增记录</span></button>
+        </div>
+        <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-insight">
+          <p class="sidebar-heading" id="sidebar-g-insight">洞察</p>
+          <button type="button" class="nav-item" data-view="insights"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 19h14M5 15V9M12 15V5M19 15v-3M3 3v18h18"/></svg><span class="nav-label">薄弱点分析</span></button>
+          <button type="button" class="nav-item" data-view="mastery"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg><span class="nav-label">掌握度趋势</span></button>
+          <button type="button" class="nav-item" data-view="clusters"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="m8 8 3 7m5-7-3 7M9 6h6"/></svg><span class="nav-label">错因专题</span></button>
+          <button type="button" class="nav-item" data-view="achievements"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg><span class="nav-label">成就徽章</span></button>
+          <button type="button" class="nav-item" data-view="weekly-recap"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg><span class="nav-label">本周战报</span></button>
+        </div>
+        <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-community">
+          <p class="sidebar-heading" id="sidebar-g-community">社区</p>
+          <button type="button" class="nav-item" data-view="groups"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><span class="nav-label">学习小组</span><span class="nav-badge" data-badge="groups" hidden></span></button>
+          <button type="button" class="nav-item" data-view="forum"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span class="nav-label">讨论区</span></button>
+          <button type="button" class="nav-item" data-view="leaderboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span class="nav-label">打卡排行榜</span></button>
+        </div>
+        <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-account">
+          <p class="sidebar-heading" id="sidebar-g-account">账号</p>
+          <button type="button" class="nav-item" data-view="plan"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span class="nav-label">我的套餐</span></button>
+          <button type="button" class="nav-item" data-view="admin" id="admin-tab" data-admin-only hidden><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span class="nav-label">管理后台</span></button>
+        </div>
+      </nav>
+      <section class="sidebar-section" id="sidebar-calendar-section" aria-labelledby="sidebar-calendar-title">
+        <div class="sidebar-section-head"><h2 id="sidebar-calendar-title">复习日历 · 近 5 周</h2><span id="sidebar-streak" class="sidebar-streak" hidden></span></div>
+        <div id="sidebar-calendar" class="sidebar-calendar"></div>
+      </section>
+      <section class="sidebar-section" id="sidebar-zones-section" aria-labelledby="sidebar-zones-title" hidden>
+        <div class="sidebar-section-head"><h2 id="sidebar-zones-title">分区</h2></div>
+        <ul id="sidebar-zones" class="sidebar-zones"></ul>
+      </section>
+      <div id="sidebar-tags" class="sidebar-tags"></div>
+    </aside>
     <header class="header">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">错</span>
@@ -46,6 +111,7 @@
           <option value="qixi">栖间</option>
         </select>
       </div>
+      <button id="app-search-trigger" type="button" class="topbar-search" hidden><svg class="topbar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span class="topbar-search-text">搜索题目、错因，或输入页面名跳转</span><kbd class="topbar-search-key">Ctrl K</kbd></button>
       <div class="user-meta">
         <div id="my-avatar-wrap" class="my-avatar-wrap" hidden>
           <details class="account-menu">
@@ -80,6 +146,7 @@
             </div>
           </details>
         </div>
+        <button id="topbar-new" type="button" class="topbar-new topbar-only" data-view="new"><svg class="topbar-new-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span>新增记录</span></button>
         <div id="home-quota" class="home-quota" hidden>
           <div class="home-quota-heading">
             <label for="home-quota-progress">今日 AI 生成额度</label>
@@ -88,6 +155,7 @@
           <progress id="home-quota-progress" max="1" value="0" aria-describedby="home-quota-text"></progress>
           <span class="home-quota-hint">围绕薄弱点，再练两道新题</span>
         </div>
+        <button type="button" id="refresh" class="topbar-icon-button topbar-only" aria-label="刷新当前页" title="刷新当前页"><svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
       </div>
     </header>
 
@@ -294,110 +362,82 @@
       <button id="auth-trial-start" type="button" class="link-button auth-trial" title="体验数据可能定期清理，长期保存请注册。">免注册体验</button>
     </section>
 
-    <main id="app" hidden>
-      <nav id="page-nav" class="tabs" aria-label="页面">
-        <button type="button" class="nav-back" data-view="home"><span aria-hidden="true">←</span> 学习大厅</button>
-        <span id="nav-current" class="nav-current"></span>
-        <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu">切换页面 <span aria-hidden="true">▾</span></button>
-        <div id="nav-menu" class="nav-menu" hidden>
-          <button type="button" data-view="today">今日复习</button>
-          <button type="button" data-view="all">全部记录</button>
-          <button type="button" data-view="new">新增记录</button>
-          <button type="button" data-view="insights">薄弱点分析</button>
-          <button type="button" data-view="plan">我的套餐</button>
-          <button type="button" data-view="leaderboard">打卡排行榜</button>
-          <button type="button" data-view="groups">学习小组</button>
-          <button type="button" data-view="forum">讨论区</button>
-          <button type="button" id="admin-tab" data-view="admin" hidden>管理后台</button>
-        </div>
-        <button type="button" id="refresh">刷新</button>
-      </nav>
-
-      <section id="home-page" class="lobby" aria-labelledby="home-title" hidden>
-        <div class="lobby-heading">
-          <div>
+    <main id="app" tabindex="-1" hidden>
+      <section id="home-page" class="overview" aria-labelledby="home-title" hidden>
+        <div class="ov-greeting">
+          <div class="ov-greeting-copy">
             <h2 id="home-title">把薄弱点，练成得分点。</h2>
-            <p>选一个入口，继续今天的进步。</p>
+            <p id="home-subtitle" class="ov-subtitle" role="status">正在读取今天的复习情况…</p>
           </div>
-          <button id="home-refresh" type="button" class="lobby-refresh"><span aria-hidden="true">↻</span> 刷新大厅</button>
+          <button id="home-refresh" type="button" class="ov-refresh"><span aria-hidden="true">↻</span> 刷新</button>
+        </div>
+        <p id="overview-error" class="ov-error" role="alert" hidden>暂时无法读取总览，点「刷新」重试。</p>
+
+        <div class="ov-tiles">
+          <section id="tile-review" class="ov-tile ov-tile-review" aria-labelledby="tile-review-title">
+            <div class="ov-tile-top">
+              <h3 id="tile-review-title" class="ov-eyebrow">今日复习</h3>
+              <span class="ov-stamp" aria-hidden="true">待批</span>
+            </div>
+            <div id="home-review-status" class="ov-review-body" role="status">
+              <span class="tile-count-wrap"><span id="home-due-count" class="tile-count" hidden></span><svg class="review-pen" aria-hidden="true" viewBox="0 0 128 86" preserveAspectRatio="none"><path class="pen" pathLength="1" d="M104 14 C80 2 30 4 12 25 C-4 43 9 69 38 77 C72 87 115 69 120 44 C124 26 110 12 89 9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
+              <span id="home-due-caption" class="ov-review-caption">正在读取待复习记录…</span>
+            </div>
+            <div class="ov-zones">
+              <div id="tile-review-bar" class="ov-zonebar" aria-hidden="true"></div>
+              <p id="tile-review-zones" class="ov-zone-text"></p>
+            </div>
+            <div class="ov-tile-actions">
+              <button type="button" id="tile-review-start" class="ov-btn ov-btn-light" data-view="today">开始复习</button>
+              <button type="button" id="tile-review-focus" class="ov-btn ov-btn-ghost" hidden>专注模式</button>
+            </div>
+          </section>
+
+          <section id="tile-streak" class="ov-tile ov-tile-streak" aria-labelledby="tile-streak-title">
+            <h3 id="tile-streak-title" class="ov-eyebrow">连续打卡</h3>
+            <p class="ov-big"><span id="streak-days">0</span><small>天</small></p>
+            <ol id="streak-ticks" class="ov-ticks" aria-label="最近 7 天的复习情况"></ol>
+          </section>
+
+          <section id="tile-heatmap" class="ov-tile ov-tile-heat" aria-labelledby="tile-heat-title">
+            <div class="ov-tile-top">
+              <h3 id="tile-heat-title" class="ov-eyebrow">复习热力图 · 近半年</h3>
+              <p id="tile-heat-summary" class="ov-heat-summary"></p>
+            </div>
+            <p id="tile-heat-total" class="ov-heat-total" hidden></p>
+            <div id="overview-heatmap" class="ov-heat-body"></div>
+          </section>
         </div>
 
-        <nav class="lobby-grid" aria-label="学习大厅入口">
-          <button type="button" class="lobby-tile lobby-tile-review" data-view="today">
-            <span class="tile-topline">
-              <span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M13 3h8v8M21 3 11 13"/><path d="m7 13 4 4 5-5"/></svg></span>
-              <span class="tile-tag">今日主线</span>
-            </span>
-            <span class="tile-title">今日复习</span>
-            <span class="tile-description">回顾到期易错点，巩固每一次进步。</span>
-            <span id="home-review-status" class="tile-review-status" role="status">
-              <span class="tile-count-wrap"><span id="home-due-count" class="tile-count" hidden></span><svg class="review-pen" aria-hidden="true" viewBox="0 0 128 86" preserveAspectRatio="none"><path class="pen" pathLength="1" d="M104 14 C80 2 30 4 12 25 C-4 43 9 69 38 77 C72 87 115 69 120 44 C124 26 110 12 89 9" fill="none" stroke="var(--review-pen)" stroke-width="3" stroke-linecap="round"/></svg></span>
-              <span id="home-due-caption">正在读取待复习记录…</span>
-            </span>
-            <span class="tile-footer"><span class="tile-cta">进入复习</span><span class="tile-footnote">含逾期，全部分区</span></span>
-          </button>
+        <div class="ov-columns">
+          <section class="ov-due" aria-labelledby="ov-due-title">
+            <div class="ov-section-head">
+              <h3 id="ov-due-title">待复习</h3>
+              <button type="button" id="ov-due-all" class="ov-link" data-view="today" hidden>查看全部 0 条 →</button>
+            </div>
+            <ul id="ov-due-list" class="ov-due-list"></ul>
+            <p id="ov-due-empty" class="ov-empty" hidden>今天没有待复习的易错点。去「新增记录」留下今天的新发现吧。</p>
+          </section>
 
-          <button type="button" class="lobby-tile lobby-tile-records" data-view="all">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg></span></span>
-            <span class="tile-title">全部记录</span>
-            <span class="tile-description">翻开笔记，找回解题的关键。</span>
-            <span class="tile-footer">我的知识档案</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-new" data-view="new">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg></span></span>
-            <span class="tile-title">新增记录</span>
-            <span class="tile-description">记下这次错因，留给下次突破。</span>
-            <span class="tile-footer">收集新的易错点</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-insights" data-view="insights">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19h14M5 15V9M12 15V5M19 15v-3M3 3v18h18"/></svg></span><span class="tile-tag">从错题历史中发现规律</span></span>
-            <span class="tile-title">薄弱点分析</span>
-            <span class="tile-description">哪些错误换一道题还会出现？结合跨题记录与复习表现，找出你反复卡住的原因。</span>
-            <span class="tile-footer">查看我的分析 <span>主动分析时消耗 1 次 AI 额度</span></span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-achievements" data-view="achievements">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg></span></span>
-            <span class="tile-title">成就徽章</span>
-            <span class="tile-description">从第一条错因到连续打卡，让每一份积累都看得见。</span>
-            <span class="tile-footer">看看下一枚徽章还差多少</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-weekly-recap" data-view="weekly-recap">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg></span></span>
-            <span class="tile-title">本周战报</span>
-            <span class="tile-description">回顾最近 7 天的记录、复习与练习，看看每一步积累。</span>
-            <span class="tile-footer">对照上周，找到自己的学习节奏</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-groups" data-view="groups">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg></span></span>
-            <span class="tile-title">学习小组</span>
-            <span class="tile-description">用邀请码约上熟人，一起坚持复习、发现共同薄弱点。</span>
-            <span class="tile-footer">让学习路上多一点陪伴</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-forum" data-view="forum">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg></span></span>
-            <span class="tile-title">讨论区</span>
-            <span class="tile-description">交流思路，让卡住的地方有回音。</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-leaderboard" data-view="leaderboard">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg></span></span>
-            <span class="tile-title">打卡排行榜</span>
-            <span class="tile-description">看看连续打卡榜，和坚持的人同行。</span>
-          </button>
-
-          <button type="button" class="lobby-tile lobby-tile-plan" data-view="plan">
-            <span class="tile-topline"><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg></span></span>
-            <span class="tile-title">我的套餐</span>
-            <span class="tile-description">查看订阅与 AI 额度，为练习补给。</span>
-          </button>
-        </nav>
-        <div class="lobby-bottom"><p>记录错因，按时复习，真正掌握</p><button id="home-admin" type="button" data-view="admin" hidden>管理后台</button></div>
+          <aside id="overview-aside" class="ov-aside" aria-label="总览信息栏">
+            <section id="ov-fading-card" class="ov-card ov-card-alert" aria-labelledby="ov-fading-title" hidden>
+              <h3 id="ov-fading-title">快被遗忘</h3>
+              <div id="ov-fading"></div>
+            </section>
+            <section id="ov-weakness-card" class="ov-card" aria-labelledby="ov-weakness-title">
+              <h3 id="ov-weakness-title">薄弱点提示</h3>
+              <button type="button" id="ov-weakness" class="ov-card-link" data-view="insights"></button>
+            </section>
+            <section id="ov-groups-card" class="ov-card" aria-labelledby="ov-groups-title">
+              <h3 id="ov-groups-title">我的小组</h3>
+              <ul id="ov-groups" class="ov-groups"></ul>
+            </section>
+            <section id="ov-hot-card" class="ov-card" aria-labelledby="ov-hot-title" hidden>
+              <h3 id="ov-hot-title">讨论区热帖</h3>
+              <button type="button" id="ov-hot" class="ov-card-link"></button>
+            </section>
+          </aside>
+        </div>
       </section>
 
       <section id="achievements-page" aria-labelledby="achievements-title" hidden>
@@ -418,6 +458,78 @@
         <p id="achievements-status" role="status" aria-live="polite"></p>
         <button id="achievements-retry" type="button" hidden>重新加载徽章</button>
         <div id="achievements-list"></div>
+      </section>
+
+      <section id="print-page" aria-labelledby="print-title" aria-busy="false" hidden>
+        <div class="page-heading">
+          <div>
+            <h2 id="print-title">考前打印版</h2>
+            <p class="muted">按分区把错题整理成一份可以打印的错题本，考前突击拿来翻。</p>
+          </div>
+          <button id="print-go" type="button" class="primary" data-blocked="1" disabled>打印 / 保存为 PDF</button>
+        </div>
+        <p id="print-status" role="status" aria-live="polite"></p>
+        <button id="print-retry" type="button" hidden>重新加载</button>
+        <div id="print-body" class="print-layout" hidden>
+          <aside class="print-panel panel" aria-label="打印选项">
+            <div id="print-options"></div>
+            <p id="print-summary" class="print-summary" role="status" aria-live="polite"></p>
+          </aside>
+          <div class="print-paper">
+            <article id="print-sheet" class="print-sheet" aria-label="错题本预览"></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="mastery-page" aria-labelledby="mastery-title" aria-busy="false" hidden>
+        <div class="page-heading">
+          <div>
+            <h2 id="mastery-title">掌握度趋势</h2>
+            <p class="muted">按分区估算「现在还记得多少」，看哪一科在悄悄被遗忘。</p>
+          </div>
+        </div>
+        <p id="mastery-status" role="status" aria-live="polite"></p>
+        <button id="mastery-retry" type="button" hidden>重新加载</button>
+        <div id="mastery-alert" class="mastery-alert" hidden></div>
+        <section id="mastery-chart-card" class="panel mastery-chart-card" aria-labelledby="mastery-chart-title" hidden>
+          <div class="mastery-chart-head">
+            <h3 id="mastery-chart-title">近 12 周</h3>
+            <div id="mastery-legend" class="mastery-legend" role="group" aria-label="显示或隐藏分区的曲线"></div>
+          </div>
+          <div id="mastery-chart" class="mastery-chart" tabindex="0" role="group" aria-label="掌握度曲线，左右方向键逐周查看"></div>
+          <p id="mastery-chart-summary" class="mastery-sr-only" role="status" aria-live="polite"></p>
+          <details class="mastery-table-wrap">
+            <summary>查看数据表</summary>
+            <div id="mastery-table" tabindex="0" role="region" aria-label="各分区掌握度数据表，内容较宽时可左右滚动"></div>
+          </details>
+        </section>
+        <div id="mastery-zones" class="mastery-zones"></div>
+        <details class="mastery-explain" id="mastery-explain" hidden>
+          <summary>掌握度是怎么算的？</summary>
+          <p>每条易错点按「遗忘曲线」估算现在还记得的概率：按计划准时复习时约 90%，拖得越久掉得越快，间隔越长的越牢（保持率 = 0.9 的「距上次学习的天数 ÷ 排定间隔」次方）。分区的掌握度是它名下所有易错点的平均值；曲线上每个点都是当时的估算，只用到那一天以前的记录和复习。低于 70% 且已经到期的分区会被标成「快被遗忘」。</p>
+          <p>这是估算，不是考试成绩：它只看你什么时候记录、什么时候复习、复习安排了多久，不看题目难度，也不调用 AI。</p>
+        </details>
+      </section>
+
+      <section id="clusters-page" aria-labelledby="clusters-title" aria-busy="false" hidden>
+        <div class="page-heading">
+          <div>
+            <h2 id="clusters-title">错因专题</h2>
+            <p class="muted">把意思相近的错因合在一起，复习时一次过一遍</p>
+          </div>
+        </div>
+        <div class="clusters-toolbar">
+          <button id="clusters-generate" type="button" class="primary" aria-disabled="true">归并相似错因 · 消耗 1 次 AI 额度</button>
+          <p id="clusters-quota" class="muted"></p>
+        </div>
+        <p id="clusters-new" hidden></p>
+        <p id="clusters-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <button id="clusters-retry" type="button" hidden>重新加载</button>
+        <div id="clusters-empty" class="clusters-empty" hidden>
+          <h3 id="clusters-empty-title"></h3>
+          <p id="clusters-empty-text"></p>
+        </div>
+        <div id="clusters-result" hidden></div>
       </section>
 
       <section id="weekly-recap-page" aria-labelledby="weekly-recap-title" hidden>
@@ -492,13 +604,23 @@
           <div>
             <h2 id="list-title">今日复习</h2>
             <p id="list-summary" class="muted"></p>
+            <p id="list-filter" class="list-filter" hidden><span id="list-filter-text"></span><button id="list-filter-clear" type="button" class="link-button">清除筛选</button></p>
           </div>
-          <label class="zone-filter">
-            分区
-            <select id="zone-filter">
-              <option value="">全部分区</option>
-            </select>
-          </label>
+          <div class="list-tools">
+            <button id="list-focus" type="button" class="list-focus" hidden>专注模式</button>
+            <label class="zone-filter">
+              分区
+              <select id="zone-filter">
+                <option value="">全部分区</option>
+              </select>
+            </label>
+            <label class="zone-filter" hidden>
+              标签
+              <select id="tag-filter">
+                <option value="">全部标签</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div class="workspace">
           <aside id="cards" aria-label="易错点列表"></aside>
@@ -912,6 +1034,33 @@
         </section>
       </section>
     </main>
+  </div>
+  <nav id="app-tabbar" class="app-tabbar" aria-label="底部导航">
+    <button type="button" class="tab-item" data-view="today"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M13 3h8v8M21 3 11 13"/><path d="m7 13 4 4 5-5"/></svg><span class="tab-label">今日</span><span class="nav-badge" data-badge="today" hidden></span></button>
+    <button type="button" class="tab-item" data-view="all"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg><span class="tab-label">记录</span></button>
+    <button type="button" class="tab-item tab-item-new" data-view="new"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span class="tab-label">新增</span></button>
+    <button type="button" class="tab-item" data-view="groups"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><span class="tab-label">小组</span></button>
+    <button type="button" class="tab-item" id="tab-more" aria-haspopup="dialog" aria-expanded="false" aria-controls="more-sheet"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span class="tab-label">更多</span></button>
+  </nav>
+  <div id="more-sheet" class="more-sheet" hidden>
+    <div class="more-backdrop" data-more-close></div>
+    <div class="more-panel" role="dialog" aria-modal="true" aria-labelledby="more-title" tabindex="-1">
+      <div class="more-head"><h2 id="more-title">更多入口</h2><button type="button" class="more-close" data-more-close aria-label="关闭">×</button></div>
+      <div class="more-grid">
+        <button type="button" class="more-item" data-view="home"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>总览</span></button>
+        <button type="button" class="more-item" data-view="insights"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 19h14M5 15V9M12 15V5M19 15v-3M3 3v18h18"/></svg><span>薄弱点分析</span></button>
+        <button type="button" class="more-item" data-view="print"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg><span>考前打印版</span></button>
+        <button type="button" class="more-item" data-view="mastery"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg><span>掌握度趋势</span></button>
+        <button type="button" class="more-item" data-view="clusters"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="m8 8 3 7m5-7-3 7M9 6h6"/></svg><span>错因专题</span></button>
+        <button type="button" class="more-item" data-view="achievements"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg><span>成就徽章</span></button>
+        <button type="button" class="more-item" data-view="weekly-recap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg><span>本周战报</span></button>
+        <button type="button" class="more-item" data-view="forum"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>讨论区</span></button>
+        <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>打卡排行榜</span></button>
+        <button type="button" class="more-item" data-view="plan"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span>我的套餐</span></button>
+        <button type="button" class="more-item" data-view="admin" id="more-admin" data-admin-only hidden><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>管理后台</span></button>
+      </div>
+      <div class="more-foot"><button type="button" class="more-refresh" id="more-refresh"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span>刷新当前页</span></button></div>
+    </div>
   </div>
   <div id="seal-layer" aria-hidden="true"></div>
 </body>

@@ -19,7 +19,7 @@ PROBLEM_KEYS = {
 }
 MISTAKE_KEYS = {
     "id", "description", "repetitions", "interval_days", "ease_factor",
-    "due_date", "last_reviewed_at", "reviews", "variants",
+    "due_date", "last_reviewed_at", "reviews", "variants", "tags",
 }
 REVIEW_KEYS = {"quality", "reviewed_at", "next_due_date"}
 VARIANT_KEYS = {
@@ -76,6 +76,15 @@ def seed_notebook(user_id, marker):
                 ).lastrowid
                 mistake["reviews"] = []
                 mistake["variants"] = []
+                mistake["tags"] = []
+                if number == 1 and mistake_number == 1:
+                    for tag in ("边界", "粗心"):
+                        conn.execute(
+                            "INSERT INTO mistake_tags(mistake_id, user_id, tag, created_at) "
+                            "VALUES (?, ?, ?, '2026-09-01T00:00:00+00:00')",
+                            (mistake["id"], user_id, tag),
+                        )
+                        mistake["tags"].append(tag)
                 # 第二道题没有复习/练习，第三道题连易错点也没有。
                 if number == 1:
                     reviews = []

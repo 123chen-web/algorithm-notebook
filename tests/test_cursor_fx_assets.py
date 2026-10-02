@@ -213,7 +213,13 @@ def test_ripple_pause_and_destroy_clear_ambient_timeout(cursor_source):
     assert re.search(r"\b(?:clearTimeout|pause)\s*\(", destroy)
 
 
-@pytest.mark.parametrize("filename", ["style.css", "intro.css"])
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "style.css", "intro.css", "shell.css", "overview.css", "activity.css",
+        "emoji.css", "palette.css", "focus.css", "tags.css", "mastery.css", "clusters.css", "print.css",
+    ],
+)
 def test_backdrop_blur_is_limited_to_fine_hover_pointers(filename):
     declarations = css_declarations((STATIC / filename).read_text(encoding="utf-8"))
     for blocks, declaration in declarations:
@@ -227,7 +233,7 @@ def test_backdrop_blur_is_limited_to_fine_hover_pointers(filename):
         ), f"Touch devices must not receive {declaration} in {filename}: {blocks}"
 
 
-@pytest.mark.parametrize("filename", ["style.css", "intro.css"])
+@pytest.mark.parametrize("filename", ["style.css", "intro.css", "shell.css", "overview.css"])
 def test_translucent_panels_require_running_ripple_and_color_mix_support(filename):
     declarations = css_declarations((STATIC / filename).read_text(encoding="utf-8"))
     translucent_rules = 0

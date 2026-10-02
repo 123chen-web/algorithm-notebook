@@ -151,6 +151,43 @@ def test_main_account_has_plenty_of_mistakes_and_four_groups(world):
                          "(SELECT id FROM users WHERE username = ?)", MAIN) == [(1,)]
 
 
+def test_main_account_has_saved_mistake_topics_with_real_members(world):
+    folder, _ = world
+    saved = query(folder, "SELECT content FROM mistake_clusters WHERE user_id = "
+                          "(SELECT id FROM users WHERE username = ?)", MAIN)
+    assert len(saved) == 1
+    report = json.loads(saved[0][0])
+    assert len(report["clusters"]) >= 3
+    source = {
+        mistake_id: (problem_id, title, zone, description, due_date)
+        for mistake_id, problem_id, title, zone, description, due_date in query(
+            folder, "SELECT m.id, p.id, p.title, p.zone, m.description, m.due_date "
+                    "FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+                    "JOIN users u ON u.id = p.user_id WHERE u.username = ?", MAIN)
+    }
+    seen = set()
+    for cluster in report["clusters"]:
+        assert 2 <= len(cluster["members"]) <= 8
+        for member in cluster["members"]:
+            mistake_id = member["mistake_id"]
+            assert mistake_id in source and mistake_id not in seen
+            seen.add(mistake_id)
+            assert (member["problem_id"], member["title"], member["zone"],
+                    member["description"], member["due_date"]) == source[mistake_id]
+    assert report["sample"]["mistake_count"] == len(source)
+
+
+def test_main_account_has_tags_and_forum_emoji(world):
+    folder, _ = world
+    kinds = query(folder, "SELECT COUNT(DISTINCT t.tag) FROM mistake_tags t JOIN users u ON u.id = t.user_id "
+                          "WHERE u.username = ?", MAIN)
+    assert kinds[0][0] >= 5, "the tag filter needs several kinds to show"
+    tagged = query(folder, "SELECT COUNT(DISTINCT t.mistake_id) FROM mistake_tags t JOIN users u ON u.id = t.user_id "
+                           "WHERE u.username = ?", MAIN)
+    assert tagged[0][0] >= 15
+    assert query(folder, "SELECT COUNT(*) FROM post_comments WHERE body LIKE '%👍%' OR body LIKE '%🙌%'")[0][0] >= 2
+
+
 def test_newcomer_and_admin_cover_the_empty_and_privileged_states(world):
     folder, _ = world
     assert query(folder, "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "

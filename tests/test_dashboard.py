@@ -91,48 +91,87 @@ def test_dashboard_markup_has_unique_ids_and_starts_without_private_metrics(inde
     assert heading["text"].strip()
 
 
-def test_dashboard_tiles_preserve_destinations_as_named_native_buttons(index_document):
-    tiles = [
-        node for node in index_document.within("home-page")
-        if "lobby-tile" in node["attrs"].get("class", "").split()
+def test_sidebar_navigation_preserves_destinations_as_named_native_buttons(index_document):
+    entries = [
+        node for node in index_document.within("app-sidebar")
+        if node["tag"] == "button" and "data-view" in node["attrs"]
     ]
-    expected = {"today", "all", "new", "insights", "achievements", "weekly-recap", "forum", "leaderboard", "groups", "plan"}
-    assert Counter(tile["attrs"].get("data-view") for tile in tiles) == Counter(expected)
-    for tile in tiles:
-        assert tile["tag"] == "button"
-        assert tile["attrs"].get("type") == "button"
-        assert tile["text"].strip()
-        assert "onclick" not in tile["attrs"]
-        tile_index = next(
-            index for index, node in enumerate(index_document.elements) if node is tile
+    expected = {
+        "home", "today", "all", "print", "new", "insights", "mastery", "clusters", "achievements", "weekly-recap",
+        "groups", "forum", "leaderboard", "plan", "admin",
+    }
+    assert Counter(entry["attrs"]["data-view"] for entry in entries) == Counter(expected)
+    for entry in entries:
+        assert entry["attrs"].get("type") == "button"
+        assert entry["text"].strip()
+        assert "onclick" not in entry["attrs"]
+        entry_index = next(
+            index for index, node in enumerate(index_document.elements) if node is entry
         )
         children = [
-            node for node in index_document.elements if tile_index in node["ancestors"]
+            node for node in index_document.elements if entry_index in node["ancestors"]
         ]
         assert not any(node["tag"] in {"button", "a", "input", "select"} for node in children)
-        icons = [
-            node for node in children
-            if "tile-icon" in node["attrs"].get("class", "").split()
-        ]
+        icons = [node for node in children if node["tag"] == "svg"]
         assert icons and all(icon["attrs"].get("aria-hidden") == "true" for icon in icons)
 
 
-def test_dashboard_has_return_navigation_and_hides_admin_until_authorized(index_document):
-    page_nav = index_document.by_id("page-nav")
-    assert page_nav["tag"] == "nav"
+def test_tab_bar_and_more_sheet_together_reach_every_sidebar_destination(index_document):
+    def views(container):
+        return {
+            node["attrs"]["data-view"] for node in index_document.within(container)
+            if node["tag"] == "button" and "data-view" in node["attrs"]
+        }
+
+    sidebar = views("app-sidebar")
+    tabs = views("app-tabbar")
+    sheet = views("more-sheet")
+    assert tabs == {"today", "all", "new", "groups"}
+    assert "clusters" in sheet
+    assert tabs | sheet == sidebar
+    assert not tabs & sheet, "an entry should live in exactly one of the tab bar and the sheet"
+    for container in ("app-tabbar", "more-sheet"):
+        for node in index_document.within(container):
+            if node["tag"] == "button":
+                assert node["attrs"].get("type") == "button"
+                assert node["text"].strip() or node["attrs"].get("aria-label")
+
+
+def test_shell_has_home_navigation_and_hides_admin_until_authorized(index_document):
+    sidebar_nav = [
+        node for node in index_document.within("app-sidebar")
+        if node["tag"] == "nav"
+    ]
+    assert [node["attrs"].get("aria-label") for node in sidebar_nav] == ["主导航"]
     home_buttons = [
-        node for node in index_document.within("page-nav")
+        node for node in index_document.within("app-sidebar")
         if node["attrs"].get("data-view") == "home"
     ]
     assert len(home_buttons) == 1
     assert home_buttons[0]["tag"] == "button"
     assert home_buttons[0]["attrs"].get("type") == "button"
-    assert home_buttons[0]["text"].strip()
-    for element_id in ("admin-tab", "home-admin"):
+    assert home_buttons[0]["text"].strip() == "总览"
+    for element_id in ("admin-tab", "more-admin"):
         admin = index_document.by_id(element_id)
         assert admin["tag"] == "button"
         assert admin["attrs"].get("data-view") == "admin"
         assert "hidden" in admin["attrs"]
+        assert "data-admin-only" in admin["attrs"]
+
+
+def test_overview_primary_actions_are_native_buttons(index_document):
+    for element_id, destination in (
+        ("tile-review-start", "today"), ("ov-due-all", "today"), ("ov-weakness", "insights"),
+    ):
+        node = index_document.by_id(element_id)
+        assert node["tag"] == "button"
+        assert node["attrs"].get("type") == "button"
+        assert node["attrs"].get("data-view") == destination
+    focus = index_document.by_id("tile-review-focus")
+    assert focus["tag"] == "button" and "hidden" in focus["attrs"]
+    # 打开具体帖子/记录的入口自己处理点击，不能再带 data-view 被通用导航抢先处理。
+    assert "data-view" not in index_document.by_id("ov-hot")["attrs"]
+    assert "data-view" not in index_document.by_id("tile-review-focus")["attrs"]
 
 
 def test_dashboard_quota_uses_labeled_native_progress(index_document):
