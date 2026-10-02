@@ -198,7 +198,8 @@ CREATE TABLE IF NOT EXISTS post_comments (
     body TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT,
-    deleted_at TEXT
+    deleted_at TEXT,
+    reply_to_id INTEGER REFERENCES post_comments(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_post_comments_post
@@ -320,6 +321,15 @@ PLAN_COLUMN_MIGRATIONS = (
 )
 
 
+POST_COMMENT_COLUMN_MIGRATIONS = (
+    (
+        "reply_to_id",
+        "ALTER TABLE post_comments ADD COLUMN reply_to_id INTEGER "
+        "REFERENCES post_comments(id) ON DELETE SET NULL",
+    ),
+)
+
+
 @contextmanager
 def connect(write=False):
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
@@ -371,6 +381,13 @@ def init_db():
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(plans)")}
         for column, statement in PLAN_COLUMN_MIGRATIONS:
+            if column not in existing:
+                conn.execute(statement)
+
+        existing = {
+            row["name"] for row in conn.execute("PRAGMA table_info(post_comments)")
+        }
+        for column, statement in POST_COMMENT_COLUMN_MIGRATIONS:
             if column not in existing:
                 conn.execute(statement)
 

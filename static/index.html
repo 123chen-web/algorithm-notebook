@@ -8,15 +8,18 @@
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=43">
+  <link rel="stylesheet" href="/static/style.css?v=47">
   <link rel="stylesheet" href="/static/intro.css?v=18">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=11">
   <link rel="stylesheet" href="/static/new-record.css?v=4">
+  <link rel="stylesheet" href="/static/weakness.css?v=2">
+  <link rel="stylesheet" href="/static/groups.css?v=1">
+  <link rel="stylesheet" href="/static/forum.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
   <script defer src="/static/cursor-fx.js?v=18"></script>
-  <script defer src="/static/app.js?v=42"></script>
+  <script defer src="/static/app.js?v=47"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
 <body>
@@ -438,30 +441,50 @@
             <p class="muted">单次对话看不到的反复错误，藏在你的错题历史里。把跨题错因与复习表现放在一起，找出值得优先突破的 1–3 个根本性薄弱点。</p>
           </div>
         </div>
-        <div class="panel">
-          <h3>长期成长</h3>
-          <p class="muted">按分区看你是不是真的在变好——数字是从你的记录里算出来的，不是估的。</p>
-          <p id="growth-empty" class="muted" hidden></p>
-          <div id="growth-summary" hidden>
-            <div id="growth-zones" class="growth-zones"></div>
+        <div class="weakness-layout">
+          <aside id="weakness-controls" class="weakness-controls" aria-labelledby="weakness-controls-title">
+            <h3 id="weakness-controls-title">分析台</h3>
+            <p id="weakness-count" class="weakness-count"></p>
+            <div id="weakness-readiness"></div>
+            <div class="actions">
+              <button id="weakness-analyze" type="button" class="primary" aria-describedby="weakness-cost" data-blocked="1" disabled>分析我的薄弱点 · 消耗 1 次 AI 额度</button>
+            </div>
+            <p id="weakness-status" role="status" aria-live="polite"></p>
+            <div class="weakness-quota-block">
+              <div id="weakness-quota-meter" aria-hidden="true"></div>
+              <p id="weakness-quota" class="muted"></p>
+            </div>
+            <details class="weakness-billing">
+              <summary>怎么计费？</summary>
+              <p id="weakness-cost" class="field-hint">与拍照识别、生成练习题共用今日 AI 额度。调用失败也占用次数；不足 5 条易错点时不调用 AI、不扣额度。查看已有结果和刷新页面免费。</p>
+            </details>
+          </aside>
+          <div class="weakness-report">
+            <section class="weakness-growth" aria-labelledby="growth-title">
+              <div class="weakness-section-heading">
+                <h3 id="growth-title">长期成长</h3>
+                <p class="muted">按分区看记录的变化，数字来自你的真实积累。</p>
+              </div>
+              <p id="growth-empty" class="muted" hidden></p>
+              <div id="growth-summary" hidden>
+                <div id="growth-zones" class="growth-zones"></div>
+                <p id="growth-community-note" class="muted" hidden></p>
+              </div>
+            </section>
+            <section class="weakness-analysis" aria-labelledby="weakness-report-title">
+              <div class="weakness-section-heading">
+                <h3 id="weakness-report-title">分析结果</h3>
+                <p class="muted">连接最近 40 条易错点与复习评分，找到下一步值得练的方向。记录越具体，规律越有依据；证据不足时会如实说明。</p>
+              </div>
+              <div id="weakness-empty" class="weakness-empty" hidden>
+                <span class="weakness-empty-mark" aria-hidden="true"></span>
+                <h3>错题积累下来，规律才会浮现</h3>
+                <p id="weakness-empty-text" class="muted"></p>
+              </div>
+              <div id="weakness-result" hidden></div>
+            </section>
           </div>
         </div>
-        <div class="panel weakness-controls">
-          <h3>让积累的记录告诉你，下一步该练什么</h3>
-          <p class="muted">每次取最近 40 条易错点及其复习评分历史。记录和复习越具体，越有机会看出有依据的规律；证据不足时，分析会如实说明。</p>
-          <p id="weakness-count" class="weakness-count"></p>
-          <p id="weakness-quota" class="muted"></p>
-          <div class="actions">
-            <button id="weakness-analyze" type="button" class="primary" aria-describedby="weakness-cost" data-blocked="1" disabled>分析我的薄弱点 · 消耗 1 次 AI 额度</button>
-          </div>
-          <p id="weakness-cost" class="field-hint">与拍照识别、生成练习题共用今日 AI 额度。调用失败也占用次数；不足 5 条易错点时不调用 AI、不扣额度。查看已有结果和刷新页面免费。</p>
-          <p id="weakness-status" role="status" aria-live="polite"></p>
-        </div>
-        <div id="weakness-empty" class="panel weakness-empty" hidden>
-          <h3>错题积累下来，规律才会浮现</h3>
-          <p id="weakness-empty-text" class="muted"></p>
-        </div>
-        <div id="weakness-result" hidden></div>
       </section>
 
       <section id="list-page">
@@ -657,14 +680,14 @@
         <div class="page-heading">
           <div>
             <h2 id="groups-title">学习小组</h2>
-            <p class="muted">通过邀请码相聚，看看彼此的连续打卡和共同薄弱点。组内展示真实用户名，体验账号也可以参与。</p>
+            <p class="muted">把每天的一点进步，汇成小组的共同成长。组内展示真实用户名，体验账号也可以参与。</p>
           </div>
         </div>
         <p id="groups-status" class="muted" role="status" aria-live="polite"></p>
         <button id="groups-retry" type="button" hidden>重新加载小组</button>
 
         <div id="groups-overview">
-          <section class="panel" aria-labelledby="groups-list-title">
+          <section class="groups-list-section" aria-labelledby="groups-list-title">
             <h3 id="groups-list-title">我加入的小组</h3>
             <div id="groups-list"></div>
           </section>
@@ -672,6 +695,7 @@
             <section class="panel" aria-labelledby="groups-create-title">
               <h3 id="groups-create-title">创建小组</h3>
               <p class="muted">给小组起个名字，再把邀请码告诉一起学习的人。</p>
+              <p class="groups-form-limit">每个小组最多 10 人</p>
               <form id="groups-create-form">
                 <label for="groups-name">小组名称</label>
                 <input id="groups-name" name="name" required minlength="1" maxlength="40" placeholder="例如：每天进步一点点">
@@ -681,6 +705,7 @@
             <section class="panel" aria-labelledby="groups-join-title">
               <h3 id="groups-join-title">通过邀请码加入</h3>
               <p class="muted">向熟人获取 8 位邀请码，大小写都可以。</p>
+              <p class="groups-form-limit">每个小组最多 10 人</p>
               <form id="groups-join-form">
                 <label for="groups-invite-input">邀请码</label>
                 <input id="groups-invite-input" name="invite_code" required minlength="8" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入 8 位邀请码">
@@ -693,24 +718,39 @@
         <section id="groups-detail" aria-labelledby="groups-detail-title" hidden>
           <button id="groups-back" type="button">返回我的小组</button>
           <div id="groups-detail-content" hidden>
-            <div class="panel groups-summary">
-              <h3 id="groups-detail-title"></h3>
-              <p class="muted">邀请码，仅小组成员可见</p>
-              <p id="groups-invite-code" class="groups-invite-code"></p>
-              <p class="muted">复制这 8 位邀请码，邀请熟人加入。</p>
+            <div id="groups-hero" class="panel groups-hero">
+              <div id="groups-hero-badge" class="groups-hero-badge"></div>
+              <div class="groups-hero-copy">
+                <p class="groups-eyebrow">一起落笔 · 共同进步</p>
+                <h3 id="groups-detail-title"></h3>
+                <p id="groups-detail-meta" class="groups-detail-meta"></p>
+                <div id="groups-level-progress" class="groups-progress groups-progress--hero" role="progressbar" aria-label="当前等级成长进度" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+                <p id="groups-level-caption" class="groups-level-caption"></p>
+              </div>
+              <div class="groups-invite">
+                <p class="groups-invite-label">邀请码 · 仅成员可见</p>
+                <p id="groups-invite-code" class="groups-invite-code" tabindex="0" aria-label="小组邀请码"></p>
+                <button id="groups-copy-invite" type="button">复制邀请码</button>
+              </div>
             </div>
-            <section class="panel groups-members" aria-labelledby="groups-members-title">
+            <section class="groups-members-section" aria-labelledby="groups-members-title">
               <h3 id="groups-members-title">小组成员</h3>
               <p id="groups-streak-rules" class="muted">按连续打卡天数排序，同分按用户名排序。每天完成复习评分即为打卡，日期按每位成员自己的时区计算。</p>
-              <table class="leaderboard-table" aria-labelledby="groups-members-title" aria-describedby="groups-streak-rules">
-                <thead><tr><th scope="col">用户名</th><th scope="col" class="leaderboard-days">连续打卡</th><th id="groups-member-actions" scope="col" hidden>操作</th></tr></thead>
-                <tbody id="groups-members"></tbody>
-              </table>
+              <p id="groups-member-actions" class="groups-member-actions muted" hidden>你是组长，可以移除其他成员。</p>
+              <ul id="groups-members" aria-labelledby="groups-members-title" aria-describedby="groups-streak-rules"></ul>
             </section>
+            <details id="groups-upgrade" class="panel groups-upgrade">
+              <summary>怎么升级<span class="groups-upgrade-hint">每一笔努力，都算数</span></summary>
+              <p id="groups-levels-status" class="muted" role="status" aria-live="polite"></p>
+              <button id="groups-levels-retry" type="button" hidden>重试加载等级说明</button>
+              <ol id="groups-level-ladder" aria-label="小组等级阶梯"></ol>
+              <ul id="groups-level-rules"></ul>
+              <p class="groups-level-note">等级按当前成员的贡献实时计算，成员退出后其贡献不再计入。只统计加入小组后的行为，按每位成员自己的时区计算每日积分，体验账号照常计分。</p>
+            </details>
             <section class="groups-weakness" aria-labelledby="groups-weakness-title">
               <h3 id="groups-weakness-title">组内薄弱点信号</h3>
               <p class="muted">每个分区至少有 3 位非体验成员记录过易错点，才显示群体挣扎占比；其中累计有 3 条及以上易错点视为反复出错。体验账号的学习数据不参与聚合。</p>
-              <div id="groups-weakness" class="growth-zones"></div>
+              <div id="groups-weakness"></div>
             </section>
             <div class="danger-zone">
               <p class="danger-hint">可以随时退出；最后一位成员退出后，小组会自动删除。</p>
@@ -731,7 +771,7 @@
 
         <section id="forum-list" aria-labelledby="forum-list-title">
           <div class="page-heading forum-list-heading">
-            <h3 id="forum-list-title">全部帖子</h3>
+            <h3 id="forum-list-title" tabindex="-1">全部帖子</h3>
             <button id="forum-new-post-btn" type="button" class="primary">发帖</button>
           </div>
           <form id="forum-search-form" role="search">
@@ -763,22 +803,44 @@
           </form>
         </section>
 
-        <section id="forum-detail" class="panel" aria-labelledby="forum-detail-title" hidden>
-          <div class="actions">
-            <button id="forum-back" type="button">返回帖子列表</button>
+        <section id="forum-detail" aria-labelledby="forum-detail-title" hidden>
+          <div class="forum-detail-navigation">
+            <button id="forum-back" type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button>
           </div>
-          <div id="forum-post"></div>
-          <section id="forum-comments-section">
-            <h3 id="forum-comments-title">评论</h3>
+          <article id="forum-post" aria-labelledby="forum-detail-title"></article>
+          <section id="forum-comments-section" aria-labelledby="forum-comments-title">
+            <div class="forum-comments-heading">
+              <h3 id="forum-comments-title">全部评论 · 0</h3>
+              <div class="forum-comment-controls">
+                <div id="forum-comment-sort" class="forum-sort" role="group" aria-label="评论排序">
+                  <button type="button" data-forum-order="earliest" aria-pressed="true" aria-controls="forum-comments">最早</button>
+                  <button type="button" data-forum-order="latest" aria-pressed="false" aria-controls="forum-comments">最新</button>
+                </div>
+                <button id="forum-only-op" type="button" aria-pressed="false" aria-controls="forum-comments">只看楼主</button>
+              </div>
+            </div>
+            <p id="forum-comment-status" class="forum-sr-only" role="status" aria-live="polite"></p>
             <div id="forum-comments"></div>
-            <form id="forum-comment-form">
-              <label>
-                发表评论
-                <textarea name="body" required maxlength="2000" rows="3"></textarea>
-              </label>
-              <button type="submit" class="primary">发表评论</button>
+            <form id="forum-comment-form" aria-labelledby="forum-composer-title">
+              <div id="forum-comment-avatar" aria-hidden="true"></div>
+              <div class="forum-composer-content">
+                <label id="forum-composer-title" for="forum-comment-body">发表你的看法</label>
+                <div id="forum-reply-target" class="forum-reply-target" role="status" hidden>
+                  <span id="forum-reply-label"></span>
+                  <button id="forum-reply-cancel" type="button" class="forum-text-action" aria-label="取消回复">×</button>
+                </div>
+                <textarea id="forum-comment-body" name="body" required maxlength="2000" rows="3" placeholder="一起聊聊你的思路…" aria-describedby="forum-comment-count"></textarea>
+                <div class="forum-composer-footer">
+                  <output id="forum-comment-count" for="forum-comment-body">0/2000</output>
+                  <button type="submit" class="primary">发表评论</button>
+                </div>
+              </div>
             </form>
+            <p id="forum-comment-trial-note" hidden>体验账号可以浏览，不能评论</p>
           </section>
+          <div class="forum-detail-navigation forum-detail-navigation-bottom">
+            <button id="forum-back-bottom" type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button>
+          </div>
         </section>
       </section>
 

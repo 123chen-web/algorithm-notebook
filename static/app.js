@@ -29,6 +29,9 @@ let planPurchase = null;
 let orderPollTimer = null;
 let orderPollGeneration = 0;
 let forumPost = null;
+let forumCommentOrder = "earliest";
+let forumOnlyOp = false;
+let forumReplyTarget = null;
 let forumSearchQuery = "";
 let forumListGeneration = 0;
 let adminDashboardGeneration = 0;
@@ -39,6 +42,9 @@ let weaknessQuotaAvailable = false;
 let achievementsGeneration = 0;
 let weeklyRecapGeneration = 0;
 let groupsGeneration = 0;
+let groupLevelsGeneration = 0;
+let groupLevelRules = null;
+let groupCopyTimer = null;
 let selectedGroupId = null;
 let studyGroup = null;
 let growthZones = null;
@@ -64,14 +70,19 @@ function sealAnchorPoint(anchor) {
 
 function stampSeal(text, options = {}) {
   const layer = $("#seal-layer");
-  if (!layer || document.hidden || !/^[\u3400-\u9fff]{2,4}$/u.test(text)) return;
-  const tone = options.tone === "gamboge" ? "gamboge" : "cinnabar";
+  const isGroupUpgrade = /^升至 Lv\.[1-8]$/u.test(text);
+  if (!layer || document.hidden || (!/^[\u3400-\u9fff]{2,4}$/u.test(text) && !isGroupUpgrade)) return;
+  const tone = ["gamboge", "gold"].includes(options.tone) ? "gamboge" : "cinnabar";
   const stamp = document.createElement("span");
   stamp.className = `seal-stamp seal-stamp--${tone}`;
   stamp.setAttribute("aria-hidden", "true");
   stamp.textContent = text;
   stamp.style.setProperty("--rot", `${-12 + Math.random() * 8}deg`);
-  stamp.style.setProperty("--seal-height", `${78 + (Array.from(text).length - 2) * 30}px`);
+  stamp.style.setProperty("--seal-height", isGroupUpgrade ? "64px" : `${78 + (Array.from(text).length - 2) * 30}px`);
+  if (isGroupUpgrade) {
+    stamp.style.setProperty("--seal-width", "176px");
+    stamp.style.setProperty("--seal-writing-mode", "horizontal-tb");
+  }
   const timers = new Set();
   const entry = { remove };
   function remove() {
@@ -423,6 +434,9 @@ function signedOut() {
   $("#leaderboard-page").setAttribute("aria-busy", "false");
   forumPost = null;
   forumSearchQuery = "";
+  forumCommentOrder = "earliest";
+  forumOnlyOp = false;
+  clearForumReply();
   forumListGeneration += 1;
   $("#forum-search-form").reset();
   $("#forum-list-title").textContent = "全部帖子";
@@ -935,6 +949,9 @@ async function loadLeaderboard() {
 
 function resetGroups() {
   groupsGeneration += 1;
+  groupLevelsGeneration += 1;
+  groupLevelRules = null;
+  window.clearTimeout(groupCopyTimer);
   selectedGroupId = null;
   studyGroup = null;
   $("#groups-page").hidden = true;
@@ -948,6 +965,12 @@ function resetGroups() {
   $("#groups-weakness").replaceChildren();
   $("#groups-detail-title").textContent = "";
   $("#groups-invite-code").textContent = "";
+  $("#groups-copy-invite").textContent = "复制邀请码";
+  $("#groups-upgrade").open = false;
+  $("#groups-level-ladder").replaceChildren();
+  $("#groups-level-rules").replaceChildren();
+  $("#groups-levels-status").textContent = "";
+  $("#groups-levels-retry").hidden = true;
   $("#groups-delete").hidden = true;
   $("#groups-status").textContent = "";
   $("#groups-status").classList.remove("error");
@@ -983,6 +1006,29 @@ async function requestGroups(action, onSuccess, loadingText, { retry = false } =
   }
 }
 
+function groupLevelBadge(level, size = "medium") {
+  const badge = element("span", "", `groups-level-badge groups-level-badge--${size}`);
+  badge.dataset.level = level.number;
+  badge.setAttribute("aria-hidden", "true");
+  badge.append(
+    element("span", level.name.slice(0, 1), "groups-seal-character"),
+    element("span", `Lv.${level.number}`, "groups-seal-number")
+  );
+  return badge;
+}
+
+function groupNextLevelText(level) {
+  return level.next_points == null ? "已满级"
+    : `距 Lv.${level.number + 1} ${level.next_name}还差 ${level.points_to_next} 分`;
+}
+
+function setGroupProgress(bar, level) {
+  const progress = Math.max(0, Math.min(1, level.progress));
+  bar.style.setProperty("--groups-progress", progress);
+  bar.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+  bar.setAttribute("aria-valuetext", `${level.points} 分，${groupNextLevelText(level)}`);
+}
+
 function renderGroups(groups) {
   const list = $("#groups-list");
   list.replaceChildren();
@@ -991,19 +1037,43 @@ function renderGroups(groups) {
     return;
   }
   for (const group of groups) {
-    const button = element("button", "", "record-button");
+    const button = element("button", "", "groups-card");
     button.type = "button";
     button.disabled = busy;
-    button.append(
-      element("strong", group.name),
-      element("small", `${group.member_count} 位成员${group.is_creator ? " · 我创建的小组" : ""}`, "muted")
-    );
+    const level = group.level;
+    const heading = element("span", "", "groups-card-heading");
+    const copy = element("span", "", "groups-card-copy");
+    const meta = element("span", `成员 ${group.member_count}/${group.member_limit}${group.is_creator ? " · 我是组长" : ""}`, "groups-card-meta");
+    if (group.member_count >= group.member_limit) meta.append(element("span", "已满员", "groups-full-tag"));
+    const name = element("strong", group.name, "groups-card-name");
+    name.title = group.name;
+    copy.append(name, element("span", `Lv.${level.number} ${level.name}`, "groups-card-level"), meta);
+    heading.append(groupLevelBadge(level), copy);
+    const progress = element("span", "", "groups-progress");
+    progress.setAttribute("role", "progressbar");
+    progress.setAttribute("aria-label", `${group.name}的等级进度`);
+    progress.setAttribute("aria-valuemin", "0");
+    progress.setAttribute("aria-valuemax", "100");
+    progress.append(element("span"));
+    setGroupProgress(progress, level);
+    const avatars = element("span", "", "groups-avatars");
+    for (const member of group.members_preview) {
+      const avatar = avatarElement(member.id, member.username, member.avatar_version, { hasAvatar: member.has_avatar });
+      avatar.setAttribute("aria-hidden", "true");
+      avatar.title = member.username;
+      avatars.append(avatar);
+    }
+    if (group.member_count > group.members_preview.length) {
+      avatars.append(element("span", `+${group.member_count - group.members_preview.length}`, "groups-avatars-more"));
+    }
+    button.append(heading, progress, element("span", groupNextLevelText(level), "groups-card-caption"), avatars);
     button.addEventListener("click", () => run(() => openStudyGroup(group.id)));
     list.append(button);
   }
 }
 
 async function loadGroups() {
+  groupLevelsGeneration += 1;
   selectedGroupId = null;
   studyGroup = null;
   $("#groups-overview").hidden = false;
@@ -1026,51 +1096,188 @@ function renderStudyGroup(group) {
   $("#groups-detail-content").hidden = false;
   $("#groups-detail-title").textContent = group.name;
   $("#groups-invite-code").textContent = group.invite_code;
-  $("#groups-members-title").textContent = `小组成员 · ${group.members.length} 人`;
+  window.clearTimeout(groupCopyTimer);
+  $("#groups-copy-invite").textContent = "复制邀请码";
+  $("#groups-invite-code").setAttribute("aria-label", `小组邀请码 ${group.invite_code}`);
+  $("#groups-hero-badge").replaceChildren(groupLevelBadge(group.level, "large"));
+  const meta = $("#groups-detail-meta");
+  meta.replaceChildren(element("span", `Lv.${group.level.number} ${group.level.name} · 成员 ${group.members.length}/${group.member_limit}`));
+  if (group.members.length >= group.member_limit) meta.append(element("span", "已满员", "groups-full-tag"));
+  meta.append(element("span", ` · 创建于 ${new Date(group.created_at).toLocaleDateString("zh-CN", { timeZone: user.timezone })}`));
+  setGroupProgress($("#groups-level-progress"), group.level);
+  $("#groups-level-caption").textContent = group.level.next_points == null
+    ? `${group.level.floor}+ 分 · 已满级`
+    : `${group.points} / ${group.level.next_points} 分 · ${groupNextLevelText(group.level)}`;
+  $("#groups-members-title").textContent = `小组成员 · ${group.members.length}/${group.member_limit} 人`;
   $("#groups-member-actions").hidden = !group.is_creator;
   const members = $("#groups-members");
   members.replaceChildren();
+  const highestContribution = Math.max(0, ...group.members.map((member) => member.points));
   // 服务端已按连续天数降序、用户名升序排列，保留相同的排序口径。
   for (const member of group.members) {
-    const row = element("tr");
-    row.append(
-      element("td", member.username),
-      element("td", `${member.current_streak_days} 天`, "leaderboard-days")
-    );
-    if (group.is_creator) {
-      const actions = element("td", "", "groups-member-actions");
-      if (member.id !== user.id) {
-        const remove = element("button", "移除", "danger");
-        remove.type = "button";
-        remove.disabled = busy;
-        remove.addEventListener("click", () => run(() => removeStudyGroupMember(member)));
-        actions.append(remove);
-      }
-      row.append(actions);
+    const row = element("li", "", "groups-member-card");
+    const identity = element("div", "", "groups-member-identity");
+    const name = element("div", "", "groups-member-name");
+    name.append(element("strong", member.username));
+    const tags = element("span", "", "groups-member-tags");
+    if (member.is_creator) tags.append(element("span", "组长", "groups-creator-tag"));
+    if (member.id === user.id) tags.append(element("span", "我", "groups-self-tag"));
+    name.append(tags);
+    identity.append(avatarElement(member.id, member.username, member.avatar_version, { hasAvatar: member.has_avatar }), name);
+    if (group.is_creator && member.id !== user.id) {
+      const remove = element("button", "移除", "danger");
+      remove.type = "button";
+      remove.disabled = busy;
+      remove.setAttribute("aria-label", `移除成员 ${member.username}`);
+      remove.addEventListener("click", () => run(() => removeStudyGroupMember(member)));
+      identity.append(remove);
     }
+    const stats = element("dl", "", "groups-member-stats");
+    for (const [label, value, unit] of [["连续打卡", member.current_streak_days, "天"], ["贡献", `+${member.points}`, "分"]]) {
+      const block = element("div");
+      const number = element("dd");
+      number.append(element("strong", value), element("span", unit));
+      block.append(element("dt", label), number);
+      stats.append(block);
+    }
+    const contribution = element("div", "", "groups-contribution-bar");
+    contribution.setAttribute("aria-hidden", "true");
+    contribution.style.setProperty("--groups-progress", highestContribution ? member.points / highestContribution : 0);
+    contribution.append(element("span"));
+    row.append(identity, stats, contribution);
     members.append(row);
   }
+  renderGroupWeakness(group.weakness_by_zone);
+  $("#groups-delete").hidden = !group.is_creator;
+  void loadGroupLevelRules();
+  rememberGroupLevel(group);
+}
+
+function renderGroupWeakness(weaknessByZone) {
   const signals = $("#groups-weakness");
   signals.replaceChildren();
-  const zones = Object.entries(group.weakness_by_zone);
-  if (!zones.length) {
+  const entries = Object.entries(weaknessByZone);
+  if (!entries.length) {
     signals.append(element("p", "还没有足够的学习记录，积累一些易错点后再来看看。", "muted"));
+    return;
   }
-  for (const [zone, signal] of zones) {
-    const card = element("article", "", "panel growth-zone");
-    card.append(
-      element("h4", zone),
-      element("p", signal.struggling_ratio == null
-        ? "这个分区的有效样本还不够，暂不显示群体挣扎占比。"
-        : `群体挣扎占比 ${Math.round(signal.struggling_ratio * 100)}%`, "growth-headline"),
-      element("p", "统计本组在该分区记录过易错点的非体验成员，不展示个人错题。", "muted growth-community")
-    );
-    signals.append(card);
+  const available = entries.filter(([, signal]) => signal.struggling_ratio != null);
+  const missing = entries.filter(([, signal]) => signal.struggling_ratio == null).map(([zone]) => zone);
+  if (!available.length) {
+    signals.append(element("p", "各分区的有效样本还不够，暂不显示群体挣扎占比。继续积累，一起发现需要多练的方向。", "groups-signal-empty"));
+    return;
   }
-  $("#groups-delete").hidden = !group.is_creator;
+  for (const [zone, signal] of available) {
+    const ratio = Math.max(0, Math.min(1, signal.struggling_ratio));
+    const row = element("div", "", "groups-signal-row");
+    const bar = element("div", "", "groups-signal-bar");
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.setProperty("--groups-progress", ratio);
+    bar.append(element("span"));
+    row.append(element("span", zone, "groups-signal-name"), bar, element("strong", `${Math.round(ratio * 100)}%`));
+    signals.append(row);
+  }
+  if (missing.length) signals.append(element("p", `样本暂不足：${missing.join("、")}`, "groups-signal-missing"));
+}
+
+function renderGroupLevelRules(data) {
+  const ladder = $("#groups-level-ladder");
+  ladder.replaceChildren();
+  for (const level of data.levels) {
+    const step = element("li", "", "groups-level-step");
+    step.dataset.state = level.number === studyGroup.level.number ? "current"
+      : level.number < studyGroup.level.number ? "reached" : "future";
+    if (step.dataset.state === "current") step.setAttribute("aria-current", "step");
+    step.append(groupLevelBadge(level, "small"), element("strong", `Lv.${level.number} ${level.name}`), element("span", `${level.min_points} 分`));
+    ladder.append(step);
+  }
+  const rules = $("#groups-level-rules");
+  rules.replaceChildren();
+  const units = { review: "次", checkin: "天", record: "条" };
+  for (const rule of data.rules) {
+    const item = element("li");
+    item.append(element("strong", rule.label), element("span", `+${rule.points} / ${units[rule.key] || "次"}`), element("span", `每人每天最多 ${rule.daily_cap} 分${rule.key === "checkin" ? "，完成复习即打卡，每天一次" : ""}`));
+    rules.append(item);
+  }
+}
+
+async function loadGroupLevelRules() {
+  if (!user || view !== "groups" || !studyGroup) return;
+  const generation = ++groupLevelsGeneration;
+  const userId = user.id;
+  const groupId = studyGroup.id;
+  const isCurrent = () => user?.id === userId && view === "groups"
+    && studyGroup?.id === groupId && generation === groupLevelsGeneration;
+  const details = $("#groups-upgrade");
+  const status = $("#groups-levels-status");
+  status.textContent = "正在读取等级说明…";
+  status.classList.remove("error");
+  $("#groups-levels-retry").hidden = true;
+  $("#groups-level-ladder").replaceChildren();
+  $("#groups-level-rules").replaceChildren();
+  details.setAttribute("aria-busy", "true");
+  try {
+    const data = groupLevelRules || await api("/api/group-levels");
+    if (!isCurrent()) return;
+    groupLevelRules = data;
+    renderGroupLevelRules(data);
+    status.textContent = "";
+  } catch {
+    if (!isCurrent()) return;
+    status.textContent = "等级说明暂时无法读取，小组仍可正常使用。可以稍后重试。";
+    status.classList.add("error");
+    $("#groups-levels-retry").hidden = false;
+  } finally {
+    if (isCurrent()) details.setAttribute("aria-busy", "false");
+  }
+}
+
+function rememberGroupLevel(group) {
+  try {
+    const key = `groupLevelSeen:${user.id}:${group.id}`;
+    const previous = localStorage.getItem(key);
+    localStorage.setItem(key, String(group.level.number));
+    if (previous !== null && Number.isInteger(Number(previous)) && Number(previous) >= 1
+        && group.level.number > Number(previous)) {
+      stampSeal(`升至 Lv.${group.level.number}`, { anchor: $("#groups-hero-badge"), tone: "gold" });
+    }
+  } catch {
+    // Private browsing or a full storage quota must not interrupt the group.
+  }
+}
+
+async function copyGroupInvite() {
+  if (!user || view !== "groups" || !studyGroup) return;
+  const groupId = studyGroup.id;
+  const userId = user.id;
+  const code = studyGroup.invite_code;
+  const isCurrent = () => user?.id === userId && view === "groups" && studyGroup?.id === groupId;
+  try {
+    await navigator.clipboard.writeText(code);
+    if (!isCurrent()) return;
+    const button = $("#groups-copy-invite");
+    button.textContent = "已复制";
+    message("邀请码已复制，可以分享给一起学习的人。");
+    window.clearTimeout(groupCopyTimer);
+    groupCopyTimer = window.setTimeout(() => {
+      if (isCurrent()) button.textContent = "复制邀请码";
+    }, 1800);
+  } catch {
+    if (!isCurrent()) return;
+    const label = $("#groups-invite-code");
+    label.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    message("自动复制未成功，已选中邀请码。请按 Ctrl+C，或长按复制。");
+  }
 }
 
 async function openStudyGroup(groupId) {
+  groupLevelsGeneration += 1;
+  $("#groups-upgrade").open = false;
   selectedGroupId = groupId;
   studyGroup = null;
   $("#groups-overview").hidden = true;
@@ -1354,17 +1561,56 @@ function renderWeaknessControls() {
   const minimum = weaknessAnalysis?.minimum_mistakes ?? 5;
   const count = weaknessAnalysis?.mistake_count;
   const insufficient = Number.isInteger(count) && count < minimum;
-  $("#weakness-count").textContent = Number.isInteger(count)
+  const countText = Number.isInteger(count)
     ? insufficient
       ? `已积累 ${count} 条易错点，再记录 ${minimum - count} 条就可以开始分析。`
       : `已积累 ${count} 条易错点，可以开始分析。`
     : "先积累至少 5 条易错点，让分析有足够的线索。";
+  const countNode = $("#weakness-count");
+  const readiness = $("#weakness-readiness");
+  countNode.replaceChildren();
+  readiness.replaceChildren();
+  if (Number.isInteger(count)) {
+    const visual = element("span", "", "weakness-count-visual");
+    visual.setAttribute("aria-hidden", "true");
+    visual.append(
+      element("span", "已积累", "weakness-count-label"),
+      element("span", String(count), "weakness-count-number"),
+      element("span", "条易错点", "weakness-count-unit")
+    );
+    countNode.append(element("span", countText, "weakness-sr-only"), visual);
+    if (insufficient) {
+      const progress = element("span", "", "weakness-progress-track");
+      progress.setAttribute("aria-hidden", "true");
+      const fill = element("span", "", "weakness-progress-fill");
+      fill.style.setProperty("--weakness-progress", String(Math.max(0, count / minimum)));
+      progress.append(fill);
+      readiness.append(progress, element("span", `${count} / ${minimum} · 再记录 ${minimum - count} 条`, "weakness-progress-label"));
+    } else {
+      readiness.append(element("span", "可以开始分析", "weakness-ready"));
+    }
+  } else {
+    countNode.append(element("span", countText, "weakness-count-prompt"));
+  }
   const remaining = user?.ai_daily_remaining;
   const limit = user?.ai_daily_limit;
   const quotaKnown = weaknessQuotaAvailable && Number.isInteger(remaining) && Number.isInteger(limit);
   $("#weakness-quota").textContent = quotaKnown
     ? `今日 AI 额度剩余 ${remaining} / ${limit} 次${remaining === 0 ? "，明天可再次分析，或前往“我的套餐”查看额度。" : "。"}`
     : weaknessPending ? "正在读取今日 AI 额度…" : "暂时无法读取剩余额度，分析前会由服务端检查额度。";
+  const quotaMeter = $("#weakness-quota-meter");
+  quotaMeter.replaceChildren();
+  quotaMeter.hidden = !quotaKnown;
+  if (quotaKnown) {
+    const filled = limit > 0 ? Math.max(0, Math.min(1, remaining / limit)) * 10 : 0;
+    for (let index = 0; index < 10; index += 1) {
+      const dot = element("span", "", "weakness-quota-dot");
+      const fill = element("span", "", "weakness-quota-dot-fill");
+      fill.style.setProperty("--weakness-quota-fill", String(Math.max(0, Math.min(1, filled - index))));
+      dot.append(fill);
+      quotaMeter.append(dot);
+    }
+  }
   const button = $("#weakness-analyze");
   button.dataset.blocked = weaknessPending || insufficient || (quotaKnown && remaining === 0) ? "1" : "0";
   button.disabled = busy || button.dataset.blocked === "1";
@@ -1383,41 +1629,61 @@ function renderWeaknessAnalysis() {
   result.hidden = !insight;
   $("#weakness-empty").hidden = Boolean(insight);
   $("#weakness-empty-text").textContent = weaknessAnalysis?.message
-    || "还没有分析过。点击上方按钮，把积累的错因和复习评分连起来，看看哪些问题值得先解决。";
+    || "还没有分析过。点击分析按钮，把积累的错因和复习评分连起来，看看哪些问题值得先解决。";
   renderWeaknessControls();
   if (!insight) return;
 
   const { content } = insight;
-  const overview = element("section", "", "panel weakness-overview");
+  const overview = element("section", "", "panel weakness-overview weakness-reveal");
+  overview.style.setProperty("--weakness-order", "0");
   overview.append(
-    element("p", "最近一次分析", "eyebrow"),
+    element("p", `最近一次分析 · 更新于 ${timestamp(insight.created_at)}`, "eyebrow weakness-eyebrow"),
     element("h3", content.patterns.length ? "值得优先关注的规律" : "目前的记录还不足以确认重复规律"),
-    element("p", content.summary, "multiline"),
-    element("p", `更新于 ${timestamp(insight.created_at)} · 只保留最近一次分析`, "muted")
+    element("p", content.summary, "multiline weakness-summary")
   );
   const sample = content.sample;
-  overview.append(element("p", `本次依据：${sample.problem_count} 道题 · ${sample.mistake_count} 条易错点 · ${sample.review_count} 次复习评分`, "weakness-sample"));
-  if (sample.period_start && sample.period_end) {
-    overview.append(element("p", `题目记录范围：${timestamp(sample.period_start)} 至 ${timestamp(sample.period_end)}`, "muted"));
+  const sampleStats = element("dl", "", "weakness-sample");
+  sampleStats.setAttribute("aria-label", "本次分析依据");
+  for (const [amount, label] of [
+    [sample.problem_count, "道题"],
+    [sample.mistake_count, "条易错点"],
+    [sample.review_count, "次复习评分"],
+  ]) {
+    const stat = element("div", "", "weakness-stat");
+    stat.append(element("dt", label), element("dd", String(amount), "weakness-stat-number"));
+    sampleStats.append(stat);
   }
   if (weaknessAnalysis.status === "insufficient_data") {
     overview.append(element("p", "以下是上次保存的分析；当前易错点数量不足，暂时无法更新。", "muted"));
   }
+  overview.append(sampleStats);
+  const rangeText = sample.period_start && sample.period_end
+    ? `题目记录范围：${timestamp(sample.period_start)} 至 ${timestamp(sample.period_end)} · 只保留最近一次分析`
+    : "只保留最近一次分析";
+  overview.append(element("p", rangeText, "muted weakness-range"));
   result.append(overview);
   content.patterns.forEach((pattern, index) => {
-    const card = element("article", "", "panel weakness-pattern");
+    const card = element("article", "", "panel weakness-pattern weakness-reveal");
+    card.style.setProperty("--weakness-order", String(index + 1));
+    const number = element("span", String(index + 1).padStart(2, "0"), "weakness-pattern-number");
+    number.setAttribute("aria-hidden", "true");
     const heading = element("div", "", "weakness-pattern-heading");
+    const confidence = element("span", pattern.confidence, "weakness-confidence");
+    if (pattern.confidence === "较明确") confidence.classList.add("weakness-confidence-clear");
     heading.append(
-      element("h3", `${index + 1}. ${pattern.title}`),
-      element("span", pattern.confidence, "weakness-confidence")
+      element("h3", pattern.title),
+      confidence
     );
-    card.append(heading, element("p", pattern.explanation, "multiline"));
+    card.append(number, heading, element("p", pattern.explanation, "multiline weakness-explanation"));
     const evidence = element("ul", "", "weakness-evidence");
+    evidence.setAttribute("role", "list");
     for (const item of pattern.evidence) {
       const entry = element("li");
+      const copy = element("div", "", "weakness-evidence-copy");
+      copy.append(element("strong", item.title), element("p", item.observation, "multiline"));
       entry.append(
-        element("strong", `${item.zone} · ${item.title}`),
-        element("p", item.observation, "multiline")
+        element("span", item.zone, "weakness-evidence-zone"),
+        copy
       );
       evidence.append(entry);
     }
@@ -1427,7 +1693,9 @@ function renderWeaknessAnalysis() {
     card.append(action);
     result.append(card);
   });
-  result.append(element("p", "分析是基于当前样本的学习建议。继续记录具体错因、如实复习评分，下次更新时再验证这些判断。", "muted"));
+  const note = element("p", "分析是基于当前样本的学习建议。继续记录具体错因、如实复习评分，下次更新时再验证这些判断。", "muted weakness-report-note weakness-reveal");
+  note.style.setProperty("--weakness-order", String(content.patterns.length + 1));
+  result.append(note);
 }
 
 async function loadWeaknessAnalysis() {
@@ -1469,7 +1737,10 @@ function renderGrowthInsights(loadedOk) {
   const panel = $("#growth-summary");
   const empty = $("#growth-empty");
   const list = $("#growth-zones");
+  const communityNote = $("#growth-community-note");
   list.replaceChildren();
+  communityNote.hidden = true;
+  communityNote.textContent = "";
 
   if (!loadedOk) {
     panel.hidden = true;
@@ -1485,32 +1756,63 @@ function renderGrowthInsights(loadedOk) {
   }
   empty.hidden = true;
   panel.hidden = false;
-  for (const zone of growthZones) {
-    const card = element("article", "", "panel growth-zone");
+  let hasCommunityComparison = false;
+  for (const [index, zone] of growthZones.entries()) {
+    const card = element("article", "", "panel growth-zone weakness-reveal");
+    card.style.setProperty("--weakness-order", String(index));
     if (zone.quiet_streak) card.classList.add("growth-zone-quiet");
-    card.append(element("h4", zone.zone));
+    const heading = element("div", "", "growth-zone-heading");
+    const title = element("h4");
+    const dot = element("span", "", "growth-zone-dot");
+    dot.setAttribute("aria-hidden", "true");
+    title.append(dot, document.createTextNode(zone.zone));
+    heading.append(title);
+    if (zone.quiet_streak) {
+      heading.append(element("span", `已 ${zone.days_since_last_mistake} 天没有新增`, "growth-quiet-badge"));
+    }
+    const headline = element("p", "", "growth-headline");
+    headline.append(
+      element("span", String(zone.recent_30_days), "growth-count-number"),
+      element("span", "近 30 天新增条数", "growth-period")
+    );
+    card.append(heading, headline);
+    const comparison = element("div", "", "growth-comparison");
+    comparison.setAttribute("aria-hidden", "true");
+    const maximum = Math.max(zone.recent_30_days, zone.prior_30_days, 1);
+    for (const [amount, label, previous] of [
+      [zone.recent_30_days, "近 30 天", false],
+      [zone.prior_30_days, "前 30 天", true],
+    ]) {
+      const row = element("div", "", "growth-comparison-row");
+      if (previous) row.classList.add("growth-comparison-prior");
+      const track = element("span", "", "growth-bar-track");
+      const bar = element("span", "", "growth-bar");
+      bar.style.setProperty("--growth-ratio", String(amount / maximum));
+      track.append(bar);
+      row.append(
+        element("span", label, "growth-comparison-label"),
+        track,
+        element("span", String(amount), "growth-comparison-value")
+      );
+      comparison.append(row);
+    }
+    card.append(comparison, element("p", `近 30 天新增 ${zone.recent_30_days} 条，前 30 天新增 ${zone.prior_30_days} 条。`, "weakness-sr-only"));
     card.append(element(
       "p",
-      zone.quiet_streak
-        ? `已经 ${zone.days_since_last_mistake} 天没有新的易错点了。`
-        : zone.days_since_last_mistake === 0
-          ? "今天刚记录了新的易错点。"
-          : `距离上一次记录新的易错点已经 ${zone.days_since_last_mistake} 天。`,
-      "growth-headline"
+      `累计 ${zone.total_mistakes} 条 · 距上次新增 ${zone.days_since_last_mistake} 天`,
+      "muted growth-total"
     ));
-    card.append(element(
-      "p",
-      `过去 30 天 ${zone.recent_30_days} 条，再往前 30 天 ${zone.prior_30_days} 条 · 累计 ${zone.total_mistakes} 条`,
-      "muted"
-    ));
-    card.append(element(
-      "p",
-      zone.community_struggling_ratio === null
-        ? "这个方向记录的人还不够多，暂时看不出群体趋势。"
-        : `全站有记录的用户里，${Math.round(zone.community_struggling_ratio * 100)}% 的人也在这个方向反复出错（≥3 条易错点）。`,
-      "muted growth-community"
-    ));
+    if (zone.community_struggling_ratio != null) {
+      hasCommunityComparison = true;
+      const community = element("p", `群体挣扎占比 ${Math.round(zone.community_struggling_ratio * 100)}%`, "muted growth-community");
+      community.append(element("span", "：全站在该分区有记录的用户中，反复出错（≥3 条易错点）的用户占比。", "weakness-sr-only"));
+      card.append(community);
+    }
     list.append(card);
+  }
+  if (!hasCommunityComparison) {
+    communityNote.textContent = "同分区记录的人还不够多，暂不显示群体对比";
+    communityNote.hidden = false;
   }
 }
 
@@ -2520,6 +2822,8 @@ $("#weekly-recap-retry").addEventListener("click", () => run(loadWeeklyRecap));
 $("#groups-retry").addEventListener("click", () => run(() => selectedGroupId === null
   ? loadGroups() : openStudyGroup(selectedGroupId)));
 $("#groups-back").addEventListener("click", () => run(loadGroups));
+$("#groups-copy-invite").addEventListener("click", () => run(copyGroupInvite));
+$("#groups-levels-retry").addEventListener("click", () => { void loadGroupLevelRules(); });
 $("#groups-create-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -2774,6 +3078,7 @@ $("#problem-form").addEventListener("submit", (event) => {
 
 async function showForumList() {
   forumPost = null;
+  clearForumReply();
   $("#forum-search").value = forumSearchQuery;
   $("#forum-compose").hidden = true;
   $("#forum-detail").hidden = true;
@@ -2817,9 +3122,18 @@ async function loadForumPosts() {
       )
     );
     row.append(element("strong", post.title), authorLine);
+    row.dataset.postId = String(post.id);
     row.addEventListener("click", () => run(() => openForumPost(post.id)));
     list.append(row);
   }
+}
+
+// 从帖子详情回到列表：页面回到顶部，焦点落在刚才读的那个帖子上（找不到就落在列表标题）。
+// 焦点不为它滚动页面——回到讨论区就该先看到讨论区的顶部。
+function restoreForumListPosition(postId) {
+  window.scrollTo({ top: 0, behavior: "instant" });
+  const row = postId ? $(`#forum-posts [data-post-id="${postId}"]`) : null;
+  (row || $("#forum-list-title")).focus({ preventScroll: true });
 }
 
 function showForumCompose() {
@@ -2830,7 +3144,14 @@ function showForumCompose() {
 
 async function openForumPost(postId) {
   const post = await api(`/api/posts/${postId}`);
+  if (forumPost?.id !== post.id) {
+    clearForumReply();
+    $("#forum-comment-form").reset();
+  }
   forumPost = post;
+  if (forumReplyTarget && !post.comments.some((comment) => comment.id === forumReplyTarget.id)) {
+    clearForumReply();
+  }
   $("#forum-list").hidden = true;
   $("#forum-compose").hidden = true;
   $("#forum-detail").hidden = false;
@@ -2838,55 +3159,160 @@ async function openForumPost(postId) {
   renderForumComments(post.comments);
 }
 
+function forumRelativeTime(value) {
+  const seconds = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000);
+  if (!Number.isFinite(seconds)) return timestamp(value);
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} 天前`;
+  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)} 个月前`;
+  return `${Math.floor(seconds / 31536000)} 年前`;
+}
+
+function forumTime(value, relative = false) {
+  const time = element("time", relative ? forumRelativeTime(value) : timestamp(value));
+  time.dateTime = value;
+  time.title = timestamp(value);
+  return time;
+}
+
+function forumTextAction(label, ariaLabel, callback, danger = false) {
+  const button = element("button", label, `forum-text-action link-button${danger ? " danger" : ""}`);
+  button.type = "button";
+  button.setAttribute("aria-label", ariaLabel);
+  button.addEventListener("click", callback);
+  return button;
+}
+
+function clearForumReply() {
+  forumReplyTarget = null;
+  $("#forum-reply-target").hidden = true;
+  $("#forum-reply-label").textContent = "";
+}
+
+function selectForumReply(comment) {
+  if (user.is_trial) return;
+  forumReplyTarget = comment;
+  $("#forum-reply-label").textContent = `回复 ${comment.floor} 楼 @${comment.username}`;
+  $("#forum-reply-target").hidden = false;
+  $("#forum-reply-cancel").setAttribute("aria-label", `取消回复 ${comment.floor} 楼`);
+  const form = $("#forum-comment-form");
+  form.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
+  $("#forum-comment-body").focus({ preventScroll: true });
+}
+
+function scrollToForumComment(commentId) {
+  // A quoted floor may be hidden by "only OP". Reveal it before navigating.
+  let target = $(`#forum-comment-${commentId}`);
+  if (!target && forumPost.comments.some((comment) => comment.id === commentId)) {
+    forumOnlyOp = false;
+    renderForumComments(forumPost.comments);
+    target = $(`#forum-comment-${commentId}`);
+    $("#forum-comment-status").textContent = "已显示全部评论，跳转到被引用的楼层。";
+  }
+  if (!target) {
+    message("回复的楼层已删除。");
+    return;
+  }
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduced ? "instant" : "smooth", block: "center" });
+  target.focus({ preventScroll: true });
+  if (!reduced) {
+    window.clearTimeout(target.forumHighlightTimer);
+    target.classList.remove("forum-floor-highlight");
+    // Restart the feedback when the same quote is activated twice.
+    void target.offsetWidth;
+    target.classList.add("forum-floor-highlight");
+    target.forumHighlightTimer = window.setTimeout(() => target.classList.remove("forum-floor-highlight"), 1800);
+  }
+}
+
+function updateForumCommentCount() {
+  const count = $("#forum-comment-body").value.length;
+  $("#forum-comment-count").textContent = `${count}/2000`;
+}
+
+function renderForumCommentControls() {
+  const count = forumPost.comments.length;
+  $("#forum-comments-title").textContent = `全部评论 · ${count}`;
+  const postCount = $("#forum-post-comment-count");
+  if (postCount) postCount.textContent = `${count} 条评论`;
+  document.querySelectorAll("#forum-comment-sort button").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.forumOrder === forumCommentOrder));
+  });
+  $("#forum-only-op").setAttribute("aria-pressed", String(forumOnlyOp));
+  $("#forum-comment-form").hidden = user.is_trial;
+  $("#forum-comment-trial-note").hidden = !user.is_trial;
+  const avatar = $("#forum-comment-avatar");
+  avatar.replaceChildren(avatarElement(user.id, user.username, user.avatar_version, { hasAvatar: user.has_avatar }));
+  updateForumCommentCount();
+}
+
 function renderForumPost(post) {
   const root = $("#forum-post");
 
+  function restoreActions() {
+    readOnly();
+    root.querySelector(".forum-actions button")?.focus({ preventScroll: true });
+  }
+
   function readOnly() {
     root.replaceChildren();
-    const authorLine = element("p", "", "muted author-line");
+    const authorLine = element("div", "", "forum-post-author");
+    const authorInfo = element("div", "", "forum-post-author-info");
+    const authorName = element("div", "", "forum-author-name");
+    authorName.append(element("strong", post.username), element("span", "楼主", "forum-op-stamp"));
+    const date = element("div", "", "forum-post-date");
+    date.append(forumTime(post.created_at));
+    if (post.updated_at) date.append(" · 编辑于 ", forumTime(post.updated_at));
+    authorInfo.append(authorName, date);
     authorLine.append(
       avatarElement(post.user_id, post.username, post.avatar_version, {
-        small: true, hasAvatar: post.has_avatar,
+        hasAvatar: post.has_avatar,
       }),
-      element(
-        "span",
-        `${post.username} · ${timestamp(post.created_at)}` +
-          (post.updated_at ? `（编辑于 ${timestamp(post.updated_at)}）` : "")
-      )
+      authorInfo
     );
+    const title = element("h2", post.title);
+    title.id = "forum-detail-title";
     root.append(
-      element("h2", post.title),
       authorLine,
-      element("p", post.body, "multiline")
+      title,
+      element("p", post.body, "forum-post-body multiline")
     );
+    const footer = element("footer", "", "forum-post-footer");
+    const count = element("span", `${post.comments.length} 条评论`);
+    count.id = "forum-post-comment-count";
+    footer.append(count);
     if (user.id === post.user_id) {
-      const editBtn = element("button", "编辑");
-      editBtn.type = "button";
-      editBtn.addEventListener("click", editForm);
-      const deleteBtn = element("button", "删除这条帖子", "danger");
-      deleteBtn.type = "button";
-      deleteBtn.addEventListener("click", () => run(async () => {
+      const editBtn = forumTextAction("编辑", "编辑这条帖子", editForm);
+      const deleteBtn = forumTextAction("删除", "删除这条帖子", () => run(async () => {
         if (!confirm("删除这条帖子？帖子下的评论也会一起不可见，无法恢复。")) return;
         await api(`/api/posts/${post.id}`, { method: "DELETE" });
+        if (forumPost !== post) return;
         message("已删除这条帖子。");
         await showForumList();
-      }));
-      const actions = element("div", "", "actions");
+      }), true);
+      const actions = element("div", "", "forum-actions");
       actions.append(editBtn, deleteBtn);
-      root.append(actions);
+      footer.append(actions);
     } else if (!user.is_trial) {
-      const actions = element("div", "", "actions");
-      const reportBtn = element("button", "举报这条帖子");
-      reportBtn.type = "button";
-      reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
-      const reportAvatarBtn = element("button", "举报头像");
-      reportAvatarBtn.type = "button";
-      reportAvatarBtn.addEventListener("click", () =>
-        actions.replaceWith(avatarReportForm(post.user_id, readOnly))
-      );
+      const actions = element("div", "", "forum-actions");
+      const reportBtn = forumTextAction("举报", "举报这条帖子", () => {
+        const form = reportForm();
+        actions.replaceWith(form);
+        form.querySelector("textarea").focus();
+      });
+      const reportAvatarBtn = forumTextAction("举报头像", `举报楼主 ${post.username} 的头像`, () => {
+        const form = avatarReportForm(post.user_id, restoreActions);
+        form.classList.add("forum-inline-form");
+        actions.replaceWith(form);
+        form.querySelector("textarea").focus();
+      });
       actions.append(reportBtn, reportAvatarBtn);
-      root.append(actions);
+      footer.append(actions);
     }
+    root.append(footer);
   }
 
   function editForm() {
@@ -2902,9 +3328,10 @@ function renderForumPost(post) {
     save.type = "submit";
     const cancel = element("button", "取消");
     cancel.type = "button";
-    cancel.addEventListener("click", readOnly);
+    cancel.addEventListener("click", restoreActions);
 
     const form = document.createElement("form");
+    form.className = "forum-inline-form";
     form.append(field("标题", title), field("正文", body), save, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -2916,12 +3343,16 @@ function renderForumPost(post) {
         post.title = updated.title;
         post.body = updated.body;
         post.updated_at = updated.updated_at;
+        if (forumPost !== post) return;
         message("帖子已更新。");
-        readOnly();
+        restoreActions();
       });
     });
 
-    root.replaceChildren(form);
+    const heading = element("h2", "编辑帖子");
+    heading.id = "forum-detail-title";
+    root.replaceChildren(heading, form);
+    title.focus();
   }
 
   // 只替换"举报"按钮所在的操作区，不动上面已经展示的标题和正文。
@@ -2931,9 +3362,10 @@ function renderForumPost(post) {
     submit.type = "submit";
     const cancel = element("button", "取消");
     cancel.type = "button";
-    cancel.addEventListener("click", readOnly);
+    cancel.addEventListener("click", restoreActions);
 
     const form = document.createElement("form");
+    form.className = "forum-inline-form";
     form.append(field("举报原因（可选）", reason), submit, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -2943,7 +3375,7 @@ function renderForumPost(post) {
           body: JSON.stringify({ reason: reason.value }),
         });
         message("已提交举报，管理员会尽快处理。");
-        readOnly();
+        restoreActions();
       });
     });
 
@@ -2954,50 +3386,101 @@ function renderForumPost(post) {
 }
 
 function renderForumComment(comment) {
-  const wrap = element("div", "", "forum-comment");
+  const post = forumPost;
+  const wrap = element("article", "", "forum-comment");
+  wrap.id = `forum-comment-${comment.id}`;
+  wrap.tabIndex = -1;
+  wrap.setAttribute("aria-labelledby", `forum-comment-heading-${comment.id}`);
+
+  function restoreActions() {
+    readOnly();
+    wrap.querySelector(".forum-actions button")?.focus({ preventScroll: true });
+  }
+
+  function floorHeading() {
+    const heading = element("h4", `${comment.floor} 楼 ${comment.username}`, "forum-sr-only");
+    heading.id = `forum-comment-heading-${comment.id}`;
+    return heading;
+  }
 
   function readOnly() {
     wrap.replaceChildren();
-    const meta = element("p", "", "muted forum-comment-meta author-line");
-    meta.append(
+    const author = element("div", "", "forum-comment-author");
+    const authorName = element("div", "", "forum-comment-author-name");
+    authorName.append(element("strong", comment.username));
+    const badges = element("span", "", "forum-author-badges");
+    if (comment.is_op) badges.append(element("span", "楼主", "forum-op-stamp"));
+    if (comment.user_id === user.id) badges.append(element("span", "我", "forum-self-badge"));
+    authorName.append(badges);
+    author.append(
       avatarElement(comment.user_id, comment.username, comment.avatar_version, {
-        small: true, hasAvatar: comment.has_avatar,
+        hasAvatar: comment.has_avatar,
       }),
-      element(
-        "span",
-        `${comment.username} · ${timestamp(comment.created_at)}` +
-          (comment.updated_at ? `（编辑于 ${timestamp(comment.updated_at)}）` : "")
-      )
+      authorName
     );
-    wrap.append(meta, element("p", comment.body, "multiline"));
-    if (user.id === comment.user_id) {
-      const editBtn = element("button", "编辑");
-      editBtn.type = "button";
-      editBtn.addEventListener("click", editForm);
-      const deleteBtn = element("button", "删除", "danger");
-      deleteBtn.type = "button";
-      deleteBtn.addEventListener("click", () => run(async () => {
+    const content = element("div", "", "forum-comment-content");
+    const meta = element("div", "", "forum-comment-meta");
+    meta.append(element("span", `${comment.floor} 楼`, "forum-floor-number"), forumTime(comment.created_at, true));
+    if (comment.updated_at) {
+      const edited = element("span", "编辑于 ", "forum-comment-edited");
+      edited.append(forumTime(comment.updated_at, true));
+      meta.append(edited);
+    }
+    content.append(meta);
+    if (comment.reply_to) {
+      const reply = comment.reply_to;
+      if (reply.deleted) {
+        content.append(element("div", "回复的楼层已删除", "forum-quote is-deleted"));
+      } else {
+        const quote = element("button", "", "forum-quote");
+        quote.type = "button";
+        quote.setAttribute("aria-label", `跳转到 ${reply.floor} 楼 ${reply.username} 的评论`);
+        quote.append(element("span", `回复 ${reply.floor} 楼 @${reply.username}：`, "forum-quote-author"), element("span", reply.excerpt));
+        quote.addEventListener("click", () => scrollToForumComment(reply.id));
+        content.append(quote);
+      }
+    }
+    content.append(element("p", comment.body, "forum-comment-body multiline"));
+    const actions = element("div", "", "forum-actions");
+    if (!user.is_trial) {
+      actions.append(forumTextAction("回复", `回复 ${comment.floor} 楼`, () => selectForumReply(comment)));
+    }
+    if (!user.is_trial && user.id === comment.user_id) {
+      const editBtn = forumTextAction("编辑", `编辑 ${comment.floor} 楼`, editForm);
+      const deleteBtn = forumTextAction("删除", `删除 ${comment.floor} 楼`, () => run(async () => {
         if (!confirm("删除这条评论？无法恢复。")) return;
         await api(`/api/comments/${comment.id}`, { method: "DELETE" });
+        const nextFloorId = wrap.nextElementSibling?.id || wrap.previousElementSibling?.id;
         wrap.remove();
+        post.comments = post.comments.filter((item) => item.id !== comment.id);
+        // Clear all quoted copies immediately, including comments hidden by the filter.
+        for (const item of post.comments) {
+          if (item.reply_to?.id === comment.id) item.reply_to = { id: comment.id, floor: comment.floor, deleted: true };
+        }
+        if (post !== forumPost) return;
+        if (forumReplyTarget?.id === comment.id) clearForumReply();
+        renderForumComments(post.comments);
+        const next = nextFloorId ? $(`#${nextFloorId}`) : null;
+        (next || $("#forum-comment-body")).focus({ preventScroll: true });
         message("已删除这条评论。");
-      }));
-      const actions = element("div", "", "actions");
+      }), true);
       actions.append(editBtn, deleteBtn);
-      wrap.append(actions);
     } else if (!user.is_trial) {
-      const actions = element("div", "", "actions");
-      const reportBtn = element("button", "举报");
-      reportBtn.type = "button";
-      reportBtn.addEventListener("click", () => actions.replaceWith(reportForm()));
-      const reportAvatarBtn = element("button", "举报头像");
-      reportAvatarBtn.type = "button";
-      reportAvatarBtn.addEventListener("click", () =>
-        actions.replaceWith(avatarReportForm(comment.user_id, readOnly))
-      );
+      const reportBtn = forumTextAction("举报", `举报 ${comment.floor} 楼`, () => {
+        const form = reportForm();
+        actions.replaceWith(form);
+        form.querySelector("textarea").focus();
+      });
+      const reportAvatarBtn = forumTextAction("举报头像", `举报 ${comment.floor} 楼的头像`, () => {
+        const form = avatarReportForm(comment.user_id, restoreActions);
+        form.classList.add("forum-inline-form");
+        actions.replaceWith(form);
+        form.querySelector("textarea").focus();
+      });
       actions.append(reportBtn, reportAvatarBtn);
-      wrap.append(actions);
     }
+    if (actions.childElementCount) content.append(actions);
+    wrap.append(floorHeading(), author, content);
   }
 
   function editForm() {
@@ -3007,9 +3490,10 @@ function renderForumComment(comment) {
     save.type = "submit";
     const cancel = element("button", "取消");
     cancel.type = "button";
-    cancel.addEventListener("click", readOnly);
+    cancel.addEventListener("click", restoreActions);
 
     const form = document.createElement("form");
+    form.className = "forum-inline-form";
     form.append(field("评论内容", body), save, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -3018,14 +3502,21 @@ function renderForumComment(comment) {
           method: "PUT",
           body: JSON.stringify({ body: body.value }),
         });
-        comment.body = updated.body;
-        comment.updated_at = updated.updated_at;
+        Object.assign(comment, updated);
+        const normalized = Array.from(comment.body.replace(/[\s\u001c-\u001f\u0085]+/gu, " ").trim());
+        const excerpt = normalized.slice(0, 60).join("") + (normalized.length > 60 ? "…" : "");
+        for (const item of post.comments) {
+          if (item.reply_to?.id === comment.id && !item.reply_to.deleted) item.reply_to.excerpt = excerpt;
+        }
+        if (post !== forumPost) return;
         message("评论已更新。");
-        readOnly();
+        renderForumComments(post.comments);
+        $(`#forum-comment-${comment.id}`)?.focus({ preventScroll: true });
       });
     });
 
-    wrap.replaceChildren(form);
+    wrap.replaceChildren(floorHeading(), form);
+    body.focus();
   }
 
   function reportForm() {
@@ -3034,9 +3525,10 @@ function renderForumComment(comment) {
     submit.type = "submit";
     const cancel = element("button", "取消");
     cancel.type = "button";
-    cancel.addEventListener("click", readOnly);
+    cancel.addEventListener("click", restoreActions);
 
     const form = document.createElement("form");
+    form.className = "forum-inline-form";
     form.append(field("举报原因（可选）", reason), submit, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -3046,7 +3538,7 @@ function renderForumComment(comment) {
           body: JSON.stringify({ reason: reason.value }),
         });
         message("已提交举报，管理员会尽快处理。");
-        readOnly();
+        restoreActions();
       });
     });
 
@@ -3060,13 +3552,19 @@ function renderForumComment(comment) {
 function renderForumComments(comments) {
   const list = $("#forum-comments");
   list.replaceChildren();
-  if (!comments.length) {
-    list.append(element("p", "还没有评论，来发表第一条看法吧。", "muted"));
+  const visible = comments.filter((comment) => !forumOnlyOp || comment.is_op)
+    .sort((a, b) => forumCommentOrder === "latest" ? b.floor - a.floor : a.floor - b.floor);
+  if (!visible.length) {
+    const empty = element("div", "", "forum-comments-empty");
+    const seal = element("span", comments.length ? "候" : "首", "forum-empty-seal");
+    seal.setAttribute("aria-hidden", "true");
+    empty.append(seal, element("p", comments.length ? "楼主还没有评论，先看看大家的讨论吧。" : "还没有评论，来抢沙发吧"));
+    list.append(empty);
   }
-  for (const comment of comments) {
+  for (const comment of visible) {
     list.append(renderForumComment(comment));
   }
-  $("#forum-comment-form").hidden = user.is_trial;
+  renderForumCommentControls();
 }
 
 function resetAdminDashboard() {
@@ -3369,23 +3867,61 @@ $("#forum-compose-form").addEventListener("submit", (event) => {
   });
 });
 
-$("#forum-back").addEventListener("click", () => run(async () => {
-  message();
-  await showForumList();
-}));
+// 详情页顶部和底部各有一个「返回讨论区」，行为完全一样。
+document.querySelectorAll("#forum-back, #forum-back-bottom").forEach((button) => {
+  button.addEventListener("click", () => run(async () => {
+    const openedPostId = forumPost?.id;
+    message();
+    const loading = showForumList();
+    // loadForumPosts 在第一个 await 之前就递增了代数；之后若用户又点进别的帖子或离开，就不再抢焦点。
+    const generation = forumListGeneration;
+    await loading;
+    if (generation !== forumListGeneration || view !== "forum" || $("#forum-list").hidden) return;
+    restoreForumListPosition(openedPostId);
+  }));
+});
+
+document.querySelectorAll("#forum-comment-sort button").forEach((button) => {
+  button.addEventListener("click", () => {
+    forumCommentOrder = button.dataset.forumOrder;
+    renderForumComments(forumPost.comments);
+    $("#forum-comment-status").textContent = `已按${forumCommentOrder === "latest" ? "最新" : "最早"}排序，楼层号保持不变。`;
+  });
+});
+
+$("#forum-only-op").addEventListener("click", () => {
+  forumOnlyOp = !forumOnlyOp;
+  renderForumComments(forumPost.comments);
+  $("#forum-comment-status").textContent = forumOnlyOp ? "已切换为只看楼主。" : "已显示全部评论。";
+});
+
+$("#forum-reply-cancel").addEventListener("click", () => {
+  clearForumReply();
+  $("#forum-comment-body").focus();
+});
+
+$("#forum-comment-body").addEventListener("input", updateForumCommentCount);
 
 $("#forum-comment-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   run(async () => {
+    const post = forumPost;
     const data = new FormData(form);
-    const created = await api(`/api/posts/${forumPost.id}/comments`, {
+    const payload = { body: data.get("body") };
+    if (forumReplyTarget) payload.reply_to_id = forumReplyTarget.id;
+    const created = await api(`/api/posts/${post.id}/comments`, {
       method: "POST",
-      body: JSON.stringify({ body: data.get("body") }),
+      body: JSON.stringify(payload),
     });
+    post.comments.push(created);
+    if (post !== forumPost) return;
     form.reset();
-    forumPost.comments.push(created);
-    renderForumComments(forumPost.comments);
+    clearForumReply();
+    // Always show the new floor, even when the author-only filter was active.
+    if (forumOnlyOp && !created.is_op) forumOnlyOp = false;
+    renderForumComments(post.comments);
+    scrollToForumComment(created.id);
     message("评论已发表。");
   });
 });

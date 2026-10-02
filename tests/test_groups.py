@@ -12,6 +12,23 @@ from test_growth_insights import (
     create_background_user_with_mistakes,
 )
 from test_leaderboard import insert_review
+from group_levels import level_summary
+
+
+@pytest.fixture(autouse=True)
+def isolate_group_avatars(tmp_path, monkeypatch):
+    # Group responses now inspect avatars. Keep that filesystem lookup in the
+    # existing system-temp fixture, rather than touching real project avatars.
+    monkeypatch.setenv("AVATAR_DIR", str(tmp_path / "avatars"))
+
+
+def legacy_member_fields(members):
+    # Preserve the original streak/order assertions. test_group_levels covers
+    # the full expanded member schema and precise post-joining contributions.
+    return [
+        {key: member[key] for key in ("id", "username", "current_streak_days")}
+        for member in members
+    ]
 
 
 def create_group(client, name="一起刷题"):
@@ -67,7 +84,7 @@ def test_creator_automatically_joins_and_receives_group_detail(client):
     assert group["name"] == "一起刷题"
     assert group["is_creator"] is True
     assert group["created_at"]
-    assert group["members"] == [
+    assert legacy_member_fields(group["members"]) == [
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
     ]
     assert group["weakness_by_zone"] == {}
@@ -132,7 +149,7 @@ def test_join_accepts_case_insensitive_code_and_rejects_invalid_or_duplicate(cli
     assert joined["id"] == group["id"]
     assert joined["invite_code"] == group["invite_code"]
     assert joined["is_creator"] is False
-    assert joined["members"] == [
+    assert legacy_member_fields(joined["members"]) == [
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
         {"id": bob["id"], "username": "bob", "current_streak_days": 0},
     ]
@@ -142,11 +159,11 @@ def test_join_accepts_case_insensitive_code_and_rejects_invalid_or_duplicate(cli
 
 
 def test_group_list_contains_only_own_groups_and_no_private_details(client):
-    register(client)
+    alice = register(client)
     shared = create_group(client, "共同小组")
     create_group(client, "只有 alice 的小组")
     client.post("/api/auth/logout")
-    register(client, "bob")
+    bob = register(client, "bob")
     assert client.get("/api/groups").json() == {"groups": []}
     assert client.post(
         "/api/groups/join", json={"invite_code": shared["invite_code"]}
@@ -158,10 +175,19 @@ def test_group_list_contains_only_own_groups_and_no_private_details(client):
     assert listed[shared["id"]] == {
         "id": shared["id"], "name": "共同小组", "member_count": 2,
         "is_creator": False, "created_at": shared["created_at"],
+        "member_limit": 10, "level": level_summary(0),
+        "members_preview": [
+            {"id": alice["id"], "username": "alice", "avatar_version": 0, "has_avatar": False},
+            {"id": bob["id"], "username": "bob", "avatar_version": 0, "has_avatar": False},
+        ],
     }
     assert listed[own["id"]] == {
         "id": own["id"], "name": "bob 的小组", "member_count": 1,
         "is_creator": True, "created_at": own["created_at"],
+        "member_limit": 10, "level": level_summary(0),
+        "members_preview": [
+            {"id": bob["id"], "username": "bob", "avatar_version": 0, "has_avatar": False},
+        ],
     }
 
 
@@ -169,11 +195,14 @@ def test_join_rejects_full_group_without_adding_membership(client, monkeypatch):
     monkeypatch.setattr(main, "GROUP_MAX_MEMBERS", 1)
     register(client)
     group = create_group(client)
+    assert group["member_limit"] == 1
     client.post("/api/auth/logout")
     register(client, "bob")
-    assert client.post(
+    response = client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
-    ).status_code == 403
+    )
+    assert response.status_code == 403
+    assert response.json() == {"detail": "小组已达到 1 人上限"}
     assert client.get("/api/groups").json() == {"groups": []}
 
 
@@ -253,7 +282,7 @@ def test_members_show_real_usernames_and_streaks_use_each_members_timezone(clien
 
     login(client)
     members = client.get(f"/api/groups/{group['id']}").json()["members"]
-    assert members == [
+    assert legacy_member_fields(members) == [
         {"id": bob["id"], "username": "bob", "current_streak_days": 2},
         {"id": alice["id"], "username": "alice", "current_streak_days": 1},
     ]
@@ -282,7 +311,7 @@ def test_each_member_uses_own_local_today_even_when_requester_has_next_day(clien
     )
     login(client)
     # alice 已是 09-19，bob 仍是 09-18；bob 昨天有打卡，连续两天不能清零。
-    assert client.get(f"/api/groups/{group['id']}").json()["members"] == [
+    assert legacy_member_fields(client.get(f"/api/groups/{group['id']}").json()["members"]) == [
         {"id": bob["id"], "username": "bob", "current_streak_days": 2},
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
     ]
@@ -297,7 +326,7 @@ def test_equal_streak_members_sort_by_username_instead_of_user_id(client):
         "/api/groups/join", json={"invite_code": group["invite_code"]}
     )
     assert response.status_code == 200
-    assert response.json()["members"] == [
+    assert legacy_member_fields(response.json()["members"]) == [
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
         {"id": bob["id"], "username": "bob", "current_streak_days": 0},
     ]
@@ -315,7 +344,7 @@ def test_member_can_leave_and_disappears_from_member_list(client):
     assert client.get("/api/groups").json() == {"groups": []}
     assert client.get(f"/api/groups/{group['id']}").status_code == 404
     login(client)
-    assert client.get(f"/api/groups/{group['id']}").json()["members"] == [
+    assert legacy_member_fields(client.get(f"/api/groups/{group['id']}").json()["members"]) == [
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
     ]
 
@@ -340,7 +369,7 @@ def test_creator_can_remove_member_and_removed_member_cannot_access_group(client
     assert response.json() == {"ok": True}
     response = client.get(f"/api/groups/{group['id']}")
     assert response.status_code == 200
-    assert response.json()["members"] == [
+    assert legacy_member_fields(response.json()["members"]) == [
         {"id": alice["id"], "username": "alice", "current_streak_days": 0},
         {"id": carol["id"], "username": "carol", "current_streak_days": 0},
     ]
@@ -434,7 +463,7 @@ def test_creator_can_leave_but_cannot_delete_after_leaving_and_last_member_remov
         assert response.json() == {"detail": "小组不存在"}
     login(client, "bob")
     detail = client.get(f"/api/groups/{group['id']}").json()
-    assert detail["members"] == [
+    assert legacy_member_fields(detail["members"]) == [
         {"id": bob["id"], "username": "bob", "current_streak_days": 0},
     ]
     assert detail["is_creator"] is False
@@ -485,7 +514,7 @@ def test_trial_account_can_create_a_group_and_is_a_normal_member(client):
     insert_review(mistake_id, "2026-09-19T04:00:00+00:00")
     group = create_group(client)
     assert group["is_creator"] is True
-    assert group["members"] == [
+    assert legacy_member_fields(group["members"]) == [
         {"id": trial["id"], "username": trial["username"], "current_streak_days": 1},
     ]
     assert group["weakness_by_zone"] == {}
@@ -519,7 +548,7 @@ def test_group_weakness_excludes_trial_data_and_outsiders_but_keeps_trial_streak
     assert response.status_code == 200
     below_threshold = response.json()
     assert len(below_threshold["members"]) == 3
-    assert below_threshold["members"][0] == {
+    assert legacy_member_fields(below_threshold["members"])[0] == {
         "id": trial["id"], "username": trial["username"], "current_streak_days": 3,
     }
     assert below_threshold["weakness_by_zone"]["算法"] == {
@@ -532,7 +561,7 @@ def test_group_weakness_excludes_trial_data_and_outsiders_but_keeps_trial_streak
     create_background_user_with_mistakes("outsider_backend", "后端", mistake_count=5)
     detail = client.get(f"/api/groups/{group['id']}").json()
     assert len(detail["members"]) == 5
-    assert detail["members"][0] == {
+    assert legacy_member_fields(detail["members"])[0] == {
         "id": trial["id"], "username": trial["username"], "current_streak_days": 3,
     }
     assert detail["weakness_by_zone"] == {

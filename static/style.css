@@ -353,31 +353,12 @@ button.danger { color: var(--danger); background: transparent; border-color: var
 button.danger:hover:not(:disabled) { color: var(--danger-hover); background: var(--danger-soft); border-color: var(--danger-hover-line); }
 #new-page, #weakness-page, #achievements-page, #leaderboard-page,
 #groups-page, #forum-page, #weekly-recap-page, #plan-page, #admin-page { width: 100%; min-width: 0; }
-:where(#weakness-page, #achievements-page, #leaderboard-page, #groups-page,
-  #forum-page, #weekly-recap-page, #plan-page, #admin-page) p:where(.muted, .field-hint, .multiline),
-.weakness-action p, .weakness-evidence p { max-width: var(--measure); line-height: var(--lh-prose); }
+:where(#achievements-page, #leaderboard-page, #groups-page,
+  #forum-page, #weekly-recap-page, #plan-page, #admin-page) p:where(.muted, .field-hint, .multiline) { max-width: var(--measure); line-height: var(--lh-prose); }
 @media (min-width: 1024px) {
   .workspace { grid-template-columns: var(--record-list-width) minmax(0, 1fr); }
   #cards { position: sticky; top: var(--space-4); max-height: calc(100vh - var(--space-5) * 2); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 }
-.weakness-controls > h3, .weakness-empty > h3, .weakness-overview > h3 { margin-top: 0; }
-.weakness-count { font-weight: 600; }
-.weakness-controls .actions { margin-bottom: 12px; }
-.weakness-empty, .weakness-overview, .weakness-pattern { margin-top: 22px; }
-.weakness-overview { border-color: var(--line); background: var(--paper-2); }
-.weakness-sample { display: inline-block; margin-bottom: 0; padding: 7px 12px; border-radius: var(--radius-muted); background: var(--soft); font-size: 13px; }
-.weakness-pattern-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px 20px; }
-.weakness-pattern-heading h3 { flex: 1; min-width: 180px; margin: 0; overflow-wrap: anywhere; }
-.weakness-confidence { flex-shrink: 0; padding: 3px 10px; border-radius: var(--radius-chip); background: var(--soft); color: var(--ink-2); font-size: 12px; }
-.weakness-evidence { padding-left: 20px; font-size: 13px; }
-.weakness-evidence li { margin: 14px 0; overflow-wrap: anywhere; }
-.weakness-evidence li::marker { color: var(--accent); }
-.weakness-evidence p { margin: 4px 0; color: var(--ink-2); }
-.weakness-action { padding: 16px 18px; border-left: 3px solid var(--accent); border-radius: var(--radius-flat) var(--radius-sm) var(--radius-sm) var(--radius-flat); background: var(--soft); }
-.weakness-action h4 { margin: 0 0 6px; }
-.weakness-action p { margin: 0; }
-#weakness-status:empty { display: none; }
-#weakness-status.error { color: var(--danger); }
 
 .achievements-note { max-width: var(--measure); color: var(--ink-2); font-size: var(--text-xs); }
 .achievements-summary { padding: 22px 26px; border: 1px solid var(--reward-line); border-radius: var(--radius); background: var(--reward-soft); }
@@ -431,12 +412,6 @@ button.danger:hover:not(:disabled) { color: var(--danger-hover); background: var
 .weekly-recap-value > span { font-size: 13px; }
 .weekly-recap-description { margin: 0 0 18px; color: var(--card-muted); font-size: 12px; }
 .weekly-recap-comparison { margin: auto 0 0; padding-top: 14px; border-top: 1px solid var(--summary-line); color: var(--success-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.growth-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
-.growth-zone { padding: 16px 18px; }
-.growth-zone h4 { margin: 0 0 8px; }
-.growth-headline { margin: 0 0 6px; font-weight: 600; }
-.growth-zone-quiet { border-color: var(--growth-line); background: var(--growth-soft); }
-.growth-zone-quiet .growth-headline { color: var(--growth-ink); }
 #leaderboard-page > .panel > h3 { margin-top: 0; }
 .leaderboard-personal { background: var(--soft); }
 .leaderboard-streak { margin: 8px 0; color: var(--accent-hover); font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -449,20 +424,6 @@ button.danger:hover:not(:disabled) { color: var(--danger-hover); background: var
 .leaderboard-table th:last-child, .leaderboard-days { text-align: right; }
 .leaderboard-rank { color: var(--accent); font-weight: 650; }
 .leaderboard-table tbody tr:last-child td { border-bottom: 0; }
-#groups-status:empty { display: none; }
-#groups-status.error { color: var(--danger); }
-#groups-retry { margin-bottom: 18px; }
-#groups-overview > .panel > h3, .groups-forms h3, .groups-summary h3, .groups-members h3 { margin-top: 0; }
-.groups-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; margin-top: 22px; }
-.groups-forms .panel { min-width: 0; }
-.groups-forms button { margin-top: 16px; }
-#groups-list .record-button:last-child { margin-bottom: 0; }
-#groups-list .record-button small { margin-top: 8px; }
-.groups-summary { margin-top: 20px; border-color: var(--group-line); background: var(--group-soft); }
-.groups-summary h3 { overflow-wrap: anywhere; }
-.groups-invite-code { margin: 6px 0; color: var(--group-ink); font: 700 30px/1.4 ui-monospace, monospace; letter-spacing: .12em; user-select: all; overflow-wrap: anywhere; }
-.groups-members, .groups-weakness { margin-top: 24px; }
-.groups-member-actions { text-align: right; white-space: nowrap; }
 .forum-list-heading { align-items: baseline; }
 .forum-list-heading h3 { margin: 0; }
 #forum-search-form { margin-bottom: 18px; }
@@ -472,14 +433,6 @@ button.danger:hover:not(:disabled) { color: var(--danger-hover); background: var
 .forum-search-controls button { flex-shrink: 0; }
 #forum-posts .record-button small { margin-top: 8px; }
 #forum-detail .actions { margin: 20px 0 0; }
-#forum-post h2 { margin: 0 0 6px; overflow-wrap: anywhere; }
-#forum-comments-section { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
-#forum-comments-section > h3 { margin-top: 0; }
-.forum-comment { padding: 16px 0; border-bottom: 1px solid var(--line); }
-.forum-comment:last-child { border-bottom: 0; }
-.forum-comment-meta { margin: 0 0 6px; font-size: 12px; }
-.forum-comment .actions { margin: 10px 0 0; }
-#forum-comment-form { margin-top: 20px; }
 .admin-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .admin-dashboard-heading h3 { margin: 0; }
 .admin-dashboard-note { margin: 8px 0 14px; font-size: 12px; }
@@ -623,14 +576,14 @@ body.home-view { background: var(--paper); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 58px;
+  width: var(--seal-width, 58px);
   height: var(--seal-height);
   padding: 6px;
   border: 3px solid currentColor;
   border-radius: var(--radius-xs);
   color: var(--accent);
   font: 600 26px/1 var(--kai);
-  writing-mode: vertical-rl;
+  writing-mode: var(--seal-writing-mode, vertical-rl);
   white-space: nowrap;
   letter-spacing: .15em;
   mix-blend-mode: multiply;
@@ -714,7 +667,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
     animation: content-arrive var(--motion-enter) var(--motion-ease);
   }
   /* 详情、排行与订单由原有渲染逻辑替换，淡入新内容无需增加事件监听。 */
-  .record-button, .plan-card, .forum-comment, .plan-order-row, .admin-report,
+  .record-button, .plan-card, .plan-order-row, .admin-report,
   #detail > *, .leaderboard-table tbody, details[open]:not(.account-menu) > :not(summary) {
     animation: content-arrive 180ms var(--motion-ease);
   }
@@ -754,7 +707,6 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
   .variant { padding: 8px 14px 14px; }
   .variant > .prose { padding: 14px; }
   .danger-zone button { flex-grow: 1; }
-  .groups-member-actions { white-space: normal; }
   .leaderboard-table th, .leaderboard-table td { padding: 12px 6px; }
   #notice:not(:empty) { top: 8px; }
   .home-view .header { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px 12px; padding: 14px 0; }
@@ -815,10 +767,7 @@ a, summary, .avatar-upload-label { transition: color var(--motion-fast), text-de
     background: color-mix(in srgb, var(--fx-panel-color, var(--surface)) var(--fx-panel-opacity), transparent);
   }
   html[data-cursor-fx="ripple"] #email-prompt { --fx-panel-color: var(--notice-surface); }
-  html[data-cursor-fx="ripple"] .weakness-overview { --fx-panel-color: var(--paper-2); }
   html[data-cursor-fx="ripple"] .leaderboard-personal { --fx-panel-color: var(--soft); }
-  html[data-cursor-fx="ripple"] .groups-summary { --fx-panel-color: var(--group-soft); }
-  html[data-cursor-fx="ripple"] .growth-zone-quiet { --fx-panel-color: var(--growth-soft); }
   html[data-cursor-fx="ripple"] .weekly-recap-card { --fx-panel-color: var(--summary-surface); }
   html[data-cursor-fx="ripple"] .weekly-recap-summary { --fx-panel-color: var(--success-soft); }
   html[data-cursor-fx="ripple"] .achievements-summary { --fx-panel-color: var(--reward-soft); }

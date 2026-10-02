@@ -26,6 +26,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictInt,
     StringConstraints,
     field_validator,
     model_validator,
@@ -36,6 +37,7 @@ import mailer
 import payments
 from achievements import evaluate_achievements
 from db import ROOT, connect, init_db
+from group_levels import LEVELS, RULES, level_summary, points_by_user
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
 from share_card import render_achievement_card
@@ -270,6 +272,7 @@ class PostEdit(PostFields):
 
 class NewComment(InputModel):
     body: CommentBody
+    reply_to_id: Annotated[StrictInt, Field(gt=0)] | None = None
 
 
 class CommentEdit(InputModel):
@@ -1875,7 +1878,7 @@ def leaderboard(user=Depends(current_user)):
     }
 
 
-GROUP_MAX_MEMBERS = 20
+GROUP_MAX_MEMBERS = 10
 GROUP_MAX_PER_USER = 5
 GROUP_INVITE_CODE_LENGTH = 8
 # 统一大写，省去容易混淆的 0/O、1/I/L。
@@ -1912,16 +1915,84 @@ def member_group(conn, group_id, user_id):
     return group
 
 
+def group_members_by_id(conn, group_ids):
+    """Load all visible groups' members together, in preview order."""
+    members = {group_id: [] for group_id in group_ids}
+    if not members:
+        return members
+    placeholders = ",".join("?" for _ in group_ids)
+    rows = conn.execute(
+        f"""
+        SELECT gm.group_id, u.id, u.username, u.timezone, u.avatar_version,
+               gm.joined_at
+        FROM study_group_members gm
+        JOIN users u ON u.id = gm.user_id
+        WHERE gm.group_id IN ({placeholders})
+        ORDER BY gm.joined_at ASC, u.id ASC
+        """,
+        tuple(group_ids),
+    ).fetchall()
+    for row in rows:
+        members[row["group_id"]].append(row)
+    return members
+
+
+def group_points_by_id(conn, members_by_group):
+    """Batch two activity queries for all groups, rather than per member.
+
+    A member can join several groups at different times. Keep group_id on each
+    row so the same activity is independently filtered/scored for each group.
+    Reviews of older problems count when the review itself is after joining.
+    """
+    group_ids = tuple(members_by_group)
+    if not group_ids:
+        return {}
+    placeholders = ",".join("?" for _ in group_ids)
+    review_rows = conn.execute(
+        f"""
+        SELECT gm.group_id, p.user_id, r.reviewed_at
+        FROM study_group_members gm
+        JOIN problems p ON p.user_id = gm.user_id
+        JOIN mistakes m ON m.problem_id = p.id
+        JOIN reviews r ON r.mistake_id = m.id
+        WHERE gm.group_id IN ({placeholders}) AND r.reviewed_at >= gm.joined_at
+        """,
+        group_ids,
+    ).fetchall()
+    problem_rows = conn.execute(
+        f"""
+        SELECT gm.group_id, p.user_id, p.created_at
+        FROM study_group_members gm
+        JOIN problems p ON p.user_id = gm.user_id
+        WHERE gm.group_id IN ({placeholders}) AND p.created_at >= gm.joined_at
+        """,
+        group_ids,
+    ).fetchall()
+    reviews = defaultdict(list)
+    problems = defaultdict(list)
+    for row in review_rows:
+        reviews[row["group_id"]].append(row)
+    for row in problem_rows:
+        problems[row["group_id"]].append(row)
+    return {
+        group_id: points_by_user(members, reviews[group_id], problems[group_id])
+        for group_id, members in members_by_group.items()
+    }
+
+
+def group_member_avatar(member):
+    return {
+        "id": member["id"],
+        "username": member["username"],
+        "avatar_version": member["avatar_version"],
+        "has_avatar": avatar_path(member["id"]).is_file(),
+    }
+
+
 def group_detail(conn, group_id, user_id):
     group = member_group(conn, group_id, user_id)
-    members = conn.execute(
-        """
-        SELECT u.id, u.username, u.timezone FROM users u
-        JOIN study_group_members m ON m.user_id = u.id
-        WHERE m.group_id = ?
-        """,
-        (group_id,),
-    ).fetchall()
+    members_by_group = group_members_by_id(conn, (group_id,))
+    members = members_by_group[group_id]
     review_rows = conn.execute(
         """
         SELECT p.user_id, r.reviewed_at FROM reviews r
@@ -1932,7 +2003,11 @@ def group_detail(conn, group_id, user_id):
         """,
         (group_id,),
     ).fetchall()
+    # Streaks retain their full-history meaning; growth counts only activity
+    # since joining this group and includes trial accounts like group streaks.
     streaks = review_streaks_by_user(members, review_rows)
+    member_points = group_points_by_id(conn, members_by_group)[group_id]
+    points = sum(member_points.values())
     ranked_members = sorted(
         members, key=lambda row: (-streaks[row["id"]], row["username"])
     )
@@ -1942,12 +2017,16 @@ def group_detail(conn, group_id, user_id):
         "invite_code": group["invite_code"],
         "created_at": group["created_at"],
         "is_creator": group["created_by"] == user_id,
+        "member_limit": GROUP_MAX_MEMBERS,
+        "level": level_summary(points),
+        "points": points,
         "members": [
             {
-                "id": row["id"],
                 # 小组由熟人邀请，刻意展示真实用户名；全站排行榜仍匿名。
-                "username": row["username"],
+                **group_member_avatar(row),
                 "current_streak_days": streaks[row["id"]],
+                "points": member_points[row["id"]],
+                "is_creator": group["created_by"] == row["id"],
             }
             for row in ranked_members
         ],
@@ -1988,6 +2067,7 @@ def create_group(data: NewGroup, user=Depends(current_user)):
 @app.get("/api/groups")
 def list_groups(user=Depends(current_user)):
     with connect() as conn:
+        conn.execute("BEGIN")
         groups = conn.execute(
             """
             SELECT g.id, g.name, g.created_by, g.created_at,
@@ -2000,16 +2080,35 @@ def list_groups(user=Depends(current_user)):
             """,
             (user["id"],),
         ).fetchall()
+        members_by_group = group_members_by_id(
+            conn, tuple(group["id"] for group in groups)
+        )
+        points_by_group = group_points_by_id(conn, members_by_group)
     return {"groups": [
         {
             "id": group["id"],
             "name": group["name"],
             "member_count": group["member_count"],
+            "member_limit": GROUP_MAX_MEMBERS,
             "is_creator": group["created_by"] == user["id"],
             "created_at": group["created_at"],
+            "level": level_summary(sum(points_by_group[group["id"]].values())),
+            "members_preview": [
+                group_member_avatar(member)
+                for member in members_by_group[group["id"]][:5]
+            ],
         }
         for group in groups
     ]}
+
+
+@app.get("/api/group-levels")
+def get_group_levels(user=Depends(current_user)):
+    return {
+        "member_limit": GROUP_MAX_MEMBERS,
+        "levels": [dict(level) for level in LEVELS],
+        "rules": [dict(rule) for rule in RULES],
+    }
 
 
 @app.post("/api/groups/join")
@@ -2139,6 +2238,47 @@ def owned_comment(conn, comment_id, user_id):
     return comment
 
 
+def comment_floor(conn, post_id, comment_id):
+    # Count tombstones too: soft-deleting a floor must not renumber its replies.
+    return conn.execute(
+        "SELECT COUNT(*) FROM post_comments WHERE post_id = ? AND id <= ?",
+        (post_id, comment_id),
+    ).fetchone()[0]
+
+
+def serialize_comment(conn, row, post_author_id):
+    comment = {
+        **dict(row),
+        "has_avatar": avatar_path(row["user_id"]).is_file(),
+        "floor": comment_floor(conn, row["post_id"], row["id"]),
+        "is_op": row["user_id"] == post_author_id,
+        "reply_to": None,
+    }
+    if row["reply_to_id"] is not None:
+        target = conn.execute(
+            """
+            SELECT c.*, u.username FROM post_comments c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.id = ? AND c.post_id = ?
+            """,
+            (row["reply_to_id"], row["post_id"]),
+        ).fetchone()
+        if target is not None:
+            reply_to = {
+                "id": target["id"],
+                "floor": comment_floor(conn, target["post_id"], target["id"]),
+                "deleted": target["deleted_at"] is not None,
+            }
+            if not reply_to["deleted"]:
+                excerpt = " ".join(target["body"].split())
+                reply_to.update(
+                    username=target["username"],
+                    excerpt=excerpt[:60] + ("…" if len(excerpt) > 60 else ""),
+                )
+            comment["reply_to"] = reply_to
+    return comment
+
+
 @app.get("/api/posts")
 def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
     search_filter = ""
@@ -2212,8 +2352,7 @@ def get_post(post_id: int, user=Depends(current_user)):
         post = {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
         comments = conn.execute(
             """
-            SELECT c.id, c.user_id, c.body, c.created_at, c.updated_at,
-                   u.username, u.avatar_version
+            SELECT c.*, u.username, u.avatar_version
             FROM post_comments c
             JOIN users u ON u.id = c.user_id
             WHERE c.post_id = ? AND c.deleted_at IS NULL
@@ -2221,10 +2360,9 @@ def get_post(post_id: int, user=Depends(current_user)):
             """,
             (post_id,),
         ).fetchall()
-    post["comments"] = [
-        {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
-        for row in comments
-    ]
+        post["comments"] = [
+            serialize_comment(conn, row, post["user_id"]) for row in comments
+        ]
     return post
 
 
@@ -2266,39 +2404,53 @@ def delete_post(post_id: int, user=Depends(current_user)):
 def create_comment(post_id: int, data: NewComment, user=Depends(current_user)):
     require_not_trial(user, "评论")
     with connect(write=True) as conn:
-        visible_post(conn, post_id)
+        post = visible_post(conn, post_id)
+        if data.reply_to_id is not None:
+            # SQLite IDs are signed 64-bit integers; larger positive IDs are
+            # nonexistent targets, rather than binding errors or invalid bodies.
+            if data.reply_to_id > 2**63 - 1 or conn.execute(
+                "SELECT 1 FROM post_comments "
+                "WHERE id = ? AND post_id = ? AND deleted_at IS NULL",
+                (data.reply_to_id, post_id),
+            ).fetchone() is None:
+                raise HTTPException(400, "被回复的评论不存在或已删除")
         cursor = conn.execute(
-            "INSERT INTO post_comments(post_id, user_id, body, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (post_id, user["id"], data.body, utc_now()),
+            "INSERT INTO post_comments(post_id, user_id, body, created_at, reply_to_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (post_id, user["id"], data.body, utc_now(), data.reply_to_id),
         )
         row = conn.execute(
             """
-            SELECT c.*, u.username FROM post_comments c
+            SELECT c.*, u.username, u.avatar_version FROM post_comments c
             JOIN users u ON u.id = c.user_id WHERE c.id = ?
             """,
             (cursor.lastrowid,),
         ).fetchone()
-    return dict(row)
+        comment = serialize_comment(conn, row, post["user_id"])
+    return comment
 
 
 @app.put("/api/comments/{comment_id}")
 def edit_comment(comment_id: int, data: CommentEdit, user=Depends(current_user)):
     require_not_trial(user, "评论")
     with connect(write=True) as conn:
-        owned_comment(conn, comment_id, user["id"])
+        owned = owned_comment(conn, comment_id, user["id"])
         conn.execute(
             "UPDATE post_comments SET body = ?, updated_at = ? WHERE id = ?",
             (data.body, utc_now(), comment_id),
         )
         row = conn.execute(
             """
-            SELECT c.*, u.username FROM post_comments c
+            SELECT c.*, u.username, u.avatar_version FROM post_comments c
             JOIN users u ON u.id = c.user_id WHERE c.id = ?
             """,
             (comment_id,),
         ).fetchone()
-    return dict(row)
+        post_author = conn.execute(
+            "SELECT user_id FROM posts WHERE id = ?", (owned["post_id"],)
+        ).fetchone()
+        comment = serialize_comment(conn, row, post_author["user_id"])
+    return comment
 
 
 @app.delete("/api/comments/{comment_id}")
