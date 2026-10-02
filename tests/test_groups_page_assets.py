@@ -51,11 +51,29 @@ def node_with_id(document, element_id):
     return nodes[0]
 
 
+def property_rules(source, selector, property_name):
+    """Return declarations in source order, including their conditional gates."""
+    rules = []
+    for blocks, declaration in css_declarations(source):
+        name, _, value = declaration.partition(":")
+        if name.strip() == property_name and selector in css_selectors(blocks[-1]):
+            rules.append((blocks, value.strip()))
+    assert rules, f"Missing {property_name} for {selector}"
+    return rules
+
+
+def unconditional_value(source, selector, property_name):
+    rules = [value for blocks, value in property_rules(source, selector, property_name)
+             if len(blocks) == 1]
+    assert rules, f"Missing unconditional {property_name} for {selector}"
+    return rules[-1]
+
+
 def test_group_stylesheet_is_versioned_and_follows_shared_themes(document, group_css):
     links = [node["attrs"].get("href", "") for node in document
              if node["tag"] == "link" and node["attrs"].get("rel") == "stylesheet"]
     group_links = [href for href in links if href.split("?")[0] == "/static/groups.css"]
-    assert group_links == ["/static/groups.css?v=1"]
+    assert group_links == ["/static/groups.css?v=2"]
     group_index = links.index(group_links[0])
     for shared in ("style.css", "themes.css"):
         assert next(i for i, href in enumerate(links)
@@ -93,6 +111,99 @@ def test_group_styles_use_existing_tokens_and_no_external_assets(group_css):
     assert set(re.findall(r"var\(\s*(--[\w-]+)", source)) <= defined_tokens
     for level in range(1, 9):
         assert re.search(rf'\[data-level=["\']{level}["\']\]', source)
+
+
+def test_gold_seal_text_is_darker_only_in_ink_and_keeps_existing_borders(group_css):
+    gold_token = "--groups-seal-gold-text"
+    assert unconditional_value(group_css, "#groups-page", gold_token) == "var(--gamboge-ink)"
+    ink_selector = 'html[data-theme="ink"] #groups-page'
+    assert unconditional_value(group_css, ink_selector, gold_token) == "var(--ink)"
+    mixed_rules = [(blocks, value) for blocks, value in property_rules(
+        group_css, ink_selector, gold_token,
+    ) if "color-mix(" in value]
+    assert mixed_rules
+    for blocks, value in mixed_rules:
+        assert any(block.startswith("@supports") and "color-mix(" in block
+                   for block in blocks)
+        assert not any(block.startswith("@media") for block in blocks)
+        assert re.sub(r"\s+", "", value) == (
+            "color-mix(insrgb,var(--gamboge-ink)85%,var(--ink))"
+        )
+    # Qixi retains its existing gold, including on touch and unsupported devices.
+    for blocks, declaration in css_declarations(group_css):
+        name, _, value = declaration.partition(":")
+        if name.strip() == gold_token:
+            assert set(css_selectors(blocks[-1])) <= {"#groups-page", ink_selector}
+            assert not any(block.startswith("@media") for block in blocks)
+        if name.strip().startswith("border"):
+            assert "--groups-seal-gold-text" not in value
+            assert "--groups-seal-text" not in value
+    badge = "#groups-page .groups-level-badge"
+    assert unconditional_value(group_css, badge, "--groups-seal-text") == "var(--groups-seal-ink)"
+    assert unconditional_value(group_css, badge, "color") == "var(--groups-seal-ink)"
+    assert unconditional_value(group_css, badge, "border") == "3px solid var(--groups-seal-ink)"
+    assert unconditional_value(group_css, badge + "::before", "border") == "1px solid currentColor"
+    for level in (7, 8):
+        selector = f'{badge}[data-level="{level}"]'
+        assert unconditional_value(group_css, selector, "--groups-seal-ink") == "var(--gamboge-ink)"
+        assert unconditional_value(group_css, selector, "--groups-seal-text") == f"var({gold_token})"
+    text_selector = badge + " :is(.groups-seal-character, .groups-seal-number)"
+    assert unconditional_value(group_css, text_selector, "color") == "var(--groups-seal-text)"
+    for state in ("reached", "current"):
+        selector = f'#groups-page .groups-level-step[data-state="{state}"] .groups-level-badge'
+        assert unconditional_value(group_css, selector, "--groups-seal-text") == "var(--surface)"
+        assert unconditional_value(group_css, selector, "background") == "var(--groups-seal-ink)"
+
+
+def test_seal_number_font_sizes_never_fall_below_eight_pixels(group_css):
+    shared_css = (STATIC / "style.css").read_text(encoding="utf-8")
+    token_sizes = {}
+    for blocks, declaration in css_declarations(shared_css):
+        name, _, value = declaration.partition(":")
+        if name.strip().startswith("--text-"):
+            token_sizes.setdefault(name.strip(), []).append(value.strip())
+    checked = 0
+    for blocks, declaration in css_declarations(group_css):
+        if ".groups-seal-number" not in blocks[-1]:
+            continue
+        name, _, value = declaration.partition(":")
+        if name.strip() not in {"font", "font-size"}:
+            continue
+        size = re.search(r"(?:^|\s)(\d+(?:\.\d+)?px|var\(--text-[\w-]+\))(?=/|\s|$)", value.strip())
+        assert size, f"Unresolved seal number font size: {declaration}"
+        token = re.fullmatch(r"var\((--text-[\w-]+)\)", size[1])
+        values = token_sizes.get(token[1], []) if token else [size[1]]
+        assert values, f"Undefined seal number size token: {size[1]}"
+        for resolved in values:
+            assert re.fullmatch(r"\d+(?:\.\d+)?px", resolved), resolved
+            assert float(resolved[:-2]) >= 8, (blocks, declaration, resolved)
+        checked += 1
+    assert checked >= 3, "Check default, hero and ladder seal number sizes"
+
+
+@pytest.mark.parametrize("selector", [
+    "#groups-page .page-heading .muted",
+    "#groups-page #groups-status",
+    "#groups-page #groups-list > .muted",
+    "#groups-page #groups-streak-rules",
+    "#groups-page #groups-member-actions",
+    "#groups-page .groups-weakness > .muted",
+    "#groups-page .danger-zone .danger-hint",
+])
+def test_exposed_group_explanations_use_full_strength_ink_on_every_device(group_css, selector):
+    assert unconditional_value(group_css, "#groups-page", "--groups-note-ink") == "var(--ink)"
+    assert unconditional_value(group_css, selector, "color") == "var(--groups-note-ink)"
+    # A theme or media override must not restore a pale color on another device.
+    for blocks, declaration in css_declarations(group_css):
+        name, _, value = declaration.partition(":")
+        if name.strip() == "--groups-note-ink":
+            assert blocks == ("#groups-page",) and value.strip() == "var(--ink)"
+        if name.strip() != "color":
+            continue
+        for candidate in css_selectors(blocks[-1]):
+            plain_selector = re.sub(r"^html(?:\[[^\]]+\])+\s+", "", candidate)
+            if plain_selector == selector and (candidate != selector or len(blocks) > 1):
+                assert value.strip() == "var(--groups-note-ink)", (blocks, declaration)
 
 
 def test_group_blur_and_transparency_have_device_gates_and_fallbacks(group_css):

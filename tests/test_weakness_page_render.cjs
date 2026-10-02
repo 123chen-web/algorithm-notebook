@@ -72,6 +72,8 @@ function harness(state = {}) {
     weaknessAnalysis: { mistake_count: 5, minimum_mistakes: 5, insight: null },
     weaknessPending: false,
     weaknessQuotaAvailable: true,
+    weaknessGeneration: 0,
+    updateUserInfo: () => {},
     busy: false,
     growthZones: [],
     ...state,
@@ -192,6 +194,46 @@ function growth() {
   assert.ok(get("growth-empty").textContent.includes("还没有足够的历史记录"));
 }
 
+async function growthReset() {
+  const previousZone = "A 账号独有的旧分区";
+  const { context, get } = harness({
+    user: { id: 1, timezone: "Asia/Shanghai", ai_daily_remaining: 10, ai_daily_limit: 10 },
+    growthZones: [{ zone: previousZone, total_mistakes: 12, recent_30_days: 2, prior_30_days: 8, days_since_last_mistake: 1, quiet_streak: false, community_struggling_ratio: null }],
+  });
+  context.renderGrowthInsights(true);
+  assert.ok(get("growth-zones").textContent.includes(previousZone));
+  context.resetWeaknessAnalysis();
+  assert.equal(context.growthZones, null);
+  assert.equal(get("growth-zones").children.length, 0);
+  for (const id of ["growth-summary", "growth-empty", "growth-community-note"]) {
+    assert.equal(get(id).hidden, true, `${id} must be hidden during account reset`);
+    assert.ok(!get(id).textContent.includes(previousZone));
+  }
+  assert.equal(get("growth-empty").textContent, "");
+  assert.equal(get("growth-community-note").textContent, "");
+
+  context.user = { id: 2, timezone: "Asia/Shanghai", ai_daily_remaining: 10, ai_daily_limit: 10 };
+  const requests = [];
+  context.api = (path) => new Promise((resolve) => requests.push({ path, resolve }));
+  const loading = context.loadWeaknessAnalysis();
+  assert.equal(requests.length, 3);
+  assert.equal(get("weakness-page").getAttribute("aria-busy"), "true");
+  assert.equal(get("growth-summary").hidden, true);
+  assert.equal(get("growth-empty").hidden, false);
+  assert.equal(get("growth-empty").textContent, "正在读取长期成长趋势…");
+  assert.equal(get("growth-zones").children.length, 0, "B must not see A's growth cards while the three reads are pending");
+  for (const request of requests) {
+    if (request.path === "/api/insights/weakness-analysis") request.resolve({ mistake_count: 5, minimum_mistakes: 5, insight: null });
+    else if (request.path === "/api/me") request.resolve(context.user);
+    else if (request.path === "/api/insights/growth") request.resolve({ zones: [] });
+    else assert.fail(`Unexpected request: ${request.path}`);
+  }
+  await loading;
+  assert.equal(get("weakness-page").getAttribute("aria-busy"), "false");
+  assert.ok(get("growth-empty").textContent.includes("还没有足够的历史记录"));
+  assert.ok(!get("growth-zones").textContent.includes(previousZone));
+}
+
 function analysis() {
   const hostile = '<img src=x onerror="globalThis.__injected=1">';
   const sample = { problem_count: 10, mistake_count: 21, review_count: 8, period_start: "2026-08-03T00:00:00Z", period_end: "2026-09-25T02:00:00Z" };
@@ -219,9 +261,16 @@ function analysis() {
   assert.ok(range.textContent.includes("只保留最近一次分析"));
   const cards = byClass(result, "weakness-pattern");
   assert.equal(cards.length, 2);
+  const list = oneClass(result, "weakness-patterns");
+  assert.equal(list.tagName, "ol");
+  assert.equal(list.getAttribute("role"), "list");
+  assert.equal(list.children.length, patterns.length);
+  assert.ok(list.children.every((item) => item.tagName === "li" && item.children.length === 1 && item.children[0].tagName === "article"));
   for (const [index, card] of cards.entries()) {
     const pattern = patterns[index];
-    assert.equal(byTag(card, "h3")[0].textContent, pattern.title);
+    assert.equal(byTag(card, "h3")[0].textContent, `第 ${index + 1} 条规律：${pattern.title}`);
+    assert.ok(accessibleText(byTag(card, "h3")[0]).includes(`第 ${index + 1} 条规律`));
+    assert.equal(oneClass(byTag(card, "h3")[0], "weakness-sr-only").textContent, `第 ${index + 1} 条规律：`);
     assert.equal(oneClass(card, "weakness-pattern-number").textContent, index ? "02" : "01");
     assert.equal(oneClass(card, "weakness-pattern-number").getAttribute("aria-hidden"), "true");
     const confidence = oneClass(card, "weakness-confidence");
@@ -264,7 +313,11 @@ function analysis() {
   assert.equal(get("weakness-empty-text").textContent, "再记两条具体错因");
 }
 
-const scenarios = { controls, quota, growth, analysis };
+const scenarios = { controls, quota, growth, "growth-reset": growthReset, analysis };
 assert.ok(Object.hasOwn(scenarios, payload.scenario), "Unknown report test scenario");
-scenarios[payload.scenario]();
-process.stdout.write(`${payload.scenario}: render behavior passed\n`);
+Promise.resolve(scenarios[payload.scenario]()).then(() => {
+  process.stdout.write(`${payload.scenario}: render behavior passed\n`);
+}).catch((error) => {
+  process.stderr.write(`${error.stack}\n`);
+  process.exitCode = 1;
+});

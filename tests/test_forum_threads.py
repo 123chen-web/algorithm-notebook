@@ -2,7 +2,8 @@
 
 import sqlite3
 import time
-from contextlib import closing
+from contextlib import closing, contextmanager
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ from pydantic import ValidationError
 
 import main
 from db import connect, init_db
-from test_app import client as forum_client, register
+from test_app import register
 from test_forum import create_post
 
 
@@ -23,11 +24,18 @@ COMMENT_FIELDS = {
 
 
 @pytest.fixture
-def client(forum_client, tmp_path, monkeypatch):
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("INVITE_CODE", "test-invite")
+    monkeypatch.setenv("COOKIE_SECURE", "0")
+    monkeypatch.setenv("AI_DAILY_LIMIT", "2")
     # Keep avatar checks away from the developer's real avatar directory.
     monkeypatch.setenv("AVATAR_DIR", str(tmp_path / "avatars"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    yield forum_client
+    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
+    main.reset_rate_limits()
+    with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
+        yield instance
 
 
 def create_comment(client, post_id, body="一条评论", **overrides):
@@ -121,6 +129,19 @@ def test_schema_is_nullable_self_reference_and_upgrade_preserves_data(
             and row["to"] == "id" and row["on_delete"] == "SET NULL"
             for row in foreign_keys
         )
+        indexes = {
+            row["name"] for row in conn.execute("PRAGMA index_list(post_comments)")
+        }
+        assert "idx_post_comments_reply_to" in indexes
+        assert [
+            row["name"]
+            for row in conn.execute("PRAGMA index_info(idx_post_comments_reply_to)")
+        ] == ["reply_to_id"]
+        query_plan = conn.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM post_comments WHERE reply_to_id = ?",
+            (31,),
+        ).fetchall()
+        assert any("idx_post_comments_reply_to" in row["detail"] for row in query_plan)
         comment = dict(conn.execute("SELECT * FROM post_comments WHERE id = 31").fetchone())
         assert comment == {
             "id": 31, "post_id": 13, "user_id": 7, "body": "旧评论",
@@ -178,7 +199,9 @@ def test_floor_is_per_post_id_order_and_stable_after_middle_soft_delete(client):
             "UPDATE post_comments SET created_at = '2025-01-01T00:00:00+00:00' "
             "WHERE id = ?", (last["id"],),
         )
-    before = {c["id"]: c["floor"] for c in get_comments(client, post["id"])}
+    ordered = get_comments(client, post["id"])
+    assert [c["id"] for c in ordered] == [last["id"], first["id"], middle["id"]]
+    before = {c["id"]: c["floor"] for c in ordered}
     assert before == {first["id"]: 1, middle["id"]: 2, last["id"]: 3}
     assert client.delete(f"/api/comments/{middle['id']}").status_code == 200
     after = {c["id"]: c["floor"] for c in get_comments(client, post["id"])}
@@ -302,6 +325,130 @@ def test_soft_deleted_reference_redacts_author_and_body_on_get_and_edit(client):
     assert "username" not in updated.json()["reply_to"]
     assert "excerpt" not in updated.json()["reply_to"]
     assert "body" not in updated.json()["reply_to"]
+
+
+@pytest.mark.parametrize("deleted_by", ["author", "admin"])
+def test_edit_reply_in_deleted_post_does_not_read_hidden_reference(
+    client, monkeypatch, deleted_by
+):
+    register(client, "楼主")
+    post = create_post(client)
+    client.post("/api/auth/logout")
+    register(client, "被引用甲")
+    target = create_comment(client, post["id"], "父帖删除后不能返回的第三方正文")
+    client.post("/api/auth/logout")
+    register(client, "回复乙")
+    reply = create_comment(client, post["id"], "乙的回复", reply_to_id=target["id"])
+    client.post("/api/auth/logout")
+    if deleted_by == "admin":
+        monkeypatch.setenv("ADMIN_USERNAME", "moderator")
+        register(client, "moderator")
+        delete_url = f"/api/admin/posts/{post['id']}"
+    else:
+        assert client.post(
+            "/api/auth/login",
+            json={"username": "楼主", "password": "a-test-password-123"},
+        ).status_code == 200
+        delete_url = f"/api/posts/{post['id']}"
+    assert client.delete(delete_url).status_code == 200
+    assert client.get(f"/api/posts/{post['id']}").status_code == 404
+    client.post("/api/auth/logout")
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "回复乙", "password": "a-test-password-123"},
+    ).status_code == 200
+    response = client.put(
+        f"/api/comments/{reply['id']}", json={"body": "乙仍然可以编辑自己的回复"}
+    )
+    assert response.status_code == 200
+    assert response.json()["body"] == "乙仍然可以编辑自己的回复"
+    assert response.json()["reply_to"] is None
+    assert "被引用甲" not in response.text
+    assert target["body"] not in response.text
+
+
+def test_get_post_uses_one_snapshot_during_physical_comment_delete(client, monkeypatch):
+    register(client)
+    post = create_post(client)
+    first = create_comment(client, post["id"], "第一层")
+    second = create_comment(client, post["id"], "第二层", reply_to_id=first["id"])
+    third = create_comment(client, post["id"], "第三层")
+    interleaved = False
+
+    class InterleavedConnection:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, statement, parameters=()):
+            nonlocal interleaved
+            if "FROM post_comments c" in statement and "WHERE c.post_id = ?" in statement:
+                assert self.conn.in_transaction
+                # The post SELECT has already established a WAL read snapshot.
+                with connect(write=True) as writer:
+                    writer.execute("DELETE FROM post_comments WHERE id = ?", (first["id"],))
+                interleaved = True
+            return self.conn.execute(statement, parameters)
+
+    @contextmanager
+    def interleaved_connect(write=False):
+        with connect(write=write) as conn:
+            yield InterleavedConnection(conn)
+
+    monkeypatch.setattr(main, "connect", interleaved_connect)
+    comments = get_comments(client, post["id"])
+    assert interleaved
+    assert [comment["id"] for comment in comments] == [first["id"], second["id"], third["id"]]
+    assert [comment["floor"] for comment in comments] == [1, 2, 3]
+    assert comments[1]["reply_to"] == second["reply_to"]
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT 1 FROM post_comments WHERE id = ?", (first["id"],)
+        ).fetchone() is None
+
+
+def test_get_500_comments_has_bounded_sql_and_counts_soft_deleted_floors(client, monkeypatch):
+    user = register(client)
+    post = create_post(client)
+    with connect(write=True) as conn:
+        first_id = conn.execute(
+            "INSERT INTO post_comments(post_id, user_id, body, created_at) VALUES (?, ?, ?, ?)",
+            (post["id"], user["id"], "第一层引用摘要", CREATED_AT),
+        ).lastrowid
+        conn.executemany(
+            "INSERT INTO post_comments(post_id, user_id, body, created_at, reply_to_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [(post["id"], user["id"], f"第 {floor} 层", CREATED_AT, first_id)
+             for floor in range(2, 501)],
+        )
+        ids = [row[0] for row in conn.execute(
+            "SELECT id FROM post_comments WHERE post_id = ? ORDER BY id", (post["id"],)
+        )]
+        conn.execute(
+            "UPDATE post_comments SET deleted_at = ? WHERE id = ?", (CREATED_AT, ids[249])
+        )
+        conn.execute(
+            "UPDATE post_comments SET reply_to_id = ? WHERE id = ?", (ids[249], ids[-1])
+        )
+    statements = []
+
+    @contextmanager
+    def traced_connect(write=False):
+        with connect(write=write) as conn:
+            conn.set_trace_callback(statements.append)
+            yield conn
+
+    monkeypatch.setattr(main, "connect", traced_connect)
+    comments = get_comments(client, post["id"])
+    assert len(statements) <= 12, statements
+    assert len(comments) == 499
+    assert [comment["floor"] for comment in comments] == [
+        floor for floor in range(1, 501) if floor != 250
+    ]
+    assert comments[1]["reply_to"] == {
+        "id": ids[0], "floor": 1, "deleted": False,
+        "username": user["username"], "excerpt": "第一层引用摘要",
+    }
+    assert comments[-1]["reply_to"] == {"id": ids[249], "floor": 250, "deleted": True}
 
 
 def test_physically_deleted_reference_becomes_null(client):

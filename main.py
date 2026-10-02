@@ -2238,45 +2238,61 @@ def owned_comment(conn, comment_id, user_id):
     return comment
 
 
-def comment_floor(conn, post_id, comment_id):
-    # Count tombstones too: soft-deleting a floor must not renumber its replies.
-    return conn.execute(
-        "SELECT COUNT(*) FROM post_comments WHERE post_id = ? AND id <= ?",
-        (post_id, comment_id),
-    ).fetchone()[0]
+def comment_reply_to(target, floor):
+    if target is None:
+        return None
+    reply_to = {
+        "id": target["id"],
+        "floor": floor,
+        "deleted": target["deleted_at"] is not None,
+    }
+    if not reply_to["deleted"]:
+        excerpt = " ".join(target["body"].split())
+        reply_to.update(
+            username=target["username"],
+            excerpt=excerpt[:60] + ("…" if len(excerpt) > 60 else ""),
+        )
+    return reply_to
+
+
+def comment_response(row, post_author_id, floor, reply_to):
+    return {
+        **dict(row),
+        "has_avatar": avatar_path(row["user_id"]).is_file(),
+        "floor": floor,
+        "is_op": row["user_id"] == post_author_id,
+        "reply_to": reply_to,
+    }
 
 
 def serialize_comment(conn, row, post_author_id):
-    comment = {
-        **dict(row),
-        "has_avatar": avatar_path(row["user_id"]).is_file(),
-        "floor": comment_floor(conn, row["post_id"], row["id"]),
-        "is_op": row["user_id"] == post_author_id,
-        "reply_to": None,
-    }
-    if row["reply_to_id"] is not None:
+    context = conn.execute(
+        """
+        SELECT COUNT(*) AS floor,
+               EXISTS(SELECT 1 FROM posts WHERE id = ? AND deleted_at IS NULL)
+                   AS post_visible
+        FROM post_comments WHERE post_id = ? AND id <= ?
+        """,
+        (row["post_id"], row["post_id"], row["id"]),
+    ).fetchone()
+    reply_to = None
+    # Editing an old own comment is still allowed after its post is deleted,
+    # but the response must not read another author's hidden reply target.
+    if context["post_visible"] and row["reply_to_id"] is not None:
         target = conn.execute(
             """
-            SELECT c.*, u.username FROM post_comments c
+            SELECT c.*, u.username,
+                   (SELECT COUNT(*) FROM post_comments floors
+                    WHERE floors.post_id = c.post_id AND floors.id <= c.id) AS floor
+            FROM post_comments c
             JOIN users u ON u.id = c.user_id
             WHERE c.id = ? AND c.post_id = ?
             """,
             (row["reply_to_id"], row["post_id"]),
         ).fetchone()
         if target is not None:
-            reply_to = {
-                "id": target["id"],
-                "floor": comment_floor(conn, target["post_id"], target["id"]),
-                "deleted": target["deleted_at"] is not None,
-            }
-            if not reply_to["deleted"]:
-                excerpt = " ".join(target["body"].split())
-                reply_to.update(
-                    username=target["username"],
-                    excerpt=excerpt[:60] + ("…" if len(excerpt) > 60 else ""),
-                )
-            comment["reply_to"] = reply_to
-    return comment
+            reply_to = comment_reply_to(target, target["floor"])
+    return comment_response(row, post_author_id, context["floor"], reply_to)
 
 
 @app.get("/api/posts")
@@ -2338,6 +2354,7 @@ def create_post(data: NewPost, user=Depends(current_user)):
 @app.get("/api/posts/{post_id}")
 def get_post(post_id: int, user=Depends(current_user)):
     with connect() as conn:
+        conn.execute("BEGIN")
         row = conn.execute(
             """
             SELECT p.*, u.username, u.avatar_version
@@ -2350,19 +2367,31 @@ def get_post(post_id: int, user=Depends(current_user)):
         if row is None:
             raise HTTPException(404, "帖子不存在")
         post = {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
-        comments = conn.execute(
+        rows = conn.execute(
             """
             SELECT c.*, u.username, u.avatar_version
             FROM post_comments c
             JOIN users u ON u.id = c.user_id
-            WHERE c.post_id = ? AND c.deleted_at IS NULL
-            ORDER BY c.created_at ASC
+            WHERE c.post_id = ?
+            ORDER BY c.id ASC
             """,
             (post_id,),
         ).fetchall()
-        post["comments"] = [
-            serialize_comment(conn, row, post["user_id"]) for row in comments
-        ]
+        # Tombstones keep their floor; reply lookups all use the same snapshot.
+        by_id = {row["id"]: (row, floor) for floor, row in enumerate(rows, 1)}
+        comments = sorted(
+            (row for row in rows if row["deleted_at"] is None),
+            key=lambda row: row["created_at"],
+        )
+        post["comments"] = []
+        for row in comments:
+            target, target_floor = by_id.get(row["reply_to_id"], (None, None))
+            post["comments"].append(
+                comment_response(
+                    row, post["user_id"], by_id[row["id"]][1],
+                    comment_reply_to(target, target_floor),
+                )
+            )
     return post
 
 

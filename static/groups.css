@@ -1,7 +1,23 @@
 /* A shared sheet of seals: both themes inherit their own paper and ink tokens. */
-#groups-page { --groups-seal-ink: var(--ink-2); }
+#groups-page {
+  --groups-seal-ink: var(--ink-2);
+  --groups-seal-gold-text: var(--gamboge-ink);
+  --groups-note-ink: var(--ink);
+}
+html[data-theme="ink"] #groups-page { --groups-seal-gold-text: var(--ink); }
+@supports (color: color-mix(in srgb, var(--gamboge-ink), var(--ink))) {
+  html[data-theme="ink"] #groups-page { --groups-seal-gold-text: color-mix(in srgb, var(--gamboge-ink) 85%, var(--ink)); }
+}
 #groups-page :is(h3, h4) { font-family: var(--serif); font-weight: 500; }
 #groups-page .muted { color: var(--ink-2); }
+/* Exposed landscape copy needs the theme's full-strength ink, without extra panels. */
+#groups-page .page-heading .muted,
+#groups-page #groups-status,
+#groups-page #groups-list > .muted,
+#groups-page #groups-streak-rules,
+#groups-page #groups-member-actions,
+#groups-page .groups-weakness > .muted,
+#groups-page .danger-zone .danger-hint { color: var(--groups-note-ink); }
 #groups-page #groups-status:empty { display: none; }
 #groups-page :is(#groups-status, #groups-levels-status).error { color: var(--danger); }
 #groups-page #groups-retry { margin-bottom: var(--space-5); }
@@ -29,13 +45,14 @@
 
 /* Double borders echo a carved stamp; only the seal's ink changes with level. */
 #groups-page .groups-level-badge {
-  --groups-seal-ink: var(--ink-2); --groups-seal-size: 56px;
+  --groups-seal-ink: var(--ink-2); --groups-seal-text: var(--groups-seal-ink); --groups-seal-size: 56px;
   display: inline-flex; position: relative; flex: 0 0 auto; width: var(--groups-seal-size); height: var(--groups-seal-size);
   flex-direction: column; align-items: center; justify-content: center;
   border: 3px solid var(--groups-seal-ink); border-radius: var(--radius-xs);
   color: var(--groups-seal-ink); background: var(--paper-2); line-height: 1;
 }
 #groups-page .groups-level-badge::before { content: ""; position: absolute; inset: 3px; border: 1px solid currentColor; border-radius: var(--radius-compact); pointer-events: none; }
+#groups-page .groups-level-badge :is(.groups-seal-character, .groups-seal-number) { color: var(--groups-seal-text); }
 #groups-page .groups-seal-character { font: 500 28px/1 var(--kai); }
 #groups-page .groups-seal-number { margin-top: 3px; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .02em; }
 #groups-page .groups-level-badge[data-level="1"],
@@ -45,7 +62,7 @@
 #groups-page .groups-level-badge[data-level="5"],
 #groups-page .groups-level-badge[data-level="6"] { --groups-seal-ink: var(--azurite); }
 #groups-page .groups-level-badge[data-level="7"],
-#groups-page .groups-level-badge[data-level="8"] { --groups-seal-ink: var(--gamboge-ink); }
+#groups-page .groups-level-badge[data-level="8"] { --groups-seal-ink: var(--gamboge-ink); --groups-seal-text: var(--groups-seal-gold-text); }
 #groups-page .groups-level-badge[data-level="8"]::after { content: ""; position: absolute; inset: -7px; border: 1px solid var(--gamboge-ink); border-radius: var(--radius-sm); pointer-events: none; }
 #groups-page .groups-level-badge--large { --groups-seal-size: 96px; border-width: 4px; }
 #groups-page .groups-level-badge--large::before { inset: 4px; }
@@ -54,7 +71,7 @@
 #groups-page .groups-level-badge--small { --groups-seal-size: 38px; border-width: 2px; }
 #groups-page .groups-level-badge--small::before { inset: 2px; }
 #groups-page .groups-level-badge--small .groups-seal-character { font-size: 19px; }
-#groups-page .groups-level-badge--small .groups-seal-number { margin-top: 2px; font-size: 7px; }
+#groups-page .groups-level-badge--small .groups-seal-number { margin-top: 2px; font-size: 8px; }
 
 #groups-page .groups-progress, #groups-page .groups-contribution-bar, #groups-page .groups-signal-bar {
   --groups-progress: 0; display: block; height: 4px; overflow: hidden;
@@ -120,7 +137,7 @@
 #groups-page .groups-level-step[data-state="current"] { border: 2px solid var(--azurite); background: var(--surface); padding-top: 11px; padding-bottom: 11px; }
 #groups-page .groups-level-step[data-state="current"] > strong { color: var(--azurite); font-weight: 650; }
 #groups-page .groups-level-step[data-state="reached"] .groups-level-badge,
-#groups-page .groups-level-step[data-state="current"] .groups-level-badge { background: var(--groups-seal-ink); color: var(--surface); }
+#groups-page .groups-level-step[data-state="current"] .groups-level-badge { --groups-seal-text: var(--surface); background: var(--groups-seal-ink); color: var(--surface); }
 #groups-page .groups-level-step[data-state="future"] .groups-level-badge { background: var(--paper-2); }
 #groups-page #groups-level-rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); list-style: none; padding: var(--space-5) 0 0; border-top: 1px solid var(--line); }
 #groups-page #groups-level-rules li { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
@@ -139,7 +156,7 @@
 #groups-page .groups-signal-bar { height: 6px; }
 #groups-page .groups-signal-missing { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
 #groups-page .danger-zone { margin-top: var(--space-7); padding-top: var(--space-5); border-top: 1px solid var(--line); }
-#groups-page .danger-zone .danger-hint { color: var(--ink-2); max-width: none; font-size: var(--text-xs); }
+#groups-page .danger-zone .danger-hint { color: var(--groups-note-ink); max-width: none; font-size: var(--text-xs); }
 #groups-page .danger-zone button { margin-right: var(--space-2); font-size: var(--text-xs); }
 
 @supports (background: color-mix(in srgb, var(--surface), transparent)) {

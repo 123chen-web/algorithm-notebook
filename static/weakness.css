@@ -83,6 +83,7 @@
 #weakness-page .weakness-stat-number { order: -1; margin: 0; font: 400 40px/1 var(--serif); font-variant-numeric: tabular-nums; }
 #weakness-page .weakness-stat dt { color: var(--ink-2); font-size: var(--text-xs); }
 #weakness-page .weakness-range { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+#weakness-page .weakness-patterns { margin: 0; padding: 0; list-style: none; }
 #weakness-page .weakness-pattern { margin-top: var(--space-6); padding: var(--space-6); border-radius: var(--radius-sm); background: var(--surface); }
 #weakness-page .weakness-pattern-number { display: block; margin-bottom: var(--space-3); color: var(--accent); font: 400 40px/1 var(--serif); font-variant-numeric: tabular-nums; }
 #weakness-page .weakness-pattern-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-4); }
@@ -112,6 +113,8 @@
 
 @media (min-width: 1024px) {
   #weakness-page .weakness-layout { grid-template-columns: 336px minmax(0, 1fr); gap: var(--space-8); }
+}
+@media (min-width: 1024px) and (min-height: 640px) {
   #weakness-page .weakness-controls { position: sticky; top: var(--space-4); }
 }
 @media (min-width: 1024px) and (max-width: 1150px) {

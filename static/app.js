@@ -1534,11 +1534,25 @@ async function loadWeeklyRecap() {
   }
 }
 
+function resetGrowthInsights() {
+  growthZones = null;
+  $("#growth-zones").replaceChildren();
+  $("#growth-summary").hidden = true;
+  $("#growth-empty").hidden = true;
+  $("#growth-empty").textContent = "";
+  const communityNote = $("#growth-community-note");
+  if (communityNote) {
+    communityNote.hidden = true;
+    communityNote.textContent = "";
+  }
+}
+
 function resetWeaknessAnalysis() {
   weaknessGeneration += 1;
   weaknessAnalysis = null;
   weaknessPending = false;
   weaknessQuotaAvailable = false;
+  resetGrowthInsights();
   $("#weakness-page").hidden = true;
   $("#weakness-page").setAttribute("aria-busy", "false");
   $("#weakness-result").replaceChildren();
@@ -1662,16 +1676,24 @@ function renderWeaknessAnalysis() {
     : "只保留最近一次分析";
   overview.append(element("p", rangeText, "muted weakness-range"));
   result.append(overview);
+  const patterns = element("ol", "", "weakness-patterns");
+  patterns.setAttribute("role", "list");
   content.patterns.forEach((pattern, index) => {
+    const item = element("li");
     const card = element("article", "", "panel weakness-pattern weakness-reveal");
     card.style.setProperty("--weakness-order", String(index + 1));
     const number = element("span", String(index + 1).padStart(2, "0"), "weakness-pattern-number");
     number.setAttribute("aria-hidden", "true");
     const heading = element("div", "", "weakness-pattern-heading");
+    const title = element("h3");
+    title.append(
+      element("span", `第 ${index + 1} 条规律：`, "weakness-sr-only"),
+      document.createTextNode(pattern.title)
+    );
     const confidence = element("span", pattern.confidence, "weakness-confidence");
     if (pattern.confidence === "较明确") confidence.classList.add("weakness-confidence-clear");
     heading.append(
-      element("h3", pattern.title),
+      title,
       confidence
     );
     card.append(number, heading, element("p", pattern.explanation, "multiline weakness-explanation"));
@@ -1691,8 +1713,10 @@ function renderWeaknessAnalysis() {
     const action = element("div", "", "weakness-action");
     action.append(element("h4", "下一步可以这样练"), element("p", pattern.action, "multiline"));
     card.append(action);
-    result.append(card);
+    item.append(card);
+    patterns.append(item);
   });
+  if (content.patterns.length) result.append(patterns);
   const note = element("p", "分析是基于当前样本的学习建议。继续记录具体错因、如实复习评分，下次更新时再验证这些判断。", "muted weakness-report-note weakness-reveal");
   note.style.setProperty("--weakness-order", String(content.patterns.length + 1));
   result.append(note);
@@ -1704,6 +1728,9 @@ async function loadWeaknessAnalysis() {
   weaknessPending = true;
   weaknessQuotaAvailable = false;
   renderWeaknessControls();
+  resetGrowthInsights();
+  $("#growth-empty").hidden = false;
+  $("#growth-empty").textContent = "正在读取长期成长趋势…";
   const status = $("#weakness-status");
   status.classList.remove("error");
   status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
@@ -3205,7 +3232,7 @@ function selectForumReply(comment) {
 function scrollToForumComment(commentId) {
   // A quoted floor may be hidden by "only OP". Reveal it before navigating.
   let target = $(`#forum-comment-${commentId}`);
-  if (!target && forumPost.comments.some((comment) => comment.id === commentId)) {
+  if ((!target || target.hidden) && forumPost.comments.some((comment) => comment.id === commentId)) {
     forumOnlyOp = false;
     renderForumComments(forumPost.comments);
     target = $(`#forum-comment-${commentId}`);
@@ -3386,13 +3413,17 @@ function renderForumPost(post) {
 }
 
 function renderForumComment(comment) {
-  const post = forumPost;
+  let post = forumPost;
   const wrap = element("article", "", "forum-comment");
   wrap.id = `forum-comment-${comment.id}`;
   wrap.tabIndex = -1;
   wrap.setAttribute("aria-labelledby", `forum-comment-heading-${comment.id}`);
+  let inlineForm = null;
+  let editing = false;
 
   function restoreActions() {
+    inlineForm = null;
+    editing = false;
     readOnly();
     wrap.querySelector(".forum-actions button")?.focus({ preventScroll: true });
   }
@@ -3405,6 +3436,11 @@ function renderForumComment(comment) {
 
   function readOnly() {
     wrap.replaceChildren();
+    // Keep an open editor when a quoted floor changes elsewhere in the thread.
+    if (editing) {
+      wrap.append(floorHeading(), inlineForm);
+      return;
+    }
     const author = element("div", "", "forum-comment-author");
     const authorName = element("div", "", "forum-comment-author-name");
     authorName.append(element("strong", comment.username));
@@ -3450,7 +3486,11 @@ function renderForumComment(comment) {
       const deleteBtn = forumTextAction("删除", `删除 ${comment.floor} 楼`, () => run(async () => {
         if (!confirm("删除这条评论？无法恢复。")) return;
         await api(`/api/comments/${comment.id}`, { method: "DELETE" });
-        const nextFloorId = wrap.nextElementSibling?.id || wrap.previousElementSibling?.id;
+        let nextFloor = wrap.nextElementSibling;
+        while (nextFloor?.hidden) nextFloor = nextFloor.nextElementSibling;
+        let previousFloor = wrap.previousElementSibling;
+        while (previousFloor?.hidden) previousFloor = previousFloor.previousElementSibling;
+        const nextFloorId = nextFloor?.id || previousFloor?.id;
         wrap.remove();
         post.comments = post.comments.filter((item) => item.id !== comment.id);
         // Clear all quoted copies immediately, including comments hidden by the filter.
@@ -3468,18 +3508,20 @@ function renderForumComment(comment) {
     } else if (!user.is_trial) {
       const reportBtn = forumTextAction("举报", `举报 ${comment.floor} 楼`, () => {
         const form = reportForm();
+        inlineForm = form;
         actions.replaceWith(form);
         form.querySelector("textarea").focus();
       });
       const reportAvatarBtn = forumTextAction("举报头像", `举报 ${comment.floor} 楼的头像`, () => {
         const form = avatarReportForm(comment.user_id, restoreActions);
         form.classList.add("forum-inline-form");
+        inlineForm = form;
         actions.replaceWith(form);
         form.querySelector("textarea").focus();
       });
       actions.append(reportBtn, reportAvatarBtn);
     }
-    if (actions.childElementCount) content.append(actions);
+    if (actions.childElementCount) content.append(inlineForm || actions);
     wrap.append(floorHeading(), author, content);
   }
 
@@ -3510,11 +3552,16 @@ function renderForumComment(comment) {
         }
         if (post !== forumPost) return;
         message("评论已更新。");
+        inlineForm = null;
+        editing = false;
+        readOnly();
         renderForumComments(post.comments);
         $(`#forum-comment-${comment.id}`)?.focus({ preventScroll: true });
       });
     });
 
+    inlineForm = form;
+    editing = true;
     wrap.replaceChildren(floorHeading(), form);
     body.focus();
   }
@@ -3545,24 +3592,72 @@ function renderForumComment(comment) {
     return form;
   }
 
+  wrap.refreshForumComment = (updated, redraw = true) => {
+    comment = updated;
+    post = forumPost;
+    if (redraw) readOnly();
+  };
   readOnly();
   return wrap;
 }
 
 function renderForumComments(comments) {
   const list = $("#forum-comments");
-  list.replaceChildren();
-  const visible = comments.filter((comment) => !forumOnlyOp || comment.is_op)
+  const active = document.activeElement;
+  const hadFocus = active && list.contains(active);
+  const selection = hadFocus && typeof active.selectionStart === "number"
+    ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null;
+  if (!list.forumCommentNodes || list.forumCommentPostId !== forumPost.id || list.forumCommentOwner !== user.id) {
+    list.replaceChildren();
+    list.forumCommentNodes = new Map();
+    list.forumCommentPostId = forumPost.id;
+    list.forumCommentOwner = user.id;
+  }
+  const nodes = list.forumCommentNodes;
+  const currentIds = new Set(comments.map((comment) => comment.id));
+  for (const [id, entry] of nodes) {
+    if (!currentIds.has(id)) {
+      entry.node.remove();
+      nodes.delete(id);
+    }
+  }
+  list.forumCommentsEmpty?.remove();
+  list.forumCommentsEmpty = null;
+  const ordered = [...comments]
     .sort((a, b) => forumCommentOrder === "latest" ? b.floor - a.floor : a.floor - b.floor);
-  if (!visible.length) {
+  for (const comment of ordered) {
+    const signature = JSON.stringify([user.is_trial, comment]);
+    let entry = nodes.get(comment.id);
+    if (!entry || entry.node.parentNode !== list) {
+      entry = { node: renderForumComment(comment), signature };
+      nodes.set(comment.id, entry);
+    } else if (entry.signature !== signature) {
+      entry.node.refreshForumComment(comment);
+      entry.signature = signature;
+    } else {
+      entry.node.refreshForumComment(comment, false);
+    }
+    // Native hidden + inert also remove every control in a filtered floor from Tab navigation.
+    entry.node.hidden = forumOnlyOp && !comment.is_op;
+    entry.node.inert = entry.node.hidden;
+    list.append(entry.node);
+  }
+  if (!ordered.some((comment) => !forumOnlyOp || comment.is_op)) {
     const empty = element("div", "", "forum-comments-empty");
     const seal = element("span", comments.length ? "候" : "首", "forum-empty-seal");
     seal.setAttribute("aria-hidden", "true");
     empty.append(seal, element("p", comments.length ? "楼主还没有评论，先看看大家的讨论吧。" : "还没有评论，来抢沙发吧"));
     list.append(empty);
+    list.forumCommentsEmpty = empty;
   }
-  for (const comment of visible) {
-    list.append(renderForumComment(comment));
+  // Moving existing nodes may blur a focused field; restore its caret/selection without scrolling.
+  if (hadFocus) {
+    if (list.contains(active) && !active.closest(".forum-comment")?.hidden) {
+      active.focus({ preventScroll: true });
+      if (selection) active.setSelectionRange(...selection);
+    } else {
+      $("#forum-only-op").focus({ preventScroll: true });
+    }
   }
   renderForumCommentControls();
 }

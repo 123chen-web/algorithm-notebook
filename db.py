@@ -391,6 +391,12 @@ def init_db():
             if column not in existing:
                 conn.execute(statement)
 
+        # Old schemas acquire reply_to_id above before this index can be built.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_post_comments_reply_to "
+            "ON post_comments(reply_to_id)"
+        )
+
         # 多个账号都没填邮箱时 email 是 NULL，SQLite 的唯一索引允许
         # 多个 NULL 并存，所以旧账号不会因为这条索引互相冲突。
         conn.execute(

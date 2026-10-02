@@ -173,6 +173,36 @@ def test_report_motion_is_opt_in_short_and_does_not_change_layout(stylesheet):
     assert animated and keyframe_declarations, "Missing the report's optional entrance motion"
 
 
+def test_analysis_desk_only_sticks_in_wide_and_tall_viewports(stylesheet):
+    sticky_rules = [
+        blocks for blocks, declaration in css_declarations(stylesheet)
+        if declaration == "position: sticky"
+        and "#weakness-page .weakness-controls" in css_selectors(blocks[-1])
+    ]
+    assert sticky_rules, "Keep the analysis desk sticky when enough screen space is available"
+    for blocks in sticky_rules:
+        assert any(
+            block.startswith("@media")
+            and re.search(r"\(\s*min-width\s*:\s*1024px\s*\)", block)
+            and re.search(r"\(\s*min-height\s*:\s*640px\s*\)", block)
+            for block in blocks
+        ), "Short viewports must be able to scroll the expanded billing explanation normally"
+
+
+def test_pattern_list_removes_visual_markers_and_has_its_own_hidden_text_style(stylesheet):
+    declarations = list(css_declarations(stylesheet))
+    assert any(
+        blocks == ("#weakness-page .weakness-patterns",)
+        and declaration == "list-style: none"
+        for blocks, declaration in declarations
+    )
+    hidden_text = {
+        declaration for blocks, declaration in declarations
+        if blocks == ("#weakness-page .weakness-sr-only",)
+    }
+    assert {"position: absolute", "width: 1px", "height: 1px", "overflow: hidden", "clip-path: inset(50%)"} <= hidden_text
+
+
 def test_report_preserves_unique_ids_and_existing_accessibility(document):
     page_index, page = element_with_id(document, "weakness-page")
     assert page["attrs"].get("aria-labelledby") == "weakness-title"
@@ -214,7 +244,7 @@ def test_cost_explanation_uses_a_native_collapsed_keyboard_control(document):
     assert "hidden" not in summaries[0]["attrs"]
 
 
-@pytest.mark.parametrize("scenario", ["controls", "quota", "growth", "analysis"])
+@pytest.mark.parametrize("scenario", ["controls", "quota", "growth", "growth-reset", "analysis"])
 def test_report_rendering_preserves_control_states_and_data_semantics(document, scenario):
     """Execute real render functions without app startup or a browser/database."""
     node = shutil.which("node")
@@ -223,11 +253,12 @@ def test_report_rendering_preserves_control_states_and_data_semantics(document, 
     source = (STATIC / "app.js").read_text(encoding="utf-8")
     functions = []
     for name in (
-        "element", "timestamp", "renderWeaknessControls",
+        "element", "timestamp", "renderWeaknessControls", "resetGrowthInsights",
+        "resetWeaknessAnalysis", "weaknessRequestCurrent", "loadWeaknessAnalysis",
         "renderWeaknessAnalysis", "renderGrowthInsights",
     ):
         declaration = re.search(
-            rf"(?m)^function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{",
+            rf"(?m)^(?:async\s+)?function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{",
             source,
         )
         assert declaration, f"Missing {name} renderer or helper"
