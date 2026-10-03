@@ -242,6 +242,8 @@ html[data-view="app"] {
   .topbar-search-key { display: none; }
   html[data-view="app"] .header .user-meta { display: contents; }
   html[data-view="app"] .header .my-avatar-wrap { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  /* 头像在顶栏最右边，账号菜单要从头像右缘向左展开；style.css 里 ≤780px 的旧规则让它从左缘向右展开，手机上会被切掉大半。 */
+  html[data-view="app"] .header .account-menu-panel { right: 0; left: auto; }
   html[data-view="app"] .header .account-summary-name, html[data-view="app"] .header .account-menu-arrow { display: none; }
   html[data-view="app"] .header #my-avatar { width: 36px; height: 36px; }
   html[data-view="app"] .header #refresh, html[data-view="app"] .header .topbar-new { display: none; }

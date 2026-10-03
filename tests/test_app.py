@@ -1170,6 +1170,32 @@ def test_update_username_rejects_duplicate(client):
     assert client.get("/api/me").json()["username"] == "bob"
 
 
+def test_renaming_with_capital_letters_keeps_the_account_able_to_log_in(client):
+    # 注册和登录都把用户名转成小写再比较；改名也必须这样存，否则改成 "Alice2"
+    # 之后哪种写法都登录不了（库里是 Alice2，登录查的是 alice2）。
+    register(client, "alice")
+    renamed = client.put("/api/me/username", json={"username": "Alice2"})
+    assert renamed.status_code == 200
+    assert renamed.json()["username"] == "alice2"
+    assert client.get("/api/me").json()["username"] == "alice2"
+    client.post("/api/auth/logout")
+    for typed in ("Alice2", "alice2", "ALICE2"):
+        login = client.post(
+            "/api/auth/login", json={"username": typed, "password": "a-test-password-123"},
+        )
+        assert login.status_code == 200, typed
+        client.post("/api/auth/logout")
+
+
+def test_renaming_to_a_name_that_differs_only_by_case_is_a_duplicate(client):
+    register(client, "alice")
+    client.post("/api/auth/logout")
+    register(client, "bob")
+    conflict = client.put("/api/me/username", json={"username": "ALICE"})
+    assert conflict.status_code == 409
+    assert client.get("/api/me").json()["username"] == "bob"
+
+
 def test_renamed_author_shows_new_name_on_existing_forum_content(client):
     from test_forum import create_post
 

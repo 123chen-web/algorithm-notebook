@@ -310,6 +310,32 @@ def shell_css_declarations():
     return list(css_declarations((STATIC / "shell.css").read_text(encoding="utf-8")))
 
 
+def test_the_site_has_a_favicon_so_browsers_do_not_request_a_missing_one():
+    # 没有 <link rel="icon"> 时，浏览器每次打开页面都会去请求 /favicon.ico，得到一个 404。
+    elements = layout_document()
+    icons = [item["attrs"] for item in elements if item["tag"] == "link" and item["attrs"].get("rel") == "icon"]
+    assert icons == [{"rel": "icon", "type": "image/svg+xml", "href": "/static/favicon.svg"}]
+    svg = (STATIC / "favicon.svg").read_text(encoding="utf-8")
+    assert svg.startswith("<svg ") and 'viewBox="0 0 64 64"' in svg and "错" in svg
+    assert "<script" not in svg and "href=" not in svg, "an icon must stay inert"
+
+
+def test_account_menu_panel_opens_leftwards_from_the_avatar_on_narrow_screens():
+    # 头像在顶栏最右边。如果面板从头像左缘向右展开（style.css 里 ≤780px 的旧规则），
+    # 手机上 220px 宽的面板只能露出约 50px，名字、导出、退出登录都被切掉。
+    from test_cursor_fx_assets import css_selectors
+
+    anchored = {}
+    for blocks, declaration in shell_css_declarations():
+        selectors = css_selectors(blocks[-1])
+        if not any(item.endswith('html[data-view="app"] .header .account-menu-panel') for item in selectors):
+            continue
+        assert any("max-width: 1023px" in block for block in blocks[:-1]), "the rule must cover phones and tablets"
+        name, _, value = declaration.partition(":")
+        anchored[name.strip()] = value.strip()
+    assert anchored == {"right": "0", "left": "auto"}
+
+
 def test_qixi_shell_surfaces_are_glass_with_an_opaque_fallback():
     from test_cursor_fx_assets import css_selectors
 

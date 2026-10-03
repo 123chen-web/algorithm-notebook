@@ -284,13 +284,30 @@ function avatarHue(username) {
   return hash % 360;
 }
 
+// 白色首字母压在头像底色上要有 4.6:1 以上的对比度：黄、绿、青色相天生偏亮，
+// 先把明度往下压到够用为止，其余色相保持原来的 45%。
+function avatarBackground(hue) {
+  const channel = (value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  const luminance = (lightness) => {
+    const spread = 0.55 * Math.min(lightness, 1 - lightness);
+    const [red, green, blue] = [0, 8, 4].map((offset) => {
+      const k = (offset + hue / 30) % 12;
+      return lightness - spread * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    });
+    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+  };
+  let lightness = 45;
+  while (lightness > 20 && 1.05 / (luminance(lightness / 100) + 0.05) < 4.6) lightness -= 1;
+  return `hsl(${hue}, 55%, ${lightness}%)`;
+}
+
 // 版本号只用于刷新缓存；头像不存在或加载失败时，显示用户名首字母。
 function avatarElement(userId, username, avatarVersion, {
   small = false, hasAvatar = avatarVersion > 0,
 } = {}) {
   const className = small ? "avatar avatar-sm" : "avatar";
   const fallback = element("span", (username || "?").slice(0, 1).toUpperCase(), className);
-  fallback.style.background = `hsl(${avatarHue(username || "")}, 55%, 45%)`;
+  fallback.style.background = avatarBackground(avatarHue(username || ""));
   fallback.setAttribute("aria-hidden", "true");
   if (hasAvatar) {
     const img = document.createElement("img");

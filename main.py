@@ -1013,15 +1013,18 @@ def update_username(data: UsernameUpdate, user=Depends(current_user)):
     # 用户名跟 ADMIN_USERNAME 实时比较的，改名后不再匹配就会立刻失去
     # 管理员权限——这是预期行为，不是 bug，改回原用户名或改环境变量都能恢复。
     require_not_trial(user, "修改用户名")
+    # 注册和登录都把用户名转成小写再比较，改名也必须这样存；否则改成 "Alice2" 之后
+    # 库里是 Alice2、登录查的是 alice2，这个账号用哪种写法都登录不了。
+    username = data.username.lower()
     try:
         with connect(write=True) as conn:
             conn.execute(
                 "UPDATE users SET username = ? WHERE id = ?",
-                (data.username, user["id"]),
+                (username, user["id"]),
             )
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个用户名已经被使用") from None
-    return {"ok": True, "username": data.username}
+    return {"ok": True, "username": username}
 
 
 @app.post("/api/me/avatar")
