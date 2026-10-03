@@ -1,4 +1,5 @@
 """小部件的异步行为：请求晚回来、登出再登录、强制刷新、重复挂载（Node 内置测试运行器 + 假浏览器）。"""
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,4 +17,7 @@ def test_widget_async_behaviour_in_a_fake_browser():
         cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120,
     )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-1000:]
-    assert "ℹ fail 0" in result.stdout
+    # 终端里是 "ℹ fail 0"，管道里（CI）是 TAP 的 "# fail 0"；两种都认，并确认测试真的跑了。
+    assert re.search(r"(?m)^(?:ℹ|#) fail 0$", result.stdout), result.stdout[-1500:]
+    passed = re.search(r"(?m)^(?:ℹ|#) pass (\d+)$", result.stdout)
+    assert passed and int(passed.group(1)) >= 9, result.stdout[-1500:]
