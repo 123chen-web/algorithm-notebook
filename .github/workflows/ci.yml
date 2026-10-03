@@ -18,15 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
           cache: pip
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install development dependencies
@@ -38,14 +38,33 @@ jobs:
             node --check "$f"
           done
       - name: Run tests
-        run: python -m pytest -p no:cacheprovider -q
+        run: |
+          set -o pipefail
+          python -m pytest -p no:cacheprovider -q -rfE --tb=short 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+      - name: Summarize failures
+        if: failure()
+        run: |
+          # 日志要登录才能看；失败的测试名同时写成注解和运行摘要，打开运行页就能直接看到。
+          log="$RUNNER_TEMP/pytest.log"
+          [ -f "$log" ] || exit 0
+          escape() { sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g'; }
+          failed=$(grep -E '^(FAILED|ERROR) ' "$log" | head -80 | cut -c1-400 | escape)
+          tail_text=$(tail -n 40 "$log" | cut -c1-400 | escape)
+          [ -n "$failed" ] && echo "::error title=pytest failed tests::${failed}"
+          echo "::warning title=pytest output tail::${tail_text}"
+          {
+            echo '### 失败的测试'
+            echo '```'
+            grep -E '^(FAILED|ERROR) ' "$log" | head -80 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: Install audit dependencies
@@ -56,7 +75,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t algorithm-notebook:ci .
       - name: Start container
