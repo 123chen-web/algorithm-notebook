@@ -159,9 +159,9 @@ def test_main_account_has_saved_mistake_topics_with_real_members(world):
     report = json.loads(saved[0][0])
     assert len(report["clusters"]) >= 3
     source = {
-        mistake_id: (problem_id, title, zone, description, due_date)
-        for mistake_id, problem_id, title, zone, description, due_date in query(
-            folder, "SELECT m.id, p.id, p.title, p.zone, m.description, m.due_date "
+        mistake_id: (problem_id, title, zone, description, due_date, problem_created_at)
+        for mistake_id, problem_id, title, zone, description, due_date, problem_created_at in query(
+            folder, "SELECT m.id, p.id, p.title, p.zone, m.description, m.due_date, p.created_at "
                     "FROM mistakes m JOIN problems p ON p.id = m.problem_id "
                     "JOIN users u ON u.id = p.user_id WHERE u.username = ?", MAIN)
     }
@@ -173,7 +173,7 @@ def test_main_account_has_saved_mistake_topics_with_real_members(world):
             assert mistake_id in source and mistake_id not in seen
             seen.add(mistake_id)
             assert (member["problem_id"], member["title"], member["zone"],
-                    member["description"], member["due_date"]) == source[mistake_id]
+                    member["description"], member["due_date"], member["problem_created_at"]) == source[mistake_id]
     assert report["sample"]["mistake_count"] == len(source)
 
 

@@ -1364,7 +1364,7 @@ def get_mistake_clusters(user=Depends(current_user)):
 
 @app.post("/api/insights/clusters")
 def create_mistake_clusters(user=Depends(current_user)):
-    return clusters.create_clusters(user, today_for(user).isoformat(), ai_quota)
+    return clusters.create_clusters(user, today_for, ai_quota)
 
 
 GROWTH_RECENT_WINDOW_DAYS = 30

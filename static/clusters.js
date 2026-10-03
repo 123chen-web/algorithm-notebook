@@ -7,6 +7,7 @@
   let report = null;
   let generation = 0;
   let pending = "";
+  let refreshRequested = false;
   let quotaAvailable = false;
   let retryAction = "load";
 
@@ -37,6 +38,7 @@
     const button = $("#clusters-generate");
     button.setAttribute("aria-disabled", String(blocked));
     button.dataset.blocked = blocked ? "1" : "0";
+    button.disabled = $("#app").getAttribute("aria-busy") === "true" || blocked;
     button.textContent = pending === "generate"
       ? "正在归并相似错因…"
       : report?.insight ? "重新归并 · 消耗 1 次 AI 额度" : "归并相似错因 · 消耗 1 次 AI 额度";
@@ -148,8 +150,18 @@
     updateUserInfo();
   }
 
+  async function refreshIfRequested() {
+    if (!refreshRequested) return;
+    refreshRequested = false;
+    if (user && !$("#clusters-page").hidden) await load();
+  }
+
   async function load() {
-    if (!user || pending === "generate") return;
+    if (!user) return;
+    if (pending === "generate") {
+      refreshRequested = true;
+      return;
+    }
     const ticket = ++generation;
     const userId = user.id;
     const requestUser = user;
@@ -173,6 +185,7 @@
       else renderControls();
       setStatus(`${state.reason.message || "暂时无法读取专题，请稍后重试"}${report?.insight ? "。已保留上次专题结果。" : ""}`, { error: true, retry: true });
     }
+    await refreshIfRequested();
   }
 
   async function generate() {
@@ -207,6 +220,7 @@
         if (current(ticket, userId)) {
           pending = "";
           renderControls();
+          await refreshIfRequested();
         }
       }
     }
@@ -216,6 +230,7 @@
     generation += 1;
     report = null;
     pending = "";
+    refreshRequested = false;
     quotaAvailable = false;
     retryAction = "load";
     $("#clusters-page").hidden = true;
@@ -234,7 +249,9 @@
   $("#clusters-generate").addEventListener("click", generate);
   $("#clusters-retry").addEventListener("click", () => retryAction === "generate" ? generate() : load());
   document.addEventListener("app:data-changed", () => {
-    if (user && !$("#clusters-page").hidden && !pending) void load();
+    if (!user || $("#clusters-page").hidden) return;
+    if (pending) refreshRequested = true;
+    else void load();
   });
   window.Clusters = { load, reset };
 })();

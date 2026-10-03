@@ -2,7 +2,7 @@
 import copy
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -49,6 +49,24 @@ def seed_mistakes(user_id, count=6):
                 (problem_id, f"第 {index + 1} 次遗漏端点相等的情况", DAY),
             ).lastrowid)
     return ids
+
+
+def create_api_problem(client, title):
+    response = client.post("/api/problems", json={
+        "title": title, "zone": "算法", "language": "Python", "code": "pass",
+        "thinking": "没有明确区间的含义", "mistakes": ["遗漏端点相等的情况"],
+    })
+    assert response.status_code == 201
+    return response.json()
+
+
+def seed_api_problems(client, monkeypatch, count=6):
+    stamps = iter(
+        (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=index)).isoformat()
+        for index in range(count + 1)
+    )
+    monkeypatch.setattr(main, "utc_now", lambda: next(stamps))
+    return [create_api_problem(client, f"原始错题 {index + 1}") for index in range(count)]
 
 
 def cluster_result(reference, summary="这些错因都涉及区间边界的含义，建议结合专题对照复习。"):
@@ -145,12 +163,13 @@ def test_api_shared_quota_saves_database_fields_and_input_order(client, monkeypa
     assert members[0]["title"] == "更新后的真实标题"
     assert members[0]["due_date"] == "2026-10-01"
     assert set(members[0]) == {
-        "mistake_id", "problem_id", "title", "zone", "description", "due_date",
+        "mistake_id", "problem_id", "problem_created_at", "title", "zone", "description", "due_date",
     }
     with connect() as conn:
         for member in members:
             original = conn.execute(
-                """SELECT m.id AS mistake_id, m.problem_id, p.title, p.zone,
+                """SELECT m.id AS mistake_id, m.problem_id, p.created_at AS problem_created_at,
+                          p.title, p.zone,
                           m.description, m.due_date
                    FROM mistakes m JOIN problems p ON p.id = m.problem_id WHERE m.id = ?""",
                 (member["mistake_id"],),
@@ -336,6 +355,138 @@ def test_api_read_refreshes_title_and_due_and_removes_deleted_members(client, mo
     with connect() as conn:
         stored = json.loads(conn.execute("SELECT content FROM mistake_clusters").fetchone()[0])
         assert len(stored["clusters"]) == 2  # Reading preserves the original snapshot.
+
+
+@pytest.mark.parametrize("member_count", [2, 3])
+def test_api_get_removes_reused_maximum_id_from_snapshot(client, monkeypatch, member_count):
+    register(client)
+    problems = seed_api_problems(client, monkeypatch)
+    ids = [problem["mistake_ids"][0] for problem in problems]
+    assert problems[-1]["mistake_ids"][0] == max(ids)
+
+    def generate(reference):
+        result = cluster_result(reference)
+        result["clusters"][0]["mistake_ids"] = ids[-member_count:]
+        return result
+
+    monkeypatch.setattr(ai, "cluster_mistakes", generate)
+    saved = client.post(ENDPOINT)
+    assert saved.status_code == 200
+    assert client.delete(f"/api/problems/{problems[-1]['id']}").status_code == 200
+    replacement = create_api_problem(client, "复用 ID 的全新题目")
+    assert replacement["mistake_ids"] == [max(ids)]
+    assert replacement["id"] == problems[-1]["id"]
+
+    response = client.get(ENDPOINT)
+    assert response.status_code == 200
+    shown = response.json()["insight"]["content"]["clusters"]
+    assert len(shown) == int(member_count == 3)
+    members = [member for cluster in shown for member in cluster["members"]]
+    assert max(ids) not in {member["mistake_id"] for member in members}
+    assert "复用 ID 的全新题目" not in {member["title"] for member in members}
+    if shown:
+        assert {member["mistake_id"] for member in members} == set(ids[-member_count:-1])
+
+
+@pytest.mark.parametrize("member_count", [2, 3])
+def test_api_generation_drops_id_reused_while_ai_is_running(client, monkeypatch, member_count):
+    user_id = register(client)["id"]
+    problems = seed_api_problems(client, monkeypatch)
+    ids = [problem["mistake_ids"][0] for problem in problems]
+
+    def generate(reference):
+        assert max(ids) in {item["mistake_id"] for item in reference["mistakes"]}
+        assert all("problem_created_at" not in item for item in reference["mistakes"])
+        result = cluster_result(reference)
+        result["clusters"][0]["mistake_ids"] = ids[-member_count:]
+        assert client.delete(f"/api/problems/{problems[-1]['id']}").status_code == 200
+        replacement = create_api_problem(client, "AI 等待期间新建的题目")
+        assert replacement["mistake_ids"] == [max(ids)]
+        assert replacement["id"] == problems[-1]["id"]
+        return result
+
+    monkeypatch.setattr(ai, "cluster_mistakes", generate)
+    response = client.post(ENDPOINT)
+    assert response.status_code == 200 and attempts(user_id) == 1
+    shown = response.json()["insight"]["content"]["clusters"]
+    assert len(shown) == int(member_count == 3)
+    members = [member for cluster in shown for member in cluster["members"]]
+    assert max(ids) not in {member["mistake_id"] for member in members}
+    assert "AI 等待期间新建的题目" not in {member["title"] for member in members}
+    with connect() as conn:
+        stored = json.loads(conn.execute("SELECT content FROM mistake_clusters").fetchone()[0])
+        assert stored["clusters"] == shown
+    assert client.get(ENDPOINT).json()["insight"]["content"]["clusters"] == shown
+
+
+def test_api_legacy_snapshot_keeps_members_with_unknown_fingerprint(client, monkeypatch):
+    user_id = register(client)["id"]
+    seed_mistakes(user_id)
+    monkeypatch.setattr(ai, "cluster_mistakes", cluster_result)
+    response = client.post(ENDPOINT)
+    assert response.status_code == 200
+    content = response.json()["insight"]["content"]
+    for cluster in content["clusters"]:
+        for member in cluster["members"]:
+            member.pop("problem_created_at")
+    with connect(write=True) as conn:
+        conn.execute(
+            "UPDATE mistake_clusters SET content = ? WHERE user_id = ?",
+            (json.dumps(content, ensure_ascii=False), user_id),
+        )
+    assert client.get(ENDPOINT).json()["insight"]["content"] == content
+
+
+def test_api_completion_refreshes_today_without_moving_reserved_allowance(client, monkeypatch):
+    user_id = register(client)["id"]
+    seed_mistakes(user_id)
+    current_day = date.fromisoformat(DAY)
+    monkeypatch.setattr(main, "today_for", lambda user: current_day)
+
+    def generate(reference):
+        nonlocal current_day
+        assert attempts(user_id) == 1
+        current_day += timedelta(days=1)
+        return cluster_result(reference)
+
+    monkeypatch.setattr(ai, "cluster_mistakes", generate)
+    response = client.post(ENDPOINT)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["today"] == "2026-09-20"
+    assert all(
+        member["due_date"] < body["today"]
+        for cluster in body["insight"]["content"]["clusters"] for member in cluster["members"]
+    )
+    with connect() as conn:
+        usage = [dict(row) for row in conn.execute(
+            "SELECT day, attempts FROM ai_usage WHERE user_id = ?", (user_id,),
+        )]
+    assert usage == [{"day": DAY, "attempts": 1}]
+
+
+def test_api_deletion_during_ai_reports_spent_allowance_and_saves_result(client, monkeypatch):
+    user_id = register(client)["id"]
+    problems = seed_api_problems(client, monkeypatch)
+
+    def generate(reference):
+        result = cluster_result(reference)
+        assert client.delete(f"/api/problems/{problems[0]['id']}").status_code == 200
+        assert client.delete(f"/api/problems/{problems[1]['id']}").status_code == 200
+        return result
+
+    monkeypatch.setattr(ai, "cluster_mistakes", generate)
+    response = client.post(ENDPOINT)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "insufficient_data" and body["mistake_count"] == 4
+    assert "已经调用 AI 并消耗了 1 次额度" in body["message"]
+    assert "当前有 4 条易错点" in body["message"]
+    assert "下次需要攒够 6 条才能再归并" in body["message"]
+    assert "本次不会调用 AI" not in body["message"]
+    assert attempts(user_id) == 1
+    assert len(body["insight"]["content"]["clusters"]) == 1
+    assert client.get(ENDPOINT).json()["insight"] == body["insight"]
 
 
 def test_api_users_and_database_member_refresh_are_isolated(client, monkeypatch):

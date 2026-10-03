@@ -18,6 +18,7 @@ const resultLabels = {
 
 let user = null;
 let sessionReady = false;
+let sessionEpoch = 0;
 let resetToken = new URLSearchParams(location.search).get("reset_token");
 let view = "today";
 // 上一次拍照识别成功的结果；非空时说明表单当前内容来自 AI 识别，
@@ -417,6 +418,7 @@ $("#auth-switch").addEventListener("keydown", (event) => {
 });
 
 function signedOut() {
+  sessionEpoch += 1;
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
   stopOrderPolling();
@@ -482,6 +484,7 @@ function signedOut() {
 }
 
 async function api(path, options = {}) {
+  const requestEpoch = sessionEpoch;
   const response = await fetch(path, {
     credentials: "same-origin",
     ...options,
@@ -495,7 +498,7 @@ async function api(path, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    if (response.status === 401) signedOut();
+    if (response.status === 401 && requestEpoch === sessionEpoch) signedOut();
 
     let detail = data.detail || "请求失败，请稍后重试";
     if (Array.isArray(detail)) {
@@ -781,6 +784,7 @@ async function enterApp() {
   resetWeeklyRecap();
   resetGroups();
   user = await api("/api/me");
+  sessionEpoch += 1;
   if (resetToken) {
     resetToken = null;
     const url = new URL(location.href);

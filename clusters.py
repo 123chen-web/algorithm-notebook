@@ -16,7 +16,8 @@ MAX_MISTAKES = 60
 def cluster_reference(conn, user_id, total_mistakes):
     rows = conn.execute(
         """
-        SELECT m.id AS mistake_id, substr(p.title, 1, 200) AS title, p.zone,
+        SELECT m.id AS mistake_id, p.created_at AS problem_created_at,
+               substr(p.title, 1, 200) AS title, p.zone,
                substr(m.description, 1, 300) AS description,
                substr(p.thinking, 1, 300) AS thinking,
                COUNT(r.id) AS review_count,
@@ -30,8 +31,11 @@ def cluster_reference(conn, user_id, total_mistakes):
         (user_id, MAX_MISTAKES),
     ).fetchall()
     mistakes = []
+    # 创建指纹留在服务端，发给模型的材料字段保持不变。
+    fingerprints = {}
     for row in rows:
         item = dict(row)
+        fingerprints[item["mistake_id"]] = item.pop("problem_created_at")
         thinking = item.pop("thinking")
         if not item["description"].strip():
             item["description"] = thinking
@@ -40,7 +44,7 @@ def cluster_reference(conn, user_id, total_mistakes):
         "total_mistakes": total_mistakes,
         "sample": {"mistake_count": len(mistakes)},
         "mistakes": mistakes,
-    }
+    }, fingerprints
 
 
 def _database_members(conn, user_id, ids):
@@ -49,7 +53,7 @@ def _database_members(conn, user_id, ids):
     placeholders = ",".join("?" for _ in ids)
     rows = conn.execute(
         f"""
-        SELECT m.id AS mistake_id, m.problem_id,
+        SELECT m.id AS mistake_id, m.problem_id, p.created_at AS problem_created_at,
                substr(p.title, 1, 200) AS title, p.zone,
                substr(m.description, 1, 300) AS description,
                substr(p.thinking, 1, 300) AS thinking, m.due_date
@@ -79,7 +83,10 @@ def _refresh_content(conn, user_id, content):
         members = []
         for member in cluster["members"]:
             source = current.get(member["mistake_id"])
-            if source is not None:
+            if source is not None and (
+                "problem_created_at" not in member
+                or member["problem_created_at"] == source["problem_created_at"]
+            ):
                 members.append({
                     **member, "title": source["title"], "due_date": source["due_date"],
                 })
@@ -88,7 +95,7 @@ def _refresh_content(conn, user_id, content):
     return {**content, "clusters": refreshed}
 
 
-def cluster_state(conn, user_id, today):
+def cluster_state(conn, user_id, today, generation_completed=False):
     count = conn.execute(
         "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
         "WHERE p.user_id = ?", (user_id,),
@@ -122,10 +129,16 @@ def cluster_state(conn, user_id, today):
                 new_since += addition["mistake_count"]
     if count < MIN_MISTAKES:
         status = "insufficient_data"
-        message = (
-            f"再积累几条错题就能看出真正的共性了。当前有 {count} 条易错点，"
-            f"还差 {MIN_MISTAKES - count} 条；本次不会调用 AI，也不消耗额度。"
-        )
+        if generation_completed:
+            message = (
+                f"这次已经调用 AI 并消耗了 1 次额度；当前有 {count} 条易错点，"
+                f"数量不足，下次需要攒够 {MIN_MISTAKES} 条才能再归并。"
+            )
+        else:
+            message = (
+                f"再积累几条错题就能看出真正的共性了。当前有 {count} 条易错点，"
+                f"还差 {MIN_MISTAKES - count} 条；本次不会调用 AI，也不消耗额度。"
+            )
     elif insight is None:
         status = "not_generated"
         message = "还没有归并过。让 AI 把根因相近的易错点合成专题，方便一起复习。"
@@ -137,16 +150,17 @@ def cluster_state(conn, user_id, today):
     }
 
 
-def create_clusters(user, today, quota_reader):
+def create_clusters(user, today_reader, quota_reader):
     """Reserve the shared allowance atomically, then release the lock before AI."""
     user_id = user["id"]
+    today = today_reader(user).isoformat()
     with connect(write=True) as conn:
         state = cluster_state(conn, user_id, today)
         if state["mistake_count"] < MIN_MISTAKES:
             return state
         if not os.getenv("OPENAI_API_KEY", "").strip():
             raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
-        reference = cluster_reference(conn, user_id, state["mistake_count"])
+        reference, fingerprints = cluster_reference(conn, user_id, state["mistake_count"])
         limit = quota_reader(conn, user_id, today)["ai_daily_limit"]
         cursor = conn.execute(
             """
@@ -180,6 +194,7 @@ def create_clusters(user, today, quota_reader):
                 sources[mistake_id]
                 for mistake_id in sorted(cluster["mistake_ids"], key=input_order.__getitem__)
                 if mistake_id in sources
+                and sources[mistake_id]["problem_created_at"] == fingerprints[mistake_id]
             ]
             if len(members) >= 2:
                 snapshots.append({
@@ -196,4 +211,6 @@ def create_clusters(user, today, quota_reader):
             WHERE excluded.created_at >= mistake_clusters.created_at
             """, (user_id, json.dumps(content, ensure_ascii=False), created_at),
         )
-        return cluster_state(conn, user_id, today)
+        return cluster_state(
+            conn, user_id, today_reader(user).isoformat(), generation_completed=True,
+        )

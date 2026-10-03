@@ -8,6 +8,13 @@ import subprocess
 
 import pytest
 
+from test_cursor_fx_assets import function_body
+from test_app_session_assets import (
+    test_stale_unauthorized_request_keeps_new_session,
+    test_current_unauthorized_request_signs_out,
+    test_api_keeps_success_and_error_behavior,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -49,7 +56,9 @@ def test_page_status_is_live_and_generation_uses_own_guard(assets):
     assert status and 'role="status"' in status[0] and 'aria-live="polite"' in status[0]
     assert 'setAttribute("aria-busy"' in script
     assert 'setAttribute("aria-disabled"' in script and 'dataset.blocked' in script
-    assert not re.search(r'\.disabled\s*=', script)
+    controls = function_body(script, "renderControls")
+    assert controls.index('button.dataset.blocked') < controls.index('button.disabled')
+    assert 'button.disabled = $("#app").getAttribute("aria-busy") === "true" || blocked;' in controls
     assert 'user.id === userId && generation === ticket' in script
     assert '归并相似错因 · 消耗 1 次 AI 额度' in script
     assert '重新归并 · 消耗 1 次 AI 额度' in script
@@ -67,8 +76,6 @@ def test_view_refresh_focus_and_logout_are_connected(assets):
     assert '$("#clusters-page").hidden = view !== "clusters";' in app
     assert 'else if (view === "clusters") await window.Clusters.load();' in app
     assert re.search(r'if \(view === "clusters"\) \{\s*message\(\);\s*await window\.Clusters\.load\(\);', app)
-    focus = app[app.index('document.addEventListener("focus:closed"'):]
-    assert 'view === "clusters"' in focus and 'window.Clusters.load()' in focus
     assert 'window.Clusters?.reset();' in assets["shell.js"]
 
 
@@ -105,17 +112,21 @@ class IdParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.ids = {}
+        self.tags = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if "id" in attrs:
             self.ids[attrs["id"]] = attrs
+            self.tags[attrs["id"]] = tag
 
 
 @pytest.mark.parametrize("scenario", [
     "states", "ready", "no-focus", "future-only", "failure-quota", "quota-unavailable",
     "stale-load", "account-switch", "reset-generation", "load-error", "data-changed",
     "zero-clusters", "navigation-quota",
+    "generation-global-busy", "deferred-refresh", "deferred-data-changed", "deferred-focus-closed",
+    "focus-closed", "reset-refresh",
 ])
 def test_real_page_rendering_and_async_guards(assets, scenario):
     node = shutil.which("node")
@@ -123,9 +134,19 @@ def test_real_page_rendering_and_async_guards(assets, scenario):
         pytest.skip("Node.js is required for the JS rendering checks")
     parser = IdParser()
     parser.feed(assets["index.html"])
+    app = assets["app.js"]
+    focus = re.search(r'^document\.addEventListener\("focus:closed",[\s\S]*?^\}\);', app, re.M)
+    assert focus, "Missing focus:closed listener"
+    app_behavior = "\n".join((
+        f'function setBusy(value) {{{function_body(app, "setBusy")}\n}}',
+        f'async function run(action) {{{function_body(app, "run")}\n}}',
+        f'async function showView(nextView, {{ refreshUser = true }} = {{}}) {{{function_body(app, "showView")}\n}}',
+        focus[0],
+    ))
     result = subprocess.run(
         [node, str(Path(__file__).with_name("test_clusters_page_render.cjs"))],
-        input=json.dumps({"source": assets["clusters.js"], "scenario": scenario, "ids": parser.ids}, ensure_ascii=False),
+        input=json.dumps({"source": assets["clusters.js"], "scenario": scenario, "ids": parser.ids,
+                          "tags": parser.tags, "appBehavior": app_behavior}, ensure_ascii=False),
         text=True, encoding="utf-8", capture_output=True, timeout=10, cwd=ROOT, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr

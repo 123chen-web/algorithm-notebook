@@ -381,7 +381,8 @@ def build(password):
         # The saved topic cards also work when the sample site's AI key is blank.
         cluster_rows = conn.execute(
             "SELECT m.id AS mistake_id, p.id AS problem_id, p.title, p.zone, "
-            "m.description, p.thinking, m.due_date FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+            "m.description, p.thinking, m.due_date, p.created_at AS problem_created_at "
+            "FROM mistakes m JOIN problems p ON p.id = m.problem_id "
             "WHERE p.user_id = ? ORDER BY p.created_at DESC, m.id DESC LIMIT 60",
             (world.user_ids[MAIN],),
         ).fetchall()
@@ -389,7 +390,7 @@ def build(password):
             row["mistake_id"]: {
                 "mistake_id": row["mistake_id"], "title": row["title"][:200], "zone": row["zone"],
                 "problem_id": row["problem_id"], "description": (row["description"] or row["thinking"])[:300],
-                "due_date": row["due_date"],
+                "due_date": row["due_date"], "problem_created_at": row["problem_created_at"],
             }
             for row in cluster_rows
         }

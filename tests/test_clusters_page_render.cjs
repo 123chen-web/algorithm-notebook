@@ -12,6 +12,7 @@ class Node {
     this.tagName = tag;
     this.attributes = { ...attrs };
     this.hidden = Object.hasOwn(attrs, "hidden");
+    this.disabled = Object.hasOwn(attrs, "disabled");
     this.children = [];
     this.dataset = {};
     this._text = "";
@@ -36,7 +37,10 @@ class Node {
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this._text = ""; this.children = [...children]; }
   addEventListener(name, callback) { (this.listeners[name] ??= []).push(callback); }
-  async click() { for (const callback of this.listeners.click || []) await callback({ target: this }); }
+  async click() {
+    if (this.disabled) return;
+    for (const callback of this.listeners.click || []) await callback({ target: this });
+  }
 }
 
 function descendants(node) { return node.children.flatMap((child) => [child, ...descendants(child)]); }
@@ -69,7 +73,7 @@ function ready(overrides = {}) {
 }
 
 function harness(options = {}) {
-  const nodes = Object.fromEntries(Object.entries(payload.ids).map(([id, attrs]) => [id, new Node("div", attrs)]));
+  const nodes = Object.fromEntries(Object.entries(payload.ids).map(([id, attrs]) => [id, new Node(payload.tags[id], attrs)]));
   const get = (id) => { assert.ok(nodes[id], `Unknown DOM id ${id}`); return nodes[id]; };
   get("clusters-page").hidden = false;
   const events = [];
@@ -79,9 +83,16 @@ function harness(options = {}) {
   let saved = options.report || ready();
   const profile = { id: 1, ai_daily_remaining: 5, ai_daily_limit: 10 };
   const context = {
-    user: { ...profile }, window: {},
+    user: { ...profile }, window: { scrollTo() {} }, view: "clusters", busy: false,
+    finishHomeOpening: null, achievementsGeneration: 0, groupsGeneration: 0,
+    stopOrderPolling() {}, cancelAchievementStamps() {}, renderUserInfo() {}, message() {},
     document: {
+      body: new Node("body"),
       querySelector: (selector) => get(selector.slice(1)),
+      querySelectorAll: (selector) => {
+        assert.equal(selector, "button");
+        return Object.values(nodes).flatMap((node) => [node, ...descendants(node)]).filter((node) => node.tagName === "button");
+      },
       createElement: (tag) => new Node(tag),
       addEventListener: (name, callback) => (listeners[name] ??= []).push(callback),
       dispatchEvent: (event) => { events.push(event); for (const callback of listeners[event.type] || []) callback(event); return true; },
@@ -99,9 +110,12 @@ function harness(options = {}) {
       throw new Error(`Unknown API ${path}`);
     },
   };
+  context.$ = context.document.querySelector;
+  context.renderHomeQuota = context.updateUserInfo;
   if (options.focus !== false) context.window.FocusReview = { start: (args) => practices.push(JSON.parse(JSON.stringify(args))) };
   vm.createContext(context);
   vm.runInContext(payload.source, context, { timeout: 1000 });
+  vm.runInContext(payload.appBehavior, context, { timeout: 1000 });
   const setReport = (value) => { saved = value; };
   return { context, get, calls, events, practices, profile, setReport, page: context.window.Clusters };
 }
@@ -190,8 +204,7 @@ async function failureQuota() {
   assert.equal(h.get("clusters-page").getAttribute("aria-busy"), "true");
   assert.equal(h.get("clusters-generate").getAttribute("aria-disabled"), "true");
   await h.get("clusters-generate").click();
-  await h.page.load();
-  assert.equal(posts, 1, "Duplicate click and refresh must not launch another request");
+  assert.equal(posts, 1, "Duplicate click must not launch another request");
   post.reject(new Error("服务端尚未配置 OpenAI API Key"));
   await generating;
   assert.ok(h.get("clusters-status").textContent.includes("服务端尚未配置 OpenAI API Key"));
@@ -308,6 +321,116 @@ async function dataChanged() {
   assert.equal(h.calls.length, prior + 2);
 }
 
+async function settle() {
+  for (let i = 0; i < 12; i += 1) await Promise.resolve();
+}
+
+async function generationGlobalBusy() {
+  const h = harness();
+  await h.page.load();
+  const post = deferred();
+  let posts = 0;
+  h.context.api = async (path, args = {}) => {
+    if (path === "/api/me") return { ...h.profile };
+    if (args.method !== "POST") return ready();
+    posts += 1;
+    return post.promise;
+  };
+  const generating = h.get("clusters-generate").click();
+  await h.context.run(() => h.page.load());
+  assert.equal(h.get("app").getAttribute("aria-busy"), "false");
+  assert.equal(h.get("clusters-generate").disabled, true);
+  assert.equal(posts, 1);
+  post.resolve(ready());
+  await generating;
+  assert.equal(h.get("clusters-generate").dataset.blocked, "0");
+  assert.equal(h.get("clusters-generate").getAttribute("aria-disabled"), "false");
+  assert.equal(h.get("clusters-generate").disabled, false, "Global refresh must not leave generation disabled");
+  await h.get("clusters-generate").click();
+  assert.equal(posts, 2, "The restored button must accept another click");
+
+  h.context.setBusy(true);
+  await h.page.load();
+  assert.equal(h.get("clusters-generate").dataset.blocked, "0");
+  assert.equal(h.get("clusters-generate").disabled, true, "Page rendering must respect active global busy state");
+  h.context.setBusy(false);
+  assert.equal(h.get("clusters-generate").disabled, false);
+}
+
+async function deferredRefresh(events = ["data", "data", "focus"]) {
+  const h = harness();
+  await h.page.load();
+  const post = deferred(), quota = deferred();
+  let profiles = 0, reads = 0, posts = 0;
+  const refreshed = ready();
+  refreshed.insight.content.clusters[0].members[0].due_date = "2026-10-20";
+  h.context.api = async (path, args = {}) => {
+    if (path === "/api/me") return ++profiles === 1 ? quota.promise : { ...h.profile };
+    if (args.method === "POST") { posts += 1; return post.promise; }
+    reads += 1;
+    return refreshed;
+  };
+  const generating = h.get("clusters-generate").click();
+  post.resolve(ready());
+  await settle();
+  assert.equal(profiles, 1, "The quota read must still be pending after the result renders");
+  assert.equal(h.get("clusters-page").getAttribute("aria-busy"), "true");
+  for (const kind of events) {
+    if (kind === "data") h.context.document.dispatchEvent(new h.context.CustomEvent("app:data-changed"));
+    else h.context.document.dispatchEvent(new h.context.CustomEvent("focus:closed", { detail: { graded: true, view: "clusters" } }));
+  }
+  await settle();
+  assert.equal(reads, 0, "Changes during the quota read must wait for generation to finish");
+  quota.resolve({ ...h.profile, ai_daily_remaining: 4 });
+  await generating;
+  await settle();
+  assert.equal(posts, 1);
+  assert.equal(reads, 1, "Data changes and focus completion must coalesce into one follow-up read");
+  assert.equal(profiles, 2);
+  assert.equal(byClass(h.get("clusters-result"), "clusters-due")[0].textContent, "2026-10-20 到期");
+  assert.equal(byClass(h.get("clusters-result"), "clusters-practise")[0].textContent, "一起复习这 1 条到期的");
+  assert.equal(h.get("clusters-generate").disabled, false);
+}
+
+async function focusClosed() {
+  const h = harness();
+  await h.page.load();
+  const prior = h.calls.length;
+  const changed = ready();
+  changed.insight.content.clusters[0].members[0].due_date = "2026-10-20";
+  h.setReport(changed);
+  h.context.view = "all";
+  h.get("clusters-page").hidden = true;
+  h.context.document.dispatchEvent(new h.context.CustomEvent("focus:closed", { detail: { graded: true, view: "clusters" } }));
+  await settle();
+  assert.equal(h.context.view, "clusters");
+  assert.equal(h.get("clusters-page").hidden, false);
+  assert.equal(h.calls.length, prior + 2, "The real focus listener must reread saved clusters and quota");
+  assert.equal(byClass(h.get("clusters-result"), "clusters-due")[0].textContent, "2026-10-20 到期");
+}
+
+async function resetRefresh() {
+  const h = harness();
+  await h.page.load();
+  const post = deferred();
+  let reads = 0;
+  h.context.api = async (path, args = {}) => {
+    if (path === "/api/me") return { ...h.profile };
+    if (args.method === "POST") return post.promise;
+    reads += 1;
+    return ready();
+  };
+  const generating = h.get("clusters-generate").click();
+  h.context.document.dispatchEvent(new h.context.CustomEvent("app:data-changed"));
+  h.page.reset();
+  post.resolve(ready());
+  await generating;
+  assert.equal(reads, 0);
+  h.get("clusters-page").hidden = false;
+  await h.page.load();
+  assert.equal(reads, 1, "Reset must clear refresh requests from the prior page generation");
+}
+
 async function zeroClusters() {
   const data = ready();
   data.insight.content.clusters = [];
@@ -350,6 +473,10 @@ const scenarios = {
   "stale-load": staleLoad, "account-switch": accountSwitch, "reset-generation": resetGeneration,
   "load-error": loadError, "data-changed": dataChanged, "zero-clusters": zeroClusters,
   "navigation-quota": navigationQuota,
+  "generation-global-busy": generationGlobalBusy, "deferred-refresh": () => deferredRefresh(),
+  "deferred-data-changed": () => deferredRefresh(["data"]),
+  "deferred-focus-closed": () => deferredRefresh(["focus"]),
+  "focus-closed": focusClosed, "reset-refresh": resetRefresh,
 };
 assert.ok(Object.hasOwn(scenarios, payload.scenario), "Unknown rendering scenario");
 Promise.resolve(scenarios[payload.scenario]()).then(() => {
