@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
   --paper: #f5f0e6; --paper-2: #fbf8f0; --surface: #ffffff;
-  --ink: #1c1b19; --ink-2: #5b574f; --muted: #7a766d;
+  --ink: #1c1b19; --ink-2: #5b574f; --muted: #6c685f;
   --accent: #c23a2b; --accent-hover: #a52f22; --soft: #f6e7e1; --line: #e0d8c7;
   --azurite: #2f6f73; --gamboge: #d8a23a; --gamboge-ink: #9a6d12;
   --serif: "Times New Roman", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
@@ -56,7 +56,7 @@
 /* Both themes share component rules; only their visual tokens change. */
 html[data-theme="ink"] {
   --paper: #f5f0e6; --paper-2: #fbf8f0; --surface: #ffffff;
-  --ink: #1c1b19; --ink-2: #5b574f; --muted: #7a766d;
+  --ink: #1c1b19; --ink-2: #5b574f; --muted: #6c685f;
   --accent: #c23a2b; --accent-hover: #a52f22; --soft: #f6e7e1; --line: #e0d8c7;
   --azurite: #2f6f73; --gamboge: #d8a23a; --gamboge-ink: #9a6d12;
   --glass-surface: rgb(245 240 230 / .88); --radius-round: 50%;
@@ -72,7 +72,7 @@ html[data-theme="ink"] {
 }
 html[data-theme="qixi"] {
   --paper: #eaf0e9; --paper-2: #f3f7f1; --surface: #fcfefa;
-  --ink: #203b35; --ink-2: #4d655b; --muted: #62766b;
+  --ink: #203b35; --ink-2: #4d655b; --muted: #586c61;
   --accent: var(--scene-accent, #32645b); --accent-hover: color-mix(in srgb, var(--scene-accent, #32645b) 82%, var(--ink));
   --soft: #e0ece3; --line: #cddcd0;
   --azurite: #3e756d; --gamboge: #c29a51; --gamboge-ink: #806226;

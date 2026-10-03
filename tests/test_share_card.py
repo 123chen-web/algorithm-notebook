@@ -2,12 +2,15 @@
 
 from datetime import date, timedelta
 from io import BytesIO
+from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFont
 
 import ai
 import main
+import share_card
 from achievements import evaluate_achievements
 from db import connect
 from learning_stats import learning_metrics
@@ -36,6 +39,11 @@ FONT_PATHS = [
     "C:/Windows/Fonts/simhei.ttf",
     "C:/Windows/Fonts/simsun.ttc",
 ]
+BUNDLED_FONT = (
+    Path(share_card.__file__).resolve().parent / "assets" / "fonts"
+    / "NotoSansSC-Regular-subset.otf"
+)
+MISSING_FONT_DETAIL = "分享卡片暂时不可用：服务器缺少中文字体，请联系管理员。"
 
 
 @pytest.fixture(autouse=True)
@@ -292,19 +300,21 @@ def test_endpoint_uses_one_explicit_read_snapshot(client, monkeypatch):
 def test_missing_yahei_tries_the_next_chinese_font(monkeypatch):
     original_truetype = ImageFont.truetype
     attempted = []
+    bundled_path = str(BUNDLED_FONT).replace("\\", "/")
 
     def unavailable_yahei(font, *args, **kwargs):
         path = str(font).replace("\\", "/")
         attempted.append(path)
-        if path == FONT_PATHS[0]:
-            raise OSError("模拟微软雅黑字体不可用")
-        return original_truetype(font, *args, **kwargs)
+        if path in (bundled_path, FONT_PATHS[0]):
+            raise OSError("模拟自带字体和微软雅黑不可用")
+        # 用自带字体模拟系统备选，测试不依赖 Windows 字体是否安装。
+        return original_truetype(BUNDLED_FONT, *args, **kwargs)
 
     monkeypatch.setattr(ImageFont, "truetype", unavailable_yahei)
     content = render_achievement_card(
         "alice", EMPTY_METRICS, evaluate_achievements(EMPTY_METRICS), TODAY,
     )
-    assert attempted[:2] == FONT_PATHS[:2]
+    assert attempted[:3] == [bundled_path, *FONT_PATHS[:2]]
     assert_png(content)
 
 
@@ -320,8 +330,63 @@ def test_missing_all_chinese_fonts_raises_clear_error_without_default_font(monke
 
     monkeypatch.setattr(ImageFont, "truetype", unavailable_font)
     monkeypatch.setattr(ImageFont, "load_default", unexpected_default)
-    with pytest.raises(RuntimeError, match="中文字体"):
+    with pytest.raises(HTTPException) as error:
         render_achievement_card(
             "alice", EMPTY_METRICS, evaluate_achievements(EMPTY_METRICS), TODAY,
         )
-    assert attempted == FONT_PATHS
+    assert error.value.status_code == 503
+    assert error.value.detail == MISSING_FONT_DETAIL
+    assert attempted == [str(BUNDLED_FONT).replace("\\", "/"), *FONT_PATHS]
+
+
+def test_bundled_font_is_first_and_independent_of_working_directory(monkeypatch):
+    original_truetype = ImageFont.truetype
+    attempted = []
+
+    def record_font(font, *args, **kwargs):
+        attempted.append(Path(font))
+        return original_truetype(font, *args, **kwargs)
+
+    monkeypatch.chdir(Path(__file__).resolve().parent)
+    monkeypatch.setattr(ImageFont, "truetype", record_font)
+    assert share_card.FONT_PATHS[0] == BUNDLED_FONT
+    assert_png(render_achievement_card(
+        "alice", EMPTY_METRICS, evaluate_achievements(EMPTY_METRICS), TODAY,
+    ))
+    assert attempted == [BUNDLED_FONT]
+
+
+def test_bundled_font_renders_mixed_chinese_and_rare_characters(monkeypatch, drawn_text):
+    monkeypatch.setattr(share_card, "FONT_PATHS", (
+        BUNDLED_FONT,
+        "/missing/windows/msyh.ttc",
+        "/missing/windows/simhei.ttf",
+        "/missing/windows/simsun.ttc",
+    ))
+    username = "中文 学习者 Alice_123-é龘𠮷"
+    badges = evaluate_achievements(EMPTY_METRICS)
+    first = render_achievement_card(username, EMPTY_METRICS, badges, TODAY)
+    assert_png(first)
+    assert render_achievement_card(username, EMPTY_METRICS, badges, TODAY) == first
+    assert f"{username} 的学习战报" in drawn_text
+
+
+def test_missing_all_fonts_returns_503_from_real_endpoint(client, monkeypatch):
+    register(client)
+    # 文件名必须是任何系统都不会有的：Pillow 找不到路径时会按文件名去系统字体目录里再找一遍，
+    # 用 msyh.ttc 之类真实字体名，在装了微软雅黑的 Windows 上会"假装缺字体"失败。
+    monkeypatch.setattr(share_card, "FONT_PATHS", (
+        "/missing/no-such-font-1.otf",
+        "/missing/no-such-font-2.ttc",
+        "/missing/no-such-font-3.ttf",
+        "/missing/no-such-font-4.ttc",
+    ))
+    response = client.get(ENDPOINT)
+    assert response.status_code == 503
+    assert response.json() == {"detail": MISSING_FONT_DETAIL}
+
+
+def test_bundled_font_and_license_are_present():
+    assert BUNDLED_FONT.is_file()
+    assert 500 * 1024 < BUNDLED_FONT.stat().st_size < 5 * 1024 * 1024
+    assert (BUNDLED_FONT.parent / "OFL.txt").is_file()

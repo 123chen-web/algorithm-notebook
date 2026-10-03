@@ -2,7 +2,9 @@
 
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 
+from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFont
 
 from learning_stats import LearningMetrics
@@ -13,11 +15,12 @@ CARD_SIZE = (1080, 1350)
 PAPER = "#faf9f5"
 INK = "#1f1e1c"
 ACCENT = "#bc5b3a"
-MUTED = "#7a766d"
+MUTED = "#6c685f"
 SOFT = "#f4ece2"
 
-# 这些路径仅适用于 Windows；部署 Linux 时需换成当地中文字体路径或仓库自带字体文件。
+# 优先使用仓库自带中文字体，系统字体仅作备选。
 FONT_PATHS = (
+    Path(__file__).resolve().parent / "assets" / "fonts" / "NotoSansSC-Regular-subset.otf",
     r"C:\Windows\Fonts\msyh.ttc",
     r"C:\Windows\Fonts\simhei.ttf",
     r"C:\Windows\Fonts\simsun.ttc",
@@ -30,9 +33,8 @@ def _load_font(size):
             return ImageFont.truetype(path, size=size)
         except OSError:
             continue
-    raise RuntimeError(
-        "无法生成分享卡片：未能加载中文字体，请安装微软雅黑、黑体或宋体。"
-        "已尝试：" + "、".join(FONT_PATHS)
+    raise HTTPException(
+        503, "分享卡片暂时不可用：服务器缺少中文字体，请联系管理员。",
     )
 
 
