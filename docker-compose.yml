@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    # 默认只在本机监听；对外服务请放在 HTTPS 反向代理之后。想让局域网其他机器直接访问，改成 "8000:8000"。
+    ports: ["127.0.0.1:8000:8000"]
+    volumes: ["./data:/app/data"]
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).close()"
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3

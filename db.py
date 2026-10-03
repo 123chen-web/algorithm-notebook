@@ -350,13 +350,16 @@ POST_COMMENT_COLUMN_MIGRATIONS = (
 
 
 @contextmanager
-def connect(write=False):
+def connect(write=False, *, create=True):
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
     if not path.is_absolute():
         path = ROOT / path
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(str(path), timeout=10)
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path), timeout=10)
+    else:
+        # 健康检查只打开已有数据库，不能把缺失文件误建成空库。
+        conn = sqlite3.connect(path.as_uri() + "?mode=rw", uri=True, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
 
@@ -373,55 +376,172 @@ def connect(write=False):
         conn.close()
 
 
+def _apply_baseline(conn):
+    # executescript 会隐式提交；逐条执行同一份 SQL，让基线也能完整回滚。
+    statement = ""
+    for line in SCHEMA.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            conn.execute(statement)
+            statement = ""
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    for column, statement in USER_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    for column, statement in ORDER_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(problems)")}
+    for column, statement in PROBLEM_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(variants)")}
+    for column, statement in VARIANT_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(plans)")}
+    for column, statement in PLAN_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    existing = {
+        row["name"] for row in conn.execute("PRAGMA table_info(post_comments)")
+    }
+    for column, statement in POST_COMMENT_COLUMN_MIGRATIONS:
+        if column not in existing:
+            conn.execute(statement)
+
+    # 旧表先补 reply_to_id 列，再创建索引。
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_comments_reply_to "
+        "ON post_comments(reply_to_id)"
+    )
+
+    # 多个账号都没填邮箱时 email 是 NULL，SQLite 的唯一索引允许
+    # 多个 NULL 并存，所以旧账号不会因为这条索引互相冲突。
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
+    )
+    # plan_id 由上面的迁移添加，旧库必须先补列再建索引。
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_plan ON users(plan_id)"
+    )
+
+
+def _apply_ai_calls(conn):
+    conn.execute(
+        """
+        CREATE TABLE ai_calls (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            feature TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '',
+            prompt_tokens INTEGER,
+            completion_tokens INTEGER,
+            ok INTEGER NOT NULL,
+            error TEXT NOT NULL DEFAULT '',
+            duration_ms INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_ai_calls_created_at ON ai_calls(created_at)")
+    conn.execute(
+        "CREATE INDEX idx_ai_calls_user_created_at ON ai_calls(user_id, created_at)"
+    )
+
+
+# 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
+# SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
+MIGRATIONS = [
+    (1, "历史数据库基线", _apply_baseline),
+    (2, "AI 调用记账", _apply_ai_calls),
+]
+SCHEMA_VERSION = MIGRATIONS[-1][0]
+
+
+def schema_version(conn):
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _check_schema_version(version):
+    if version > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"数据库版本 {version} 比当前程序支持的 {SCHEMA_VERSION} 更新，"
+            "请先升级程序再启动（不要用旧版程序打开新版数据库）"
+        )
+
+
+def _baseline_needs_repair(conn):
+    # 保留旧 init_db 对缺表、缺列和缺索引的自修复，完整库不会重跑基线。
+    expected = {
+        "idx_post_comments_reply_to", "idx_users_email", "idx_users_plan"
+    }
+    for line in SCHEMA.splitlines():
+        for prefix in (
+            "CREATE TABLE IF NOT EXISTS ",
+            "CREATE INDEX IF NOT EXISTS ",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ",
+        ):
+            if line.startswith(prefix):
+                expected.add(line[len(prefix):].split()[0])
+    existing = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'index')"
+        )
+    }
+    if not expected <= existing:
+        return True
+
+    for table, migrations in (
+        ("users", USER_COLUMN_MIGRATIONS),
+        ("orders", ORDER_COLUMN_MIGRATIONS),
+        ("problems", PROBLEM_COLUMN_MIGRATIONS),
+        ("variants", VARIANT_COLUMN_MIGRATIONS),
+        ("plans", PLAN_COLUMN_MIGRATIONS),
+        ("post_comments", POST_COMMENT_COLUMN_MIGRATIONS),
+    ):
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if any(column not in columns for column, _statement in migrations):
+            return True
+    return False
+
+
 def init_db():
     with connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
-        conn.executescript(SCHEMA)
+        current = schema_version(conn)
+        _check_schema_version(current)
 
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-        for column, statement in USER_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
+        if current >= 1 and _baseline_needs_repair(conn):
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                _check_schema_version(schema_version(conn))
+                _apply_baseline(conn)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
-        for column, statement in ORDER_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
-
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(problems)")}
-        for column, statement in PROBLEM_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
-
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(variants)")}
-        for column, statement in VARIANT_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
-
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(plans)")}
-        for column, statement in PLAN_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
-
-        existing = {
-            row["name"] for row in conn.execute("PRAGMA table_info(post_comments)")
-        }
-        for column, statement in POST_COMMENT_COLUMN_MIGRATIONS:
-            if column not in existing:
-                conn.execute(statement)
-
-        # Old schemas acquire reply_to_id above before this index can be built.
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_post_comments_reply_to "
-            "ON post_comments(reply_to_id)"
-        )
-
-        # 多个账号都没填邮箱时 email 是 NULL，SQLite 的唯一索引允许
-        # 多个 NULL 并存，所以旧账号不会因为这条索引互相冲突。
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
-        )
-        # plan_id 由上面的迁移添加，旧库必须先补列再建索引。
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_users_plan ON users(plan_id)"
-        )
+        for version, _name, apply in MIGRATIONS:
+            if version <= current:
+                continue
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # 多个进程同时启动时，取得写锁后重新确认迁移是否已完成。
+                current = schema_version(conn)
+                _check_schema_version(current)
+                if version > current:
+                    apply(conn)
+                    conn.execute(f"PRAGMA user_version = {version}")
+                    current = version
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise

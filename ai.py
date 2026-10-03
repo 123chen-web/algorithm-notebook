@@ -12,6 +12,8 @@ from openai import (
     RateLimitError,
 )
 
+from ai_limits import note_usage
+
 REFUSAL_MARKER = "REFUSED_OFF_TOPIC"
 
 # 与 main.py 的 CODE_ZONES / NON_CODE_ZONES 保持一致，仅用于拼提示词里的说明文字；
@@ -216,6 +218,7 @@ def generate(mistake: dict) -> dict:
             timeout=120.0,
             max_retries=0,
         ) as client:
+            note_usage(model, None)
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -235,6 +238,7 @@ def generate(mistake: dict) -> dict:
                 # 比纯输出预留大得多的余量。
                 max_tokens=30000,
             )
+            note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 生成超时，请稍后重试") from None
     except RateLimitError:
@@ -366,6 +370,7 @@ def recognize_photo(jpeg_bytes: bytes) -> dict:
             timeout=120.0,
             max_retries=0,
         ) as client:
+            note_usage(model, None)
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -391,6 +396,7 @@ def recognize_photo(jpeg_bytes: bytes) -> dict:
                 max_tokens=30000,
                 response_format={"type": "json_object"},
             )
+            note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 图片识别超时，请稍后重试") from None
     except RateLimitError:
@@ -568,6 +574,7 @@ def analyze_weaknesses(reference: dict) -> dict:
         with OpenAI(
             api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0,
         ) as client:
+            note_usage(model, None)
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -581,6 +588,7 @@ def analyze_weaknesses(reference: dict) -> dict:
                 max_tokens=30000,
                 response_format={"type": "json_object"},
             )
+            note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 薄弱点分析超时，请稍后重试") from None
     except RateLimitError:
@@ -727,6 +735,7 @@ def cluster_mistakes(reference: dict) -> dict:
         with OpenAI(
             api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0,
         ) as client:
+            note_usage(model, None)
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -740,6 +749,7 @@ def cluster_mistakes(reference: dict) -> dict:
                 max_tokens=30000,
                 response_format={"type": "json_object"},
             )
+            note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 专题归并超时，请稍后重试") from None
     except RateLimitError:

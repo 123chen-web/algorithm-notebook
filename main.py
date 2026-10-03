@@ -10,7 +10,7 @@ import threading
 import time
 import unicodedata
 from collections import defaultdict, deque
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
@@ -38,7 +38,8 @@ import mailer
 import payments
 from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
-from db import ROOT, connect, init_db
+from ai_limits import ai_slot, track_call
+from db import ROOT, connect, init_db, schema_version
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
@@ -666,6 +667,20 @@ async def request_protection(request, call_next):
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@app.get("/healthz")
+def healthz():
+    headers = {"Cache-Control": "no-store"}
+    try:
+        with connect(create=False) as conn:
+            conn.execute("SELECT 1").fetchone()
+            version = schema_version(conn)
+        with connect(write=True, create=False):
+            pass
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "error"}, headers=headers)
+    return JSONResponse(content={"status": "ok", "schema_version": version}, headers=headers)
 
 
 @app.get("/")
@@ -1307,53 +1322,59 @@ def get_weakness_analysis(user=Depends(current_user)):
 
 @app.post("/api/insights/weakness-analysis")
 def create_weakness_analysis(user=Depends(current_user)):
-    with connect(write=True) as conn:
-        state = weakness_analysis_state(conn, user["id"])
-        # 先判断数量，哪怕额度已用完或未配置 Key，也只返回积累材料的提示。
-        if state["mistake_count"] < WEAKNESS_MIN_MISTAKES:
-            return state
-        if not os.getenv("OPENAI_API_KEY", "").strip():
-            raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
-        reference = weakness_analysis_reference(conn, user["id"], state["mistake_count"])
-        # 与生成练习题、拍照识别完全相同的套餐读取及原子扣额 SQL。
-        # 失败仍占用次数；在发起外部请求前提交，网络调用不持有写锁。
-        day = today_for(user).isoformat()
-        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
-        cursor = conn.execute(
-            """
-            INSERT INTO ai_usage(user_id, day, attempts)
-            SELECT ?, ?, 1 WHERE ? > 0
-            ON CONFLICT(user_id, day) DO UPDATE
-            SET attempts = ai_usage.attempts + 1
-            WHERE ai_usage.attempts < ?
-            """,
-            (user["id"], day, limit, limit),
-        )
-        if cursor.rowcount != 1:
-            raise HTTPException(429, "今天的 AI 生成次数已用完")
-        # 记录材料快照时间，微秒精度区分同秒请求，旧请求晚完成也不覆盖新快照。
-        created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    with ExitStack() as stack:
+        with connect(write=True) as conn:
+            state = weakness_analysis_state(conn, user["id"])
+            # 先判断数量，哪怕额度已用完或未配置 Key，也只返回积累材料的提示。
+            if state["mistake_count"] < WEAKNESS_MIN_MISTAKES:
+                return state
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+            reference = weakness_analysis_reference(conn, user["id"], state["mistake_count"])
+            # 与生成练习题、拍照识别完全相同的套餐读取及原子扣额 SQL。
+            # 失败仍占用次数；在发起外部请求前提交，网络调用不持有写锁。
+            day = today_for(user).isoformat()
+            quota = ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_slot())
+            cursor = conn.execute(
+                """
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
+                """,
+                (user["id"], day, limit, limit),
+            )
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            # 记录材料快照时间，微秒精度区分同秒请求，旧请求晚完成也不覆盖新快照。
+            created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
-    content = ai.analyze_weaknesses(reference)
-    content["sample"] = reference["sample"]
-    by_id = {item["mistake_id"]: item for item in reference["mistakes"]}
-    for pattern in content["patterns"]:
-        for evidence in pattern["evidence"]:
-            source = by_id[evidence["mistake_id"]]
-            # 标题和分区由可信的来源映射补齐，不让模型虚构题目归属。
-            evidence.update({key: source[key] for key in ("problem_id", "title", "zone")})
+        with track_call(user["id"], "weakness"):
+            content = ai.analyze_weaknesses(reference)
+        content["sample"] = reference["sample"]
+        by_id = {item["mistake_id"]: item for item in reference["mistakes"]}
+        for pattern in content["patterns"]:
+            for evidence in pattern["evidence"]:
+                source = by_id[evidence["mistake_id"]]
+                # 标题和分区由可信的来源映射补齐，不让模型虚构题目归属。
+                evidence.update({key: source[key] for key in ("problem_id", "title", "zone")})
 
-    with connect(write=True) as conn:
-        conn.execute(
-            """
-            INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE
-            SET content = excluded.content, created_at = excluded.created_at
-            WHERE excluded.created_at >= weakness_insights.created_at
-            """,
-            (user["id"], json.dumps(content, ensure_ascii=False), created_at),
-        )
-        return weakness_analysis_state(conn, user["id"])
+        with connect(write=True) as conn:
+            conn.execute(
+                """
+                INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE
+                SET content = excluded.content, created_at = excluded.created_at
+                WHERE excluded.created_at >= weakness_insights.created_at
+                """,
+                (user["id"], json.dumps(content, ensure_ascii=False), created_at),
+            )
+            return weakness_analysis_state(conn, user["id"])
 
 
 @app.get("/api/insights/clusters")
@@ -1649,25 +1670,31 @@ async def recognize_problem_photo(user=Depends(current_user), file: UploadFile =
     # 配额检查和扣减跟生成练习题共用同一套逻辑：同一次 BEGIN IMMEDIATE 事务内
     # 原子扣减，调用失败也占用次数；AI 调用本身放到事务外面执行，不在网络
     # 请求期间持有数据库写锁。
-    with connect(write=True) as conn:
-        if not os.getenv("OPENAI_API_KEY", "").strip():
-            raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
-        day = today_for(user).isoformat()
-        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
-        cursor = conn.execute(
-            """
-            INSERT INTO ai_usage(user_id, day, attempts)
-            SELECT ?, ?, 1 WHERE ? > 0
-            ON CONFLICT(user_id, day) DO UPDATE
-            SET attempts = ai_usage.attempts + 1
-            WHERE ai_usage.attempts < ?
-            """,
-            (user["id"], day, limit, limit),
-        )
-        if cursor.rowcount != 1:
-            raise HTTPException(429, "今天的 AI 生成次数已用完")
+    with ExitStack() as stack:
+        with connect(write=True) as conn:
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+            day = today_for(user).isoformat()
+            quota = ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_slot())
+            cursor = conn.execute(
+                """
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
+                """,
+                (user["id"], day, limit, limit),
+            )
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-    return await run_in_threadpool(ai.recognize_photo, jpeg_bytes)
+        with track_call(user["id"], "photo"):
+            return await run_in_threadpool(ai.recognize_photo, jpeg_bytes)
 
 
 @app.put("/api/problems/{problem_id}")
@@ -1887,75 +1914,81 @@ def mastery_signal(conn, mistake_id):
 def create_variant(mistake_id: int, user=Depends(current_user)):
     # BEGIN IMMEDIATE 后重读套餐并扣额，与支付回调等写入串行执行。
     # 配额在短事务内原子扣除，网络请求期间不持有数据库写锁。
-    with connect(write=True) as conn:
-        item = owned_mistake(conn, mistake_id, user["id"])
-        # 完全没有复习记录时是 None，generate() 的提示词行为跟之前完全一样；
-        # 有反复偏低/偏高的复习历史时才提示 AI 调整新题难度。
-        item["mastery_signal"] = mastery_signal(conn, mistake_id)
-        if not os.getenv("OPENAI_API_KEY", "").strip():
-            raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+    with ExitStack() as stack:
+        with connect(write=True) as conn:
+            item = owned_mistake(conn, mistake_id, user["id"])
+            # 完全没有复习记录时是 None，generate() 的提示词行为跟之前完全一样；
+            # 有反复偏低/偏高的复习历史时才提示 AI 调整新题难度。
+            item["mastery_signal"] = mastery_signal(conn, mistake_id)
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
 
-        day = today_for(user).isoformat()
-        limit = ai_quota(conn, user["id"], day)["ai_daily_limit"]
-        cursor = conn.execute(
-            """
-            INSERT INTO ai_usage(user_id, day, attempts)
-            SELECT ?, ?, 1 WHERE ? > 0
-            ON CONFLICT(user_id, day) DO UPDATE
-            SET attempts = ai_usage.attempts + 1
-            WHERE ai_usage.attempts < ?
-            """,
-            (
-                user["id"],
-                day,
-                limit,
-                limit,
-            ),
-        )
-        if cursor.rowcount != 1:
-            raise HTTPException(429, "今天的 AI 生成次数已用完")
-
-    generated = ai.generate(item)
-    is_code_zone = item["zone"] in CODE_ZONES
-    rows = []
-    for question in generated["questions"]:
-        if is_code_zone:
-            description = f"{question['question']}\n\n【样例】\n{question['answer']}"
-            expected_answer = ""
-        else:
-            description = question["question"]
-            expected_answer = question["answer"]
-        rows.append((description, expected_answer))
-
-    with connect(write=True) as conn:
-        # 重新读取当前错因：生成期间用户可能已经自己编辑过，不能用生成前的
-        # 旧快照来判断是否需要回填，否则可能覆盖掉用户刚写的内容。
-        current = owned_mistake(conn, mistake_id, user["id"])
-        variants = []
-        created_at = utc_now()
-        for description, expected_answer in rows:
+            day = today_for(user).isoformat()
+            quota = ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_slot())
             cursor = conn.execute(
                 """
-                INSERT INTO variants(
-                    mistake_id, description, model, created_at, expected_answer
-                ) VALUES (?, ?, ?, ?, ?)
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
                 """,
                 (
-                    mistake_id, description, generated["model"],
-                    created_at, expected_answer,
+                    user["id"],
+                    day,
+                    limit,
+                    limit,
                 ),
             )
-            created_row = dict(conn.execute(
-                VARIANT_SELECT + " WHERE v.id = ?", (cursor.lastrowid,),
-            ).fetchone())
-            variants.append(redact_pending_answer(created_row))
-        if not current["description"].strip():
-            conn.execute(
-                "UPDATE mistakes SET description = ? WHERE id = ?",
-                (generated["mistake_summary"], mistake_id),
-            )
-            current["description"] = generated["mistake_summary"]
-    return {"variants": variants, "mistake_description": current["description"]}
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+
+        with track_call(user["id"], "variant"):
+            generated = ai.generate(item)
+        is_code_zone = item["zone"] in CODE_ZONES
+        rows = []
+        for question in generated["questions"]:
+            if is_code_zone:
+                description = f"{question['question']}\n\n【样例】\n{question['answer']}"
+                expected_answer = ""
+            else:
+                description = question["question"]
+                expected_answer = question["answer"]
+            rows.append((description, expected_answer))
+
+        with connect(write=True) as conn:
+            # 重新读取当前错因：生成期间用户可能已经自己编辑过，不能用生成前的
+            # 旧快照来判断是否需要回填，否则可能覆盖掉用户刚写的内容。
+            current = owned_mistake(conn, mistake_id, user["id"])
+            variants = []
+            created_at = utc_now()
+            for description, expected_answer in rows:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO variants(
+                        mistake_id, description, model, created_at, expected_answer
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        mistake_id, description, generated["model"],
+                        created_at, expected_answer,
+                    ),
+                )
+                created_row = dict(conn.execute(
+                    VARIANT_SELECT + " WHERE v.id = ?", (cursor.lastrowid,),
+                ).fetchone())
+                variants.append(redact_pending_answer(created_row))
+            if not current["description"].strip():
+                conn.execute(
+                    "UPDATE mistakes SET description = ? WHERE id = ?",
+                    (generated["mistake_summary"], mistake_id),
+                )
+                current["description"] = generated["mistake_summary"]
+        return {"variants": variants, "mistake_description": current["description"]}
 
 
 def normalize_math_answer(value: str) -> str:
