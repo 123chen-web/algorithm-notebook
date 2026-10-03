@@ -20,6 +20,8 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
+只想运行网站用 `requirements.txt`；要跑自动化测试、依赖审计，改用 `requirements-dev.txt`（它包含 `requirements.txt` 并额外装 pytest、pip-audit）。
+
 编辑 `.env`：
 
 - 将 `INVITE_CODE` 从 `change-me` 改为自己的内测邀请码。
@@ -79,6 +81,8 @@ macOS / Linux：
 ```bash
 .venv/bin/python -B -m pytest -p no:cacheprovider -q
 ```
+
+先安装开发依赖：Windows 用 `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`，macOS / Linux 用 `.venv/bin/python -m pip install -r requirements-dev.txt`。
 
 测试使用临时数据库，AI 调用被模拟，不会产生 API 费用。
 不要把测试临时目录或缓存目录放进仓库；系统临时目录遇到权限错误时应停止，
@@ -506,6 +510,8 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 抽出作为组件发布或分发。复制或实质性改写代码时，必须保留源码顶部完整的
 版权、许可及免责声明；完整声明见 `static/cursor-fx.js` 文件头。
 
+分享卡片使用的中文字体是 Noto Sans CJK SC 的子集，采用 SIL Open Font License 1.1，许可证随字体放在 `assets/fonts/OFL.txt`。
+
 ## 成就徽章
 
 学习大厅的「成就徽章」入口展示当前账号的全部徽章。进入页面或刷新时，
@@ -548,8 +554,7 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 `share_card.py` 使用 Pillow 渲染，直接复用 `learning_metrics()` 和
 `evaluate_achievements()` 的结果。图片展示用户名、连续打卡天数、徽章与学习
 数据、下一个目标及用户时区的生成日期，不包含邮箱、用户 ID 等非公开信息。
-当前使用 Windows 中文字体（优先微软雅黑，依次备选黑体、宋体）；部署到
-Linux 时需调整字体路径或提供中文字体文件。
+字体优先使用仓库自带的 Noto Sans CJK SC Regular 子集（`assets/fonts/`，约 1.6 MB，覆盖 ASCII、常用标点和 GB2312 全部汉字），Linux / 容器里不用另装系统字体；找不到自带字体时依次备选 Windows 的微软雅黑、黑体、宋体。所有字体都不可用时接口返回 HTTP 503（而不是 500）。字体采用 SIL Open Font License 1.1，许可证见 `assets/fonts/OFL.txt`，来源与重新生成方法见 `assets/fonts/README.md`；分发本项目时请保留许可证。GB2312 之外的生僻字会显示为方框。
 
 ## 学习小组
 
@@ -1286,12 +1291,18 @@ SDK 的解密和验签；预下单、退款与退款查询的网络请求被替�
 同步依赖等操作也共享这份容量；AI 等待网络返回时仍占用令牌，饱和后
 新的同步任务会排队，因此高并发下登录和生成请求可能相互影响。
 这一限制见 [Starlette 官方线程池说明](https://www.starlette.io/threadpool/)。
+为了不让 AI 把线程池占满，变体生成、薄弱点分析、拍照识别和错因归并共用一个进程内的并发上限 `AI_MAX_CONCURRENCY`（默认 6）：超过上限立即返回 429，并且**不消耗**每日额度。每次实际调用会在 `ai_calls` 表记下模型、服务商返回的 token 用量、耗时和成败（不记录提示词或模型回复），汇总方法见 [部署与升级](docs/operations/deploy.md)。
 当前仍按 SQLite 单实例、单 worker 部署。负载增长后可评估多 worker
 或把密码计算、AI 生成隔离执行；届时需同时处理 SQLite 写入竞争及
 下述内存限流的共享问题，不能只增加 worker 数量。
 
-备份时停止服务后复制整个 `data` 目录，
-或使用 SQLite 自带的在线备份接口。
+### 备份与恢复
+
+使用 `python backup.py` 在线备份 SQLite 数据库与头像（服务不用停），默认保存在 `data/backups/`，保留最近 14 份，可用 `--output-dir`、`--keep` 调整；`python backup.py verify 归档.tar.gz` 校验。恢复时先停止服务，再用 `python backup.py restore 归档.tar.gz --into 独立目录` 还原并校验，手动替换数据库与头像后启动服务、访问 `/healthz`。归档含密码哈希和个人数据，不含 `.env` 里的密钥，请安全保存并另存异地副本。定时任务示例和季度恢复演练见 [备份与恢复](docs/operations/backup-and-restore.md)。
+
+### Docker、健康检查、升级与 CI
+
+仓库带有 `Dockerfile` 和 `docker-compose.yml`（容器内用非 root 用户，数据放在挂载的 `./data`）；`GET /healthz` 无需登录，检查数据库可读写并返回 `schema_version`，失败返回 503。数据库用 `PRAGMA user_version` 记录版本，启动时按顺序自动执行未完成的迁移，每个迁移独立提交、失败回滚；数据库版本比程序新时程序会拒绝启动。GitHub Actions（`.github/workflows/ci.yml`）在每次推送到 `main` 和每个 pull request 时跑语法检查、全部测试，并构建镜像检查 `/healthz`，另有一个只作提示的依赖安全审计。详细步骤见 [部署与升级](docs/operations/deploy.md)。
 
 不要提交 `.env` 或用户数据库到 GitHub。
 
@@ -1306,5 +1317,4 @@ SDK 的解密和验签；预下单、退款与退款查询的网络请求被替�
 改成共享存储，并确认拿到的是真实客户端 IP。
 
 支付宝接口尚需商户账号开通后完成沙箱/实网联调；微信支付没有沙箱，
-只能用真实商户号完成小额联调。V1 不包含多实例部署和正式的数据库版本
-迁移工具。
+只能用真实商户号完成小额联调。V1 不包含多实例部署。
