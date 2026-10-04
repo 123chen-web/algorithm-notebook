@@ -252,6 +252,469 @@
     target.onclick = () => context.onOpenPost?.(post.id);
   }
 
+  /* ---------- 趋势区：指标条 + 随指标切换的主图（GET /api/stats/summary） ---------- */
+  const TREND_DAYS = [7, 30, 90];
+  const TREND_STORE = "home-trend-days";
+  const TREND_KEYS = ["due", "streak", "reviews", "retention"];
+  const RETENTION_TARGET = 0.85;
+  const TREND_HEIGHT = 224;
+  const TREND_MARGIN = { left: 40, right: 14, top: 30, bottom: 30 };
+  const trend = { epoch: 0, seq: 0, api: null, days: 30, key: "due", summary: null, width: 0 };
+
+  function niceScale(maxValue) {
+    if (!(maxValue > 0)) return { max: 1, ticks: [0, 1] };
+    const magnitude = 10 ** Math.floor(Math.log10(maxValue));
+    const step = [0.5, 1, 2, 5, 10].map((unit) => unit * magnitude).filter((candidate) => candidate >= 1).find((candidate) => maxValue / candidate <= 5);
+    const top = Math.ceil(maxValue / step) * step;
+    const ticks = [];
+    for (let value = 0; value <= top + step / 2; value += step) ticks.push(Math.round(value * 1e6) / 1e6);
+    return { max: top, ticks };
+  }
+  const monthDay = (date) => date.slice(5);
+  function pointsLabel(points) {
+    return `${points < 0 ? "−" : "+"}${Math.abs(points).toFixed(1)} 个点`;
+  }
+
+  function reviewsTrend(current, previous) {
+    if (previous === 0) {
+      return current === 0
+        ? { dir: "flat", text: "持平", label: "与上一周期持平" }
+        : { dir: "new", text: "新", label: "上一周期没有复习，本周期为新增" };
+    }
+    const percent = Math.round(((current - previous) / previous) * 100);
+    if (percent === 0) return { dir: "flat", text: "→ 持平", label: "与上一周期持平" };
+    const up = percent > 0;
+    return {
+      dir: up ? "up" : "down",
+      text: `${up ? "↗ +" : "↘ −"}${Math.abs(percent)}%`,
+      label: `比上一周期${up ? "增加" : "减少"} ${Math.abs(percent)}%`,
+    };
+  }
+  function retentionTrend(current, previous) {
+    if (current === null || previous === null) return null;
+    const points = Math.round((current - previous) * 1000) / 10;
+    if (points === 0) return { dir: "flat", text: "→ 持平", label: "与上一周期持平" };
+    return {
+      dir: points > 0 ? "up" : "down",
+      text: `${points > 0 ? "↗" : "↘"} ${pointsLabel(points)}`,
+      label: `比上一周期${points > 0 ? "高" : "低"} ${Math.abs(points).toFixed(1)} 个点`,
+    };
+  }
+
+  /* 纯函数：指标块文案、涨跌方向与百分比、各图的数据与刻度。 */
+  function trendModel(summary) {
+    const days = summary.days;
+    const rate = summary.retention.current.rate;
+    const previousRate = summary.retention.previous.rate;
+    const overdue = summary.due.overdue;
+    const forecast = summary.forecast.map((item, index) => ({
+      date: item.date,
+      value: item.due,
+      today: index === 0,
+      label: index === 0 ? "今天" : index === 1 ? "明" : index === 2 ? "后" : monthDay(item.date),
+    }));
+    const weekly = summary.retention.weekly;
+    return {
+      days,
+      metrics: [
+        {
+          key: "due", label: "待复习", value: String(summary.due.today), unit: "条", trend: null,
+          sub: overdue > 0 ? `其中逾期 ${overdue}` : "没有逾期",
+          how: "到期日在今天或更早的易错点数量（含逾期）。图为未来 14 天每天到期的条数，今天的柱包含全部逾期。",
+        },
+        {
+          key: "streak", label: "连续打卡", value: String(summary.streak_days), unit: "天", trend: null,
+          sub: "按你的本地日统计",
+          how: "每天至少完成一次复习算一天；今天还没复习但昨天复习了，连续天数不会清零。图为近期每天是否复习。",
+        },
+        {
+          key: "reviews", label: `近 ${days} 天复习`, value: String(summary.reviews.current), unit: "次",
+          trend: reviewsTrend(summary.reviews.current, summary.reviews.previous),
+          sub: `上一周期 ${summary.reviews.previous} 次`,
+          how: `最近 ${days} 天（含今天）的复习评分次数，对比紧邻的前 ${days} 天。`,
+        },
+        {
+          key: "retention", label: "真实保持率", value: rate === null ? "—" : `${Math.round(rate * 100)}%`,
+          unit: "", trend: retentionTrend(rate, previousRate),
+          sub: rate === null
+            ? "需要至少一次非首次复习"
+            : `${summary.retention.current.passed}/${summary.retention.current.reviews} 次非首次复习评分 ≥ 3`,
+          how: `只看「非首次复习」（这条易错点之前已经复习过）里评分 ≥ 3 的占比，最近 ${days} 天，对比前 ${days} 天。分母为 0 时显示「—」。图为最近 8 个自然周（周一起算）。`,
+        },
+      ],
+      charts: {
+        due: {
+          kind: "bars", items: forecast, scale: niceScale(Math.max(0, ...forecast.map((item) => item.value))),
+          empty: forecast.every((item) => item.value === 0), emptyText: "未来 14 天没有到期的易错点。",
+          caption: "未来 14 天每天到期条数（今天含逾期）",
+          table: { headers: ["日期", "到期条数"], rows: forecast.map((item) => [item.date + (item.today ? "（今天，含逾期）" : ""), String(item.value)]) },
+        },
+        streak: {
+          kind: "cells", items: summary.daily_reviews, scale: niceScale(Math.max(0, ...summary.daily_reviews.map((item) => item.count))),
+          empty: summary.daily_reviews.every((item) => item.count === 0), emptyText: `近 ${days} 天还没有复习记录。`,
+          caption: `近 ${days} 天每天是否复习`,
+          table: { headers: ["日期", "复习次数"], rows: summary.daily_reviews.map((item) => [item.date, String(item.count)]) },
+        },
+        reviews: {
+          kind: "area", items: summary.daily_reviews, scale: niceScale(Math.max(0, ...summary.daily_reviews.map((item) => item.count))),
+          empty: summary.daily_reviews.every((item) => item.count === 0), emptyText: `近 ${days} 天还没有复习记录。`,
+          caption: `近 ${days} 天每天的复习次数`,
+          table: { headers: ["日期", "复习次数"], rows: summary.daily_reviews.map((item) => [item.date, String(item.count)]) },
+        },
+        retention: {
+          kind: "line",
+          items: weekly.map((week) => ({ date: week.week_start, value: week.rate, reviews: week.reviews, passed: week.passed })),
+          scale: { max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] }, target: RETENTION_TARGET,
+          empty: weekly.every((week) => week.rate === null), emptyText: "需要至少一次非首次复习，才能算出真实保持率。",
+          caption: "最近 8 周的真实保持率（周一起算）",
+          table: {
+            headers: ["周起始", "非首次复习", "通过", "保持率"],
+            rows: weekly.map((week) => [week.week_start, String(week.reviews), String(week.passed), week.rate === null ? "—" : `${(week.rate * 100).toFixed(1)}%`]),
+          },
+        },
+      },
+    };
+  }
+
+  /* ---- 图：同一个比例尺画刻度、标签和数据点 ---- */
+  function chartGeometry(width) {
+    const { left, right, top, bottom } = TREND_MARGIN;
+    return { width, height: TREND_HEIGHT, left, top, plotW: width - left - right, plotH: TREND_HEIGHT - top - bottom };
+  }
+  function svgText(text, attributes, className) {
+    const item = svgNode("text", { class: className, ...attributes });
+    item.textContent = text;
+    return item;
+  }
+  function chartFrame(model, geo, formatTick) {
+    const parts = [];
+    const y = (value) => geo.top + geo.plotH - (value / model.scale.max) * geo.plotH;
+    for (const tick of model.scale.ticks) {
+      parts.push(svgNode("line", { class: tick === 0 ? "ov-ch-axis" : "ov-ch-grid", x1: geo.left, x2: geo.left + geo.plotW, y1: y(tick), y2: y(tick) }));
+      parts.push(svgText(formatTick(tick), { x: geo.left - 6, y: y(tick) + 4, "text-anchor": "end" }, "ov-ch-label"));
+    }
+    return { parts, y };
+  }
+  function pickLabelIndexes(count, plotW, minGap) {
+    const slots = Math.max(2, Math.floor(plotW / minGap));
+    if (count <= slots) return Array.from({ length: count }, (_, index) => index);
+    const picked = new Set([0, count - 1]);
+    for (let slot = 1; slot < slots - 1; slot += 1) picked.add(Math.round((slot * (count - 1)) / (slots - 1)));
+    return [...picked].sort((a, b) => a - b);
+  }
+
+  function drawBars(model, geo) {
+    const frame = chartFrame(model, geo, (tick) => String(tick));
+    const count = model.items.length;
+    const pitch = geo.plotW / count;
+    const barW = Math.max(4, Math.min(28, pitch * 0.62));
+    const every = pitch < 34 ? 2 : 1;
+    model.items.forEach((item, index) => {
+      const cx = geo.left + pitch * (index + 0.5);
+      const top = frame.y(item.value);
+      const base = frame.y(0);
+      if (item.value === 0) {
+        frame.parts.push(svgNode("line", { class: "ov-ch-zero", x1: cx - barW / 2, x2: cx + barW / 2, y1: base, y2: base }));
+      } else {
+        frame.parts.push(svgNode("rect", { class: `ov-ch-bar${item.today ? " is-today" : ""}`, x: cx - barW / 2, y: top, width: barW, height: base - top, rx: 2 }));
+        frame.parts.push(svgText(String(item.value), { x: cx, y: top - 5, "text-anchor": "middle" }, `ov-ch-value${item.today ? " is-today" : ""}`));
+      }
+      if (item.today) frame.parts.push(svgText("含逾期", { x: cx, y: Math.max(11, (item.value === 0 ? base : top) - 19), "text-anchor": "middle" }, "ov-ch-note"));
+      if (index % every === 0) frame.parts.push(svgText(item.label, { x: cx, y: geo.top + geo.plotH + 18, "text-anchor": "middle" }, `ov-ch-label${item.today ? " is-today" : ""}`));
+    });
+    return { nodes: frame.parts, xAt: (index) => geo.left + pitch * (index + 0.5), count, pitch };
+  }
+
+  function drawCells(model, geo) {
+    const count = model.items.length;
+    const gap = count > 60 ? 1 : 2;
+    const cell = (geo.plotW - gap * (count - 1)) / count;
+    const rowY = geo.top + geo.plotH / 2 - 14;
+    const nodes = [];
+    model.items.forEach((item, index) => {
+      const level = item.count === 0 ? 0 : item.count / model.scale.max;
+      const rect = svgNode("rect", {
+        class: `ov-ch-cell${item.count > 0 ? " is-on" : ""}`, x: geo.left + index * (cell + gap), y: rowY,
+        width: cell, height: 28, rx: 2,
+      });
+      if (item.count > 0) rect.setAttribute("fill-opacity", String(Math.round((0.35 + 0.65 * level) * 100) / 100));
+      nodes.push(rect);
+    });
+    for (const index of pickLabelIndexes(count, geo.plotW, 64)) {
+      const x = geo.left + index * (cell + gap) + cell / 2;
+      nodes.push(svgText(index === count - 1 ? "今天" : monthDay(model.items[index].date), { x, y: rowY + 28 + 18, "text-anchor": "middle" }, "ov-ch-label"));
+    }
+    return { nodes, xAt: (index) => geo.left + index * (cell + gap) + cell / 2, count, pitch: cell + gap };
+  }
+
+  function drawArea(model, geo) {
+    const frame = chartFrame(model, geo, (tick) => String(tick));
+    const count = model.items.length;
+    const step = count > 1 ? geo.plotW / (count - 1) : 0;
+    const xAt = (index) => geo.left + step * index;
+    const points = model.items.map((item, index) => `${xAt(index).toFixed(1)},${frame.y(item.count).toFixed(1)}`);
+    const base = frame.y(0).toFixed(1);
+    frame.parts.push(svgNode("polygon", { class: "ov-ch-area", points: `${xAt(0).toFixed(1)},${base} ${points.join(" ")} ${xAt(count - 1).toFixed(1)},${base}` }));
+    frame.parts.push(svgNode("polyline", { class: "ov-ch-line", points: points.join(" "), fill: "none" }));
+    const last = model.items[count - 1];
+    frame.parts.push(svgNode("circle", { class: "ov-ch-dot", cx: xAt(count - 1), cy: frame.y(last.count), r: 4 }));
+    for (const index of pickLabelIndexes(count, geo.plotW, 64)) {
+      frame.parts.push(svgText(index === count - 1 ? "今天" : monthDay(model.items[index].date), { x: xAt(index), y: geo.top + geo.plotH + 18, "text-anchor": index === 0 ? "start" : index === count - 1 ? "end" : "middle" }, "ov-ch-label"));
+    }
+    return { nodes: frame.parts, xAt, count, pitch: step };
+  }
+
+  function drawLine(model, geo) {
+    const frame = chartFrame(model, geo, (tick) => `${Math.round(tick * 100)}%`);
+    const count = model.items.length;
+    const step = count > 1 ? geo.plotW / (count - 1) : 0;
+    const xAt = (index) => geo.left + step * index;
+    const targetY = frame.y(model.target);
+    frame.parts.push(svgNode("line", { class: "ov-ch-target", x1: geo.left, x2: geo.left + geo.plotW, y1: targetY, y2: targetY }));
+    frame.parts.push(svgText(`目标线 ${Math.round(model.target * 100)}%`, { x: geo.left + geo.plotW, y: targetY - 5, "text-anchor": "end" }, "ov-ch-note"));
+    let segment = [];
+    const flush = () => {
+      if (segment.length > 1) frame.parts.push(svgNode("polyline", { class: "ov-ch-line", fill: "none", points: segment.join(" ") }));
+      segment = [];
+    };
+    model.items.forEach((item, index) => {
+      if (item.value === null) { flush(); return; }
+      segment.push(`${xAt(index).toFixed(1)},${frame.y(item.value).toFixed(1)}`);
+    });
+    flush();
+    model.items.forEach((item, index) => {
+      if (item.value === null) return;
+      frame.parts.push(svgNode("circle", { class: `ov-ch-dot${index === count - 1 ? " is-last" : ""}`, cx: xAt(index), cy: frame.y(item.value), r: index === count - 1 ? 4 : 3 }));
+    });
+    model.items.forEach((item, index) => {
+      frame.parts.push(svgText(monthDay(item.date), { x: xAt(index), y: geo.top + geo.plotH + 18, "text-anchor": "middle" }, "ov-ch-label"));
+    });
+    return { nodes: frame.parts, xAt, count, pitch: step };
+  }
+
+  function readoutFor(key, model, index) {
+    const item = model.items[index];
+    if (key === "due") return `${item.today ? "今天（含逾期）" : item.date} · ${item.value} 条到期`;
+    if (key === "retention") {
+      return item.value === null
+        ? `${item.date} 起的一周 · 没有非首次复习`
+        : `${item.date} 起的一周 · 保持率 ${(item.value * 100).toFixed(1)}%（${item.passed}/${item.reviews}）`;
+    }
+    return `${item.date} · 复习 ${item.count} 次`;
+  }
+
+  function buildChart(key, model, width) {
+    const geo = chartGeometry(width);
+    const drawer = { due: drawBars, streak: drawCells, reviews: drawArea, retention: drawLine }[key];
+    const drawn = drawer(model, geo);
+    const svg = svgNode("svg", {
+      class: "ov-chart-svg", viewBox: `0 0 ${geo.width} ${geo.height}`, role: "img", focusable: "false",
+      "aria-label": model.caption,
+    });
+    svg.append(...drawn.nodes);
+    return { svg, geo, drawn };
+  }
+
+  function nearestIndex(event, svg, geo, drawn) {
+    const rect = svg.getBoundingClientRect();
+    const scale = rect.width > 0 ? geo.width / rect.width : 1;
+    const x = (event.clientX - rect.left) * scale;
+    let best = 0;
+    let distance = Infinity;
+    for (let index = 0; index < drawn.count; index += 1) {
+      const gap = Math.abs(drawn.xAt(index) - x);
+      if (gap < distance) { best = index; distance = gap; }
+    }
+    return best;
+  }
+
+  function renderTrendChart() {
+    const wrap = $("#home-trend-chart");
+    const readout = $("#home-trend-readout");
+    const summary = trend.summary;
+    if (!wrap || !summary) return;
+    const model = trendModel(summary);
+    const chart = model.charts[trend.key];
+    const panel = $("#home-trend-panel");
+    panel.dataset.chart = trend.key;
+    if (chart.empty) {
+      wrap.replaceChildren(node("p", "ov-trend-empty", chart.emptyText));
+      readout.textContent = "";
+    } else {
+      const width = Math.max(260, Math.min(760, trend.width || 640));
+      const { svg, geo, drawn } = buildChart(trend.key, chart, width);
+      const show = (index) => { readout.textContent = readoutFor(trend.key, chart, index); };
+      for (const type of ["pointermove", "pointerdown"]) svg.addEventListener(type, (event) => show(nearestIndex(event, svg, geo, drawn)));
+      wrap.replaceChildren(svg);
+      show(drawn.count - 1);
+    }
+    $("#home-trend-caption").textContent = chart.caption;
+    const table = node("table", "ov-trend-table");
+    table.append(node("caption", "", chart.caption));
+    const head = node("tr");
+    for (const header of chart.table.headers) { const cell = node("th", "", header); cell.scope = "col"; head.append(cell); }
+    const body = node("tbody");
+    for (const row of chart.table.rows) {
+      const line = node("tr");
+      row.forEach((text, index) => {
+        const cell = node(index === 0 ? "th" : "td", "", text);
+        if (index === 0) cell.scope = "row";
+        line.append(cell);
+      });
+      body.append(line);
+    }
+    const headGroup = node("thead");
+    headGroup.append(head);
+    table.append(headGroup, body);
+    $("#home-trend-table-body").replaceChildren(table);
+  }
+
+  function trendTabs() { return [...$("#home-trend-metrics").querySelectorAll('[role="tab"]')]; }
+  function selectTrendMetric(key, { focus = false } = {}) {
+    if (!TREND_KEYS.includes(key)) return;
+    trend.key = key;
+    for (const tab of trendTabs()) {
+      const selected = tab.dataset.metric === key;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.classList.toggle("is-selected", selected);
+      if (selected && focus) tab.focus();
+    }
+    if (trend.summary) {
+      const metric = trendModel(trend.summary).metrics.find((item) => item.key === key);
+      $("#home-trend-how").textContent = metric.how;
+      renderTrendChart();
+    }
+  }
+  function onTrendTabKey(event) {
+    const keys = { ArrowRight: 1, ArrowLeft: -1 };
+    let target;
+    if (event.key in keys) target = TREND_KEYS[(TREND_KEYS.indexOf(trend.key) + keys[event.key] + TREND_KEYS.length) % TREND_KEYS.length];
+    else if (event.key === "Home") target = TREND_KEYS[0];
+    else if (event.key === "End") target = TREND_KEYS[TREND_KEYS.length - 1];
+    else return;
+    event.preventDefault();
+    selectTrendMetric(target, { focus: true });
+  }
+
+  function trendStatus(state, text) {
+    const section = $("#home-trend");
+    section.dataset.state = state;
+    if (state === "loading") section.setAttribute("aria-busy", "true"); else section.removeAttribute("aria-busy");
+    $("#home-trend-skeleton").hidden = state !== "loading";
+    $("#home-trend-error").hidden = state !== "error";
+    $("#home-trend-body").hidden = state !== "ready";
+    if (state === "error") $("#home-trend-error-text").textContent = text || "暂时无法读取趋势数据。";
+  }
+
+  function renderTrendMetrics(model) {
+    const strip = $("#home-trend-metrics");
+    strip.replaceChildren(...model.metrics.map((metric) => {
+      const tab = node("button", "ov-metric");
+      tab.type = "button";
+      tab.id = `home-trend-tab-${metric.key}`;
+      tab.dataset.metric = metric.key;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "home-trend-panel");
+      const value = node("span", "ov-metric-value");
+      value.append(node("strong", "", metric.value), node("span", "ov-metric-unit", metric.unit));
+      const parts = [node("span", "ov-metric-label", metric.label), value];
+      if (metric.trend) {
+        const delta = node("span", `ov-metric-trend is-${metric.trend.dir}`, metric.trend.text);
+        delta.title = metric.trend.label;
+        delta.setAttribute("aria-label", metric.trend.label);
+        parts.push(delta);
+      }
+      parts.push(node("span", "ov-metric-sub", metric.sub));
+      tab.append(...parts);
+      tab.addEventListener("click", () => selectTrendMetric(metric.key));
+      tab.addEventListener("keydown", onTrendTabKey);
+      return tab;
+    }));
+  }
+
+  function renderTrend(summary) {
+    trend.summary = summary;
+    trendStatus("ready");
+    renderTrendMetrics(trendModel(summary));
+    selectTrendMetric(trend.key);
+  }
+  function renderTrendLoading() { trendStatus("loading"); }
+  function renderTrendError(text) { trendStatus("error", text); }
+
+  function storedTrendDays() {
+    try {
+      const value = Number(window.localStorage.getItem(TREND_STORE));
+      return TREND_DAYS.includes(value) ? value : 30;
+    } catch (error) { return 30; }
+  }
+  function markTrendRange() {
+    for (const button of $("#home-trend-range").querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.days) === trend.days));
+    }
+  }
+  function setTrendDays(days) {
+    if (!TREND_DAYS.includes(days) || days === trend.days) return;
+    trend.days = days;
+    try { window.localStorage.setItem(TREND_STORE, String(days)); } catch (error) { /* 无存储时只是不记住 */ }
+    markTrendRange();
+    loadTrend();
+  }
+
+  function loadTrend() {
+    const epoch = trend.epoch;
+    const token = ++trend.seq;
+    const path = `/api/stats/summary?days=${trend.days}`;
+    const live = () => epoch === trend.epoch && token === trend.seq;
+    renderTrendLoading();
+    const request = trend.api
+      ? trend.api(path)
+      : window.fetch(path, { credentials: "same-origin", headers: { "X-CSRF-Protection": "1" } })
+        .then((response) => (response.ok ? response.json() : Promise.reject(new Error("request failed"))));
+    return Promise.resolve(request).then(
+      (data) => { if (live()) renderTrend(data); },
+      () => { if (live()) renderTrendError("暂时无法读取趋势数据。"); },
+    );
+  }
+
+  let trendWired = false;
+  function wireTrend() {
+    if (trendWired) return;
+    trendWired = true;
+    trend.days = storedTrendDays();
+    markTrendRange();
+    for (const button of $("#home-trend-range").querySelectorAll("button")) {
+      button.addEventListener("click", () => setTrendDays(Number(button.dataset.days)));
+    }
+    $("#home-trend-retry").addEventListener("click", () => loadTrend());
+    if (typeof window.ResizeObserver === "function") {
+      new window.ResizeObserver((entries) => {
+        const width = Math.round(entries[0]?.contentRect?.width || 0);
+        if (width && width !== trend.width) { trend.width = width; if (trend.summary) renderTrendChart(); }
+      }).observe($("#home-trend-chart"));
+    }
+  }
+
+  /* 挂载趋势区：接线（只做一次）并请求；context.api 缺省时退回 fetch。 */
+  function mountTrend(context = {}) {
+    wireTrend();
+    trend.api = context.api || null;
+    return loadTrend();
+  }
+
+  function resetTrend() {
+    trend.epoch += 1;
+    trend.seq += 1;
+    trend.summary = null;
+    trend.api = null;
+    $("#home-trend-metrics").replaceChildren();
+    $("#home-trend-chart").replaceChildren();
+    $("#home-trend-table-body").replaceChildren();
+    $("#home-trend-readout").textContent = "";
+    $("#home-trend-how").textContent = "";
+    trendStatus("loading");
+  }
+
   /* ---------- 对外 ---------- */
   function render(data, context = {}) {
     $("#overview-error").hidden = true;
@@ -264,6 +727,7 @@
     window.Mastery?.mountAlert($("#ov-fading-card"));
     renderGroups(data);
     renderHot(data, context);
+    mountTrend(context);
     const shell = window.AppShell;
     if (shell) {
       shell.setCounts(data);
@@ -277,6 +741,7 @@
     $("#overview-error").hidden = false;
     $("#home-subtitle").textContent = "";
     $("#home-due-caption").textContent = "暂时无法读取数量，可进入复习重试";
+    renderTrendError("总览读取失败，趋势暂不可用。");
   }
 
   function reset() {
@@ -305,7 +770,8 @@
     $("#ov-groups").replaceChildren();
     $("#ov-hot-card").hidden = true;
     $("#ov-hot").replaceChildren();
+    resetTrend();
   }
 
-  window.Overview = { render, renderError, reset };
+  window.Overview = { render, renderError, reset, renderTrend, trendModel, mountTrend };
 })();

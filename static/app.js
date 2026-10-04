@@ -908,6 +908,7 @@ async function loadHome({ refreshUser = true } = {}) {
   if (overview.status === "fulfilled") {
     window.Overview.render(overview.value, {
       username: user.username,
+      api,
       onOpenRecord: (id) => run(async () => {
         message();
         await showView("today");

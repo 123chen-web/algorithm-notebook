@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/static/groups.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=5">
   <link rel="stylesheet" href="/static/shell.css?v=3">
-  <link rel="stylesheet" href="/static/overview.css?v=2">
+  <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/activity.css?v=2">
   <link rel="stylesheet" href="/static/emoji.css?v=2">
   <link rel="stylesheet" href="/static/palette.css?v=2">
@@ -41,10 +41,10 @@
   <script defer src="/static/clusters.js?v=4"></script>
   <script defer src="/static/print.js?v=2"></script>
   <script defer src="/static/shell.js?v=4"></script>
-  <script defer src="/static/overview.js?v=2"></script>
+  <script defer src="/static/overview.js?v=3"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/app.js?v=59"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -441,6 +441,29 @@
             <div id="overview-heatmap" class="ov-heat-body"></div>
           </section>
         </div>
+
+        <section id="home-trend" class="ov-trend" aria-labelledby="home-trend-title" data-state="loading" aria-busy="true">
+          <div class="ov-section-head ov-trend-head">
+            <h3 id="home-trend-title">趋势</h3>
+            <div id="home-trend-range" class="ov-range" role="group" aria-label="时间范围">
+              <button type="button" data-days="7" aria-pressed="false">7 天</button>
+              <button type="button" data-days="30" aria-pressed="true">30 天</button>
+              <button type="button" data-days="90" aria-pressed="false">90 天</button>
+            </div>
+          </div>
+          <div id="home-trend-skeleton" class="ov-trend-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <p id="home-trend-error" class="ov-trend-error" role="alert" hidden><span id="home-trend-error-text">暂时无法读取趋势数据。</span> <button id="home-trend-retry" type="button" class="ov-link">重试</button></p>
+          <div id="home-trend-body" hidden>
+            <div id="home-trend-metrics" class="ov-metrics" role="tablist" aria-label="趋势指标"></div>
+            <div id="home-trend-panel" class="ov-trend-panel" role="tabpanel">
+              <p id="home-trend-caption" class="ov-trend-caption"></p>
+              <div id="home-trend-chart" class="ov-trend-chart"></div>
+              <p id="home-trend-readout" class="ov-trend-readout" aria-live="polite"></p>
+              <details class="ov-trend-details"><summary>怎么算</summary><p id="home-trend-how"></p></details>
+              <details class="ov-trend-details"><summary>查看数据表</summary><div id="home-trend-table-body" class="ov-trend-table-wrap"></div></details>
+            </div>
+          </div>
+        </section>
 
         <div class="ov-columns">
           <section class="ov-due" aria-labelledby="ov-due-title">

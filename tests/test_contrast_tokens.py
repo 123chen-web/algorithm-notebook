@@ -30,8 +30,14 @@ THREAD_TEXT_PAIRS = (
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
 )
+# 总览"趋势"区（static/overview.css 的 .ov-trend / .ov-metric / .ov-ch-*）新增的文字/底色配对。
+OVERVIEW_TREND_PAIRS = (
+    ("--success-ink", "--paper"),
+    ("--danger", "--paper"),
+    ("--azurite", "--paper"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + OVERVIEW_TREND_PAIRS for token in pair
 }
 
 
@@ -212,6 +218,24 @@ def test_thread_text_pairs_meet_contrast(context, tokens, foreground, background
     ratio = contrast_ratio(tokens[foreground], tokens[background])
     assert ratio >= 4.5, (
         f"论坛主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", OVERVIEW_TREND_PAIRS)
+def test_overview_trend_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"总览趋势区 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
         f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
     )
 
