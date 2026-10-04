@@ -337,7 +337,7 @@ def test_thread_script_is_versioned_external_and_loaded_before_app(document):
     thread_index = scripts.index("/static/thread.js?v=1")
     app_indices = [index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js"]
     assert len(app_indices) == 1 and thread_index < app_indices[0]
-    assert scripts[app_indices[0]] == "/static/app.js?v=59"
+    assert scripts[app_indices[0]] == "/static/app.js?v=60"
 
 
 def test_thread_markup_uses_external_csp_safe_controls_and_shared_renderer(document, source):

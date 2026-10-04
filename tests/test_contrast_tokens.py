@@ -30,8 +30,24 @@ THREAD_TEXT_PAIRS = (
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
 )
+# 管理后台“运营概览”（static/admin-metrics.css）用到的文字 / 底色配对。
+ADMIN_METRICS_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink-2", "--surface"),
+    ("--muted", "--surface"),
+    ("--muted", "--paper"),
+    ("--success-ink", "--surface"),
+    ("--danger", "--surface"),
+    ("--danger", "--paper"),
+    ("--azurite", "--surface"),
+    ("--ink", "--tile-azurite"),
+    ("--ink", "--danger-soft"),
+    ("--ink-2", "--danger-soft"),
+    ("--danger", "--danger-soft"),
+    ("--danger-hover", "--danger-soft"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS for token in pair
 }
 
 
@@ -214,6 +230,54 @@ def test_thread_text_pairs_meet_contrast(context, tokens, foreground, background
         f"论坛主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
         f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
     )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", ADMIN_METRICS_TEXT_PAIRS)
+def test_admin_metrics_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"运营概览主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_admin_metrics_css_text_colors_match_the_checked_pairs():
+    """运营概览里每个带文字色的规则，实际用的令牌必须与上面检查过的配对一致。"""
+    expected = {
+        ".am-metric": ("--ink", "--surface"),
+        ".am-metric-label": ("--ink-2", "--surface"),
+        ".am-metric-sub": ("--ink-2", "--surface"),
+        ".am-metric-value": ("--ink", "--surface"),
+        '.am-delta[data-trend="up"]': ("--success-ink", "--surface"),
+        '.am-delta[data-trend="down"]': ("--danger", "--surface"),
+        '.am-delta[data-trend="flat"]': ("--muted", "--surface"),
+        '.am-delta[data-trend="new"]': ("--azurite", "--surface"),
+        '.am-range button[aria-pressed="true"]': ("--ink", "--tile-azurite"),
+        '.am-metric[data-alert="true"] .am-metric-value': ("--danger", "--danger-soft"),
+        ".am-link": ("--danger-hover", "--danger-soft"),
+        ".am-status.error": ("--danger", "--paper"),
+    }
+    source = (STATIC / "admin-metrics.css").read_text(encoding="utf-8")
+    colors = {}
+    for blocks, declaration in css_declarations(source):
+        if blocks and not blocks[-1].startswith("@") and declaration.startswith("color:"):
+            colors[blocks[-1]] = declaration.partition(":")[2].strip()
+    assert set(colors) >= set(expected), set(expected) - set(colors)
+    allowed = set(ADMIN_METRICS_TEXT_PAIRS) | {(fg, bg) for fg in MINIMUMS for bg in BACKGROUNDS}
+    for selector, pair in expected.items():
+        assert colors[selector] == f"var({pair[0]})", selector
+        assert pair in allowed, f"{selector}: {pair} 没有对比度检查"
+    for selector, color in colors.items():
+        assert re.fullmatch(r"var\(--[\w-]+\)", color), f"{selector}: 文字色必须是主题令牌"
 
 
 def mix_srgb(foreground, background, weight):
