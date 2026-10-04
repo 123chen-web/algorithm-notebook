@@ -29,6 +29,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     StringConstraints,
     field_validator,
@@ -37,9 +38,13 @@ from pydantic import (
 
 import ai
 import clusters
+import hot_problems
 import mailer
 import payments
 from payments import activate_plan
+import rank_board
+import rank_cache
+import rank_notice
 import thread_summary
 from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
@@ -657,7 +662,7 @@ def current_user(request: Request):
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
                    u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version,
-                   u.is_admin, u.deleted_at
+                   u.is_admin, u.deleted_at, u.public_rank_opt_out
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL
@@ -676,6 +681,7 @@ def current_user(request: Request):
     user = dict(row)
     user["is_trial"] = bool(user["is_trial"])
     user["is_admin"] = bool(user["is_admin"])
+    user["public_rank_opt_out"] = bool(user["public_rank_opt_out"])
     return user
 
 
@@ -1389,6 +1395,7 @@ def delete_account(
         fresh = recheck_account(conn, user["id"], stored)
         require_deletable_account(fresh)
         delete_account_data(conn, user["id"], utc_now())
+    rank_cache.invalidate()
     avatar_path(user["id"]).unlink(missing_ok=True)
     response.delete_cookie("session", path="/")
     return {"ok": True}
@@ -2777,7 +2784,8 @@ def review_streaks_by_user(users, review_rows):
 def leaderboard(user=Depends(current_user)):
     with connect() as conn:
         users = conn.execute(
-            "SELECT id, timezone, is_trial FROM users WHERE deleted_at IS NULL"
+            "SELECT id, timezone, is_trial, public_rank_opt_out FROM users "
+            "WHERE deleted_at IS NULL"
         ).fetchall()
         review_rows = conn.execute(
             """
@@ -2792,8 +2800,13 @@ def leaderboard(user=Depends(current_user)):
 
     # 体验账号不参与排行榜——跟体验账号能看 /api/plans 但不能真的下单是
     # 同一种"能看不能上榜"的模式；已排除的账号不占用前 LEADERBOARD_SIZE 名额。
+    # 选择“不参与公开榜单”的用户同样不上榜，但仍能看到自己的连续天数。
     eligible = sorted(
-        (row for row in users if not row["is_trial"] and streaks[row["id"]] >= 1),
+        (
+            row for row in users
+            if not row["is_trial"] and not row["public_rank_opt_out"]
+            and streaks[row["id"]] >= 1
+        ),
         key=lambda row: (-streaks[row["id"]], row["id"]),
     )
 
@@ -2809,7 +2822,7 @@ def leaderboard(user=Depends(current_user)):
     ]
 
     my_rank = None
-    if not user["is_trial"] and streaks[user["id"]] >= 1:
+    if not user["is_trial"] and not user["public_rank_opt_out"] and streaks[user["id"]] >= 1:
         for index, row in enumerate(eligible):
             if row["id"] == user["id"]:
                 my_rank = index + 1
@@ -2824,6 +2837,69 @@ def leaderboard(user=Depends(current_user)):
             "is_trial": user["is_trial"],
         },
     }
+
+
+# ---- 榜单页：昨日之星、本周热门题目、今日一条（逻辑在 rank_board / hot_problems / rank_notice） ----
+
+
+class PublicRankSetting(InputModel):
+    participate: StrictBool
+
+
+@app.put("/api/me/public-rank")
+def update_public_rank(data: PublicRankSetting, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        conn.execute(
+            "UPDATE users SET public_rank_opt_out = ? WHERE id = ?",
+            (0 if data.participate else 1, user["id"]),
+        )
+    rank_cache.invalidate()
+    return {"participate": data.participate}
+
+
+@app.get("/api/rank/yesterday")
+def rank_yesterday(user=Depends(current_user)):
+    return rank_board.yesterday_response(user)
+
+
+@app.get("/api/rank/hot-problems")
+def rank_hot_problems(user=Depends(current_user)):
+    return hot_problems.hot_problems_response()
+
+
+@app.get("/api/rank/notice")
+def rank_notice_today(user=Depends(current_user)):
+    with connect() as conn:
+        return {"notice": rank_notice.current_notice(conn, rank_board.beijing_today())}
+
+
+@app.get("/api/admin/daily-notices")
+def admin_list_daily_notices(user=Depends(current_user)):
+    require_admin(user)
+    with connect() as conn:
+        return {"notices": rank_notice.list_notices(conn, rank_board.beijing_today())}
+
+
+@app.post("/api/admin/daily-notices", status_code=201)
+def admin_create_daily_notice(data: rank_notice.NoticeInput, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        notice_id = rank_notice.create_notice(conn, data, user["id"], utc_now())
+    return {"id": notice_id}
+
+
+@app.put("/api/admin/daily-notices/{notice_id}")
+def admin_update_daily_notice(
+    notice_id: int, data: rank_notice.NoticeInput, user=Depends(current_user)
+):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        if rank_notice.update_notice(conn, notice_id, data, utc_now()) != 1:
+            raise HTTPException(404, "这条记录不存在")
+    return {"ok": True}
 
 
 GROUP_MAX_MEMBERS = 10
@@ -4250,6 +4326,7 @@ def admin_ban_user(user_id: int, user=Depends(current_user)):
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "用户不存在")
+    rank_cache.invalidate()
     return {"ok": True}
 
 
@@ -4262,4 +4339,5 @@ def admin_unban_user(user_id: int, user=Depends(current_user)):
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "用户不存在")
+    rank_cache.invalidate()
     return {"ok": True}
