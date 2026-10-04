@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="/static/clusters.css?v=2">
   <link rel="stylesheet" href="/static/account.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
+  <link rel="stylesheet" href="/static/plan.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
@@ -44,7 +45,8 @@
   <script defer src="/static/overview.js?v=2"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/plan.js?v=1"></script>
+  <script defer src="/static/app.js?v=59"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -1138,44 +1140,20 @@
         <div class="page-heading">
           <div>
             <h2 id="plan-title">我的套餐</h2>
-            <p class="muted">查看订阅状态和今日 AI 额度，选择适合你的套餐。</p>
+            <p class="muted">看清你现在的套餐和今日 AI 额度，选择适合你的套餐。</p>
           </div>
         </div>
 
-        <section class="panel" aria-labelledby="plan-subscription-title">
-          <h3 id="plan-subscription-title">当前订阅</h3>
+        <section id="plan-status" class="pl-section" aria-labelledby="plan-subscription-title">
+          <h3 id="plan-subscription-title">当前状态</h3>
           <div id="plan-subscription"></div>
         </section>
 
         <p id="plan-trial-note" class="muted" hidden>体验账号不支持购买套餐，注册正式账号后可以购买。</p>
 
-        <section id="redeem-panel" class="panel redeem-panel" aria-labelledby="redeem-title" hidden>
-          <h3 id="redeem-title">有兑换码？</h3>
-          <form id="redeem-form" data-state="idle">
-            <div class="redeem-inline">
-              <label for="redeem-code">兑换码<input id="redeem-code" type="text" maxlength="64" autocomplete="off" spellcheck="false" inputmode="text" aria-describedby="redeem-status" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
-              <button id="redeem-submit" class="primary" type="submit">兑换</button>
-            </div>
-            <p id="redeem-status" class="redeem-status" role="status" aria-live="polite"></p>
-          </form>
-        </section>
-        <p id="redeem-trial-note" class="muted" hidden>注册正式账号后可兑换。</p>
-        <p id="manual-payment-status" class="redeem-status" role="status" aria-live="polite"></p>
-        <section id="manual-payment-panel" class="panel manual-payment-panel" aria-labelledby="manual-payment-title" hidden>
-          <h3 id="manual-payment-title">手动付款（内测期）</h3>
-          <ul id="manual-payment-prices" class="manual-price-list"></ul>
-          <p>扫码付款，付款备注里写上你的用户名。付款后把截图发给站长，站长确认后会发给你兑换码；内测期间通常当天处理。</p>
-          <div id="manual-payment-qrs" class="manual-qr-grid"></div>
-          <p>联系站长：<span id="manual-payment-contact"></span></p>
-        </section>
-        <dialog id="manual-qr-dialog" class="manual-qr-dialog" aria-labelledby="manual-qr-title">
-          <div class="redeem-inline"><h3 id="manual-qr-title">收款码</h3><button id="manual-qr-close" type="button">关闭</button></div>
-          <img id="manual-qr-large" alt="放大的个人收款码">
-        </dialog>
-
-        <section id="plan-catalog" aria-labelledby="plan-catalog-title">
-          <h3 id="plan-catalog-title">可购买套餐</h3>
-          <div id="plan-list"></div>
+        <section id="plan-catalog" class="pl-section" aria-labelledby="plan-catalog-title">
+          <h3 id="plan-catalog-title">选择套餐</h3>
+          <div id="plan-list" class="pl-cards"></div>
         </section>
 
         <section id="plan-order" class="panel" aria-labelledby="plan-order-title" hidden>
@@ -1188,9 +1166,41 @@
           </div>
         </section>
 
-        <section id="plan-orders" class="panel" aria-labelledby="plan-orders-title">
+        <section id="plan-how" class="pl-section" aria-labelledby="plan-how-title">
+          <h3 id="plan-how-title">开通方式</h3>
+          <p id="manual-payment-status" class="redeem-status" role="status" aria-live="polite"></p>
+          <section id="manual-payment-panel" class="panel manual-payment-panel" aria-labelledby="manual-payment-title" hidden>
+            <h3 id="manual-payment-title">手动付款（内测期）</h3>
+            <ol class="pl-steps">
+              <li>扫码付款，备注写用户名</li>
+              <li>站长确认后发给你兑换码</li>
+              <li>在下面输入兑换码，立刻生效</li>
+            </ol>
+            <ul id="manual-payment-prices" class="manual-price-list"></ul>
+            <p>扫码付款，付款备注里写上你的用户名。付款后把截图发给站长，站长确认后会发给你兑换码；内测期间通常当天处理。</p>
+            <div id="manual-payment-qrs" class="manual-qr-grid"></div>
+            <p>联系站长：<span id="manual-payment-contact"></span></p>
+          </section>
+          <section id="redeem-panel" class="panel redeem-panel" aria-labelledby="redeem-title" hidden>
+            <h3 id="redeem-title">有兑换码？</h3>
+            <form id="redeem-form" data-state="idle">
+              <div class="redeem-inline">
+                <label for="redeem-code">兑换码<input id="redeem-code" type="text" maxlength="64" autocomplete="off" spellcheck="false" inputmode="text" aria-describedby="redeem-status" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+                <button id="redeem-submit" class="primary" type="submit">兑换</button>
+              </div>
+              <p id="redeem-status" class="redeem-status" role="status" aria-live="polite"></p>
+            </form>
+          </section>
+          <p id="redeem-trial-note" class="muted" hidden>注册正式账号后可兑换。</p>
+          <dialog id="manual-qr-dialog" class="manual-qr-dialog" aria-labelledby="manual-qr-title">
+            <div class="redeem-inline"><h3 id="manual-qr-title">收款码</h3><button id="manual-qr-close" type="button">关闭</button></div>
+            <img id="manual-qr-large" alt="放大的个人收款码">
+          </dialog>
+        </section>
+
+        <section id="plan-orders" class="pl-section" aria-labelledby="plan-orders-title">
           <h3 id="plan-orders-title">我的订单</h3>
-          <p class="muted">已支付订单可自助全额退款。退回任意一笔订单都会清空当前整体套餐，包括其他订单叠加的时长；今日已用 AI 次数不恢复。</p>
+          <p class="muted pl-rules">已支付订单可自助全额退款。退回任意一笔订单都会清空当前整体套餐，包括其他订单叠加的时长；今日已用 AI 次数不恢复。</p>
           <div id="plan-orders-list"></div>
         </section>
       </section>

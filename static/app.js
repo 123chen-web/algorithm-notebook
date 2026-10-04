@@ -27,6 +27,7 @@ let view = "today";
 let photoRecognition = null;
 let busy = false;
 let planPurchase = null;
+let planCatalog = [];
 let orderPollTimer = null;
 let orderPollGeneration = 0;
 let forumPost = null;
@@ -439,6 +440,7 @@ function signedOut() {
   resetWeeklyRecap();
   resetGroups();
   planPurchase = null;
+  planCatalog = [];
   $("#plan-subscription").replaceChildren();
   $("#plan-list").replaceChildren();
   $("#plan-orders-list").replaceChildren();
@@ -1939,63 +1941,25 @@ async function refreshPlanSubscription(isCurrent = () => true) {
   if (user !== currentUser || !user || view !== "plan" || !isCurrent()) return false;
   user = updated;
   updateUserInfo();
-  const entries = [
-    ["套餐", user.plan_name || "当前使用免费额度"],
-    ["状态", user.plan_active ? "有效" : "无有效套餐，当前使用免费额度"],
-  ];
-  if (user.plan_expires_at) {
-    entries.push(["到期时间", timestamp(user.plan_expires_at)]);
-  }
-  entries.push(
-    ["今日 AI 用量", `${user.ai_daily_used} / ${user.ai_daily_limit} 次`],
-    ["今日剩余", `${user.ai_daily_remaining} 次`]
-  );
-  $("#plan-subscription").replaceChildren(planFacts(entries));
+  renderPlanStatus();
+  // “当前套餐”标记和价格倍数依赖最新的 /api/me，已有目录时一并重画。
+  if (planCatalog.length) renderPlans(planCatalog);
   $("#plan-trial-note").hidden = !user.is_trial;
   return true;
+}
+
+function renderPlanStatus() {
+  window.PlanView.renderStatus($("#plan-subscription"), window.PlanView.model(planCatalog, user, Date.now()), user, planCatalog);
 }
 
 async function loadPlanOrders() {
   const currentUser = user;
   const { orders } = await api("/api/orders");
   if (user !== currentUser || !user || view !== "plan") return false;
-  const list = $("#plan-orders-list");
-  list.replaceChildren();
-  if (!orders.length) {
-    list.append(element("p", "暂无订单。", "muted"));
-    return true;
-  }
-  const statuses = {
-    pending: "待支付",
-    paid: "已支付",
-    failed: "支付失败",
-    closed: "已关闭",
-    refunded: "已退款",
-  };
-  for (const order of orders) {
-    const row = element("article", "", "plan-order-row");
-    const heading = element("div", "", "plan-order-heading");
-    heading.append(
-      element("h4", order.plan_name),
-      element("span", yuan(order.amount_cents), "plan-order-amount")
-    );
-    row.append(heading, planFacts([
-      ["订单号", order.id],
-      ["状态", statuses[order.status] || "未知状态"],
-      ["创建时间", timestamp(order.created_at)],
-    ]));
-    if (order.status === "paid") {
-      const refund = element("button", "申请退款", "danger");
-      refund.type = "button";
-      refund.disabled = busy;
-      refund.setAttribute("aria-label", `申请退款：${order.plan_name}，订单 ${order.id}`);
-      refund.addEventListener("click", () => run(() => refundPlanOrder(order)));
-      const actions = element("div", "", "actions");
-      actions.append(refund);
-      row.append(actions);
-    }
-    list.append(row);
-  }
+  window.PlanView.renderOrders($("#plan-orders-list"), orders, {
+    yuan, time: timestamp, busy,
+    onRefund: (order) => run(() => refundPlanOrder(order)),
+  });
   return true;
 }
 
@@ -2033,48 +1997,34 @@ async function refundPlanOrder(order) {
   }
 }
 
+async function buyPlan(plan) {
+  if (user.is_trial) return;
+  message();
+  const purchase = await api("/api/orders", {
+    method: "POST",
+    body: JSON.stringify({ plan_id: plan.id, channel: "alipay" }),
+  });
+  stopOrderPolling();
+  planPurchase = purchase;
+  renderPlanOrder();
+  if (purchase.order.status === "pending") {
+    startOrderPolling();
+    await loadPlanOrders();
+  } else await finishPlanOrder();
+}
+
 function renderPlans(plans) {
+  planCatalog = plans;
   const list = $("#plan-list");
-  list.replaceChildren();
   if (!plans.length) {
-    list.append(element("p", "暂无可购买的套餐。", "muted"));
+    list.replaceChildren(element("p", "暂无可购买的套餐。", "muted"));
     return;
   }
-  for (const plan of plans) {
-    const card = element("article", "", "plan-card panel");
-    card.append(
-      element("h4", plan.name),
-      element("p", yuan(plan.price_cents), "plan-price"),
-      element("p", `${plan.period_days} 天`, "muted"),
-      element("p", `每天 ${plan.ai_daily_limit} 次 AI 生成`)
-    );
-    if (!plan.purchasable) {
-      card.append(element("p", "即将开放购买，敬请期待", "muted"));
-    } else if (!user.is_trial) {
-      const buy = element("button", "购买", "primary");
-      buy.type = "button";
-      buy.setAttribute("aria-label", `购买${plan.name}`);
-      buy.addEventListener("click", () => run(async () => {
-        if (user.is_trial) return;
-        message();
-        const purchase = await api("/api/orders", {
-          method: "POST",
-          body: JSON.stringify({ plan_id: plan.id, channel: "alipay" }),
-        });
-        stopOrderPolling();
-        planPurchase = purchase;
-        renderPlanOrder();
-        if (purchase.order.status === "pending") {
-          startOrderPolling();
-          await loadPlanOrders();
-        } else await finishPlanOrder();
-      }));
-      const actions = element("div", "", "actions");
-      actions.append(buy);
-      card.append(actions);
-    }
-    list.append(card);
-  }
+  window.PlanView.renderCards(list, window.PlanView.model(plans, user, Date.now()), plans, {
+    isTrial: Boolean(user.is_trial),
+    onBuy: (plan) => run(() => buyPlan(plan)),
+    onHow: () => window.PlanView.scrollTo($("#plan-how")),
+  });
 }
 
 function renderPlanOrder() {
@@ -2188,6 +2138,7 @@ async function loadPlanPage() {
   const { plans } = await api("/api/plans");
   if (user !== currentUser || !user || view !== "plan") return;
   renderPlans(plans);
+  renderPlanStatus();
   renderPlanOrder();
   await window.Redeem?.loadPlan(plans);
   if (user !== currentUser || !user || view !== "plan") return;

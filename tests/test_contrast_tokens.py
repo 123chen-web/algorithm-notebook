@@ -29,6 +29,11 @@ THREAD_TEXT_PAIRS = (
     ("--danger", "--success-soft"),
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
+    ("--ink", "--soft"),
+    ("--danger", "--danger-soft"),
+    ("--azurite", "--surface"),
+    ("--muted", "--surface"),
+    ("--ink-2", "--surface"),
 )
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
     token for pair in THREAD_TEXT_PAIRS for token in pair
