@@ -43,6 +43,7 @@ from payments import activate_plan
 import thread_summary
 from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
+from admin_metrics import PERIOD_CHOICES, compute_metrics as compute_admin_metrics
 from ai_limits import ai_slot, release_attempt, track_call
 from db import ROOT, connect, init_db, normalize_username, schema_version
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
@@ -3888,6 +3889,16 @@ def admin_dashboard(user=Depends(current_user)):
         ],
         "subscriptions": subscriptions,
     }
+
+
+@app.get("/api/admin/metrics")
+def admin_metrics_overview(days: int = 7, user=Depends(current_user)):
+    require_admin(user)
+    if days not in PERIOD_CHOICES:
+        raise HTTPException(422, "days 只能是 7 或 30")
+    now = datetime.fromisoformat(utc_now()).astimezone(timezone.utc)
+    with connect() as conn:
+        return compute_admin_metrics(conn, days, now)
 
 
 @app.get("/api/admin/reports")
