@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -992,7 +992,14 @@ def login(data: Credentials, request: Request, response: Response):
     return {"ok": True}
 
 
+def mask_email(address):
+    """日志里只留邮箱的首字符和域名，够排查又不把完整地址写进日志。"""
+    name, _, domain = str(address).partition("@")
+    return f"{name[:1]}***@{domain}" if domain else "***"
+
+
 def send_password_reset_email(to_address, username, token):
+    """在后台任务里执行：SMTP 可能很慢或失败，都不能影响接口响应。"""
     link = f"{public_base_url()}/?reset_token={token}"
     body = (
         f"你好 {username}，\n\n"
@@ -1003,13 +1010,15 @@ def send_password_reset_email(to_address, username, token):
     try:
         mailer.send_email(to_address, f"{PRODUCT_NAME}：重置密码", body)
     except Exception:
-        # 发信失败不影响接口返回，避免把 SMTP 报错暴露给客户端；
-        # 服务端日志里留一条记录方便自己排查。
-        logger.exception("发送密码重置邮件失败：%s", to_address)
+        # 不向客户端暴露 SMTP 报错；服务端日志只记收件人的脱敏形式和失败原因
+        # （mailer 的异常信息不含密码，这里也不记录令牌或链接）。
+        logger.exception("发送密码重置邮件失败（收件人 %s）", mask_email(to_address))
 
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(data: ForgotPassword, request: Request):
+def forgot_password(
+    data: ForgotPassword, request: Request, background_tasks: BackgroundTasks
+):
     if rate_limited(
         f"forgot:{client_ip(request)}",
         FORGOT_PASSWORD_LIMIT,
@@ -1046,9 +1055,12 @@ def forgot_password(data: ForgotPassword, request: Request):
                         int(time.time()) + RESET_TOKEN_SECONDS,
                     ),
                 )
-        # token 已提交，SMTP 的耗时或失败都不会延长写锁或回滚 token。
+        # token 已提交；发信放到响应之后的后台任务，SMTP 的耗时或失败都不会
+        # 拖慢响应（也避免"邮箱存在时更慢"这种计时侧信道），更不会回滚 token。
         if user is not None:
-            send_password_reset_email(email, user["username"], token)
+            background_tasks.add_task(
+                send_password_reset_email, email, user["username"], token
+            )
 
     # 不论邮箱是否存在都返回同样的结果，避免被用来探测已注册账号。
     return {"ok": True}
