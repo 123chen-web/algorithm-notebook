@@ -29,6 +29,11 @@ THREAD_TEXT_PAIRS = (
     ("--danger", "--success-soft"),
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
+    ("--ink", "--soft"),
+    ("--danger", "--danger-soft"),
+    ("--azurite", "--surface"),
+    ("--muted", "--surface"),
+    ("--ink-2", "--surface"),
 )
 # 管理后台“运营概览”（static/admin-metrics.css）用到的文字 / 底色配对。
 ADMIN_METRICS_TEXT_PAIRS = (

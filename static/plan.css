@@ -1,0 +1,81 @@
+/* 套餐页：当前状态、套餐卡片、开通方式、订单。只作用在 #plan-page 内。 */
+#plan-page { --pl-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace; }
+#plan-page :is(.pl-price, .pl-expiry, .pl-usage-label, .pl-amount, .pl-orders, .pl-features, .pl-steps) { font-variant-numeric: tabular-nums; }
+#plan-page .pl-section { margin-top: var(--space-6); min-width: 0; }
+#plan-page .pl-section > h3 { margin-top: 0; }
+#plan-page .pl-section > h3::before { content: ""; display: inline-block; width: 18px; height: 2px; margin-right: var(--space-2); vertical-align: middle; background: var(--azurite); }
+#plan-page .pl-rules { margin: 0 0 var(--space-3); font-family: var(--pl-mono); font-size: var(--text-sm); }
+
+/* 当前状态 */
+.pl-status { padding: var(--space-4) var(--space-5); border: 1px solid var(--line); border-left: 3px solid var(--azurite); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); min-width: 0; }
+.pl-status-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-4); }
+.pl-status-title { margin: 0; font-size: var(--text-lg); }
+.pl-expiry { margin: 0; color: var(--ink-2); }
+.pl-expiry[data-urgent="true"], .pl-renew-hint { color: var(--danger); font-weight: 650; }
+.pl-renew-hint, .pl-note { margin: var(--space-2) 0 0; }
+.pl-note { color: var(--ink-2); }
+.pl-usage { margin-top: var(--space-3); }
+.pl-usage-label { margin: 0 0 var(--space-2); font-family: var(--pl-mono); font-size: var(--text-sm); color: var(--ink-2); }
+.pl-meter { height: 10px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
+.pl-meter-fill { display: block; height: 100%; width: var(--pl-fill, 0%); background: var(--azurite); }
+.pl-usage[data-exhausted="true"] .pl-meter-fill { background: var(--danger); }
+.pl-usage-warning { margin: var(--space-2) 0 0; color: var(--danger); font-weight: 650; }
+
+/* 胶囊 */
+.pl-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 1px var(--space-3); border: 1px solid var(--line); border-radius: 999px; font-family: var(--pl-mono); font-size: var(--text-sm); font-weight: 600; white-space: nowrap; }
+.pl-pill-plan { color: var(--azurite); background: var(--surface); border-color: var(--azurite); }
+.pl-pill-paid { color: var(--success-ink); background: var(--success-soft); border-color: var(--success-line); }
+.pl-pill-pending { color: var(--ink); background: var(--soft); }
+.pl-pill-warn { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+
+/* 套餐卡片 */
+.pl-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: var(--space-4); align-items: stretch; }
+.pl-card { display: flex; flex-direction: column; min-width: 0; padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; }
+.pl-card-current { border-color: var(--azurite); }
+.pl-card-featured { border-color: var(--code-surface); background: var(--code-surface); color: var(--code-ink); }
+.pl-badges { display: flex; flex-wrap: wrap; gap: var(--space-2); min-height: 24px; }
+.pl-badge { padding: 1px var(--space-3); border: 1px solid var(--azurite); border-radius: 999px; background: var(--surface); color: var(--azurite); font-family: var(--pl-mono); font-size: var(--text-sm); font-weight: 600; }
+.pl-badge-featured { background: var(--code-ink); border-color: var(--code-ink); color: var(--code-surface); }
+.pl-card-name { margin: var(--space-2) 0 0; font-size: var(--text-lg); }
+.pl-price { margin: var(--space-2) 0 var(--space-3); }
+.pl-price strong { font-size: 28px; line-height: 1.2; }
+.pl-price-unit { font-family: var(--pl-mono); font-size: var(--text-sm); }
+.pl-features { margin: 0 0 var(--space-4); padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+.pl-features li { position: relative; padding-left: var(--space-4); }
+.pl-features li::before { content: "›"; position: absolute; left: 0; font-family: var(--pl-mono); font-weight: 700; }
+.pl-card-action { margin-top: auto; width: 100%; min-height: 44px; }
+.pl-card-featured .pl-card-action { background: var(--code-ink); border-color: var(--code-ink); color: var(--code-surface); }
+
+/* 开通方式 */
+.pl-steps { margin: 0 0 var(--space-4); padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); counter-reset: pl-step; }
+.pl-steps li { counter-increment: pl-step; padding: var(--space-3); border: 1px dashed var(--line); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.pl-steps li::before { content: counter(pl-step) " /"; display: block; margin-bottom: var(--space-1); color: var(--azurite); font-family: var(--pl-mono); font-weight: 700; }
+#plan-how > .panel { margin: var(--space-4) 0 0; }
+
+/* 订单 */
+.pl-orders { width: 100%; border-collapse: collapse; background: var(--surface); color: var(--ink); }
+.pl-orders th, .pl-orders td { padding: var(--space-3); border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+.pl-orders th { color: var(--muted); font-family: var(--pl-mono); font-size: var(--text-sm); font-weight: 600; letter-spacing: .06em; }
+.pl-order-id { display: block; color: var(--muted); font-family: var(--pl-mono); font-size: var(--text-xs); }
+.pl-order-actions button { min-height: 40px; }
+.pl-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-5); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+.pl-empty p { margin: 0; }
+.pl-stamp { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 2px solid var(--accent); border-radius: 8px; color: var(--accent); font-weight: 700; transform: rotate(-8deg); }
+
+@media (max-width: 700px) {
+  .pl-steps { grid-template-columns: minmax(0, 1fr); }
+  .pl-status { padding: var(--space-4); }
+  .pl-card { padding: var(--space-4); }
+  .pl-orders, .pl-orders tbody, .pl-orders tr, .pl-orders td { display: block; width: 100%; }
+  .pl-orders thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pl-orders tr { margin-bottom: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .pl-orders td { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); border-bottom: 1px solid var(--line); text-align: right; }
+  .pl-orders td:last-child { border-bottom: 0; }
+  .pl-orders td::before { content: attr(data-label); flex: 0 0 auto; color: var(--muted); font-family: var(--pl-mono); font-size: var(--text-sm); text-align: left; }
+  .pl-orders td.pl-cell-none { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pl-card { transition: border-color var(--motion-fast), transform var(--motion-fast) var(--motion-ease); }
+  .pl-card:hover { transform: translateY(-2px); }
+  .pl-meter-fill { transition: width var(--motion-enter) var(--motion-ease); }
+}
