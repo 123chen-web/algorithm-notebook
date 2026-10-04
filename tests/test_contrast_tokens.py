@@ -88,8 +88,21 @@ ONBOARDING_TEXT_PAIRS = (
     ("--danger", "--surface"),
     ("--error-ink", "--error-surface"),
 )
+# 打卡排行榜页新区块（static/rank.css）：今日一条、昨日之星、本周热门题目、账号菜单开关、管理后台卡片。
+# 红笔圈只是边框（--accent 不当文字色用）；文字都落在这些底色上，两个主题都要 ≥ 4.5:1。
+RANK_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink-2", "--surface"),
+    ("--muted", "--surface"),
+    ("--ink", "--soft"),
+    ("--ink-2", "--soft"),
+    ("--ink", "--paper-2"),
+    ("--ink", "--tile-azurite"),
+    ("--azurite", "--surface"),
+    ("--danger", "--surface"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS for token in pair
 }
 
 
@@ -541,3 +554,85 @@ def test_trend_text_pairs_meet_contrast(context, tokens, foreground, background)
         f"趋势区主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
         f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
     )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", RANK_TEXT_PAIRS)
+def test_rank_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"榜单页 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_rank_stylesheet_only_uses_checked_text_and_background_tokens():
+    """rank.css 里每个 color / background 令牌都必须落在上面逐主题检查过的配对里。"""
+    source = (STATIC / "rank.css").read_text(encoding="utf-8")
+    checked = set(RANK_TEXT_PAIRS)
+    foregrounds = {fg for fg, _ in checked}
+    backgrounds = {bg for _, bg in checked}
+    used_foregrounds, used_backgrounds = set(), set()
+    for blocks, declaration in css_declarations(source):
+        name, _, value = declaration.partition(":")
+        name = name.strip()
+        tokens = set(re.findall(r"var\((--[\w-]+)\)", value))
+        if name == "color":
+            used_foregrounds |= tokens
+        elif name in ("background", "background-color"):
+            used_backgrounds |= tokens
+    assert used_foregrounds, "没有解析到任何文字颜色，检查方式失效了"
+    assert used_foregrounds <= foregrounds, used_foregrounds - foregrounds
+    # --azurite 只用来画 7px 的装饰圆点（.rank-tag::before），上面没有文字。
+    assert used_backgrounds <= backgrounds | {"--azurite"}, used_backgrounds - backgrounds
+
+
+def test_rank_css_text_color_and_background_pairs_are_the_checked_ones():
+    """逐条规则核对：文字色 + 它落在的底色必须是 RANK_TEXT_PAIRS 里的一对。"""
+    expected = {
+        ".rank-notice": ("--ink", "--soft"),
+        ".rank-tag": ("--ink-2", "--surface"),
+        # .rank-notice .rank-tag 继承 .rank-tag 的 --ink-2，落在 --soft 上：(--ink-2, --soft) 已在 RANK_TEXT_PAIRS。
+        ".rank-me": ("--ink", "--soft"),
+        ".rank-row.is-me": (None, "--soft"),
+        ".rank-row.is-first .rank-no": (None, "--soft"),
+        ".rank-name": ("--ink", "--surface"),
+        ".rank-praise": ("--ink-2", "--surface"),
+        ".rank-count": ("--ink", "--surface"),
+        ".rank-streak": ("--ink-2", "--surface"),
+        ".rank-source": ("--ink-2", "--surface"),
+        ".rank-hot-users": ("--ink", "--surface"),
+        ".rank-admin-badge": ("--ink", "--surface"),
+        ".rank-admin-item-link": ("--azurite", "--surface"),
+        ".rank-admin-count[data-over=\"true\"]": ("--danger", "--surface"),
+        ".account-rank-pref-note": ("--muted", "--surface"),
+    }
+    source = (STATIC / "rank.css").read_text(encoding="utf-8")
+    colors, backgrounds = {}, {}
+    for blocks, declaration in css_declarations(source):
+        if not blocks or blocks[-1].startswith("@"):
+            continue
+        name, _, value = declaration.partition(":")
+        if name.strip() == "color":
+            colors[blocks[-1]] = value.strip()
+        elif name.strip() == "background":
+            backgrounds[blocks[-1]] = value.strip()
+    allowed = set(RANK_TEXT_PAIRS) | {(fg, bg) for fg in MINIMUMS for bg in BACKGROUNDS}
+    for selector, (foreground, background) in expected.items():
+        if foreground:
+            assert colors.get(selector) == f"var({foreground})", selector
+        # 规则自己写了底色就必须等于这里登记的；没写底色的文字落在外层容器（--surface / --soft）上。
+        if selector in backgrounds:
+            assert backgrounds[selector] == f"var({background})", selector
+        if foreground and background:
+            assert (foreground, background) in allowed, f"{selector}: {(foreground, background)} 没有对比度检查"
+    for selector, value in colors.items():
+        assert re.fullmatch(r"var\(--[\w-]+\)", value), f"{selector}: 文字色必须是主题令牌"

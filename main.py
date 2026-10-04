@@ -2878,7 +2878,8 @@ def rank_notice_today(user=Depends(current_user)):
 def admin_list_daily_notices(user=Depends(current_user)):
     require_admin(user)
     with connect() as conn:
-        return {"notices": rank_notice.list_notices(conn, rank_board.beijing_today())}
+        today = rank_board.beijing_today()
+        return {"today": today.isoformat(), "notices": rank_notice.list_notices(conn, today)}
 
 
 @app.post("/api/admin/daily-notices", status_code=201)

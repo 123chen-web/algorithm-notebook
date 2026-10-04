@@ -495,6 +495,8 @@ function signedOut() {
   document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = true; });
   resetAdminDashboard();
   window.AdminMetrics?.reset();
+  window.RankAdmin?.reset();
+  window.Rank?.reset();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
   $("#problem-form").reset();
@@ -687,6 +689,8 @@ function updateUserInfo() {
   document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = !user.is_admin; });
   window.AppShell?.setUser(user.username);
   renderHomeQuota();
+  configureRank();
+  window.Rank?.syncSetting(user);
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -947,6 +951,7 @@ async function loadHome({ refreshUser = true } = {}) {
 
 async function loadLeaderboard() {
   const currentUser = user;
+  window.Rank?.load(); // 今日一条、昨日之星、本周热门题目：各自带登录代次与请求序号守卫
   const page = $("#leaderboard-page");
   const status = $("#leaderboard-status");
   const entries = $("#leaderboard-entries");
@@ -965,7 +970,9 @@ async function loadLeaderboard() {
     const rankText = me.is_trial
       ? "体验账号不参与排名，你仍可查看自己的连续打卡天数。"
       : me.rank === null
-        ? "暂无排名，连续打卡至少 1 天即可参与排名。"
+        ? (user.public_rank_opt_out
+          ? "你已设置不参与公开榜单，不会出现在榜单上；你仍可查看自己的连续打卡天数。"
+          : "暂无排名，连续打卡至少 1 天即可参与排名。")
         : `第 ${me.rank} 名${me.rank > data.leaderboard_size ? `（未进入前 ${data.leaderboard_size} 名）` : ""}`;
     mine.append(
       element("p", `${me.streak_days} 天`, "leaderboard-streak"),
@@ -4387,8 +4394,9 @@ async function loadAdminDashboard() {
 async function loadAdminPage() {
   configureRedeem();
   configureAdminMetrics();
+  configureRank();
   // 各区块独立加载，看板失败不会阻断原有的举报处理。
-  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin(), window.AdminMetrics?.load()]);
+  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin(), window.AdminMetrics?.load(), window.RankAdmin?.load()]);
   if (reports.status === "rejected") throw reports.reason;
   return dashboard.status === "fulfilled" && dashboard.value;
 }
@@ -4400,6 +4408,12 @@ function configureRedeem() {
 
 function configureAdminMetrics() {
   window.AdminMetrics?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view });
+}
+
+function configureRank() {
+  const hooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement };
+  window.Rank?.configure(hooks);
+  window.RankAdmin?.configure(hooks);
 }
 
 function removeReportCard(card) {
