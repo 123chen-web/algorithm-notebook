@@ -30,7 +30,7 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings",
         } <= tables
-        assert db.schema_version(conn) == 6
+        assert db.schema_version(conn) == 8
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -586,6 +586,9 @@ def initialize_before_redeem_migration(monkeypatch):
 def test_redeem_migration_schema_preserves_v5_data_and_repeated_startup(
     database_path, monkeypatch, from_version_5,
 ):
+    # 隔离版本 6：之后追加的迁移（如 8 给 posts 加 zone 列）不应改变这里的“旧数据逐行相等”。
+    monkeypatch.setattr(db, "MIGRATIONS", [entry for entry in db.MIGRATIONS if entry[0] <= 6])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 6)
     before_data = before_schema = None
     if from_version_5:
         initialize_before_redeem_migration(monkeypatch)
@@ -741,3 +744,86 @@ def test_redeem_migration_rolls_back_new_schema_and_settings_on_failure(
             "SELECT name FROM sqlite_master WHERE name IN "
             "('redeem_codes', 'idx_redeem_codes_redeemed_by', 'app_settings')"
         ).fetchall() == []
+
+
+@pytest.mark.parametrize("from_version", [0, 1, 5, 6], ids=["fresh", "v1", "v5", "v6"])
+def test_forum_zone_migration_to_v8_preserves_old_data_and_is_repeatable(
+    database_path, monkeypatch, from_version,
+):
+    before = None
+    if from_version:
+        with monkeypatch.context() as patch:
+            patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= from_version])
+            patch.setattr(db, "SCHEMA_VERSION", from_version)
+            db.init_db()
+        with db.connect(write=True) as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, timezone, created_at) "
+                "VALUES (7, 'legacy-zone', 'unchanged-hash', 'Asia/Taipei', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO posts (id, user_id, title, body, created_at) "
+                "VALUES (11, 7, '历史问题', '历史正文', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO post_comments (id, post_id, user_id, body, created_at) "
+                "VALUES (13, 11, 7, '历史评论', ?)",
+                (CREATED_AT,),
+            )
+            before = {
+                table: dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                for table in ("users", "posts", "post_comments")
+            }
+            assert "zone" not in before["posts"]
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 8
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(posts)")}
+        assert columns["zone"]["type"] == "TEXT"
+        assert columns["zone"]["notnull"] == 0
+        assert columns["zone"]["dflt_value"] is None
+        if before:
+            for table, saved in before.items():
+                current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                assert {key: current[key] for key in saved} == saved
+            assert conn.execute("SELECT zone FROM posts WHERE id = 11").fetchone()[0] is None
+        indexes = {
+            row["name"]: row for row in conn.execute("PRAGMA index_list(post_comments)")
+        }
+        assert [
+            row["name"] for row in conn.execute("PRAGMA index_info(idx_post_comments_post_visible)")
+        ] == ["post_id", "deleted_at", "created_at"]
+        assert "idx_post_comments_post_visible" in indexes
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_forum_zone_migration_rolls_back_on_failure(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 6])
+        patch.setattr(db, "SCHEMA_VERSION", 6)
+        db.init_db()
+    zone_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 8)
+
+    def broken_zone_migration(conn):
+        zone_apply(conn)
+        raise ValueError("分区迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_zone_migration if version == 8 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="分区迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 6
+        assert "zone" not in {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'idx_post_comments_post_visible'"
+        ).fetchone() is None

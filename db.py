@@ -537,6 +537,17 @@ def _apply_manual_payment_and_redeem_codes(conn):
     )
 
 
+def _apply_forum_zones(conn):
+    # 旧帖子的 zone 为 NULL（前端显示“未分区”）。
+    conn.execute("ALTER TABLE posts ADD COLUMN zone TEXT")
+    # 讨论区列表按帖子分组统计未删除评论数、最新评论时间和近 7 天评论数。
+    # 现有 idx_post_comments_post 只含 post_id，不等价，所以新建覆盖索引。
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_comments_post_visible "
+        "ON post_comments(post_id, deleted_at, created_at)"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -546,6 +557,8 @@ MIGRATIONS = [
     (4, "账号安全与隐私", _apply_accounts_and_privacy),
     (5, "论坛：采纳、有用、AI 要点", _apply_forum_accept_votes_summaries),
     (6, "手动收款与兑换码", _apply_manual_payment_and_redeem_codes),
+    # 7 留给“复习手感”任务；合并时由审查者衔接。
+    (8, "论坛：分区", _apply_forum_zones),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
