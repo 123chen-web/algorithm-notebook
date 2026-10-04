@@ -1587,6 +1587,7 @@ function resetGrowthInsights() {
 
 function resetWeaknessAnalysis() {
   weaknessGeneration += 1;
+  window.PracticeNow?.reset();
   weaknessAnalysis = null;
   weaknessPending = false;
   weaknessQuotaAvailable = false;
@@ -1751,6 +1752,13 @@ function renderWeaknessAnalysis() {
     const action = element("div", "", "weakness-action");
     action.append(element("h4", "下一步可以这样练"), element("p", pattern.action, "multiline"));
     card.append(action);
+    const patternZones = [...new Set(pattern.evidence.map((entry) => entry.zone))];
+    const patternPractice = window.PracticeNow?.slot({
+      ids: pattern.evidence.map((entry) => entry.mistake_id),
+      emptyText: "这一块今天没有要复习的",
+      link: { zone: patternZones.length === 1 ? patternZones[0] : "" },
+    });
+    if (patternPractice) card.append(patternPractice);
     item.append(card);
     patterns.append(item);
   });
@@ -1796,6 +1804,19 @@ async function loadWeaknessAnalysis() {
   // 独立降级：成长趋势和薄弱点分析是两个互不依赖的接口，一个失败不影响另一个展示。
   growthZones = growth.status === "fulfilled" ? growth.value.zones : null;
   renderGrowthInsights(growth.status === "fulfilled");
+  if (window.PracticeNow) void loadWeaknessDue(generation, userId);
+}
+
+// "现在就练 5 条"需要知道哪些易错点今天到期：读一次现有的到期列表，按分区 / 引用 id 在前端分给各个按钮。
+// 读不到就不显示按钮；离开本页、登出或换账号之后才回来的响应丢弃。
+async function loadWeaknessDue(generation, userId) {
+  try {
+    const due = await api("/api/mistakes?due_only=true");
+    if (!weaknessRequestCurrent(generation, userId) || view !== "insights") return;
+    window.PracticeNow?.setDue(due.items, due.today);
+  } catch {
+    // 按钮保持隐藏，薄弱点页本身不受影响。
+  }
 }
 
 function renderGrowthInsights(loadedOk) {
@@ -1873,6 +1894,12 @@ function renderGrowthInsights(loadedOk) {
       community.append(element("span", "：全站在该分区有记录的用户中，反复出错（≥3 条易错点）的用户占比。", "weakness-sr-only"));
       card.append(community);
     }
+    const zonePractice = window.PracticeNow?.slot({
+      zone: zone.zone,
+      emptyText: "这一块今天没有要复习的",
+      link: { zone: zone.zone },
+    });
+    if (zonePractice) card.append(zonePractice);
     list.append(card);
   }
   if (!hasCommunityComparison) {
