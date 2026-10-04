@@ -390,6 +390,8 @@ function renderPageRoute() {
   if (location.hash !== `#/${next}`) {
     history.replaceState(null, "", `${location.pathname}${location.search}#/${next}`);
   }
+  // 首访开场短片只在登录状态检测完成后、第一次落到欢迎页时播放（见 intro-film.js）。
+  window.IntroFilm?.route(next);
 }
 
 window.addEventListener("hashchange", () => {
