@@ -122,6 +122,7 @@
     const insufficient = count < minimum;
     $("#clusters-empty-title").textContent = insufficient ? `再记录 ${minimum - count} 条易错点` : "还没有归并过错因";
     // 状态行（live region）已经读出服务端的说明；卡片里写"接下来做什么"，不把同一句话再显示一遍。
+    window.Onboarding?.emptyNext("clusters", $("#clusters-empty"), insufficient ? { count, minimum, total: count } : null);
     $("#clusters-empty-text").textContent = insufficient
       ? `继续记录易错点并写清具体错因，攒够 ${minimum} 条（已有 ${count} 条）就能归并。本次不会调用 AI，也不消耗额度。`
       : "把具体错因积累下来，点击上方归并按钮，就能把有共同根因的记录放在一起复习。";

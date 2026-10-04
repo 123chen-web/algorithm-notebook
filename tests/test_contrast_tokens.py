@@ -30,8 +30,20 @@ THREAD_TEXT_PAIRS = (
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
 )
+# 首次清单（static/onboarding.css）用到的文字 / 底色配对；两个主题都要 ≥ 4.5:1。
+ONBOARDING_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink", "--paper-2"),
+    ("--ink-2", "--surface"),
+    ("--ink-2", "--paper-2"),
+    ("--azurite", "--surface"),
+    ("--azurite", "--paper-2"),
+    ("--success-ink", "--success-soft"),
+    ("--danger", "--surface"),
+    ("--error-ink", "--error-surface"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS for token in pair
 }
 
 
@@ -266,3 +278,40 @@ def test_thread_copy_text_inherits_checked_terminal_label_color():
         and declaration == "color: var(--code-ink)"
         for blocks, declaration in declarations
     )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", ONBOARDING_TEXT_PAIRS)
+def test_onboarding_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"首次清单 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_onboarding_stylesheet_only_uses_checked_text_and_background_tokens():
+    """onboarding.css 里出现的每个 color / background 令牌都必须落在上面检查过的配对里。"""
+    source = (STATIC / "onboarding.css").read_text(encoding="utf-8")
+    foregrounds = {pair[0] for pair in ONBOARDING_TEXT_PAIRS} | {"--muted"}
+    backgrounds = {pair[1] for pair in ONBOARDING_TEXT_PAIRS} | {"--paper"}
+    used_foregrounds, used_backgrounds = set(), set()
+    for blocks, declaration in css_declarations(source):
+        name, _, value = declaration.partition(":")
+        name = name.strip()
+        tokens = set(re.findall(r"var\((--[\w-]+)\)", value))
+        if name == "color":
+            used_foregrounds |= tokens
+        elif name == "background" or name == "background-color":
+            used_backgrounds |= tokens
+    assert used_foregrounds, "没有解析到任何文字颜色，检查方式失效了"
+    assert used_foregrounds <= foregrounds, used_foregrounds - foregrounds
+    assert used_backgrounds <= backgrounds, used_backgrounds - backgrounds
