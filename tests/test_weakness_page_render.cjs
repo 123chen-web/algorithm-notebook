@@ -68,6 +68,7 @@ function harness(state = {}) {
       createTextNode: (text) => { const node = new Node("#text"); node.textContent = text; return node; },
     },
     $: (selector) => get(selector.slice(1)),
+    window: {}, // 渲染函数会问 window.Onboarding 要不要给空状态加"下一步"按钮；这里没有这个模块
     user: { timezone: "Asia/Shanghai", ai_daily_remaining: 10, ai_daily_limit: 10 },
     weaknessAnalysis: { mistake_count: 5, minimum_mistakes: 5, insight: null },
     weaknessPending: false,
