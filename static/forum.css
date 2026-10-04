@@ -528,7 +528,10 @@
 #forum-page .board-more { min-height: 44px; padding-inline: var(--space-6); border-color: var(--signal-line); border-radius: var(--radius-pill); background: var(--surface); color: var(--signal); font-size: var(--text-sm); font-weight: 650; }
 #forum-page .board-more:hover:not(:disabled) { border-color: var(--signal); background: var(--surface); }
 #forum-page .board-rail .thread-link { color: var(--signal); }
-#forum-page .board-zonelist button { min-height: 36px; }
+#forum-page .board-compose-form .thread-tabs button { min-height: 40px; }
+#forum-page .board-zonelist button { min-height: 40px; }
+#forum-page .board-rail .thread-link,
+#forum-page .board-draft .thread-link { min-height: 40px; }
 #forum-page .board-help em[hidden] { display: none; }
 #forum-page .board-row .board-people .avatar,
 #forum-page .board-meta .avatar { flex: none; }
