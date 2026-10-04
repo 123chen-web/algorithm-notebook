@@ -60,8 +60,15 @@ AN_TEXT_PAIRS = (
     ("--azurite", "--surface"),
     ("--azurite", "--paper"),
 )
+# 收录（粘贴链接 / 书签小工具）：书签按钮（深色代码块配色）、顶部“已从书签带入”提示条。
+CAPTURE_TEXT_PAIRS = (
+    ("--code-ink", "--code-surface"),
+    ("--success-ink", "--success-soft"),
+    ("--ink", "--surface"),
+    ("--muted", "--surface"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS for token in pair
 }
 
 
@@ -264,6 +271,24 @@ def test_admin_metrics_text_pairs_meet_contrast(context, tokens, foreground, bac
     )
 
 
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", CAPTURE_TEXT_PAIRS)
+def test_capture_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"收录主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
 def test_admin_metrics_css_text_colors_match_the_checked_pairs():
     """运营概览里每个带文字色的规则，实际用的令牌必须与上面检查过的配对一致。"""
     expected = {
@@ -292,6 +317,12 @@ def test_admin_metrics_css_text_colors_match_the_checked_pairs():
         assert pair in allowed, f"{selector}: {pair} 没有对比度检查"
     for selector, color in colors.items():
         assert re.fullmatch(r"var\(--[\w-]+\)", color), f"{selector}: 文字色必须是主题令牌"
+
+
+def test_capture_stylesheet_uses_the_checked_pairs():
+    source = (STATIC / "capture.css").read_text(encoding="utf-8")
+    assert re.search(r"\.capture-bookmarklet \{[^}]*background: var\(--code-surface\); color: var\(--code-ink\)", source)
+    assert re.search(r"\.capture-banner \{[^}]*background: var\(--success-soft\); color: var\(--success-ink\)", source)
 
 
 def mix_srgb(foreground, background, weight):

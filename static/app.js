@@ -394,7 +394,9 @@ function renderPageRoute() {
 
 window.addEventListener("hashchange", () => {
   message();
+  const captured = window.Capture?.intake(); // 先收下书签参数，renderPageRoute 会把地址栏改回 #/app
   renderPageRoute();
+  if (captured && user) run(applyCapturePending);
 });
 
 function showAuthPanels(visibleIds) {
@@ -430,6 +432,7 @@ $("#auth-switch").addEventListener("keydown", (event) => {
 
 function signedOut() {
   sessionEpoch += 1;
+  if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
@@ -819,7 +822,18 @@ async function enterApp() {
   $("#logout").hidden = false;
   updateUserInfo();
   await loadZones();
-  await showView("home", { refreshUser: false });
+  if (window.Capture?.hasPending()) await applyCapturePending();
+  else await showView("home", { refreshUser: false });
+}
+
+// 书签带来的预填：切到新增记录页再填；登出再登录别的账号后才完成的，丢弃。
+async function applyCapturePending() {
+  const epoch = sessionEpoch;
+  const pending = window.Capture?.take();
+  if (!pending) return;
+  await showView("new");
+  if (epoch !== sessionEpoch || !user) return;
+  window.Capture.applyIntake(pending);
 }
 
 async function showView(nextView, { refreshUser = true } = {}) {
@@ -2469,7 +2483,7 @@ function renderProblemEditor(item) {
     editBtn.addEventListener("click", editForm);
     wrap.replaceChildren(
       element("h4", "当时的思路"),
-      element("p", item.thinking, "multiline"),
+      window.Capture ? window.Capture.renderThinking(item.thinking) : element("p", item.thinking, "multiline"),
       element("h4", codeZones.has(item.zone) ? "当时的代码" : "当时的解题过程"),
       element("pre", item.code, "code"),
       editBtn
@@ -4867,6 +4881,7 @@ $("#timezone").value =
 addMistakeInput();
 initReviewSpotlight();
 
+window.Capture?.intake();
 if (resetToken) {
   // 从密码重置邮件点进来的，不管当前是否登录，先处理重置。
   showAuthPanels(["reset-form"]);

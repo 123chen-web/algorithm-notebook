@@ -1,0 +1,35 @@
+/* 收录：粘贴题目链接 + 书签小工具。只用主题令牌。 */
+#new-page .capture-box {
+  display: grid; gap: var(--space-3); min-width: 0; margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line); border-left: 3px solid var(--azurite); border-radius: var(--radius);
+  background: var(--surface);
+}
+#new-page .capture-label { display: block; margin: 0 0 var(--space-2); color: var(--ink); font-size: var(--text-sm); font-weight: 650; }
+#new-page .capture-input-row { display: flex; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
+#new-page .capture-input-row input { flex: 1 1 220px; min-width: 0; font-family: var(--mono, ui-monospace, monospace); }
+#new-page .capture-input-row button { min-height: 44px; }
+#new-page .capture-status:empty, #new-page .capture-copy-status:empty { display: none; }
+#new-page .capture-status, #new-page .capture-copy-status { margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-prose); }
+#new-page .capture-banner {
+  margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-badge);
+  background: var(--success-soft); color: var(--success-ink); font-size: var(--text-sm); font-weight: 600;
+}
+#new-page .capture-banner[hidden] { display: none; }
+#new-page .capture-bookmarklet-box summary { min-height: 40px; display: flex; align-items: center; color: var(--ink); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+#new-page .capture-bookmarklet-box ol { margin: var(--space-2) 0; padding-left: var(--space-5); color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-prose); }
+#new-page .capture-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; }
+#new-page .capture-bookmarklet {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-5);
+  border-radius: var(--radius-field); background: var(--code-surface); color: var(--code-ink);
+  font-size: var(--text-sm); font-weight: 650; text-decoration: none; cursor: grab;
+}
+#new-page .capture-actions button { min-height: 44px; }
+#new-page #capture-code { width: 100%; min-height: 80px; margin-top: var(--space-3); font-family: var(--mono, ui-monospace, monospace); font-size: var(--text-xs); }
+#new-page #capture-code[hidden] { display: none; }
+#new-page .capture-mobile-note { display: none; margin: 0; color: var(--muted); font-size: var(--text-xs); }
+@media (max-width: 599px) {
+  #new-page .capture-box { padding: var(--space-4); }
+  #new-page .capture-bookmarklet-box { display: none; }
+  #new-page .capture-mobile-note { display: block; }
+}
