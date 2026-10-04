@@ -29,6 +29,11 @@ THREAD_TEXT_PAIRS = (
     ("--danger", "--success-soft"),
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
+    # 讨论区主页（static/forum.css 的 .board-*）：「刚刚」胶囊是 --on-accent 字压在 --azurite 底上；
+    # 选中标签上的数字徽标是 --ink 字压在 --soft 底上。其余配对（--ink / --ink-2 / --muted / --azurite /
+    # --success-* / --danger 压在 --paper / --paper-2 / --surface 上）已被上面的矩阵覆盖。
+    ("--on-accent", "--azurite"),
+    ("--ink", "--soft"),
 )
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
     token for pair in THREAD_TEXT_PAIRS for token in pair
@@ -96,6 +101,8 @@ def theme_tokens(stylesheets):
             name, value = name.strip(), value.strip()
             if not separator or name not in COLOR_TOKENS:
                 continue
+            if re.fullmatch(r"#[0-9a-fA-F]{3}", value):  # #fff → #ffffff
+                value = "#" + "".join(character * 2 for character in value[1:])
             assert re.fullmatch(r"#[0-9a-fA-F]{6}", value), (
                 f"请扩展颜色解析以支持 {name}: {value}；不能跳过令牌"
             )

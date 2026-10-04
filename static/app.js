@@ -44,7 +44,6 @@ let forumMapDrag = null;
 let forumMapDragFrame = null;
 const forumMutations = new Map();
 let forumReplyTarget = null;
-let forumSearchQuery = "";
 let forumListGeneration = 0;
 let adminDashboardGeneration = 0;
 let weaknessAnalysis = null;
@@ -479,18 +478,13 @@ function signedOut() {
   forumCurrentComment = null;
   forumMutations.clear();
   setForumPreview(false);
-  forumSearchQuery = "";
   forumCommentOrder = "earliest";
   forumOnlyOp = false;
   clearForumReply();
   forumListGeneration += 1;
-  $("#forum-search-form").reset();
-  $("#forum-list-title").textContent = "全部帖子";
-  $("#forum-posts").replaceChildren();
-  $("#forum-list-status").textContent = "";
+  window.Board?.reset(); // 列表、搜索词、发帖表单都属于上一位用户（草稿按用户 id 存在 localStorage 里）
   $("#forum-post").replaceChildren();
   $("#forum-comments").replaceChildren();
-  $("#forum-compose-form").reset();
   $("#forum-comment-form").reset();
   document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = true; });
   resetAdminDashboard();
@@ -3279,7 +3273,6 @@ async function showForumList() {
   $("#forum-minimap").hidden = true;
   $("#forum-floor-nav").hidden = true;
   clearForumReply();
-  $("#forum-search").value = forumSearchQuery;
   $("#forum-compose").hidden = true;
   $("#forum-detail").hidden = true;
   $("#forum-list").hidden = false;
@@ -3287,59 +3280,22 @@ async function showForumList() {
   await loadForumPosts();
 }
 
+// 列表的请求、渲染、筛选和分页都在 static/board.js 里；这里只负责递增代数
+// （「返回讨论区」靠它判断是否有更新的列表加载抢走了焦点）。
 async function loadForumPosts() {
-  const currentUser = user;
-  const generation = ++forumListGeneration;
-  const query = forumSearchQuery;
-  const status = $("#forum-list-status");
-  const list = $("#forum-posts");
-  const isCurrent = () => generation === forumListGeneration && user === currentUser
-    && user && view === "forum" && !$("#forum-list").hidden;
-  $("#forum-list-title").textContent = query ? "搜索结果" : "全部帖子";
-  status.textContent = "正在加载帖子列表…";
-  list.replaceChildren();
-  let posts;
-  try {
-    ({ posts } = await api(query ? `/api/posts?q=${encodeURIComponent(query)}` : "/api/posts"));
-  } catch (error) {
-    if (isCurrent()) status.textContent = error.message || "帖子列表加载失败，请稍后重试。";
-    return;
-  }
-  if (!isCurrent()) return;
-  status.textContent = posts.length ? "" : (query
-    ? "没有找到相关帖子，请试试其他关键词。" : "还没有帖子，来发第一条吧。");
-  for (const post of posts) {
-    const row = element("button", "", "record-button");
-    row.type = "button";
-    const authorLine = element("div", "", "author-line muted");
-    authorLine.append(
-      avatarElement(post.user_id, post.username, post.avatar_version, {
-        small: true, hasAvatar: post.has_avatar,
-      }),
-      element(
-        "small",
-        `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`
-      )
-    );
-    const title = element("strong", "", "forum-list-post-title");
-    if (post.solved === true) title.append(element("span", "✓ 已解决", "thread-solved"));
-    title.append(post.title);
-    row.append(title, element("small", `#${String(post.id).padStart(4, "0")} · ${post.comment_count} 回复`, "thread-list-meta"), authorLine);
-    row.dataset.postId = String(post.id);
-    row.addEventListener("click", () => run(() => openForumPost(post.id)));
-    list.append(row);
-  }
+  forumListGeneration += 1;
+  await window.Board.show();
 }
 
 // 从帖子详情回到列表：页面回到顶部，焦点落在刚才读的那个帖子上（找不到就落在列表标题）。
 // 焦点不为它滚动页面——回到讨论区就该先看到讨论区的顶部。
 function restoreForumListPosition(postId) {
   window.scrollTo({ top: 0, behavior: "instant" });
-  const row = postId ? $(`#forum-posts [data-post-id="${postId}"]`) : null;
+  const row = postId ? $(`#forum-posts [data-post-id="${postId}"] .board-open`) : null;
   (row || $("#forum-list-title")).focus({ preventScroll: true });
 }
 
-function showForumCompose() {
+function showForumCompose(options = {}) {
   forumDetailGeneration += 1;
   forumSummaryController?.reset();
   forumMapModel = null;
@@ -3347,6 +3303,7 @@ function showForumCompose() {
   $("#forum-list").hidden = true;
   $("#forum-detail").hidden = true;
   $("#forum-compose").hidden = false;
+  window.Board.openCompose(options);
 }
 
 async function openForumPost(postId) {
@@ -4532,20 +4489,6 @@ function renderAdminAvatarReport(report) {
   return card;
 }
 
-$("#forum-search-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const input = $("#forum-search");
-  const query = input.value.trim();
-  input.value = query;
-  if (Array.from(query).length > 200) {
-    $("#forum-list-status").textContent = "搜索关键词不能超过 200 个字符。";
-    return;
-  }
-  forumSearchQuery = query;
-  message();
-  loadForumPosts();
-});
-
 $("#forum-new-post-btn").addEventListener("click", () => {
   message();
   showForumCompose();
@@ -4555,24 +4498,6 @@ $("#forum-compose-cancel").addEventListener("click", () => run(async () => {
   message();
   await showForumList();
 }));
-
-$("#forum-compose-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  run(async () => {
-    const data = new FormData(form);
-    const created = await api("/api/posts", {
-      method: "POST",
-      body: JSON.stringify({
-        title: data.get("title"),
-        body: data.get("body"),
-      }),
-    });
-    form.reset();
-    await openForumPost(created.id);
-    message("帖子已发布。");
-  });
-});
 
 // 详情页顶部和底部各有一个「返回讨论区」，行为完全一样。
 document.querySelectorAll("#forum-back, #forum-back-bottom").forEach((button) => {
@@ -4735,7 +4660,6 @@ $("#forum-reply-cancel").addEventListener("click", () => {
 $("#forum-comment-body").addEventListener("input", updateForumCommentCount);
 // 表情面板：评论/回复框的按钮放在页脚（和字数并排），发新帖的正文按钮放在输入框下面。
 window.EmojiPicker?.attach($("#forum-comment-body"), { container: $(".forum-composer-footer") });
-window.EmojiPicker?.attach($("#forum-compose-form textarea[name=body]"));
 
 $("#forum-comment-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -4784,6 +4708,28 @@ function submitForumComment() {
     message("评论已发表。");
   });
 }
+
+// 讨论区主页与发帖页（static/board.js）：请求都带登录代次，登出再登录之后迟到的响应会被丢弃。
+window.Board?.mount({
+  api,
+  getUser: () => user,
+  getEpoch: () => sessionEpoch,
+  getView: () => view,
+  isListVisible: () => !$("#forum-page").hidden && !$("#forum-list").hidden,
+  isDetailVisible: forumDetailVisible,
+  openPost: (id) => run(() => openForumPost(id)),
+  openCompose: (options) => {
+    message();
+    showForumCompose(options);
+  },
+  afterPublish: (post) => run(async () => {
+    await openForumPost(post.id);
+    message("帖子已发布。");
+  }),
+  avatar: avatarElement,
+  renderBody: forumBody,
+  timestamp,
+});
 
 $("#timezone").value =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";

@@ -60,7 +60,7 @@ def test_forum_stylesheet_is_versioned_and_loaded_after_shared_styles(document, 
     ]
     assert len(matches) == 1
     forum_index, attrs = matches[0]
-    assert attrs["href"] == "/static/forum.css?v=5"
+    assert attrs["href"] == "/static/forum.css?v=6"
     shared_indices = [
         index for index, attrs in enumerate(links)
         if attrs.get("href", "").split("?", 1)[0] in (
@@ -195,7 +195,9 @@ def test_forum_detail_has_clear_back_buttons_above_and_below_the_thread(document
     restore = function_body(source, "restoreForumListPosition")
     assert 'window.scrollTo({ top: 0, behavior: "instant" })' in restore
     assert ".focus({ preventScroll: true })" in restore and "data-post-id" in restore
-    assert "row.dataset.postId = String(post.id)" in source
+    # 帖子行改由 board.js 生成（app.js 只剩 restoreForumListPosition），行上仍带 data-post-id。
+    board = (STATIC / "board.js").read_text(encoding="utf-8")
+    assert "item.dataset.postId = String(model.id)" in board
     _, list_title = element_with_id(document, "forum-list-title")
     assert list_title["attrs"].get("tabindex") == "-1"
 
@@ -337,7 +339,7 @@ def test_thread_script_is_versioned_external_and_loaded_before_app(document):
     thread_index = scripts.index("/static/thread.js?v=1")
     app_indices = [index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js"]
     assert len(app_indices) == 1 and thread_index < app_indices[0]
-    assert scripts[app_indices[0]] == "/static/app.js?v=58"
+    assert scripts[app_indices[0]] == "/static/app.js?v=59"
 
 
 def test_thread_markup_uses_external_csp_safe_controls_and_shared_renderer(document, source):
@@ -384,3 +386,68 @@ def test_forum_documentation_describes_stable_floors_and_private_deleted_quotes(
     section = readme.split("## 讨论区", 1)[1].split("\n## ", 1)[0]
     for text in ("楼主", "楼层", "reply_to_id", "60", "回复的楼层已删除", "不会重新编号"):
         assert text in section
+
+
+BOARD_IDS = (
+    "forum-list", "forum-list-title", "forum-new-post-btn", "forum-search-form", "forum-search",
+    "forum-list-status", "forum-posts", "forum-compose", "forum-compose-form", "forum-compose-cancel",
+    "board-tabs", "board-sort", "board-zones", "board-readouts", "board-notice", "board-foot", "board-more",
+    "board-rail-help", "board-rail-zones", "board-ask-apply",
+    "forum-compose-title-input", "forum-compose-body", "forum-compose-zones", "forum-compose-send",
+    "forum-compose-status", "forum-compose-draft", "forum-compose-draft-clear", "forum-compose-preview",
+    "forum-compose-code", "forum-compose-template",
+)
+
+
+def test_board_keeps_the_ids_the_app_depends_on_and_the_search_landmark(document):
+    page_index, _ = element_with_id(document, "forum-page")
+    for element_id in BOARD_IDS:
+        _, node = element_with_id(document, element_id)
+        assert page_index in node["ancestors"], element_id
+    _, form = element_with_id(document, "forum-search-form")
+    assert form["tag"] == "form" and form["attrs"].get("role") == "search"
+    _, status = element_with_id(document, "forum-list-status")
+    assert status["attrs"].get("role") == "status" and status["attrs"].get("aria-live") == "polite"
+    _, search = element_with_id(document, "forum-search")
+    assert search["attrs"].get("maxlength") == "200"
+    _, title = element_with_id(document, "forum-compose-title-input")
+    _, body = element_with_id(document, "forum-compose-body")
+    assert title["attrs"].get("maxlength") == "200" and body["attrs"].get("maxlength") == "8000"
+    _, posts = element_with_id(document, "forum-posts")
+    assert posts["tag"] == "ol"
+
+
+def test_board_script_is_versioned_external_and_loaded_before_app(document):
+    scripts = [node["attrs"].get("src", "") for node in document if node["tag"] == "script"]
+    assert scripts.count("/static/board.js?v=1") == 1
+    board_index = scripts.index("/static/board.js?v=1")
+    app_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js")
+    thread_index = scripts.index("/static/thread.js?v=1")
+    emoji_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/emoji.js")
+    assert max(thread_index, emoji_index) < board_index < app_index
+
+
+def test_board_controller_never_writes_markup_and_keeps_user_text_as_text():
+    board = (STATIC / "board.js").read_text(encoding="utf-8")
+    assert not re.search(r"\.innerHTML\s*=|insertAdjacentHTML\s*\(|outerHTML\s*=|document\.write\s*\(", board)
+    assert not re.search(r"\.setAttribute\(\s*[\"']style[\"']", board)
+    assert "eval(" not in board and "new Function" not in board
+
+
+def test_board_list_requests_are_guarded_by_generation_and_session_epoch():
+    board = (STATIC / "board.js").read_text(encoding="utf-8")
+    current = function_body(board, "current")
+    assert "getEpoch()" in current and "generation" in current and "isListVisible()" in current
+    for name in ("load", "loadMore"):
+        assert "current(t)" in function_body(board, name), name
+    assert "getEpoch()" in function_body(board, "submitCompose")
+
+
+def test_board_css_has_mobile_rules_without_horizontal_page_overflow_hooks(stylesheet):
+    assert re.search(r"@media \(max-width: 600px\)[^{]*\{[^@]*board-row", stylesheet, re.S)
+    assert "@media (min-width: 1100px)" in stylesheet
+    for blocks, declaration in css_declarations(stylesheet):
+        if blocks and "board-rail" in blocks[-1] and declaration == "display: none":
+            break
+    else:
+        pytest.fail("The side rail must be hidden below 1100px")

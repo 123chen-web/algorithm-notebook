@@ -80,12 +80,14 @@ def test_stylesheet_follows_the_project_rules(stylesheet):
     assert coarse and "min-height: 44px" in coarse.group(1)
 
 
-@pytest.mark.parametrize("anchor", [
-    '$("#forum-comment-body")',
-    '$("#forum-compose-form textarea[name=body]")',
-])
-def test_forum_composers_get_the_picker(app_source, anchor):
-    assert re.search(r"EmojiPicker\?\.attach\(\s*" + re.escape(anchor), app_source)
+def test_forum_comment_composer_gets_the_picker(app_source):
+    assert re.search(r"EmojiPicker\?\.attach\(\s*" + re.escape('$("#forum-comment-body")'), app_source)
+
+
+def test_forum_post_composer_gets_the_picker_from_the_board_controller():
+    # 发帖页改由 static/board.js 的控制器挂载（正文框 id 为 forum-compose-body），不再写在 app.js 里。
+    board = (STATIC / "board.js").read_text(encoding="utf-8")
+    assert re.search(r"EmojiPicker\?\.attach\(\s*\$\(\"#forum-compose-body\"\)", board)
 
 
 def test_inline_edit_forms_get_the_picker_too(app_source):
