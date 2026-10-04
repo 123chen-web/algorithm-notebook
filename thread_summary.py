@@ -207,7 +207,7 @@ def summarize_thread(reference):
     """Request one isolated JSON summary and require verifiable floor evidence."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
-        raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+        raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
     base_url = os.getenv("OPENAI_BASE_URL", "").strip() or None
     reference_json = (

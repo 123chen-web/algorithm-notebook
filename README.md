@@ -25,8 +25,8 @@ Copy-Item .env.example .env
 编辑 `.env`：
 
 - 将 `INVITE_CODE` 从 `change-me` 改为自己的内测邀请码。
-- 填写 `OPENAI_API_KEY`，启用 AI 生成功能。
-- 默认模型是 `gpt-4.1-mini`，可通过 `OPENAI_MODEL` 修改。
+- 填写 `OPENAI_API_KEY`，启用 AI 生成功能。变量名沿用“OpenAI 兼容接口”的叫法，实际填的是所用服务商的 Key；我们线上用的是 **DeepSeek**（国内可直接访问，不需要翻墙），此时同时设置 `OPENAI_BASE_URL=https://api.deepseek.com`，并把 `OPENAI_MODEL` 改成 DeepSeek 当前的模型名。
+- 这两项留空时才会请求 OpenAI 官方（默认模型 `gpt-4.1-mini`）。
 - 填写 `SMTP_*`，启用找回密码和每日邮件提醒，见下方"密码找回与邮件提醒"。
 
 然后启动：
@@ -65,7 +65,7 @@ SQLite 文件和表结构会在第一次启动时自动创建。
 8. 刷新页面，确认变体及练习结果仍然存在。
 9. 注册第二个账号，确认看不到第一个账号的记录。
 
-AI 使用真实 OpenAI API，会产生 API 使用费用。
+AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 使用费用。
 不配置 API Key 时，其余功能仍然可以使用。
 
 ## 自动化测试
@@ -688,10 +688,7 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 
 ## AI 行为
 
-默认对接官方 OpenAI；也可以通过 `OPENAI_BASE_URL` 换成 DeepSeek 等其他
-"OpenAI 兼容"服务商，同时把 `OPENAI_API_KEY`、`OPENAI_MODEL` 换成对应
-服务商的 Key 和模型名即可，代码不用改。具体模型名和价格以服务商官方
-文档为准。
+AI 走“OpenAI 兼容”接口，客户端用的是 openai 官方 Python SDK，但**请求发往哪里由 `OPENAI_BASE_URL` 决定**。我们线上使用 **DeepSeek**（`OPENAI_BASE_URL=https://api.deepseek.com`，国内可直接访问，不需要翻墙，不会把数据发给 OpenAI）；变量名里的 OPENAI 只是沿用接口的叫法。也可以换成其他兼容服务商，同时把 `OPENAI_API_KEY`、`OPENAI_MODEL` 换成对应的 Key 和模型名，代码不用改。`OPENAI_BASE_URL` 留空时才会请求 OpenAI 官方。具体模型名和价格以服务商官方文档为准。
 
 密钥仅存在服务端环境变量中。
 

@@ -2683,7 +2683,7 @@ function renderDetail(item) {
     element("h3", "诊断错因，再练两道"),
     element(
       "p",
-      "生成时会把这道题的代码（或解题过程）、思路发送给 OpenAI；" +
+      "生成时会把这道题的代码（或解题过程）、思路发送给 AI 模型服务商（DeepSeek）；" +
       "错因没填时 AI 会自己反推，已经填了则作为参考。" +
       `每天最多 ${user.ai_daily_limit} 次尝试，失败也计入次数。`,
       "muted"

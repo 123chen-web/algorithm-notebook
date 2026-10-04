@@ -234,9 +234,9 @@ async function failureQuota() {
   assert.equal(h.get("clusters-generate").getAttribute("aria-disabled"), "true");
   await h.get("clusters-generate").click();
   assert.equal(posts, 1, "Duplicate click must not launch another request");
-  post.reject(new Error("服务端尚未配置 OpenAI API Key"));
+  post.reject(new Error("服务端尚未配置 AI 服务密钥"));
   await generating;
-  assert.ok(h.get("clusters-status").textContent.includes("服务端尚未配置 OpenAI API Key"));
+  assert.ok(h.get("clusters-status").textContent.includes("服务端尚未配置 AI 服务密钥"));
   assert.equal(h.context.user.ai_daily_remaining, 5);
   assert.equal(h.get("clusters-retry").hidden, false);
   assert.ok(h.get("clusters-retry").textContent.includes("消耗 1 次 AI 额度"));

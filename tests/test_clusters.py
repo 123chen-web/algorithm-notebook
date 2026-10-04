@@ -128,7 +128,7 @@ def test_api_missing_key_returns_503_without_spending_quota(client, monkeypatch)
     monkeypatch.setattr(ai, "cluster_mistakes", unexpected)
     response = client.post(ENDPOINT)
     assert response.status_code == 503
-    assert response.json()["detail"] == "服务端尚未配置 OpenAI API Key"
+    assert response.json()["detail"] == "服务端尚未配置 AI 服务密钥"
     assert attempts(user_id) == 0
 
 

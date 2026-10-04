@@ -166,7 +166,7 @@ def create_clusters(user, today_reader, quota_reader):
             if state["mistake_count"] < MIN_MISTAKES:
                 return state
             if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             reference, fingerprints = cluster_reference(conn, user_id, state["mistake_count"])
             quota = quota_reader(conn, user_id, today)
             limit = quota["ai_daily_limit"]

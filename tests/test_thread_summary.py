@@ -299,7 +299,7 @@ def test_provider_requires_key_before_client_creation(monkeypatch, reference, ke
         monkeypatch.setenv("OPENAI_API_KEY", key)
     with pytest.raises(HTTPException) as exc:
         thread_summary.summarize_thread(reference)
-    assert (exc.value.status_code, exc.value.detail) == (503, "服务端尚未配置 OpenAI API Key")
+    assert (exc.value.status_code, exc.value.detail) == (503, "服务端尚未配置 AI 服务密钥")
 
 
 def test_validation_trims_controls_and_truncates_instead_of_rejecting(reference):
@@ -522,7 +522,7 @@ def test_post_key_precedes_reply_count_and_quota(client, monkeypatch):
     set_attempts(user_id, 10)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     response = client.post(endpoint)
-    assert response.status_code == 503 and response.json() == {"detail": "服务端尚未配置 OpenAI API Key"}
+    assert response.status_code == 503 and response.json() == {"detail": "服务端尚未配置 AI 服务密钥"}
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     response = client.post(endpoint)
     assert response.status_code == 400 and response.json() == {"detail": "回复太少，暂时不需要提炼"}

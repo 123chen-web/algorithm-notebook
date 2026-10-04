@@ -229,7 +229,7 @@ def test_existing_early_branches_keep_priority_when_slot_is_busy(client, monkeyp
         response = request_ai(client, feature, mistake_id[0] if mistake_id else 0)
     if branch == "key":
         assert response.status_code == 503
-        assert response.json()["detail"] == "服务端尚未配置 OpenAI API Key"
+        assert response.json()["detail"] == "服务端尚未配置 AI 服务密钥"
     elif branch == "quota":
         assert response.status_code == 429
         assert response.json()["detail"] == "今天的 AI 生成次数已用完"

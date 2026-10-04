@@ -1993,7 +1993,7 @@ def create_weakness_analysis(user=Depends(current_user)):
             if state["mistake_count"] < WEAKNESS_MIN_MISTAKES:
                 return state
             if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             reference = weakness_analysis_reference(conn, user["id"], state["mistake_count"])
             # 与生成练习题、拍照识别完全相同的套餐读取及原子扣额 SQL。
             # 失败仍占用次数；在发起外部请求前提交，网络调用不持有写锁。
@@ -2349,7 +2349,7 @@ async def recognize_problem_photo(user=Depends(current_user), file: UploadFile =
     with ExitStack() as stack:
         with connect(write=True) as conn:
             if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             day = today_for(user).isoformat()
             quota = ai_quota(conn, user["id"], day)
             limit = quota["ai_daily_limit"]
@@ -2604,7 +2604,7 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
             # 有反复偏低/偏高的复习历史时才提示 AI 调整新题难度。
             item["mastery_signal"] = mastery_signal(conn, mistake_id)
             if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
 
             day = today_for(user).isoformat()
             quota = ai_quota(conn, user["id"], day)
@@ -3928,7 +3928,7 @@ def create_thread_summary(post_id: int, user=Depends(current_user)):
             recheck_account(conn, user["id"])
             post, comments = thread_summary.load_thread(conn, post_id)
             if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             if len(comments) < 2:
                 raise HTTPException(400, "回复太少，暂时不需要提炼")
             if rate_limited(f"summary:{user['id']}", 10, 3600):
