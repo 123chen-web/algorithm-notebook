@@ -44,7 +44,15 @@ join = newcomer.post("/api/groups/join", json={"invite_code": full_code})
 posts = mine.get("/api/posts").json()["posts"]
 thread = next(post for post in posts if post["title"].startswith("二分查找的边界"))
 detail = mine.get(f"/api/posts/{thread['id']}").json()
+board = mine.get("/api/posts", params={"limit": 50}).json()
 print(json.dumps({
+    "board": {
+        "total": board["total"], "counts": board["counts"], "zone_counts": board["zone_counts"],
+        "posts": [{key: post[key] for key in ("title", "zone", "solved", "hot", "has_code", "is_mine",
+                                                "comment_count", "helpful_total", "participant_count")}
+                  for post in board["posts"]],
+        "unanswered": [post["title"] for post in mine.get("/api/posts", params={"filter": "unanswered"}).json()["posts"]],
+    },
     "groups": [(g["name"], g["member_count"], g["level"]["number"]) for g in mine.get("/api/groups").json()["groups"]],
     "analysis": mine.get("/api/insights/weakness-analysis").json()["status"],
     "ai_attempt": mine.post("/api/insights/weakness-analysis").status_code,
@@ -92,6 +100,18 @@ def query(folder, sql, *params):
     database = (Path(folder) / "sample.db").as_uri() + "?mode=ro"
     with closing(sqlite3.connect(database, uri=True)) as conn:
         return conn.execute(sql, params).fetchall()
+
+
+_PROBES = {}
+
+
+def probe(folder):
+    """Run the login probe once per sample world (it logs in as three accounts)."""
+    if folder not in _PROBES:
+        result = run_python(folder, "-c", LOGIN_AND_PROBE)
+        assert result.returncode == 0, result.stdout + result.stderr
+        _PROBES[folder] = json.loads(result.stdout.strip().splitlines()[-1])
+    return _PROBES[folder]
 
 
 @pytest.fixture(scope="module")
@@ -214,9 +234,41 @@ def test_forum_has_floors_quotes_a_deleted_floor_and_a_report(world):
     deleted = {comment_id for comment_id, _, gone in comments if gone}
     assert deleted, "a deleted floor shows how quotes of removed comments look"
     assert any(reply in deleted for _, reply, _ in comments)
-    assert query(folder, "SELECT COUNT(*) FROM posts") == [(3,)]
+    assert query(folder, "SELECT COUNT(*) FROM posts") == [(8,)]
     assert query(folder, "SELECT COUNT(*) FROM post_comments WHERE post_id = "
                          "(SELECT id FROM posts WHERE title LIKE '二分查找的边界%')") == [(8,)]
+
+
+def test_forum_board_home_shows_every_state_and_zone(world):
+    folder, _ = world
+    zones = dict(query(folder, "SELECT title, zone FROM posts"))
+    assert zones["二分查找的边界总写错，大家是怎么自查的？"] == "算法"
+    assert zones["我整理了一份二分查找自查清单"] == "算法"
+    assert zones["整理了一份数据库索引失效的清单"] == "数据库"
+    assert {zones[title] for title in zones if title.startswith(("CSS Grid", "条件概率", "短链", "矩阵"))} == {
+        "前端", "概率统计", "系统设计", "线性代数",
+    }
+    assert None not in zones.values()
+    # 时间要有层次：几小时前到五周前
+    ages = query(folder, "SELECT (julianday('now') - julianday(created_at)) * 24 FROM posts ORDER BY 1")
+    assert ages[0][0] < 6 and ages[-1][0] > 24 * 30
+
+
+def test_forum_board_api_view_of_the_sample_data(world):
+    folder, _ = world
+    facts = probe(folder)["board"]
+    posts = {post["title"][:6]: post for post in facts["posts"]}
+    assert facts["total"] == 8 and facts["counts"]["all"] == 8
+    assert facts["zone_counts"] == {"算法": 3, "数据库": 1, "前端": 1, "概率统计": 1, "系统设计": 1, "线性代数": 1}
+    window = next(post for post in facts["posts"] if post["title"].startswith("滑动窗口"))
+    assert window["solved"] and window["hot"] and window["has_code"]
+    assert window["comment_count"] >= 6 and window["helpful_total"] >= 5
+    assert facts["unanswered"] and all(title for title in facts["unanswered"])
+    assert any(post["title"].startswith("短链") for post in facts["posts"])
+    assert next(p for p in facts["posts"] if p["title"].startswith("短链"))["comment_count"] == 0
+    assert sum(post["is_mine"] for post in facts["posts"]) == 2   # 样本同学自己发的两个帖子
+    assert facts["counts"]["mine"] == 2 and facts["counts"]["unanswered"] == len(facts["unanswered"])
+    assert posts
 
 
 def test_forum_has_an_accepted_checklist_votes_and_a_fresh_manual_summary(world):
@@ -264,9 +316,7 @@ def test_forum_has_an_accepted_checklist_votes_and_a_fresh_manual_summary(world)
 
 def test_accounts_log_in_with_the_shared_password_and_nothing_can_spend_money(world):
     folder, _ = world
-    result = run_python(folder, "-c", LOGIN_AND_PROBE)
-    assert result.returncode == 0, result.stdout + result.stderr
-    facts = json.loads(result.stdout.strip().splitlines()[-1])
+    facts = probe(folder)
     assert len(facts["groups"]) == 4
     assert {name: level for name, _, level in facts["groups"]}["满分俱乐部"] == 8
     assert facts["analysis"] == "ready"
