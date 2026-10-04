@@ -494,6 +494,7 @@ function signedOut() {
   $("#forum-comment-form").reset();
   document.querySelectorAll("[data-admin-only]").forEach((item) => { item.hidden = true; });
   resetAdminDashboard();
+  window.AdminMetrics?.reset();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
   $("#problem-form").reset();
@@ -4375,8 +4376,9 @@ async function loadAdminDashboard() {
 
 async function loadAdminPage() {
   configureRedeem();
+  configureAdminMetrics();
   // 各区块独立加载，看板失败不会阻断原有的举报处理。
-  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin()]);
+  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin(), window.AdminMetrics?.load()]);
   if (reports.status === "rejected") throw reports.reason;
   return dashboard.status === "fulfilled" && dashboard.value;
 }
@@ -4384,6 +4386,10 @@ async function loadAdminPage() {
 function configureRedeem() {
   window.Redeem?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch,
     getView: () => view, refreshPlanSubscription });
+}
+
+function configureAdminMetrics() {
+  window.AdminMetrics?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view });
 }
 
 function removeReportCard(card) {

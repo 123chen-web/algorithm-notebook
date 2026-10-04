@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="/static/clusters.css?v=2">
   <link rel="stylesheet" href="/static/account.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
+  <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
@@ -44,7 +45,8 @@
   <script defer src="/static/overview.js?v=2"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/admin-metrics.js?v=1"></script>
+  <script defer src="/static/app.js?v=59"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -1038,6 +1040,65 @@
             <p class="muted">查看全站运营数据，处理讨论区与头像举报。</p>
           </div>
         </div>
+        <section id="admin-metrics" class="admin-metrics" aria-labelledby="admin-metrics-title" aria-busy="false" data-state="idle" data-admin-only hidden>
+          <div class="am-head">
+            <div>
+              <p class="am-tag">OVERVIEW</p>
+              <h3 id="admin-metrics-title">运营概览</h3>
+            </div>
+            <div class="am-range" role="group" aria-label="时间范围">
+              <button type="button" data-am-days="7" aria-pressed="true">7 天</button>
+              <button type="button" data-am-days="30" aria-pressed="false">30 天</button>
+            </div>
+          </div>
+          <p id="admin-metrics-status" class="muted am-status" role="status" aria-live="polite"></p>
+          <button id="admin-metrics-retry" type="button" hidden>重试</button>
+          <div id="admin-metrics-skeleton" class="am-skeleton" aria-hidden="true" hidden><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div id="admin-metrics-body" hidden>
+            <div id="admin-metrics-strip" class="am-strip" role="list" aria-label="运营指标，对比上一周期"></div>
+            <details class="am-howto">
+              <summary>怎么算</summary>
+              <ul>
+                <li>周期按服务器 UTC 日切分：本周期是最近 7 / 30 天（含今天），涨跌与紧邻的前一个等长周期比较；上一周期为 0 时显示“新”。</li>
+                <li>用户相关数字只算正式、未注销的账号，不含体验账号；论坛里已删除的帖子 / 评论不算。</li>
+                <li>活跃用户：周期内有过复习、新增记录、发帖或评论的去重人数。</li>
+                <li>AI 调用与令牌按全部调用统计（含体验账号）。待处理举报是当前队列的实时数量，不分周期。</li>
+              </ul>
+            </details>
+            <section class="panel am-panel" aria-labelledby="admin-metrics-chart-title">
+              <div class="am-panel-head">
+                <h4 id="admin-metrics-chart-title">每日趋势</h4>
+                <div class="am-range" role="group" aria-label="趋势指标">
+                  <button type="button" data-am-series="new_users" aria-pressed="true">新增用户</button>
+                  <button type="button" data-am-series="active_users" aria-pressed="false">活跃用户</button>
+                  <button type="button" data-am-series="reviews" aria-pressed="false">复习次数</button>
+                </div>
+              </div>
+              <div id="admin-metrics-chart-wrap" class="am-chart-wrap">
+                <svg id="admin-metrics-chart" class="am-chart" viewBox="0 0 640 220" role="img" aria-label="每日趋势"></svg>
+              </div>
+              <details class="am-data">
+                <summary>查看数据表</summary>
+                <div class="am-table-scroll"><table id="admin-metrics-table" class="am-table"></table></div>
+              </details>
+            </section>
+            <section class="panel am-panel" aria-labelledby="admin-metrics-funnel-title">
+              <h4 id="admin-metrics-funnel-title">新用户转化漏斗</h4>
+              <p class="muted am-note">本周期内注册的正式账号；“次日回访”指注册日之后的某个更晚的 UTC 日又有过复习、新增、发帖或评论。</p>
+              <ol id="admin-metrics-funnel" class="am-funnel"></ol>
+              <p id="admin-metrics-funnel-empty" class="muted" hidden>这段时间没有新注册的正式账号，暂无漏斗数据。</p>
+            </section>
+            <section class="panel am-panel" aria-labelledby="admin-metrics-ai-title">
+              <h4 id="admin-metrics-ai-title">AI 明细</h4>
+              <div class="am-table-scroll"><table id="admin-metrics-ai-table" class="am-table"></table></div>
+              <p id="admin-metrics-ai-empty" class="muted" hidden>这段时间没有 AI 调用。</p>
+              <p id="admin-metrics-ai-split" class="muted am-note"></p>
+              <p class="muted am-note">令牌来自服务商返回的用量，仅供估算成本；单价请按你所用服务商的价目表自己换算。</p>
+            </section>
+            <p id="admin-metrics-other" class="muted am-note"></p>
+            <p id="admin-metrics-updated" class="muted am-note"></p>
+          </div>
+        </section>
         <section id="admin-dashboard" aria-labelledby="admin-dashboard-title" aria-busy="false">
           <div class="admin-dashboard-heading">
             <h3 id="admin-dashboard-title">数据看板</h3>
@@ -1128,7 +1189,7 @@
             </form>
           </section>
         </details>
-        <h3 class="admin-reports-heading">举报处理</h3>
+        <h3 id="admin-reports-heading" class="admin-reports-heading" tabindex="-1">举报处理</h3>
         <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
         <p id="admin-status" class="muted" role="status" aria-live="polite"></p>
         <div id="admin-reports"></div>
