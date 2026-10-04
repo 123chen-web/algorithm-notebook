@@ -49,6 +49,7 @@ from db import ROOT, connect, init_db, normalize_username, schema_version
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
+from stats_summary import ALLOWED_DAYS as ALLOWED_SUMMARY_DAYS, summary as stats_summary
 from scheduler import schedule, today_in_timezone
 from mastery import mastery_report
 from search import search_all
@@ -2173,6 +2174,17 @@ def get_activity_stats(
         conn.execute("BEGIN")
         reviews, records, _ = day_counts(conn, user["id"], user["timezone"])
     return activity_summary(reviews, records, today_for(user), weeks)
+
+
+@app.get("/api/stats/summary")
+def get_stats_summary(days: Annotated[int, Query()] = 30, user=Depends(current_user)):
+    # 总览「趋势」区：待复习 / 连续打卡 / 复习次数 / 真实保持率 + 未来 14 天预测。
+    # 全部按用户本地日，SQL 分组，纯统计，不调用 AI、不占额度。
+    if days not in ALLOWED_SUMMARY_DAYS:
+        raise HTTPException(422, "days 只能是 7、30 或 90")
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return stats_summary(conn, user["id"], user["timezone"], today_for(user), days)
 
 
 @app.get("/api/stats/mastery")

@@ -221,3 +221,118 @@ html[data-theme="qixi"] .ov-greeting { padding: var(--space-4) var(--space-5); b
   .ov-btn, .ov-link, .ov-refresh { min-height: 44px; }
   .ov-card-link, .ov-group { min-height: 44px; }
 }
+
+/* ---------- 趋势区：指标条 + 随指标切换的主图 ---------- */
+.ov-trend {
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+  min-width: 0;
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-home);
+  background: var(--surface);
+  color: var(--ink);
+}
+.ov-trend-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.ov-trend-head h3 { margin: 0; font-size: var(--text-lg); }
+.ov-trend-range { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper); }
+.ov-trend-range-button { min-height: 40px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--ink-2); font: 600 var(--text-xs)/1 var(--mono); letter-spacing: .04em; white-space: nowrap; }
+.ov-trend-range-button:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); }
+.ov-trend-range-button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.ov-trend-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--error-line); border-radius: var(--radius-sm); background: var(--error-surface); color: var(--error-ink); font-size: var(--text-sm); }
+.ov-trend-error[hidden], .ov-trend-tabs[hidden], .ov-trend-panel[hidden], .ov-trend-how[hidden], .ov-trend-data[hidden] { display: none; }
+
+/* 指标条：四个可点击的指标块，选中的那个决定下面的主图。 */
+.ov-trend-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.ov-trend-tab {
+  position: relative; /* 读屏文字（.ov-sr-only 是绝对定位）要被指标条的滚动容器裁住 */
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 112px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-option);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+.ov-trend-tab:hover:not(:disabled) { border-color: var(--ink-2); background: var(--surface); }
+.ov-trend-tab[aria-selected="true"] { border-color: var(--azurite); background: var(--paper); box-shadow: inset 0 3px 0 var(--azurite); }
+.ov-trend-label { color: var(--ink-2); font: 600 var(--text-meta)/1.4 var(--mono); letter-spacing: .08em; }
+.ov-trend-value { display: flex; align-items: baseline; gap: var(--space-1); }
+.ov-trend-value strong { font-family: var(--serif); font-size: 30px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ov-trend-value small { color: var(--ink-2); font-size: var(--text-sm); }
+.ov-trend-line-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-height: 20px; font-size: var(--text-xs); }
+.ov-trend-sub { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ov-trend-delta { display: inline-flex; align-items: center; gap: 3px; font: 700 var(--text-xs)/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.ov-trend-delta.is-up, .ov-trend-delta.is-new { color: var(--success-ink); }
+.ov-trend-delta.is-down { color: var(--danger); }
+.ov-trend-delta.is-flat { color: var(--ink-2); }
+.ov-trend-explain { color: var(--ink-2); font-size: var(--text-xs); line-height: 1.5; }
+.ov-trend-tab.is-skeleton { border-style: dashed; background: var(--paper); }
+
+/* 主图 */
+.ov-trend-panel { min-width: 0; margin-top: var(--space-4); }
+.ov-trend-chart { min-width: 0; }
+.ov-chart { display: block; width: 100%; height: auto; }
+.ov-chart-grid { stroke: var(--line); stroke-width: 1; }
+.ov-chart-tick, .ov-chart-axis { fill: var(--ink-2); font: 500 11px var(--mono); }
+.ov-chart-axis.is-today { fill: var(--ink); font-weight: 700; }
+.ov-chart-value { fill: var(--ink); font: 600 11px var(--mono); }
+.ov-chart-value.is-today { font-weight: 700; }
+.ov-chart-note { fill: var(--ink-2); font: 500 11px var(--mono); }
+.ov-bar-rect { fill: var(--azurite); }
+.ov-bar-rect.is-today { fill: var(--accent); }
+.ov-bar-rect.is-zero { fill: var(--line); }
+.ov-area-fill { fill: var(--azurite); fill-opacity: .14; }
+.ov-area-line, .ov-trend-line { fill: none; stroke: var(--azurite); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ov-area-end { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.ov-trend-dot { fill: var(--azurite); stroke: var(--surface); stroke-width: 2; }
+.ov-trend-dot.is-last { fill: var(--accent); }
+.ov-chart-target { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ov-heat-cell { fill: var(--azurite); }
+.ov-heat-cell.level-0 { fill: var(--line); }
+.ov-heat-cell.level-1 { fill-opacity: .3; }
+.ov-heat-cell.level-2 { fill-opacity: .55; }
+.ov-heat-cell.level-3 { fill-opacity: .78; }
+.ov-hover { display: none; pointer-events: none; }
+.ov-hover.is-on { display: block; }
+.ov-hover-line { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.ov-hover-dot { fill: var(--azurite); stroke: var(--surface); stroke-width: 2; }
+.ov-hover-box { fill: var(--ink); }
+.ov-hover-text { fill: var(--paper); font: 600 11px var(--mono); }
+.ov-hover-overlay { fill: transparent; cursor: crosshair; touch-action: pan-y; }
+.ov-trend-note { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-xs); line-height: 1.6; }
+.ov-trend-note:empty { display: none; }
+.ov-trend-empty { margin: 0; padding: var(--space-6) var(--space-4); border: 1px dashed var(--line); border-radius: var(--radius-option); color: var(--ink-2); font-size: var(--text-sm); text-align: center; }
+.ov-trend-skeleton { height: 160px; border-radius: var(--radius-option); background: var(--paper); }
+.ov-trend-how { margin-top: var(--space-1); }
+.ov-trend-how summary, .ov-trend-data summary { display: flex; align-items: center; min-height: 40px; color: var(--azurite); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.ov-trend-how p { margin: 0 0 var(--space-2); color: var(--ink-2); font-size: var(--text-sm); line-height: 1.7; }
+.ov-trend-table-wrap { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.ov-trend-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.ov-trend-table caption { padding: var(--space-2) var(--space-3); color: var(--ink-2); text-align: left; }
+.ov-trend-table th, .ov-trend-table td { padding: var(--space-1) var(--space-3); border-top: 1px solid var(--line); color: var(--ink); text-align: left; font-weight: 400; }
+.ov-trend-table thead th { color: var(--ink-2); font-weight: 600; }
+.ov-trend-tab:focus-visible, .ov-trend-range-button:focus-visible, .ov-trend-how summary:focus-visible, .ov-trend-data summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 1023px) {
+  .ov-trend-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 599px) {
+  .ov-trend { padding: var(--space-4); }
+  /* 手机：指标条横向滚动、逐块吸附；滚动只发生在条内，页面不横向滚动。 */
+  .ov-trend-tabs { display: flex; gap: var(--space-2); overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: var(--space-1); overscroll-behavior-x: contain; padding-bottom: var(--space-1); }
+  .ov-trend-tab { flex: 0 0 min(78%, 260px); scroll-snap-align: start; }
+}
+@media (pointer: coarse) {
+  .ov-trend-range-button { min-height: 44px; }
+  .ov-trend-how summary, .ov-trend-data summary { min-height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ov-trend-skeleton, .ov-trend-tab.is-skeleton { animation: ov-trend-pulse 1.4s ease-in-out infinite; }
+  @keyframes ov-trend-pulse { 50% { opacity: .55; } }
+}

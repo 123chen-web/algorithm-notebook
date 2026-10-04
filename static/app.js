@@ -911,6 +911,8 @@ async function loadHome({ refreshUser = true } = {}) {
   finishHomeOpening?.();
   const currentUser = user;
   resetHomeSummary();
+  const [trendEpoch, trendUserId] = [sessionEpoch, user?.id];
+  window.Overview?.loadTrend({ api, isCurrent: () => trendEpoch === sessionEpoch && user?.id === trendUserId && view === "home" });
   // 总览统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
   // 两份数据独立降级，读取失败不显示旧值或假定的零值。
   const [profile, overview] = await Promise.allSettled([

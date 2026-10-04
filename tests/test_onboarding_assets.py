@@ -34,15 +34,16 @@ def test_assets_are_versioned_and_loaded_before_app():
 
 def test_changed_assets_had_their_versions_bumped():
     # 基线：app.js=58、mastery.js=2、clusters.js=4；改过的都加一。
-    # 整合后：app.js 每个分支加一（此处 63），mastery.js / clusters.js 被 AN 与 ON 各改一次（4 / 6）。
-    assert "/static/app.js?v=63" in script_sources()
+    # 整合后：app.js 每个分支加一（此处 64），mastery.js / clusters.js 被 AN 与 ON 各改一次（4 / 6）。
+    assert "/static/app.js?v=64" in script_sources()
     assert "/static/mastery.js?v=4" in script_sources()
     assert "/static/clusters.js?v=6" in script_sources()
 
 
 def test_overview_files_were_not_touched_by_this_task():
-    assert "/static/overview.js?v=2" in script_sources()
-    assert 'href="/static/overview.css?v=2"' in INDEX
+    # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们，版本是 3。
+    assert "/static/overview.js?v=3" in script_sources()
+    assert 'href="/static/overview.css?v=3"' in INDEX
 
 
 @pytest.mark.parametrize("source,name", [(SCRIPT, "onboarding.js"), (STYLE, "onboarding.css")])
