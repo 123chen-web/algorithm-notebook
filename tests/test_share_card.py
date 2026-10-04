@@ -123,7 +123,7 @@ def test_new_user_gets_png_and_easiest_next_goal(client, drawn_text):
 
     card(client)
     text = "\n".join(drawn_text)
-    assert "算法错题本" in text
+    assert "欧叶OY" in text
     assert "把错误变成掌握" in text
     assert "alice 的学习战报" in text
     assert "下一个目标" in text

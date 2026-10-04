@@ -165,7 +165,7 @@ class AlipayChannel:
         total_amount = f"{amount_cents // 100}.{amount_cents % 100:02d}"
         try:
             result = self._client.api_alipay_trade_precreate(
-                subject="算法错题本订阅",
+                subject="欧叶OY订阅",
                 out_trade_no=order["id"],
                 total_amount=total_amount,
                 notify_url=self.notify_url,
@@ -412,7 +412,7 @@ class WechatPayChannel:
             raise PaymentChannelError("微信支付订单金额无效")
         result = self._call(
             self._client.pay,
-            description="算法错题本订阅",
+            description="欧叶OY订阅",
             out_trade_no=order["id"],
             amount={"total": amount_cents},
             notify_url=self.notify_url,

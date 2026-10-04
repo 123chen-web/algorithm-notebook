@@ -339,4 +339,4 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
     header = Message()
     header["Content-Disposition"] = disposition
     assert header.get_content_disposition() == "attachment"
-    assert header.get_filename() == f"算法错题本导出_小明_{local_day}.json"
+    assert header.get_filename() == f"欧叶OY导出_小明_{local_day}.json"

@@ -20,7 +20,7 @@ import mailer
 from db import connect, init_db
 from scheduler import today_in_timezone
 
-REMINDER_SUBJECT = "算法错题本：今天有易错点待复习"
+REMINDER_SUBJECT = "欧叶OY：今天有易错点待复习"
 REMINDER_ITEM_LIMIT = 8
 
 
@@ -73,7 +73,7 @@ def reminder_body(username, count, mistakes):
     if remaining > 0:
         lines.extend(["", f"还有 {remaining} 条易错点待复习，可在网站查看。"])
     lines.extend([
-        "", "打开算法错题本，进入“今日复习”，从最早到期的一条开始吧。", "",
+        "", "打开欧叶OY，进入“今日复习”，从最早到期的一条开始吧。", "",
         "（这是自动提醒邮件，回复不会被处理。）",
     ])
     return "\n".join(lines)

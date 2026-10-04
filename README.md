@@ -1,6 +1,6 @@
-# 算法错题本 V1
+# 欧叶OY V1
 
-FastAPI + SQLite + 原生网页。
+（原名“算法错题本”。）FastAPI + SQLite + 原生网页。
 
 支持邀请码注册、免邀请码体验账号、独立用户数据、题目记录、按易错点
 复习、AI 变体题、手动练习结果、密码找回、每日邮件复习提醒。不会执行
@@ -885,7 +885,7 @@ AI 关闭时也能查看样例，不产生 AI 调用。
 确认无误后接入计划任务。Windows（任务计划程序，示例每天凌晨 3 点）：
 
 ```powershell
-schtasks /create /tn "算法错题本清理体验账号" /sc daily /st 03:00 /tr "C:\dev\algorithm-notebook\.venv\Scripts\python.exe C:\dev\algorithm-notebook\cleanup_trial_accounts.py"
+schtasks /create /tn "欧叶OY清理体验账号" /sc daily /st 03:00 /tr "C:\dev\algorithm-notebook\.venv\Scripts\python.exe C:\dev\algorithm-notebook\cleanup_trial_accounts.py"
 ```
 
 macOS / Linux（cron，示例每天凌晨 3 点）：
@@ -947,7 +947,7 @@ macOS / Linux（cron，示例每天凌晨 3 点）：
 确认无误后接入计划任务。Windows（任务计划程序，示例每天早上 8 点）：
 
 ```powershell
-schtasks /create /tn "算法错题本每日提醒" /sc daily /st 08:00 /tr "C:\dev\algorithm-notebook\.venv\Scripts\python.exe C:\dev\algorithm-notebook\send_reminders.py"
+schtasks /create /tn "欧叶OY每日提醒" /sc daily /st 08:00 /tr "C:\dev\algorithm-notebook\.venv\Scripts\python.exe C:\dev\algorithm-notebook\send_reminders.py"
 ```
 
 macOS / Linux（cron，示例每天早上 8 点）：

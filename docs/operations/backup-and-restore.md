@@ -60,7 +60,7 @@ schtasks /Create /TN "AlgorithmNotebookBackup" /SC DAILY /ST 02:00 /TR 'C:\dev\a
 
 ```ini
 [Unit]
-Description=算法错题本备份
+Description=欧叶OY备份
 
 [Service]
 Type=oneshot
@@ -73,7 +73,7 @@ ExecStart=/srv/algorithm-notebook/.venv/bin/python /srv/algorithm-notebook/backu
 
 ```ini
 [Unit]
-Description=每天备份算法错题本
+Description=每天备份欧叶OY
 
 [Timer]
 OnCalendar=*-*-* 02:00:00

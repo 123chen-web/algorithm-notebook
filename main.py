@@ -797,12 +797,12 @@ def send_password_reset_email(to_address, username, token):
     link = f"{public_base_url()}/?reset_token={token}"
     body = (
         f"你好 {username}，\n\n"
-        "有人（希望是你）在算法错题本申请了重置密码。\n"
+        "有人（希望是你）在欧叶OY申请了重置密码。\n"
         f"30 分钟内点击下面的链接设置新密码：\n{link}\n\n"
         "如果这不是你本人操作，忽略这封邮件即可，密码不会被改动。"
     )
     try:
-        mailer.send_email(to_address, "算法错题本：重置密码", body)
+        mailer.send_email(to_address, "欧叶OY：重置密码", body)
     except Exception:
         # 发信失败不影响接口返回，避免把 SMTP 报错暴露给客户端；
         # 服务端日志里留一条记录方便自己排查。
@@ -998,7 +998,7 @@ def export_data(user=Depends(current_user)):
         "username": user["username"],
         "problems": list(problems.values()),
     }
-    filename = f"算法错题本导出_{user['username']}_{today_for(user).isoformat()}.json"
+    filename = f"欧叶OY导出_{user['username']}_{today_for(user).isoformat()}.json"
     return Response(
         content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
         media_type="application/json",
