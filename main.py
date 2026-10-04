@@ -56,6 +56,7 @@ from tags import (
     replace_tags, tags_for_mistakes, user_tag_counts,
 )
 from share_card import render_achievement_card
+from stats_summary import stats_summary
 from weekly_recap import weekly_recap
 
 logger = logging.getLogger("algorithm_notebook")
@@ -2160,6 +2161,16 @@ def get_activity_stats(
         conn.execute("BEGIN")
         reviews, records, _ = day_counts(conn, user["id"], user["timezone"])
     return activity_summary(reviews, records, today_for(user), weeks)
+
+
+@app.get("/api/stats/summary")
+def get_stats_summary(days: int = 30, user=Depends(current_user)):
+    if days not in (7, 30, 90):
+        raise HTTPException(422, "days 只能是 7、30 或 90")
+    # 总览"趋势"区：到期预测、真实保持率、与上一周期对比；纯统计，不调用 AI、不占额度。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return stats_summary(conn, user["id"], user["timezone"], today_for(user), days)
 
 
 @app.get("/api/stats/mastery")
