@@ -17,6 +17,7 @@
 
 /* ---------- 两个榜单区块 ---------- */
 .rank-panel { margin-top: var(--space-5); min-width: 0; }
+.rank-panel + .panel { margin-top: var(--space-5); }
 .rank-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
 .rank-head h3 { margin: 0; }
 .rank-retry { min-height: 40px; }
@@ -69,6 +70,7 @@ a.rank-hot-link:focus-visible, .rank-notice-link:focus-visible, .rank-admin-item
 .account-menu-panel > .account-rank-pref[hidden] { display: none; }
 .account-rank-pref-row { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; color: var(--ink); font-size: var(--text-sm); }
 .account-rank-pref-row input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
+.account-menu-panel > .account-rank-pref { margin-bottom: var(--space-3); }
 .account-rank-pref-note { color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 
 /* ---------- 管理后台“今日一条” ---------- */
@@ -80,6 +82,7 @@ a.rank-hot-link:focus-visible, .rank-notice-link:focus-visible, .rank-admin-item
 .rank-admin-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12em), 1fr)); gap: var(--space-3); }
 .rank-admin-dates label { display: grid; gap: var(--space-1); min-width: 0; }
 .rank-admin-check { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; }
+.rank-admin-check input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
 .rank-admin-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .rank-admin-actions button, .rank-admin-item-actions button { min-height: 40px; }
 .rank-admin-actions [hidden] { display: none; }

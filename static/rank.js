@@ -270,7 +270,11 @@
       if (!stillCurrent()) return;
       hooks.getUser().public_rank_opt_out = !wanted;
       settingNote.textContent = wanted ? "已加入公开榜单。" : "已退出公开榜单，你不会再出现在榜单上。";
-      if (hooks.getView() === "leaderboard") load();
+      if (hooks.getView() === "leaderboard") {
+        // 宿主能刷新整页（含原来的连续打卡榜）就交给宿主；否则只刷新这里的区块。
+        if (typeof hooks.refreshPage === "function") hooks.refreshPage();
+        else load();
+      }
     } catch (error) {
       if (!stillCurrent()) return;
       checkbox.checked = !wanted;

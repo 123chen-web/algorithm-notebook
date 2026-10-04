@@ -4411,7 +4411,7 @@ function configureAdminMetrics() {
 }
 
 function configureRank() {
-  const hooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement };
+  const hooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement, refreshPage: () => loadLeaderboard().catch(() => {}) };
   window.Rank?.configure(hooks);
   window.RankAdmin?.configure(hooks);
 }

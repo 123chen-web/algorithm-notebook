@@ -90,6 +90,7 @@ def test_app_js_only_wires_load_configure_sync_and_reset():
     assert "window.Rank?.reset();" in APP and "window.RankAdmin?.reset();" in APP
     assert "window.Rank?.syncSetting(user);" in APP
     assert "window.RankAdmin?.load()" in APP
+    assert "refreshPage: () => loadLeaderboard()" in APP
     assert "window.Rank?.configure(hooks);" in APP and "window.RankAdmin?.configure(hooks);" in APP
     assert len(re.findall(r"\bRank(?:Admin)?\b", APP)) <= 14
 

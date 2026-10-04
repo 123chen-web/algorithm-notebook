@@ -260,6 +260,19 @@ test("setting: turning the switch off PUTs participate=false, updates the user a
   assert.equal(byPath(ctx.env, "/api/rank/yesterday").length, 1, "在榜单页上改设置会立刻刷新榜单");
 });
 
+test("setting: when the host can refresh the whole page it does that instead of reloading only the new blocks", async () => {
+  const ctx = setup();
+  let refreshed = 0;
+  ctx.hooks.refreshPage = () => { refreshed += 1; };
+  ctx.env.window.Rank.syncSetting(ctx.state.user);
+  toggle(ctx, false);
+  await tick();
+  ctx.env.respond(byPath(ctx.env, "/api/me/public-rank")[0], 200, { participate: false });
+  await settle();
+  assert.equal(refreshed, 1);
+  assert.equal(byPath(ctx.env, "/api/rank/yesterday").length, 0);
+});
+
 test("setting: a failed save puts the switch back and says so", async () => {
   const ctx = setup();
   ctx.env.window.Rank.syncSetting(ctx.state.user);
