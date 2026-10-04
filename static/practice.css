@@ -1,0 +1,11 @@
+/* 「现在就练 5 条」按钮（薄弱点分析页、错因专题页共用）。颜色全部走主题变量。 */
+.practice-now { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.practice-now[hidden] { display: none; }
+.practice-now-button { min-height: 44px; font-size: var(--text-sm); }
+.practice-now-button.is-empty:disabled { background: var(--paper); color: var(--ink-2); }
+.practice-now-note { color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-ui); }
+.practice-now-link { min-height: 44px; border-color: transparent; background: transparent; color: var(--azurite); font-size: var(--text-sm); text-decoration: underline; text-underline-offset: 4px; }
+.practice-now :is(button):focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 599px) {
+  .practice-now-button:not(:disabled) { width: 100%; }
+}

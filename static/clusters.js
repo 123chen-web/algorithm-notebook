@@ -10,6 +10,11 @@
   let refreshRequested = false;
   let quotaAvailable = false;
   let retryAction = "load";
+  let trendRun = 0; // 每次重画专题加一：旧的复习记录请求回来时对不上就丢弃
+  let trendSlots = [];
+
+  // 专题徽标的判定规则（任务书 AN §4）；边界集中写在这里，测试直接引用。
+  const TREND = Object.freeze({ windowDays: 14, minRecent: 3, failBelow: 3, improvePoints: 20, repeatPercent: 40, concurrency: 4 });
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -68,6 +73,93 @@
     return `${member.due_date} 到期`;
   }
 
+  /* ---------- 专题徽标：已改善 / 仍在反复 / 样本不足 ---------- */
+  function utcDay(text) {
+    if (typeof text !== "string") return NaN;
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : NaN;
+  }
+
+  /** reviews：专题全部成员的复习记录 [{ quality, reviewed_at }]；today：页面上的"今天"（YYYY-MM-DD）。
+      最近 14 天 = 距今天 0–13 天（reviewed_at 取日期部分，与 today 同按日历日比较，不换算时区）。
+      返回 null（不显示）或 { kind: "improved" | "repeating" | "sparse", label, text }。
+      任何一条记录读不懂 → null：数据不可信时整体不下结论。 */
+  function trendOf(reviews, today) {
+    const end = utcDay(today);
+    if (!Array.isArray(reviews) || Number.isNaN(end)) return null;
+    const recent = { total: 0, failed: 0 };
+    const earlier = { total: 0, failed: 0 };
+    for (const review of reviews) {
+      const day = utcDay(review?.reviewed_at);
+      if (Number.isNaN(day) || !Number.isInteger(review.quality) || review.quality < 0 || review.quality > 5) return null;
+      const bucket = Math.round((end - day) / 86400000) < TREND.windowDays ? recent : earlier;
+      bucket.total += 1;
+      if (review.quality < TREND.failBelow) bucket.failed += 1;
+    }
+    if (recent.total < TREND.minRecent) {
+      return { kind: "sparse", label: "样本不足", text: `最近两周只复习了 ${recent.total} 次，不足 ${TREND.minRecent} 次，暂时看不出有没有改善` };
+    }
+    if (earlier.total === 0) return null; // 没有更早的复习可比
+    const percent = (part) => Math.round((part.failed / part.total) * 100);
+    const text = `最近两周答错的比例 ${percent(recent)}%，之前是 ${percent(earlier)}%`;
+    // 用整数交叉相乘比较，避免 0.2 / 0.4 的浮点误差：
+    // 下降 ≥ 20 个百分点 ⇔ 100·(earlier.failed·recent.total − recent.failed·earlier.total) ≥ 20·earlier.total·recent.total
+    const drop = earlier.failed * recent.total - recent.failed * earlier.total;
+    if (100 * drop >= TREND.improvePoints * earlier.total * recent.total) return { kind: "improved", label: "已改善", text };
+    const notLower = recent.failed * earlier.total >= earlier.failed * recent.total;
+    if (notLower && recent.failed * 100 >= TREND.repeatPercent * recent.total) return { kind: "repeating", label: "仍在反复", text };
+    return null;
+  }
+
+  function trendSlot(cluster) {
+    const badge = node("span", "clusters-trend");
+    badge.hidden = true;
+    trendSlots.push({ cluster, badge });
+    return badge;
+  }
+
+  function showTrend(badge, trend) {
+    badge.className = `clusters-trend is-${trend.kind}`;
+    badge.textContent = trend.label;
+    badge.tabIndex = 0;
+    badge.title = trend.text;
+    badge.dataset.tip = trend.text;
+    badge.setAttribute("role", "note");
+    badge.setAttribute("aria-label", `${trend.label}：${trend.text}`);
+    badge.hidden = false;
+  }
+
+  /** 读取每个成员的复习记录（现有接口 GET /api/mistakes/{id}），最多并发 TREND.concurrency 个。
+      任何一个失败或晚到作废 → 整体不显示徽标。 */
+  async function loadTrends(ticket, userId, run) {
+    const slots = trendSlots;
+    const today = report?.today;
+    if (!slots.length || typeof today !== "string" || typeof api !== "function") return;
+    const ids = [...new Set(slots.flatMap((entry) => entry.cluster.members.map((member) => member.mistake_id)))];
+    const reviews = new Map();
+    let failed = false;
+    const live = () => run === trendRun && current(ticket, userId);
+    let next = 0;
+    async function worker() {
+      while (!failed && live() && next < ids.length) {
+        const id = ids[next++];
+        try {
+          const detail = await api(`/api/mistakes/${id}`);
+          if (!Array.isArray(detail?.reviews)) throw new Error("no reviews");
+          reviews.set(id, detail.reviews);
+        } catch {
+          failed = true;
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(TREND.concurrency, ids.length) }, worker));
+    if (failed || !live()) return;
+    for (const { cluster, badge } of slots) {
+      const trend = trendOf(cluster.members.flatMap((member) => reviews.get(member.mistake_id) || []), today);
+      if (trend) showTrend(badge, trend);
+    }
+  }
+
   function memberRow(member, ticket, userId) {
     const row = node("li", "clusters-member");
     const open = node("button", "clusters-member-open");
@@ -97,15 +189,19 @@
     members.setAttribute("role", "list");
     members.setAttribute("aria-label", `${cluster.title}的易错点`);
     members.append(...cluster.members.map((member) => memberRow(member, ticket, userId)));
+    head.append(trendSlot(cluster));
     card.append(head, explanation, tip, members);
-    const ids = cluster.members.filter(isDue).map((member) => member.mistake_id);
-    if (ids.length && typeof window.FocusReview?.start === "function") {
-      const practise = node("button", "clusters-practise", `一起复习这 ${ids.length} 条到期的`);
-      practise.type = "button";
-      practise.addEventListener("click", () => {
-        if (current(ticket, userId)) window.FocusReview?.start({ ids });
+    if (window.PracticeNow) {
+      const box = node("div", "practice-now clusters-practise-box");
+      const ids = window.PracticeNow.pickDueIds(cluster.members, { today: report.today });
+      window.PracticeNow.fill(box, {
+        ids,
+        label: ids.length ? `现在就练这个专题（${ids.length} 条）` : "现在就练这个专题",
+        emptyText: "这个专题今天没有要复习的",
+        guard: () => current(ticket, userId),
+        buttonClass: "clusters-practise",
       });
-      card.append(practise);
+      card.append(box);
     }
     return card;
   }
@@ -114,6 +210,8 @@
     renderControls();
     const result = $("#clusters-result");
     result.replaceChildren();
+    trendRun += 1;
+    trendSlots = [];
     const insight = report?.insight;
     result.hidden = !insight;
     $("#clusters-empty").hidden = Boolean(insight);
@@ -139,6 +237,7 @@
     const userId = user.id;
     list.append(...content.clusters.map((cluster, index) => clusterCard(cluster, index, ticket, userId)));
     result.append(list);
+    void loadTrends(ticket, userId, trendRun);
     if (!content.clusters.length) result.append(node("p", "clusters-no-common", "暂时看不出可归并的共性。继续记录具体错因，再积累一些线索。"));
   }
 
@@ -228,6 +327,8 @@
 
   function reset() {
     generation += 1;
+    trendRun += 1;
+    trendSlots = [];
     report = null;
     pending = "";
     refreshRequested = false;
@@ -253,5 +354,5 @@
     if (pending) refreshRequested = true;
     else void load();
   });
-  window.Clusters = { load, reset };
+  window.Clusters = { load, reset, trendOf, TREND };
 })();

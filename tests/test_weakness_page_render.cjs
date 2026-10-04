@@ -37,6 +37,11 @@ class Node {
   set innerHTML(_) { throw new Error("Report data must be inserted as text, never innerHTML"); }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   getAttribute(name) { return this.attributes[name] ?? null; }
+  addEventListener(name, callback) { (this.listeners ??= {})[name] = [...((this.listeners ?? {})[name] || []), callback]; }
+  async click() {
+    if (this.disabled) return;
+    for (const callback of (this.listeners || {}).click || []) await callback({ target: this });
+  }
   append(...children) {
     for (const child of children) {
       if (child instanceof Node) this.children.push(child);
@@ -46,6 +51,11 @@ class Node {
   replaceChildren(...children) { this._text = ""; this.children = []; this.append(...children); }
 }
 
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+  return { promise, resolve, reject };
+}
 function descendants(node) { return node.children.flatMap((child) => [child, ...descendants(child)]); }
 function byClass(node, name) { return descendants(node).filter((child) => child.classList.contains(name)); }
 function byTag(node, tag) { return descendants(node).filter((child) => child.tagName === tag); }
@@ -62,11 +72,17 @@ function oneClass(node, name) {
 function harness(state = {}) {
   const nodes = Object.fromEntries(Object.entries(payload.ids).map(([id, attrs]) => [id, new Node("div", attrs)]));
   const get = (id) => { assert.ok(nodes[id], `Unknown DOM id: ${id}`); return nodes[id]; };
+  const events = [];
+  const practices = [];
   const context = {
     document: {
       createElement: (tag) => new Node(tag),
       createTextNode: (text) => { const node = new Node("#text"); node.textContent = text; return node; },
+      dispatchEvent: (event) => { events.push({ type: event.type, detail: JSON.parse(JSON.stringify(event.detail)) }); return true; },
     },
+    CustomEvent: class CustomEvent { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
+    window: { FocusReview: { start: (args) => practices.push(JSON.parse(JSON.stringify(args))) } },
+    view: "insights",
     $: (selector) => get(selector.slice(1)),
     user: { timezone: "Asia/Shanghai", ai_daily_remaining: 10, ai_daily_limit: 10 },
     weaknessAnalysis: { mistake_count: 5, minimum_mistakes: 5, insight: null },
@@ -79,8 +95,9 @@ function harness(state = {}) {
     ...state,
   };
   vm.createContext(context);
+  vm.runInContext(payload.practice, context, { timeout: 1000 });
   vm.runInContext(payload.source, context, { timeout: 1000 });
-  return { context, get };
+  return { context, get, events, practices, practice: context.window.PracticeNow };
 }
 
 function controls() {
@@ -313,7 +330,179 @@ function analysis() {
   assert.equal(get("weakness-empty-text").textContent, "再记两条具体错因");
 }
 
-const scenarios = { controls, quota, growth, "growth-reset": growthReset, analysis };
+/* ---------------- 现在就练 5 条 ---------------- */
+const TODAY = "2026-10-02";
+const due = (id, zone, day) => ({ id, zone, due_date: day, title: `题${id}` });
+const dueItems = () => [
+  due(1, "算法", "2026-09-30"), due(2, "算法", "2026-09-25"), due(3, "算法", "2026-10-02"),
+  due(4, "算法", "2026-09-25"), due(5, "算法", "2026-10-01"), due(6, "算法", "2026-10-02"),
+  due(7, "算法", "2026-09-20"), due(8, "后端", "2026-10-02"),
+  due(9, "算法", "2026-10-09"), // 还没到期：就算被误传进来也不能练
+];
+const zoneCards = (get) => byClass(get("growth-zones"), "growth-zone");
+function practiceState(card) {
+  const box = oneClass(card, "practice-now");
+  const buttons = byClass(box, "practice-now-button");
+  return { box, button: buttons[0], note: byClass(box, "practice-now-note")[0], link: byClass(box, "practice-now-link")[0] };
+}
+const growthZonesFixture = () => ["算法", "前端", "后端"].map((zone) => ({ zone, total_mistakes: 9, recent_30_days: 1, prior_30_days: 1, days_since_last_mistake: 1, quiet_streak: false, community_struggling_ratio: null }));
+
+async function practiceSlots() {
+  const { context, get, events, practices, practice } = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  context.renderGrowthInsights(true);
+  // 到期清单还没读到：不画按钮（不假装有）。
+  for (const card of zoneCards(get)) assert.equal(oneClass(card, "practice-now").hidden, true);
+  assert.equal(byClass(get("growth-zones"), "practice-now-button").length, 0);
+
+  practice.setDue(dueItems(), TODAY);
+  const [algorithm, frontend, backend] = zoneCards(get).map(practiceState);
+  // 算法有 7 条到期：取最早的 5 条（到期日升序，同日按 id），未到期的 9 与别的分区的 8 不在其中。
+  assert.equal(algorithm.button.textContent, "现在就练 5 条");
+  assert.equal(algorithm.button.disabled, false);
+  await algorithm.button.click();
+  assert.deepEqual(practices, [{ ids: [7, 2, 4, 1, 5] }]);
+  // 前端没有到期：禁用 + 说明 + 去看记录。
+  assert.equal(frontend.button.disabled, true);
+  assert.equal(frontend.note.textContent, "这一块今天没有要复习的");
+  await frontend.button.click();
+  assert.equal(practices.length, 1, "disabled button starts nothing");
+  await frontend.link.click();
+  assert.deepEqual(events, [{ type: "records:filter", detail: { zone: "前端" } }]);
+  // 后端只有 1 条：按钮写实际条数。
+  assert.equal(backend.button.textContent, "现在就练 1 条");
+  await backend.button.click();
+  assert.deepEqual(practices[1], { ids: [8] });
+
+  // 没有 FocusReview 入口（脚本没加载）：不显示按钮，页面本身不受影响。
+  const bare = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  delete bare.context.window.FocusReview;
+  bare.context.renderGrowthInsights(true);
+  bare.practice.setDue(dueItems(), TODAY);
+  for (const card of zoneCards(bare.get)) assert.equal(oneClass(card, "practice-now").hidden, true);
+  assert.equal(zoneCards(bare.get).length, 3);
+
+  // 非法的清单（缺 today / 不是数组）被忽略，不报错。
+  const bad = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  bad.context.renderGrowthInsights(true);
+  bad.practice.setDue(null, TODAY);
+  bad.practice.setDue(dueItems(), "昨天");
+  for (const card of zoneCards(bad.get)) assert.equal(oneClass(card, "practice-now").hidden, true);
+}
+
+function patternsFixture() {
+  const evidence = (id, zone) => ({ mistake_id: id, zone, title: `题${id}`, observation: "o" });
+  return [
+    { title: "同一分区的规律", confidence: "较明确", explanation: "e", action: "a", evidence: [evidence(3, "算法"), evidence(4, "算法"), evidence(9, "算法")] },
+    { title: "跨分区的规律", confidence: "待验证", explanation: "e", action: "a", evidence: [evidence(40, "前端"), evidence(41, "后端")] },
+  ];
+}
+function analysisState(patterns) {
+  const sample = { problem_count: 3, mistake_count: 5, review_count: 1, period_start: null, period_end: null };
+  return { mistake_count: 5, minimum_mistakes: 5, status: "ok", insight: { created_at: "2026-10-01T12:00:00Z", content: { summary: "s", sample, patterns } } };
+}
+
+async function practicePatterns() {
+  const { context, get, events, practices, practice } = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, weaknessAnalysis: analysisState(patternsFixture()) });
+  context.renderWeaknessAnalysis();
+  practice.setDue(dueItems(), TODAY);
+  const [same, cross] = byClass(get("weakness-result"), "weakness-pattern").map(practiceState);
+  // 模式引用了 3、4、9：3、4 到期，9 没到期 → 只练 3、4（到期日相同的按 id；4 是 09-25 在前）。
+  assert.equal(same.button.textContent, "现在就练 2 条");
+  await same.button.click();
+  assert.deepEqual(practices, [{ ids: [4, 3] }]);
+  // 引用的 40、41 都不在到期清单里：禁用；证据来自两个分区，"去看记录"不按分区筛。
+  assert.equal(cross.button.disabled, true);
+  assert.equal(cross.note.textContent, "这一块今天没有要复习的");
+  await cross.link.click();
+  assert.deepEqual(events, [{ type: "records:filter", detail: { zone: "" } }]);
+  // 单一分区且没有到期时，"去看记录"按那个分区筛。
+  const single = patternsFixture();
+  single[0].evidence = [{ mistake_id: 90, zone: "前端", title: "t", observation: "o" }, { mistake_id: 91, zone: "前端", title: "t", observation: "o" }];
+  const again = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, weaknessAnalysis: analysisState(single) });
+  again.context.renderWeaknessAnalysis();
+  again.practice.setDue(dueItems(), TODAY);
+  await practiceState(byClass(again.get("weakness-result"), "weakness-pattern")[0]).link.click();
+  assert.deepEqual(again.events, [{ type: "records:filter", detail: { zone: "前端" } }]);
+}
+
+async function practiceLateResponse() {
+  const first = deferred();
+  const { context, get, practice } = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  context.renderGrowthInsights(true);
+  let call = first;
+  context.api = (path) => { assert.equal(path, "/api/mistakes?due_only=true"); return call.promise; };
+  const filled = () => zoneCards(get).some((card) => !oneClass(card, "practice-now").hidden);
+
+  // 1. 响应回来时还是当前账号、当前页：填上。
+  const ok = context.loadWeaknessDue(context.weaknessGeneration, 1);
+  first.resolve({ today: TODAY, items: dueItems() });
+  await ok;
+  assert.equal(filled(), true);
+
+  // 2. 响应回来前已经重新加载（generation 变了）：丢弃。
+  practice.reset();
+  context.renderGrowthInsights(true);
+  call = deferred();
+  const stale = context.loadWeaknessDue(context.weaknessGeneration, 1);
+  context.weaknessGeneration += 1;
+  call.resolve({ today: TODAY, items: dueItems() });
+  await stale;
+  assert.equal(filled(), false, "an answer for an older load is dropped");
+
+  // 3. 换了账号：丢弃。
+  call = deferred();
+  const other = context.loadWeaknessDue(context.weaknessGeneration, 1);
+  context.user = { id: 2, timezone: "Asia/Shanghai" };
+  call.resolve({ today: TODAY, items: dueItems() });
+  await other;
+  assert.equal(filled(), false, "an answer for the previous account is dropped");
+
+  // 4. 已经离开分析页：丢弃。
+  context.user = { id: 1, timezone: "Asia/Shanghai" };
+  call = deferred();
+  const away = context.loadWeaknessDue(context.weaknessGeneration, 1);
+  context.view = "all";
+  call.resolve({ today: TODAY, items: dueItems() });
+  await away;
+  assert.equal(filled(), false, "an answer that arrives after leaving the page is dropped");
+
+  // 5. 读取失败：不显示按钮，也不抛错。
+  context.view = "insights";
+  call = deferred();
+  const failed = context.loadWeaknessDue(context.weaknessGeneration, 1);
+  call.reject(new Error("offline"));
+  await failed;
+  assert.equal(filled(), false);
+}
+
+async function practiceReset() {
+  const { context, get, practice, practices } = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  context.renderGrowthInsights(true);
+  practice.setDue(dueItems(), TODAY);
+  const button = practiceState(zoneCards(get)[0]).button;
+  assert.equal(button.disabled, false);
+  context.resetWeaknessAnalysis(); // 登出 / 换账号
+  assert.equal(get("growth-zones").children.length, 0);
+  // 旧账号留下的按钮点了也不开始复习；新账号的卡片在拿到自己的清单前不显示按钮。
+  await button.click();
+  assert.deepEqual(practices, []);
+  const fresh = harness({ user: { id: 1, timezone: "Asia/Shanghai" }, growthZones: growthZonesFixture() });
+  fresh.context.renderGrowthInsights(true);
+  fresh.practice.setDue(dueItems(), TODAY);
+  const leftover = practiceState(zoneCards(fresh.get)[0]).button;
+  fresh.context.resetWeaknessAnalysis();
+  await leftover.click();
+  assert.deepEqual(fresh.practices, [], "a leftover button from before the reset starts nothing");
+  fresh.context.growthZones = growthZonesFixture();
+  fresh.context.renderGrowthInsights(true);
+  for (const card of zoneCards(fresh.get)) assert.equal(oneClass(card, "practice-now").hidden, true, "the old account's due list is gone");
+}
+
+const scenarios = {
+  controls, quota, growth, "growth-reset": growthReset, analysis,
+  "practice-slots": practiceSlots, "practice-patterns": practicePatterns,
+  "practice-late-response": practiceLateResponse, "practice-reset": practiceReset,
+};
 assert.ok(Object.hasOwn(scenarios, payload.scenario), "Unknown report test scenario");
 Promise.resolve(scenarios[payload.scenario]()).then(() => {
   process.stdout.write(`${payload.scenario}: render behavior passed\n`);

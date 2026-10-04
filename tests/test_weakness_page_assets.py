@@ -244,7 +244,10 @@ def test_cost_explanation_uses_a_native_collapsed_keyboard_control(document):
     assert "hidden" not in summaries[0]["attrs"]
 
 
-@pytest.mark.parametrize("scenario", ["controls", "quota", "growth", "growth-reset", "analysis"])
+@pytest.mark.parametrize("scenario", [
+    "controls", "quota", "growth", "growth-reset", "analysis",
+    "practice-slots", "practice-patterns", "practice-late-response", "practice-reset",
+])
 def test_report_rendering_preserves_control_states_and_data_semantics(document, scenario):
     """Execute real render functions without app startup or a browser/database."""
     node = shutil.which("node")
@@ -255,7 +258,7 @@ def test_report_rendering_preserves_control_states_and_data_semantics(document, 
     for name in (
         "element", "timestamp", "renderWeaknessControls", "resetGrowthInsights",
         "resetWeaknessAnalysis", "weaknessRequestCurrent", "loadWeaknessAnalysis",
-        "renderWeaknessAnalysis", "renderGrowthInsights",
+        "renderWeaknessAnalysis", "renderGrowthInsights", "loadWeaknessDue",
     ):
         declaration = re.search(
             rf"(?m)^(?:async\s+)?function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{",
@@ -265,6 +268,7 @@ def test_report_rendering_preserves_control_states_and_data_semantics(document, 
         functions.append(declaration[0] + function_body(source, name) + "}")
     payload = {
         "source": "\n".join(functions),
+        "practice": (STATIC / "practice.js").read_text(encoding="utf-8"),
         "scenario": scenario,
         "ids": {
             node["attrs"]["id"]: node["attrs"]

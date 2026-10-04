@@ -24,8 +24,9 @@
   <link rel="stylesheet" href="/static/palette.css?v=2">
   <link rel="stylesheet" href="/static/focus.css?v=2">
   <link rel="stylesheet" href="/static/tags.css?v=2">
-  <link rel="stylesheet" href="/static/mastery.css?v=2">
-  <link rel="stylesheet" href="/static/clusters.css?v=2">
+  <link rel="stylesheet" href="/static/practice.css?v=1">
+  <link rel="stylesheet" href="/static/mastery.css?v=3">
+  <link rel="stylesheet" href="/static/clusters.css?v=3">
   <link rel="stylesheet" href="/static/account.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
@@ -38,15 +39,16 @@
   <script defer src="/static/palette.js?v=2"></script>
   <script defer src="/static/focus.js?v=2"></script>
   <script defer src="/static/tags.js?v=2"></script>
-  <script defer src="/static/mastery.js?v=2"></script>
-  <script defer src="/static/clusters.js?v=4"></script>
+  <script defer src="/static/practice.js?v=1"></script>
+  <script defer src="/static/mastery.js?v=3"></script>
+  <script defer src="/static/clusters.js?v=5"></script>
   <script defer src="/static/print.js?v=2"></script>
   <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=2"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
-  <script defer src="/static/app.js?v=60"></script>
+  <script defer src="/static/app.js?v=61"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -526,10 +528,18 @@
         <p id="mastery-status" role="status" aria-live="polite"></p>
         <button id="mastery-retry" type="button" hidden>重新加载</button>
         <div id="mastery-alert" class="mastery-alert" hidden></div>
+        <section id="mastery-overview-card" class="panel mastery-overview-card" aria-labelledby="mastery-overview-title" hidden>
+          <div class="mastery-chart-head">
+            <h3 id="mastery-overview-title">各分区现在的掌握度</h3>
+            <p class="mastery-overview-hint">最需要关注的排在最前。点一行，把它加进下面的曲线图（最多同时看 4 个）。</p>
+          </div>
+          <ul id="mastery-overview" class="mastery-overview" role="list"></ul>
+          <p id="mastery-select-note" class="mastery-select-note" role="status" aria-live="polite"></p>
+        </section>
         <section id="mastery-chart-card" class="panel mastery-chart-card" aria-labelledby="mastery-chart-title" hidden>
           <div class="mastery-chart-head">
             <h3 id="mastery-chart-title">近 12 周</h3>
-            <div id="mastery-legend" class="mastery-legend" role="group" aria-label="显示或隐藏分区的曲线"></div>
+            <p id="mastery-chart-hint" class="mastery-overview-hint"></p>
           </div>
           <div id="mastery-chart" class="mastery-chart" tabindex="0" role="group" aria-label="掌握度曲线，左右方向键逐周查看"></div>
           <p id="mastery-chart-summary" class="mastery-sr-only" role="status" aria-live="polite"></p>
@@ -538,7 +548,6 @@
             <div id="mastery-table" tabindex="0" role="region" aria-label="各分区掌握度数据表，内容较宽时可左右滚动"></div>
           </details>
         </section>
-        <div id="mastery-zones" class="mastery-zones"></div>
         <details class="mastery-explain" id="mastery-explain" hidden>
           <summary>掌握度是怎么算的？</summary>
           <p>每条易错点按「遗忘曲线」估算现在还记得的概率：按计划准时复习时约 90%，拖得越久掉得越快，间隔越长的越牢（保持率 = 0.9 的「距上次学习的天数 ÷ 排定间隔」次方）。分区的掌握度是它名下所有易错点的平均值；曲线上每个点都是当时的估算，只用到那一天以前的记录和复习。低于 70% 且已经到期的分区会被标成「快被遗忘」。</p>

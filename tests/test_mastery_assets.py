@@ -60,7 +60,10 @@ def test_series_are_told_apart_by_more_than_color(script, stylesheet):
     assert 'const DASHES = ["", "8 4", "2 4", "10 3 2 3"' in script
     assert '"stroke-dasharray": DASHES[seriesIndex(entry.zone)]' in script
     assert 'mastery-swatch[data-dash="1"]' in stylesheet
-    assert "text-decoration: line-through" in stylesheet, "hidden series are not just dimmed"
+    # 图例就是列表里被选中的行：选中状态不只靠颜色（aria-pressed + 线型样例 + 左侧竖线）。
+    assert re.search(r"\.mastery-row \.mastery-swatch \{[^}]*visibility: hidden", stylesheet)
+    assert re.search(r"\.mastery-row\.is-selected \.mastery-swatch \{[^}]*visibility: visible", stylesheet)
+    assert 'setAttribute("aria-pressed", String(on))' in script
 
 
 def test_script_never_builds_html_from_strings(script):

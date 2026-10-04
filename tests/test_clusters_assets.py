@@ -23,7 +23,7 @@ STATIC = ROOT / "static"
 @pytest.fixture(scope="module")
 def assets():
     return {name: (STATIC / name).read_text(encoding="utf-8") for name in (
-        "index.html", "clusters.js", "clusters.css", "app.js", "shell.js",
+        "index.html", "clusters.js", "clusters.css", "app.js", "shell.js", "practice.js",
     )}
 
 
@@ -82,9 +82,15 @@ def test_view_refresh_focus_and_logout_are_connected(assets):
 def test_navigation_and_focus_use_existing_contracts(assets):
     script = assets["clusters.js"]
     assert 'new CustomEvent("app:navigate", { detail: { view: "all", recordId: member.mistake_id } })' in script
-    assert 'window.FocusReview?.start({ ids })' in script
-    assert 'cluster.members.filter(isDue)' in script
+    # 到期的成员由共用的 PracticeNow 挑出（到期日升序、最多 5 条），按钮再走 FocusReview.start({ ids })。
+    assert 'window.PracticeNow.pickDueIds(cluster.members, { today: report.today })' in script
+    practice = assets_practice()
+    assert 'window.FocusReview.start({ ids: list.slice() })' in practice
     assert 'document.addEventListener("app:data-changed"' in script
+
+
+def assets_practice():
+    return (STATIC / "practice.js").read_text(encoding="utf-8")
 
 
 def test_styles_use_theme_tokens_and_accessible_touch_targets(assets):
@@ -127,6 +133,8 @@ class IdParser(HTMLParser):
     "zero-clusters", "navigation-quota",
     "generation-global-busy", "deferred-refresh", "deferred-data-changed", "deferred-focus-closed",
     "focus-closed", "reset-refresh",
+    "trend-rules", "trend-rules-bad", "trend-badges", "trend-concurrency", "trend-unavailable",
+    "trend-stale", "practise-cap", "practise-stale",
 ])
 def test_real_page_rendering_and_async_guards(assets, scenario):
     node = shutil.which("node")
@@ -145,7 +153,7 @@ def test_real_page_rendering_and_async_guards(assets, scenario):
     ))
     result = subprocess.run(
         [node, str(Path(__file__).with_name("test_clusters_page_render.cjs"))],
-        input=json.dumps({"source": assets["clusters.js"], "scenario": scenario, "ids": parser.ids,
+        input=json.dumps({"source": assets["clusters.js"], "practice": assets["practice.js"], "scenario": scenario, "ids": parser.ids,
                           "tags": parser.tags, "appBehavior": app_behavior}, ensure_ascii=False),
         text=True, encoding="utf-8", capture_output=True, timeout=10, cwd=ROOT, check=False,
     )

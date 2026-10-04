@@ -79,6 +79,7 @@ function harness(options = {}) {
   const events = [];
   const listeners = {};
   const calls = [];
+  const trendCalls = []; // 徽标读取每个成员的复习记录（GET /api/mistakes/{id}）；单独记，不混进 calls
   const practices = [];
   let saved = options.report || ready();
   const profile = { id: 1, ai_daily_remaining: 5, ai_daily_limit: 10 };
@@ -103,21 +104,39 @@ function harness(options = {}) {
       if (!get("home-quota").hidden) get("home-quota-text").textContent = `剩余 ${context.user.ai_daily_remaining} / ${context.user.ai_daily_limit} 次`;
     },
     timestamp: (text) => text,
-    api: async (path, args = {}) => {
-      calls.push({ path, args });
-      if (path === "/api/me") return { ...profile };
-      if (path === "/api/insights/clusters") return saved;
-      throw new Error(`Unknown API ${path}`);
-    },
   };
+  // 徽标按成员读取复习记录（GET /api/mistakes/{id}）：任何场景里（含各测试自己换掉的 api）都由这里先接走，
+  // 不计入 calls / reads，这样原有"读了几次、写了几次"的断言只数专题与额度请求。
+  const baseApi = async (path, args = {}) => {
+    calls.push({ path, args });
+    if (path === "/api/me") return { ...profile };
+    if (path === "/api/insights/clusters") return saved;
+    throw new Error(`Unknown API ${path}`);
+  };
+  let currentApi = baseApi;
+  Object.defineProperty(context, "api", {
+    enumerable: true,
+    get: () => async (path, args) => {
+      const member = /^\/api\/mistakes\/(\d+)$/.exec(path);
+      if (member) {
+        trendCalls.push(Number(member[1]));
+        if (options.reviews === null || (options.failIds || []).includes(Number(member[1]))) throw new Error("reviews unavailable");
+        if (options.trendGate) await options.trendGate.promise;
+        return { id: Number(member[1]), reviews: (options.reviews || {})[member[1]] || [] };
+      }
+      return currentApi(path, args);
+    },
+    set: (replacement) => { currentApi = replacement; },
+  });
   context.$ = context.document.querySelector;
   context.renderHomeQuota = context.updateUserInfo;
   if (options.focus !== false) context.window.FocusReview = { start: (args) => practices.push(JSON.parse(JSON.stringify(args))) };
   vm.createContext(context);
+  vm.runInContext(payload.practice, context, { timeout: 1000 });
   vm.runInContext(payload.source, context, { timeout: 1000 });
   vm.runInContext(payload.appBehavior, context, { timeout: 1000 });
   const setReport = (value) => { saved = value; };
-  return { context, get, calls, events, practices, profile, setReport, page: context.window.Clusters };
+  return { context, get, calls, trendCalls, events, practices, profile, setReport, page: context.window.Clusters };
 }
 
 async function states() {
@@ -168,9 +187,15 @@ async function readyPage() {
   await byClass(cards[0], "clusters-member-open")[0].click();
   const navigation = h.events.find((event) => event.type === "app:navigate");
   assert.deepEqual(JSON.parse(JSON.stringify(navigation.detail)), { view: "all", recordId: 11 });
+  // 每个专题卡片底部都有"现在就练这个专题"；第二个专题没有到期的，按钮禁用并写明原因。
   const practices = byClass(result, "clusters-practise");
-  assert.equal(practices.length, 1);
-  assert.equal(practices[0].textContent, "一起复习这 2 条到期的");
+  assert.equal(practices.length, 2);
+  assert.equal(practices[0].textContent, "现在就练这个专题（2 条）");
+  assert.equal(practices[0].disabled, false);
+  assert.equal(practices[1].disabled, true);
+  assert.equal(byClass(cards[1], "practice-now-note")[0].textContent, "这个专题今天没有要复习的");
+  await practices[1].click();
+  assert.deepEqual(h.practices, [], "a disabled button starts nothing");
   await practices[0].click();
   assert.deepEqual(h.practices, [{ ids: [11, 12] }]);
 }
@@ -186,7 +211,11 @@ async function futureOnly() {
   for (const cluster of data.insight.content.clusters) for (const member of cluster.members) member.due_date = "2026-10-10";
   const h = harness({ report: data });
   await h.page.load();
-  assert.equal(byClass(h.get("clusters-result"), "clusters-practise").length, 0);
+  const buttons = byClass(h.get("clusters-result"), "clusters-practise");
+  assert.equal(buttons.length, 2, "no due member: the button stays but is disabled");
+  assert.ok(buttons.every((button) => button.disabled));
+  await buttons[0].click();
+  assert.deepEqual(h.practices, []);
 }
 
 async function failureQuota() {
@@ -388,7 +417,7 @@ async function deferredRefresh(events = ["data", "data", "focus"]) {
   assert.equal(reads, 1, "Data changes and focus completion must coalesce into one follow-up read");
   assert.equal(profiles, 2);
   assert.equal(byClass(h.get("clusters-result"), "clusters-due")[0].textContent, "2026-10-20 到期");
-  assert.equal(byClass(h.get("clusters-result"), "clusters-practise")[0].textContent, "一起复习这 1 条到期的");
+  assert.equal(byClass(h.get("clusters-result"), "clusters-practise")[0].textContent, "现在就练这个专题（1 条）");
   assert.equal(h.get("clusters-generate").disabled, false);
 }
 
@@ -467,6 +496,195 @@ async function navigationQuota() {
   assert.equal(h.context.user.ai_daily_remaining, 2, "A generation completed off-page must not replace global user information");
 }
 
+/* ---------------- 专题徽标与"现在就练这个专题" ---------------- */
+const TODAY = "2026-10-02";
+function dayBefore(days) {
+  const date = new Date(Date.UTC(2026, 9, 2 - days, 8, 0, 0));
+  return `${date.toISOString().slice(0, 19)}+00:00`;
+}
+// 例：review(0, 2) = 今天打了 2 分；review(14, 4) = 14 天前打了 4 分。
+const review = (daysAgo, quality) => ({ quality, reviewed_at: dayBefore(daysAgo) });
+const repeat = (count, make) => Array.from({ length: count }, (_, index) => make(index));
+const trend = (h, reviews) => {
+  const result = h.page.trendOf(reviews, TODAY);
+  return result && JSON.parse(JSON.stringify(result));
+};
+
+async function trendRules() {
+  const h = harness();
+  const T = h.page.TREND;
+  assert.deepEqual(JSON.parse(JSON.stringify(T)), { windowDays: 14, minRecent: 3, failBelow: 3, improvePoints: 20, repeatPercent: 40, concurrency: 4 });
+
+  // 样本不足：最近 14 天少于 3 次（没有任何复习也算）。
+  assert.equal(trend(h, []).kind, "sparse");
+  assert.equal(trend(h, [review(0, 0), review(1, 0)]).kind, "sparse");
+  assert.ok(trend(h, [review(0, 0), review(1, 0)]).text.includes("2 次"));
+  assert.equal(trend(h, [review(0, 5), review(1, 5), review(2, 5), review(30, 0)]).kind !== "sparse", true, "3 次刚好够");
+  // 最近 14 天 = 距今 0–13 天；14 天前算"更早"。
+  assert.equal(trend(h, [review(13, 0), review(13, 0), review(13, 0)]), null, "13 天前仍是最近，且没有更早的可比");
+  assert.equal(trend(h, [review(14, 0), review(14, 0), review(14, 0)]).kind, "sparse", "14 天前不算最近");
+  // 没有更早的复习：没法比较，不显示。
+  assert.equal(trend(h, repeat(6, () => review(1, 0))), null);
+
+  // 已改善：失败占比下降 ≥ 20 个百分点；恰好 20 算，19.4 不算。
+  const improved = trend(h, [...repeat(4, () => review(1, 5)), review(2, 1), ...repeat(3, () => review(20, 5)), ...repeat(2, () => review(21, 0))]);
+  assert.equal(improved.kind, "improved", "20% vs 40% 恰好下降 20 个百分点");
+  assert.equal(improved.text, "最近两周答错的比例 20%，之前是 40%");
+  const notEnough = trend(h, [...repeat(3, () => review(1, 5)), review(2, 1), ...repeat(5, () => review(20, 5)), ...repeat(4, () => review(21, 0))]);
+  assert.equal(notEnough, null, "25% vs 44% 只下降 19.4 个百分点，且已经低于 40%：不显示");
+  // 页面示例文案：最近 18%，之前 47%。
+  const sample = trend(h, [...repeat(2, () => review(3, 0)), ...repeat(9, () => review(4, 5)), ...repeat(8, () => review(30, 1)), ...repeat(9, () => review(31, 4))]);
+  assert.equal(sample.kind, "improved");
+  assert.equal(sample.text, "最近两周答错的比例 18%，之前是 47%");
+  // 分数 3 不算答错，2 才算。
+  assert.equal(trend(h, [...repeat(5, () => review(1, 3)), ...repeat(5, () => review(20, 2))]).kind, "improved");
+  assert.equal(trend(h, [...repeat(5, () => review(1, 2)), ...repeat(5, () => review(20, 3))]).kind, "repeating");
+
+  // 仍在反复：占比持平或上升，且最近仍 ≥ 40%。
+  assert.equal(trend(h, [...repeat(3, () => review(1, 5)), ...repeat(2, () => review(2, 0)), ...repeat(3, () => review(20, 5)), ...repeat(2, () => review(21, 0))]).kind, "repeating", "40% 持平且恰好 40%");
+  assert.equal(trend(h, [...repeat(2, () => review(1, 0)), ...repeat(3, () => review(2, 5)), ...repeat(8, () => review(20, 5)), ...repeat(2, () => review(21, 0))]).kind, "repeating", "40% 对 20%：上升");
+  // 持平但低于 40%、或下降不足 20 且仍高 → 不显示 / 不算改善。
+  assert.equal(trend(h, [...repeat(18, () => review(1, 5)), ...repeat(7, () => review(2, 0)), ...repeat(18, () => review(20, 5)), ...repeat(7, () => review(21, 0))]), null, "28% 持平但不到 40%");
+  assert.equal(trend(h, [...repeat(3, () => review(1, 5)), ...repeat(2, () => review(2, 0)), review(20, 5), review(21, 0)]), null, "40% 对 50%：下降不足 20 个百分点，也不是持平或上升");
+}
+
+async function trendRulesBad() {
+  const h = harness();
+  assert.equal(h.page.trendOf("x", TODAY), null);
+  assert.equal(h.page.trendOf([review(1, 0)], "not-a-date"), null);
+  assert.equal(h.page.trendOf([review(1, 0)], undefined), null);
+  const good = [...repeat(3, () => review(1, 0)), ...repeat(3, () => review(20, 5))];
+  assert.equal(h.page.trendOf(good, TODAY).kind, "repeating");
+  for (const bad of [{ quality: 0, reviewed_at: "昨天" }, { quality: 9, reviewed_at: dayBefore(1) }, { quality: "3", reviewed_at: dayBefore(1) }, { quality: 1.5, reviewed_at: dayBefore(1) }, null, { reviewed_at: dayBefore(1) }]) {
+    assert.equal(h.page.trendOf([...good, bad], TODAY), null, JSON.stringify(bad));
+  }
+}
+
+function trendReport() {
+  return ready();
+}
+const badges = (h) => byClass(h.get("clusters-result"), "clusters-trend");
+const visibleBadges = (h) => badges(h).filter((badge) => !badge.hidden);
+
+async function trendBadges() {
+  // 专题 1（成员 11、12、13）：近两周 20%，之前 40% → 已改善；专题 2（成员 14、15）：近两周只有 1 次 → 样本不足。
+  const reviews = {
+    11: [review(1, 5), review(2, 5), review(3, 1), review(20, 5), review(21, 0)],
+    12: [review(1, 5), review(2, 5), review(22, 5)],
+    13: [review(4, 5), review(5, 5), review(23, 0)],
+    14: [review(2, 0)],
+    15: [],
+  };
+  const h = harness({ reviews });
+  await h.page.load();
+  await new Promise((resolve) => setImmediate(resolve));
+  const [first, second] = badges(h);
+  assert.equal(first.hidden, false);
+  assert.equal(first.textContent, "已改善");
+  assert.ok(first.classList.contains("is-improved"));
+  assert.equal(first.title, first.dataset.tip);
+  assert.equal(first.dataset.tip, "最近两周答错的比例 14%，之前是 50%");
+  assert.equal(first.getAttribute("aria-label"), "已改善：最近两周答错的比例 14%，之前是 50%");
+  assert.equal(first.tabIndex, 0, "badge can take keyboard focus so the explanation is not hover-only");
+  assert.equal(first.getAttribute("role"), "note");
+  assert.equal(second.textContent, "样本不足");
+  assert.ok(second.classList.contains("is-sparse"));
+  assert.ok(second.dataset.tip.includes("1 次"));
+  assert.deepEqual([...new Set(h.trendCalls)].sort(), [11, 12, 13, 14, 15]);
+  assert.equal(h.trendCalls.length, 5, "each member is read once");
+}
+
+async function trendConcurrency() {
+  const gate = deferred();
+  const h = harness({ trendGate: gate, reviews: {} });
+  await h.page.load();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.trendCalls.length, 4, "at most 4 reads in flight at the same time");
+  assert.equal(visibleBadges(h).length, 0);
+  gate.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.trendCalls.length, 5);
+  assert.equal(visibleBadges(h).length, 2, "both clusters get a (sparse) badge once all reads are in");
+}
+
+async function trendUnavailable() {
+  for (const options of [{ reviews: null }, { reviews: {}, failIds: [13] }]) {
+    const h = harness(options);
+    await h.page.load();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(badges(h).length, 2);
+    assert.equal(visibleBadges(h).length, 0, "if any member's reviews cannot be read, no badge at all");
+    assert.equal(byClass(h.get("clusters-result"), "clusters-card").length, 2, "the page itself is unaffected");
+  }
+}
+
+async function trendStale() {
+  const gate = deferred();
+  const h = harness({ trendGate: gate, reviews: {} });
+  await h.page.load();
+  await new Promise((resolve) => setImmediate(resolve));
+  const oldBadges = badges(h);
+  // 数据变化触发重读重画：旧一轮的读取回来时不能再画到旧卡片上。
+  h.context.document.dispatchEvent(new h.context.CustomEvent("app:data-changed"));
+  await new Promise((resolve) => setImmediate(resolve));
+  const newBadges = badges(h);
+  assert.notEqual(oldBadges[0], newBadges[0]);
+  gate.resolve();
+  for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(oldBadges.every((badge) => badge.hidden), "the superseded run never paints");
+  assert.equal(visibleBadges(h).length, 2);
+
+  // 登出（reset）之后才回来的读取：什么都不画、不抛错。
+  const gate2 = deferred();
+  const h2 = harness({ trendGate: gate2, reviews: {} });
+  await h2.page.load();
+  await new Promise((resolve) => setImmediate(resolve));
+  const before = badges(h2);
+  h2.page.reset();
+  gate2.resolve();
+  for (let turn = 0; turn < 6; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(before.every((badge) => badge.hidden));
+  assert.equal(byClass(h2.get("clusters-result"), "clusters-trend").length, 0);
+}
+
+async function practiseCap() {
+  const data = ready();
+  const member = (id, due, zone = "算法") => ({ mistake_id: id, title: `题${id}`, zone, problem_id: 200 + id, description: "d", due_date: due });
+  data.insight.content.clusters = [{
+    title: "很多到期", explanation: "e", tip: "t", members: [
+      member(21, "2026-09-30"), member(22, "2026-09-25"), member(23, "2026-10-02"), member(24, "2026-09-25"),
+      member(25, "2026-10-01"), member(26, "2026-10-02"), member(27, "2026-10-03"), member(28, "2026-09-20"),
+    ],
+  }, { title: "刚好三条", explanation: "e", tip: "t", members: [member(31, "2026-10-02"), member(32, null), member(33, "2026-10-02")] }];
+  const h = harness({ report: data });
+  await h.page.load();
+  const buttons = byClass(h.get("clusters-result"), "clusters-practise");
+  assert.equal(buttons[0].textContent, "现在就练这个专题（5 条）");
+  await buttons[0].click();
+  // 到期日升序（同一天按 id）、最多 5 条；未到期（27）与到期但排在后面的（23、26）不在其中。
+  assert.deepEqual(h.practices, [{ ids: [28, 22, 24, 21, 25] }]);
+  assert.equal(buttons[1].textContent, "现在就练这个专题（2 条）", "没有到期日的（null）不算到期");
+  await buttons[1].click();
+  assert.deepEqual(h.practices[1], { ids: [31, 33] });
+}
+
+async function practiseStale() {
+  const h = harness();
+  await h.page.load();
+  const button = byClass(h.get("clusters-result"), "clusters-practise")[0];
+  h.context.user = { ...h.profile, id: 2 }; // 换了账号
+  await button.click();
+  assert.deepEqual(h.practices, [], "a button from the previous account does nothing");
+  h.context.user = { ...h.profile, id: 1 };
+  await button.click();
+  assert.equal(h.practices.length, 1);
+  h.page.reset(); // 登出
+  await button.click();
+  assert.equal(h.practices.length, 1, "after reset a leftover button does nothing");
+}
+
 const scenarios = {
   states, ready: readyPage, "no-focus": noFocus, "future-only": futureOnly,
   "failure-quota": failureQuota, "quota-unavailable": quotaUnavailable,
@@ -477,6 +695,9 @@ const scenarios = {
   "deferred-data-changed": () => deferredRefresh(["data"]),
   "deferred-focus-closed": () => deferredRefresh(["focus"]),
   "focus-closed": focusClosed, "reset-refresh": resetRefresh,
+  "trend-rules": trendRules, "trend-rules-bad": trendRulesBad, "trend-badges": trendBadges,
+  "trend-concurrency": trendConcurrency, "trend-unavailable": trendUnavailable, "trend-stale": trendStale,
+  "practise-cap": practiseCap, "practise-stale": practiseStale,
 };
 assert.ok(Object.hasOwn(scenarios, payload.scenario), "Unknown rendering scenario");
 Promise.resolve(scenarios[payload.scenario]()).then(() => {
