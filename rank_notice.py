@@ -7,7 +7,7 @@ from datetime import date
 from typing import Optional
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
 
 NOTICE_MAX_CHARS = 80
 LINK_MAX_CHARS = 500
@@ -56,7 +56,7 @@ class NoticeInput(BaseModel):
     link: Optional[str] = None
     start_date: date
     end_date: date
-    is_active: bool = True
+    is_active: StrictBool = True
 
     @field_validator("text")
     @classmethod
