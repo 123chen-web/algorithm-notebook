@@ -30,8 +30,22 @@ THREAD_TEXT_PAIRS = (
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
 )
+# AN：掌握度四档等级胶囊、错因专题徽标用到的文字 / 底色配对（static/mastery.css、static/clusters.css）。
+# 下面的 test_an_tier_and_trend_pairs_come_from_the_stylesheets 会核对样式表里真的是这些配对。
+AN_TEXT_PAIRS = (
+    ("--danger", "--danger-soft"),          # 陌生 / 仍在反复
+    ("--reward-ink", "--reward-soft"),      # 熟悉
+    ("--group-ink", "--group-soft"),        # 熟练
+    ("--success-ink", "--success-soft"),    # 精通 / 已改善
+    ("--ink-2", "--paper"),                 # 没有记录 / 样本不足
+    ("--ink", "--surface"),                 # 优先标记、提示气泡
+    ("--ink", "--paper-2"),                 # 选中行
+    ("--azurite", "--paper-2"),             # 去看看这一块的记录（链接）
+    ("--azurite", "--surface"),
+    ("--azurite", "--paper"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + AN_TEXT_PAIRS for token in pair
 }
 
 
@@ -266,3 +280,47 @@ def test_thread_copy_text_inherits_checked_terminal_label_color():
         and declaration == "color: var(--code-ink)"
         for blocks, declaration in declarations
     )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", AN_TEXT_PAIRS)
+def test_an_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"AN 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+@pytest.mark.parametrize("filename,selector", [
+    ("mastery.css", ".mastery-tier.is-new"),
+    ("mastery.css", ".mastery-tier.is-familiar"),
+    ("mastery.css", ".mastery-tier.is-proficient"),
+    ("mastery.css", ".mastery-tier.is-mastered"),
+    ("mastery.css", ".mastery-tier.is-none"),
+    ("clusters.css", ".clusters-trend.is-improved"),
+    ("clusters.css", ".clusters-trend.is-repeating"),
+    ("clusters.css", ".clusters-trend.is-sparse"),
+])
+def test_an_tier_and_trend_pairs_come_from_the_stylesheets(filename, selector):
+    """样式表里每个等级 / 徽标的文字色与底色必须是上面逐主题检查过的配对。"""
+    source = (STATIC / filename).read_text(encoding="utf-8")
+    declarations = [
+        body for blocks, body in css_declarations(source)
+        if blocks == (selector,)
+    ]
+    color = next(body for body in declarations if body.startswith("color:"))
+    background = next(body for body in declarations if body.startswith("background:"))
+    pair = (
+        re.fullmatch(r"color: var\((--[\w-]+)\)", color).group(1),
+        re.fullmatch(r"background: var\((--[\w-]+)\)", background).group(1),
+    )
+    assert pair in AN_TEXT_PAIRS, f"{filename} {selector} 用了没有检查过的配对 {pair}"

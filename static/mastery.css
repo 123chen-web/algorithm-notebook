@@ -1,4 +1,4 @@
-/* 掌握度趋势页：曲线、图例、分区卡片、"快被遗忘"提醒。颜色全部走主题变量（分区颜色见 shell.css 的 --zone-color）。 */
+/* 掌握度趋势页：总览列表（四档等级、阶梯进度条、迷你走势）、只画选中分区的曲线、"快被遗忘"提醒。颜色全部走主题变量（分区颜色见 shell.css 的 --zone-color）。 */
 
 #mastery-page .page-heading { margin-bottom: var(--space-4); }
 #mastery-status:empty { display: none; }
@@ -21,11 +21,6 @@
 .mastery-chart-card[hidden] { display: none; }
 .mastery-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
 .mastery-chart-head h3 { margin: 0; font-size: var(--text-lg); }
-.mastery-legend { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.mastery-legend-item { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: 0 var(--space-3); border-radius: var(--radius-pill); background: var(--surface); font-size: var(--text-sm); }
-.mastery-legend-item[aria-pressed="false"] { color: var(--ink-2); background: var(--paper-2); text-decoration: line-through; }
-.mastery-legend-item[aria-pressed="false"] .mastery-swatch { opacity: .4; }
-.mastery-legend-item:hover:not(:disabled) { transform: none; }
 .mastery-swatch { width: 22px; height: 0; border-top: 3px solid var(--zone-color, var(--ink-2)); }
 .mastery-swatch[data-dash="1"], .mastery-swatch[data-dash="5"] { border-top-style: dashed; }
 .mastery-swatch[data-dash="2"], .mastery-swatch[data-dash="6"] { border-top-style: dotted; }
@@ -67,37 +62,88 @@
 .mastery-table th, .mastery-table td { padding: 4px var(--space-2); border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
 .mastery-table thead th, .mastery-table tbody th { color: var(--ink); font-weight: 600; text-align: left; }
 
-.mastery-zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); }
-.mastery-zone { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
-.mastery-zone-head { display: flex; align-items: center; gap: var(--space-2); }
-.mastery-zone-head h3 { margin: 0; font-size: var(--text-md); }
-.mastery-chip { margin-left: auto; padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: 650; line-height: 20px; }
-.mastery-chip.is-fading { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); }
-.mastery-chip.is-steady { border-color: var(--success-line); background: var(--success-soft); color: var(--success-ink); }
-.mastery-number { display: flex; align-items: baseline; gap: var(--space-3); margin: 0; }
-.mastery-number strong { font-family: var(--serif); font-size: 36px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.mastery-change { color: var(--ink-2); font-size: var(--text-xs); }
-.mastery-change.is-up { color: var(--success-ink); }
-.mastery-change.is-down { color: var(--danger); }
-.mastery-spark { display: block; width: 100%; height: 34px; }
+/* ---------- 总览列表：每个分区一行 ---------- */
+.mastery-overview-card { margin-bottom: var(--space-4); padding: var(--space-5); }
+.mastery-overview-card[hidden] { display: none; }
+.mastery-overview-card h3 { margin: 0; font-size: var(--text-lg); }
+.mastery-overview-hint { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+.mastery-overview { list-style: none; margin: 0; padding: 0; }
+.mastery-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-top: 1px solid var(--line); border-left: 3px solid transparent; }
+.mastery-row:first-child { border-top: 0; }
+.mastery-row.is-selected { border-left-color: var(--azurite); background: var(--paper-2); }
+.mastery-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) auto 84px minmax(0, 1.7fr) 30px;
+  grid-template-areas: "name tier steps meta swatch";
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.mastery-row-main:disabled { color: var(--ink-2); cursor: default; }
+.mastery-row-name { grid-area: name; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.mastery-row-zone { overflow: hidden; font-size: var(--text-base); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mastery-priority { flex-shrink: 0; padding: 0 var(--space-2); border: 1px solid var(--ink-2); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font-size: var(--text-xs); font-weight: 650; line-height: 20px; }
+.mastery-tier { grid-area: tier; display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 24px; padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: 650; line-height: 22px; white-space: nowrap; }
+.mastery-tier.is-new { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); }
+.mastery-tier.is-familiar { border-color: var(--reward-line); background: var(--reward-soft); color: var(--reward-ink); }
+.mastery-tier.is-proficient { border-color: var(--group-line); background: var(--group-soft); color: var(--group-ink); }
+.mastery-tier.is-mastered { border-color: var(--success-line); background: var(--success-soft); color: var(--success-ink); }
+.mastery-tier.is-none { border-color: var(--line); background: var(--paper); color: var(--ink-2); }
+.mastery-stair-icon { width: 14px; height: 12px; fill: currentColor; }
+.mastery-stair-icon rect { opacity: .28; }
+.mastery-stair-icon rect.is-on { opacity: 1; }
+.mastery-steps { grid-area: steps; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.mastery-step { height: 8px; border-radius: 2px; background: var(--line); }
+.mastery-step.is-on { background: var(--ink-2); }
+.mastery-row[data-tier="new"] .mastery-step.is-on { background: var(--danger); }
+.mastery-row[data-tier="familiar"] .mastery-step.is-on { background: var(--reward-ink); }
+.mastery-row[data-tier="proficient"] .mastery-step.is-on { background: var(--group-ink); }
+.mastery-row[data-tier="mastered"] .mastery-step.is-on { background: var(--success-ink); }
+.mastery-row-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); min-width: 0; }
+.mastery-row-pct { min-width: 3.4em; font-family: var(--serif); font-size: var(--text-xl); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mastery-spark, .mastery-spark-gap { flex: 0 0 96px; width: 96px; height: 28px; }
 .mastery-spark-line { fill: none; stroke: var(--zone-color, var(--ink-2)); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mastery-counts { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
-.mastery-zone-actions { margin-top: var(--space-1); }
+.mastery-row-due { color: var(--ink-2); font-size: var(--text-xs); white-space: nowrap; }
+.mastery-row .mastery-swatch { grid-area: swatch; justify-self: end; visibility: hidden; }
+.mastery-row.is-selected .mastery-swatch { visibility: visible; }
+.mastery-row .zone-dot { flex-shrink: 0; }
+.mastery-row .mastery-zone-actions { flex-wrap: nowrap; padding: 0 var(--space-3); }
 .mastery-zone-actions button { min-height: 38px; font-size: var(--text-sm); }
-.mastery-link { border-color: transparent; background: transparent; color: var(--accent-hover); }
-
+.mastery-link { border-color: transparent; background: transparent; color: var(--azurite); text-decoration: underline; text-underline-offset: 4px; }
+.mastery-select-note { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); }
+.mastery-select-note:empty { display: none; }
 .mastery-explain { margin-top: var(--space-5); color: var(--ink-2); font-size: var(--text-sm); line-height: 1.8; }
 .mastery-explain[hidden] { display: none; }
 .mastery-explain summary { cursor: pointer; }
 .mastery-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 #mastery-page :is(button, summary):focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#mastery-page .mastery-row-main:focus-visible { outline-offset: -3px; }
+@media (hover: hover) and (pointer: fine) {
+  .mastery-row-main:hover:not(:disabled) { background: var(--paper-2); transform: none; }
+}
 @media (max-width: 599px) {
-  .mastery-chart-card { padding: var(--space-4) var(--space-3); }
+  .mastery-chart-card, .mastery-overview-card { padding: var(--space-4) var(--space-3); }
   .mastery-alert { padding: var(--space-4); }
-  .mastery-zones { grid-template-columns: minmax(0, 1fr); }
+  .mastery-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name tier" "steps steps" "meta swatch";
+    gap: var(--space-2) var(--space-3);
+  }
+  .mastery-row { grid-template-columns: minmax(0, 1fr); }
+  .mastery-row-pct { min-width: 0; font-size: var(--text-lg); }
+  .mastery-spark, .mastery-spark-gap { flex-basis: 64px; width: 64px; }
+  .mastery-row .mastery-zone-actions { flex-wrap: wrap; padding: 0 var(--space-3) var(--space-2); }
 }
 @media (pointer: coarse) {
-  .mastery-legend-item, .mastery-zone-actions button { min-height: 44px; }
+  .mastery-row-main, .mastery-zone-actions button { min-height: 44px; }
   .mastery-alert-actions button { min-height: 44px; }
 }
