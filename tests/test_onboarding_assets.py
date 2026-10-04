@@ -46,7 +46,7 @@ def test_overview_files_were_not_touched_by_this_task():
     assert 'href="/static/overview.css?v=3"' in INDEX
 
 
-@pytest.mark.parametrize("source,name", [(SCRIPT, "onboarding.js"), (STYLE, "onboarding.css")])
+@pytest.mark.parametrize("source,name", [(SCRIPT, "onboarding.js"), (STYLE, "onboarding.css")], ids=["onboarding.js", "onboarding.css"])
 def test_no_hex_colours_important_or_inline_styles(source, name):
     code = re.sub(r"/\*[\s\S]*?\*/", "", source)
     assert not re.search(r"#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b(?![\w-])", code), name
