@@ -1,4 +1,4 @@
-"""首访开场短片的行为：首访、跳过、减少动态效果、后台暂停、焦点（Node 内置测试运行器 + 假浏览器）。"""
+"""首访开场短片的行为：时间表、无死帧、跳过 / 下一幕、提前可点、共享元素交接、减少动态效果、后台暂停、焦点（Node 内置测试运行器 + 假浏览器）。"""
 import re
 import shutil
 import subprocess
@@ -20,4 +20,4 @@ def test_intro_film_behaviour_in_a_fake_browser():
     # 终端里是 "ℹ fail 0"，管道里（CI）是 TAP 的 "# fail 0"；两种都认，并确认测试真的跑了。
     assert re.search(r"(?m)^(?:ℹ|#) fail 0$", result.stdout), result.stdout[-1500:]
     passed = re.search(r"(?m)^(?:ℹ|#) pass (\d+)$", result.stdout)
-    assert passed and int(passed.group(1)) >= 21, result.stdout[-1500:]
+    assert passed and int(passed.group(1)) >= 30, result.stdout[-1500:]

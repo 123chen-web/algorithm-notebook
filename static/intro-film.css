@@ -1,5 +1,5 @@
-/* 首访开场短片。默认样式就是每一幕的最终状态；起始的隐藏状态只由 no-preference 媒体查询里的动画给出。
-   时长、延迟、缓动全部来自 intro-film.js 顶部的 TIMING 表，经 --a{幕}-{节拍}、--rise、--stagger、--ease-* 传入。 */
+/* 首访开场短片。默认样式即最终画面，起始隐藏态只由 no-preference 里的动画给出；
+   时长、延迟、缓动都来自 intro-film.js 顶部的 TIMING 表（经自定义属性传入）。 */
 html.intro-film-open,
 html.intro-film-open body { overflow: hidden; }
 
@@ -15,7 +15,7 @@ html.intro-film-open body { overflow: hidden; }
 .film-act { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 80px 16px 72px; overflow-x: hidden; overflow-y: auto; visibility: hidden; }
 .film-act:is(.is-on, .is-leaving) { visibility: visible; }
 
-/* margin: auto 居中，内容比视口高时仍从顶部开始可滚动。 */
+/* margin: auto 居中，内容超高时仍可从顶部滚动。 */
 .film-frame { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); width: 100%; max-width: 640px; min-width: 0; margin: auto; text-align: center; }
 
 .film-tag { margin: 0; color: var(--azurite); font-family: var(--film-mono); font-size: var(--text-meta); letter-spacing: .06em; line-height: 1.5; }
@@ -40,7 +40,7 @@ html.intro-film-open body { overflow: hidden; }
 .intro-film :is(button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .intro-film[data-act="1"] .film-skip:focus-visible { outline-color: var(--paper); }
 
-/* 共享元素交接：真身在飞行期间隐藏，飞行层里的两个克隆负责连续运动。 */
+/* 共享元素交接：飞行期间真身隐藏，由飞行层里的克隆运动。 */
 .intro-film .is-flown,
 .intro-film .is-landing { opacity: 0; }
 .film-flight { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
@@ -148,7 +148,7 @@ html.intro-film-open body { overflow: hidden; }
 }
 .film-transcript ol { max-width: 30em; margin: var(--space-2) auto 0; padding-left: 1.4em; line-height: var(--lh-prose); }
 
-/* 飞行层里的克隆：外壳负责位置和运动，克隆本身铺满外壳。 */
+/* 克隆外壳负责位置和运动，克隆铺满外壳。 */
 .film-ghost { position: absolute; top: var(--gy); left: var(--gx); width: var(--gw); height: var(--gh); transform-origin: 50% 50%; }
 .film-ghost > * { position: static; inset: auto; display: block; width: 100%; height: 100%; margin: 0; opacity: 1; transform: none; }
 
@@ -163,7 +163,7 @@ html.intro-film-open body { overflow: hidden; }
   .film-actions { flex-direction: column; align-items: stretch; width: min(320px, 100%); }
 }
 
-/* 动画只在用户没有要求减少动态效果时运行；文字 10px 上浮 + 淡入，不弹跳、不旋转。 */
+/* 只在未要求减少动态效果时运行；文字 10px 上浮淡入，不弹跳、不旋转。 */
 @media (prefers-reduced-motion: no-preference) {
   .intro-film.is-paused,
   .intro-film.is-paused * { animation-play-state: paused; }

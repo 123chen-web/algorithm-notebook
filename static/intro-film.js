@@ -12,6 +12,7 @@
     rise: 560, // 文字 10px 上浮 + 淡入
     morph: 700, // 共享元素从上一幕飞到下一幕
     ctaAt: 0.5, // 最后一幕进入到一半，“继续探索”就可点
+    announce: 600, // 读屏实时区域插入后稍等再念第一句
     // enter 进入；hold 读完这句（每秒 6–8 字 + 300）；exit 退出；beats 为幕内节拍（从本幕开始算）。
     acts: Object.freeze([
       Object.freeze({ enter: 1100, hold: 1800, exit: 400, beats: { lead: 200 } }),
@@ -487,9 +488,8 @@
     } else {
       film.cue = 1;
       runCue(PLAN.cues[0]);
-      // 实时区域刚插入时改字常被忽略，稍等再念第一句。
       const current = film;
-      window.setTimeout(() => { if (film === current && current.act === 1) dom.live.textContent = LINES[0]; }, 600);
+      window.setTimeout(() => { if (film === current && current.act === 1) dom.live.textContent = LINES[0]; }, TIMING.announce);
       if (document.hidden) pause();
       else schedule();
     }
