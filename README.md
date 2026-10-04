@@ -923,7 +923,9 @@ macOS / Linux（cron，示例每天凌晨 3 点）：
    ```
 
 也可以填其他服务商（比如 Resend）提供的 SMTP 地址、端口和账号密码，
-代码不区分具体服务商。
+代码不区分具体服务商。国内网络建议用 QQ / 163 邮箱的 465 端口
+（`SMTP_SECURITY=ssl`）；三套配置示例和一键自测
+`python check_mail.py --to 你的邮箱` 见 [发信配置与自测](docs/operations/mail.md)。
 
 ### 部署后必须改 PUBLIC_BASE_URL
 

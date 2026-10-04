@@ -2809,17 +2809,60 @@ $("#back-to-login-link").addEventListener("click", (event) => {
   showAuthPanels(["login-form"]);
 });
 
+// 找回密码：提交成功后按钮倒计时禁用，避免重复点击连发多封邮件。
+// 倒计时用 data-blocked 表示（全局 setBusy 会据此恢复按钮状态），
+// 用会话轮次守卫：登出 / 换账号后迟到的计时器不再碰按钮。
+const FORGOT_COOLDOWN_SECONDS = 60;
+const FORGOT_BUTTON_LABEL = "发送重置邮件";
+let forgotCooldownTimer = null;
+
+function stopForgotCooldown() {
+  clearInterval(forgotCooldownTimer);
+  forgotCooldownTimer = null;
+  const button = $("#forgot-form").querySelector("button[type=submit]");
+  button.dataset.blocked = "0";
+  button.disabled = busy;
+  button.textContent = FORGOT_BUTTON_LABEL;
+}
+
+function startForgotCooldown() {
+  const epoch = sessionEpoch;
+  const button = $("#forgot-form").querySelector("button[type=submit]");
+  let remaining = FORGOT_COOLDOWN_SECONDS;
+  clearInterval(forgotCooldownTimer);
+  const paint = () => {
+    button.dataset.blocked = "1";
+    button.disabled = true;
+    button.textContent = `${FORGOT_BUTTON_LABEL}（${remaining} 秒后可重发）`;
+  };
+  paint();
+  forgotCooldownTimer = setInterval(() => {
+    if (epoch !== sessionEpoch) {
+      stopForgotCooldown();
+      return;
+    }
+    remaining -= 1;
+    if (remaining <= 0) stopForgotCooldown();
+    else paint();
+  }, 1000);
+}
+
 $("#forgot-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  if (forgotCooldownTimer !== null) return;
   const form = event.currentTarget;
+  const epoch = sessionEpoch;
   run(async () => {
     await api("/api/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify({ email: form.email.value }),
     });
+    // 响应回来时用户已登出 / 换了账号：不再改界面，也不开倒计时。
+    if (epoch !== sessionEpoch) return;
     form.reset();
     showAuthPanels(["login-form"]);
-    message("如果这个邮箱注册过账号，重置邮件已经发出，请查收（包括垃圾邮件文件夹）。");
+    startForgotCooldown();
+    message("如果该邮箱已注册，邮件会在几分钟内送达；没收到请查看垃圾邮件箱。");
   });
 });
 

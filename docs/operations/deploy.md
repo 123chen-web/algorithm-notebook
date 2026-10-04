@@ -55,7 +55,7 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 | `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL` | AI 服务密钥、模型、兼容服务地址；密钥为空时 AI 不可用 |
 | `AI_DAILY_LIMIT`、`TRIAL_AI_DAILY_LIMIT` | 正式账号及体验账号每日尝试次数；套餐额度按现有优先级覆盖 |
 | `AI_MAX_CONCURRENCY` | 每个进程同时进行中的 AI 调用上限，默认 6 |
-| `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、`SMTP_PASSWORD`、`SMTP_FROM` | 找回密码和复习提醒发信 |
+| `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURITY`、`SMTP_TIMEOUT`、`SMTP_USERNAME`、`SMTP_PASSWORD`、`SMTP_FROM` | 找回密码和复习提醒发信；配置与自测见 [发信配置与自测](mail.md) |
 | `PAYMENTS_MOCK_*`、`ALIPAY_*`、`WECHAT_*` | 本地支付模拟及支付渠道配置，详见示例中的逐项说明 |
 
 `AI_MAX_CONCURRENCY` 必须是大于等于 1 的整数，非法值回落到 6。变体生成、薄弱点分析、拍照识别和错因归并共用该上限。达到上限时立即返回 429，提示“AI 现在比较忙，请稍后再试；这次没有消耗额度。”，不预留每日额度、不记录 AI 调用。上限是进程内的信号量，多个 worker 或实例会各自拥有一份，因此当前仍部署单 worker。
