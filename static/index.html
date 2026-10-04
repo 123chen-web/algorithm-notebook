@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/static/groups.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=5">
   <link rel="stylesheet" href="/static/shell.css?v=3">
-  <link rel="stylesheet" href="/static/overview.css?v=2">
+  <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/activity.css?v=2">
   <link rel="stylesheet" href="/static/emoji.css?v=2">
   <link rel="stylesheet" href="/static/palette.css?v=2">
@@ -41,10 +41,10 @@
   <script defer src="/static/clusters.js?v=4"></script>
   <script defer src="/static/print.js?v=2"></script>
   <script defer src="/static/shell.js?v=4"></script>
-  <script defer src="/static/overview.js?v=2"></script>
+  <script defer src="/static/overview.js?v=3"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/app.js?v=59"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -441,6 +441,8 @@
             <div id="overview-heatmap" class="ov-heat-body"></div>
           </section>
         </div>
+
+        <section id="home-trend" class="ov-trend" aria-busy="true"></section>
 
         <div class="ov-columns">
           <section class="ov-due" aria-labelledby="ov-due-title">

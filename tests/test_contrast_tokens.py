@@ -266,3 +266,65 @@ def test_thread_copy_text_inherits_checked_terminal_label_color():
         and declaration == "color: var(--code-ink)"
         for blocks, declaration in declarations
     )
+
+
+# 总览「趋势」区：指标块、图上的文字、时间范围按钮、悬停提示。
+# (选择器, 属性, 前景令牌, 它可能落在的底色令牌)。文字落在卡片 --surface 上；选中的指标块与
+# 时间范围外框是 --paper，悬停是 --paper-2；选中的时间范围按钮与悬停提示是反色（--ink 底）。
+TREND_TEXT_RULES = (
+    (".ov-trend-label", "color", "--ink-2", ("--surface", "--paper")),
+    (".ov-trend-value small", "color", "--ink-2", ("--surface", "--paper")),
+    (".ov-trend-sub", "color", "--ink-2", ("--surface", "--paper")),
+    (".ov-trend-explain", "color", "--ink-2", ("--surface", "--paper")),
+    (".ov-trend-delta.is-up", "color", "--success-ink", ("--surface", "--paper")),
+    (".ov-trend-delta.is-down", "color", "--danger", ("--surface", "--paper")),
+    (".ov-trend-delta.is-flat", "color", "--ink-2", ("--surface", "--paper")),
+    (".ov-trend-range-button", "color", "--ink-2", ("--paper", "--paper-2")),
+    (".ov-trend-range-button:hover:not(:disabled)", "color", "--ink", ("--paper-2",)),
+    ('.ov-trend-range-button[aria-pressed="true"]', "color", "--paper", ("--ink",)),
+    (".ov-chart-tick", "fill", "--ink-2", ("--surface",)),
+    (".ov-chart-axis", "fill", "--ink-2", ("--surface",)),
+    (".ov-chart-axis.is-today", "fill", "--ink", ("--surface",)),
+    (".ov-chart-value", "fill", "--ink", ("--surface",)),
+    (".ov-chart-note", "fill", "--ink-2", ("--surface",)),
+    (".ov-hover-text", "fill", "--paper", ("--ink",)),
+    (".ov-trend-note", "color", "--ink-2", ("--surface",)),
+    (".ov-trend-empty", "color", "--ink-2", ("--surface",)),
+    (".ov-trend-how summary", "color", "--azurite", ("--surface",)),
+    (".ov-trend-how p", "color", "--ink-2", ("--surface",)),
+    (".ov-trend-table th, .ov-trend-table td", "color", "--ink", ("--surface",)),
+    (".ov-trend-table thead th", "color", "--ink-2", ("--surface",)),
+)
+TREND_TEXT_PAIRS = tuple(
+    sorted({(foreground, background) for _, _, foreground, backgrounds in TREND_TEXT_RULES for background in backgrounds})
+)
+
+
+@pytest.mark.parametrize("selector,prop,foreground,backgrounds", TREND_TEXT_RULES)
+def test_trend_css_really_uses_the_checked_text_colors(selector, prop, foreground, backgrounds):
+    source = (STATIC / "overview.css").read_text(encoding="utf-8")
+    wanted = {part.strip() for part in selector.split(", ")}
+    values = [
+        body.partition(":")[2].strip()
+        for blocks, body in css_declarations(source)
+        if blocks and wanted <= set(css_selectors(blocks[-1])) and body.partition(":")[0].strip() == prop
+    ]
+    assert values == [f"var({foreground})"], f"{selector} 的 {prop} 必须是 var({foreground})，才能沿用下面的对比度检查：{values}"
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", TREND_TEXT_PAIRS)
+def test_trend_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"趋势区主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
