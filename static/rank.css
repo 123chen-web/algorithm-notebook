@@ -1,0 +1,100 @@
+/* 打卡排行榜页的新区块（今日一条、昨日之星、本周热门题目）、账号菜单里的“参与公开榜单”开关、
+   管理后台“今日一条”。只用主题令牌；前三名用红笔圈，克制；动效仅在允许动画时出现。 */
+#leaderboard-page, #rank-admin-card {
+  --rank-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+
+.rank-tag { margin: 0 0 var(--space-1); color: var(--ink-2); font: 600 var(--text-meta)/1 var(--rank-mono); letter-spacing: .16em; }
+.rank-tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: var(--space-2); border-radius: var(--radius-round); background: var(--azurite); }
+
+/* ---------- 今日一条 ---------- */
+.rank-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-left: 3px solid var(--azurite); border-radius: var(--radius-sm); background: var(--soft); color: var(--ink); }
+.rank-notice[hidden] { display: none; }
+.rank-notice .rank-tag { margin: 0; }
+.rank-notice-text { flex: 1 1 14em; min-width: 0; margin: 0; font-family: var(--serif); font-size: var(--text-lg); line-height: var(--lh-heading); overflow-wrap: anywhere; }
+.rank-notice-link { display: inline-flex; align-items: center; min-height: 40px; color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--azurite); text-underline-offset: 3px; }
+.rank-notice-link[hidden] { display: none; }
+
+/* ---------- 两个榜单区块 ---------- */
+.rank-panel { margin-top: var(--space-5); min-width: 0; }
+.rank-panel + .panel { margin-top: var(--space-5); }
+.rank-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
+.rank-head h3 { margin: 0; }
+.rank-retry { min-height: 40px; }
+.rank-retry[hidden] { display: none; }
+.rank-rules, .rank-privacy { font-size: var(--text-sm); }
+#rank-yesterday-status:empty, #rank-hot-status:empty, #rank-yesterday-me:empty { display: none; }
+.rank-list, .rank-hot-list { margin: var(--space-4) 0 0; padding: 0; list-style: none; }
+.rank-list:empty, .rank-hot-list:empty { display: none; }
+
+.rank-row { display: grid; grid-template-columns: 40px 36px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); min-width: 0; min-height: 56px; padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--line); }
+.rank-row.is-me { background: var(--soft); box-shadow: inset 3px 0 var(--azurite); }
+.rank-no { display: grid; place-items: center; width: 34px; height: 34px; color: var(--ink); font: 600 var(--text-md)/1 var(--rank-mono); font-variant-numeric: tabular-nums; }
+.rank-row.is-top .rank-no { border: 2px solid var(--accent); border-radius: var(--radius-round); font: 600 var(--text-lg)/1 var(--kai); transform: rotate(-6deg); }
+.rank-row.is-first .rank-no { border-width: 3px; background: var(--soft); }
+.rank-row .rank-avatar { width: 36px; height: 36px; font-size: var(--text-md); }
+.rank-who { min-width: 0; }
+.rank-name { display: block; color: var(--ink); font-weight: 650; overflow-wrap: anywhere; }
+.rank-praise { display: block; color: var(--ink-2); font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }
+.rank-stats { text-align: right; font-variant-numeric: tabular-nums; }
+.rank-count { display: block; color: var(--ink); font-size: var(--text-sm); }
+.rank-count strong { font: 700 var(--text-xl)/1.2 var(--serif); }
+.rank-streak { display: block; color: var(--ink-2); font: 500 var(--text-xs)/var(--lh-ui) var(--rank-mono); }
+.rank-me { margin: var(--space-4) 0 0; padding: var(--space-3) var(--space-4); border-left: 3px solid var(--azurite); background: var(--soft); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.rank-hot-row { border-bottom: 1px solid var(--line); }
+.rank-hot-link { display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: 48px; padding: var(--space-2); color: var(--ink); text-decoration: none; }
+.rank-source { flex: 0 0 auto; padding: 2px var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-compact); color: var(--ink-2); font: 600 var(--text-meta)/1.4 var(--rank-mono); letter-spacing: .08em; }
+.rank-hot-name { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+a.rank-hot-link .rank-hot-name { text-decoration: underline; text-decoration-color: var(--azurite); text-underline-offset: 3px; }
+a.rank-hot-link::after { content: "↗"; flex: 0 0 auto; color: var(--ink-2); }
+.rank-hot-users { flex: 0 0 auto; color: var(--ink); font-variant-numeric: tabular-nums; }
+a.rank-hot-link:focus-visible, .rank-notice-link:focus-visible, .rank-admin-item-link:focus-visible { outline: 2px solid var(--azurite); outline-offset: 2px; }
+
+@media (max-width: 520px) {
+  .rank-row { grid-template-columns: 34px 36px minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-1); }
+  .rank-stats { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); text-align: left; }
+  .rank-hot-link { flex-wrap: wrap; }
+  .rank-hot-name { flex-basis: 8em; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a.rank-hot-link:hover { background: var(--paper-2); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rank-row, .rank-hot-row { animation: rank-in var(--motion-enter) var(--motion-ease) both; }
+  @keyframes rank-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+}
+
+/* ---------- 账号菜单里的开关 ---------- */
+.account-menu-panel > .account-rank-pref[hidden] { display: none; }
+.account-rank-pref-row { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; color: var(--ink); font-size: var(--text-sm); }
+.account-rank-pref-row input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
+.account-menu-panel > .account-rank-pref { margin-bottom: var(--space-3); }
+.account-rank-pref-note { color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
+
+/* ---------- 管理后台“今日一条” ---------- */
+.rank-admin { margin: var(--space-5) 0; min-width: 0; }
+.rank-admin > summary { display: flex; align-items: center; min-height: 40px; cursor: pointer; color: var(--ink); font-weight: 600; }
+.rank-admin h4 { margin: var(--space-4) 0 var(--space-2); }
+.rank-admin-form { display: grid; gap: var(--space-2); max-width: 40em; min-width: 0; }
+.rank-admin-form :is(input[type="text"], input[type="date"]) { width: 100%; min-width: 0; min-height: 40px; }
+.rank-admin-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12em), 1fr)); gap: var(--space-3); }
+.rank-admin-dates label { display: grid; gap: var(--space-1); min-width: 0; }
+.rank-admin-check { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; }
+.rank-admin-check input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
+.rank-admin-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.rank-admin-actions button, .rank-admin-item-actions button { min-height: 40px; }
+.rank-admin-actions [hidden] { display: none; }
+.rank-admin-count { margin: 0; font: 500 var(--text-xs)/var(--lh-ui) var(--rank-mono); }
+.rank-admin-count[data-over="true"] { color: var(--danger); font-weight: 600; }
+.rank-admin-list { margin: 0; padding: 0; list-style: none; }
+.rank-admin-item { min-width: 0; padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+.rank-admin-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; }
+.rank-admin-badge { padding: 2px var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--ink); font: 600 var(--text-meta)/1.4 var(--rank-mono); letter-spacing: .08em; }
+.rank-admin-item[data-status="active"] .rank-admin-badge { border-color: var(--azurite); background: var(--tile-azurite); }
+.rank-admin-dates-text { color: var(--ink-2); font: 500 var(--text-xs)/var(--lh-ui) var(--rank-mono); }
+.rank-admin-item-text { margin: var(--space-2) 0 0; color: var(--ink); overflow-wrap: anywhere; }
+.rank-admin-item[data-status="disabled"] .rank-admin-item-text, .rank-admin-item[data-status="expired"] .rank-admin-item-text { color: var(--ink-2); }
+.rank-admin-item-link { display: block; margin-top: var(--space-1); color: var(--azurite); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.rank-admin-item-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }

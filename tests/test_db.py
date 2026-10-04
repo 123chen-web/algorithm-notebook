@@ -143,6 +143,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "is_admin": 0,
             "terms_accepted_at": None,
             "terms_version": None,
+            "public_rank_opt_out": 0,
         }
         plan_id = insert_plan(conn)
         conn.execute(

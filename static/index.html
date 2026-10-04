@@ -33,6 +33,7 @@
   <link rel="stylesheet" href="/static/account.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
+  <link rel="stylesheet" href="/static/rank.css?v=1">
   <link rel="stylesheet" href="/static/plan.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
@@ -55,10 +56,12 @@
   <script defer src="/static/board.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
+  <script defer src="/static/rank.js?v=1"></script>
+  <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
   <script defer src="/static/plan.js?v=1"></script>
-  <script defer src="/static/app.js?v=67"></script>
+  <script defer src="/static/app.js?v=68"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -156,6 +159,10 @@
               <button id="account-revoke-others" type="button" hidden>退出其他设备</button>
               <button id="account-delete" type="button" class="account-danger" hidden>注销账号…</button>
               <button type="button" class="link-button fx-toggle" id="fx-toggle"></button>
+              <label class="account-preference account-rank-pref" id="account-public-rank-label" for="account-public-rank" hidden>
+                <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
+                <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和打卡排行榜里。</span>
+              </label>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
                   <option value="ink">水墨红笔</option>
@@ -859,6 +866,40 @@
           </div>
         </div>
 
+        <section id="rank-notice" class="rank-notice" aria-labelledby="rank-notice-tag" hidden>
+          <p id="rank-notice-tag" class="rank-tag">今日一条</p>
+          <p id="rank-notice-text" class="rank-notice-text"></p>
+          <a id="rank-notice-link" class="rank-notice-link" rel="noopener noreferrer" target="_blank" hidden>查看链接<span aria-hidden="true"> ↗</span></a>
+        </section>
+
+        <section id="rank-yesterday" class="panel rank-panel" aria-labelledby="rank-yesterday-title" aria-busy="false">
+          <div class="rank-head">
+            <div>
+              <p class="rank-tag">昨日 · 北京时间</p>
+              <h3 id="rank-yesterday-title">昨日之星</h3>
+            </div>
+            <button id="rank-yesterday-retry" type="button" class="rank-retry" hidden>重新加载</button>
+          </div>
+          <p id="rank-yesterday-rules" class="muted rank-rules">按北京时间（Asia/Shanghai）的自然日统计，昨日是 <span id="rank-yesterday-date">—</span>。昨天复习次数最多的前 10 名；同一天对同一条错题的多次评分最多算 3 次，复习 0 次不上榜，次数相同并列同一名次。体验账号、被封禁和已注销的账号不上榜。</p>
+          <p id="rank-yesterday-status" class="muted" role="status" aria-live="polite"></p>
+          <ol id="rank-yesterday-list" class="rank-list" aria-describedby="rank-yesterday-rules"></ol>
+          <p id="rank-yesterday-me" class="rank-me"></p>
+          <p class="muted rank-privacy">榜单只显示用户名、头像、昨日复习次数和连续打卡天数。不想出现在榜单上？打开右上角账号菜单，取消勾选“参与公开榜单”即可，你仍能看到自己的数据。</p>
+        </section>
+
+        <section id="rank-hot" class="panel rank-panel" aria-labelledby="rank-hot-title" aria-busy="false">
+          <div class="rank-head">
+            <div>
+              <p class="rank-tag">近 7 天 · 北京时间</p>
+              <h3 id="rank-hot-title">本周热门题目</h3>
+            </div>
+            <button id="rank-hot-retry" type="button" class="rank-retry" hidden>重新加载</button>
+          </div>
+          <p id="rank-hot-rules" class="muted rank-rules">统计 <span id="rank-hot-range">—</span> 内，被至少 <span id="rank-hot-min">5</span> 个不同用户收录或复习过的公开题目，只显示来源站点、题名和人数，不显示任何用户的信息或笔记。点击打开原题（新窗口）。</p>
+          <p id="rank-hot-status" class="muted" role="status" aria-live="polite"></p>
+          <ol id="rank-hot-list" class="rank-hot-list" aria-describedby="rank-hot-rules"></ol>
+        </section>
+
         <section class="panel leaderboard-personal" aria-labelledby="leaderboard-me-title">
           <h3 id="leaderboard-me-title">你的连续打卡</h3>
           <div id="leaderboard-me"></div>
@@ -1331,6 +1372,30 @@
               <p id="manual-grant-status" class="redeem-status" role="status" aria-live="polite"></p>
             </form>
           </section>
+        </details>
+        <details id="rank-admin-card" class="panel rank-admin" data-admin-only open hidden>
+          <summary>今日一条</summary>
+          <p class="muted">每天显示在“打卡排行榜”页顶部的一句话，由你手写，不会抓取任何网站。日期按北京时间自然日，含首尾；多条重叠时显示开始日期最近、最新建立的一条。</p>
+          <form id="rank-admin-form" class="rank-admin-form" novalidate>
+            <label for="rank-admin-text">一句话（最多 80 字）</label>
+            <input id="rank-admin-text" type="text" maxlength="200" autocomplete="off" required>
+            <p id="rank-admin-count" class="muted rank-admin-count">0 / 80</p>
+            <label for="rank-admin-link">链接（可选，只允许 http / https，不能带账号密码）</label>
+            <input id="rank-admin-link" type="text" inputmode="url" maxlength="500" autocomplete="off" spellcheck="false">
+            <div class="rank-admin-dates">
+              <label>开始日期<input id="rank-admin-start" type="date" required></label>
+              <label>结束日期<input id="rank-admin-end" type="date" required></label>
+            </div>
+            <label class="rank-admin-check"><input id="rank-admin-active" type="checkbox" checked>启用</label>
+            <div class="rank-admin-actions">
+              <button id="rank-admin-save" type="submit">发布</button>
+              <button id="rank-admin-cancel" type="button" hidden>取消编辑</button>
+            </div>
+            <p id="rank-admin-form-status" class="muted" role="status" aria-live="polite"></p>
+          </form>
+          <h4 id="rank-admin-history-title">历史记录</h4>
+          <p id="rank-admin-status" class="muted" role="status" aria-live="polite"></p>
+          <ul id="rank-admin-list" class="rank-admin-list" aria-labelledby="rank-admin-history-title"></ul>
         </details>
         <h3 id="admin-reports-heading" class="admin-reports-heading" tabindex="-1">举报处理</h3>
         <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>

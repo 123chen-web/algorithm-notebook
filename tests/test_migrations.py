@@ -30,7 +30,7 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings",
         } <= tables
-        assert db.schema_version(conn) == 8
+        assert db.schema_version(conn) == 9
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -781,7 +781,7 @@ def test_forum_zone_migration_to_v8_preserves_old_data_and_is_repeatable(
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 8
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 9
         columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(posts)")}
         assert columns["zone"]["type"] == "TEXT"
         assert columns["zone"]["notnull"] == 0

@@ -548,6 +548,35 @@ def _apply_forum_zones(conn):
     )
 
 
+def _apply_rank_board(conn):
+    # 默认参与公开榜单；用户在账号菜单里关掉后为 1。
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN public_rank_opt_out INTEGER NOT NULL DEFAULT 0"
+    )
+    # 昨日榜单按 reviewed_at 的时间范围聚合，没有这条索引就是全表扫描。
+    conn.execute("CREATE INDEX idx_reviews_reviewed_at ON reviews(reviewed_at)")
+    # 管理员手写的“今日一条”。日期是北京时间自然日（YYYY-MM-DD），含首尾；
+    # is_active = 0 表示停用，记录保留作历史。
+    conn.execute(
+        """
+        CREATE TABLE daily_notices (
+            id INTEGER PRIMARY KEY,
+            text TEXT NOT NULL,
+            link TEXT,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_daily_notices_range ON daily_notices(start_date, end_date)"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -559,6 +588,7 @@ MIGRATIONS = [
     (6, "手动收款与兑换码", _apply_manual_payment_and_redeem_codes),
     # 7 留给“复习手感”任务；合并时由审查者衔接。
     (8, "论坛：分区", _apply_forum_zones),
+    (9, "榜单：公开参与设置、今日一条", _apply_rank_board),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
