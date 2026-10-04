@@ -493,8 +493,10 @@
     if (empty) {
       $("#mastery-overview").replaceChildren();
       setStatus("还没有记录。先去「新增记录」留下几条易错点，过一阵这里就会出现每个分区的曲线。");
+      window.Onboarding?.emptyNext("mastery", $("#mastery-next"), { total: 0, view: "mastery" });
       return;
     }
+    window.Onboarding?.emptyNext("mastery", $("#mastery-next"), null);
     setStatus("");
     $("#mastery-chart-title").textContent = `近 ${data.points.length - 1} 周`;
     const known = new Set(data.zones.map((entry) => entry.zone));

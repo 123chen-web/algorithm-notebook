@@ -81,6 +81,7 @@ function harness(state = {}) {
       dispatchEvent: (event) => { events.push({ type: event.type, detail: JSON.parse(JSON.stringify(event.detail)) }); return true; },
     },
     CustomEvent: class CustomEvent { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
+    // 没有 window.Onboarding：渲染函数问它要不要给空状态加"下一步"按钮时得到 undefined，什么也不加。
     window: { FocusReview: { start: (args) => practices.push(JSON.parse(JSON.stringify(args))) } },
     view: "insights",
     $: (selector) => get(selector.slice(1)),

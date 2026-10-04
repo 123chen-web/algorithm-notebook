@@ -432,6 +432,7 @@ $("#auth-switch").addEventListener("keydown", (event) => {
 
 function signedOut() {
   sessionEpoch += 1;
+  window.Onboarding?.reset();
   if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
   finishHomeOpening?.();
@@ -811,6 +812,7 @@ async function enterApp() {
   resetGroups();
   user = await api("/api/me");
   sessionEpoch += 1;
+  window.Onboarding?.reset(user);
   if (resetToken) {
     resetToken = null;
     const url = new URL(location.href);
@@ -935,6 +937,10 @@ async function loadHome({ refreshUser = true } = {}) {
       }),
       onFocus: () => window.FocusReview?.start({}),
     });
+    // 首次清单 (onboarding.js) 在总览渲染完之后把自己插到最上方。
+    document.dispatchEvent(new CustomEvent("app:home-rendered", {
+      detail: { overview: overview.value, user: { id: user.id, is_trial: Boolean(user.is_trial) } },
+    }));
   } else {
     window.Overview.renderError();
   }
@@ -1698,6 +1704,10 @@ function renderWeaknessAnalysis() {
   $("#weakness-empty").hidden = Boolean(insight);
   $("#weakness-empty-text").textContent = weaknessAnalysis?.message
     || "还没有分析过。点击分析按钮，把积累的错因和复习评分连起来，看看哪些问题值得先解决。";
+  const weaknessShort = !insight && Number.isInteger(weaknessAnalysis?.mistake_count)
+    && weaknessAnalysis.mistake_count < weaknessAnalysis.minimum_mistakes;
+  window.Onboarding?.emptyNext("weakness", $("#weakness-empty"), weaknessShort
+    ? { count: weaknessAnalysis.mistake_count, minimum: weaknessAnalysis.minimum_mistakes, total: weaknessAnalysis.mistake_count } : null);
   renderWeaknessControls();
   if (!insight) return;
 
@@ -2280,6 +2290,10 @@ async function loadList() {
         ? "可以去「全部记录」回看笔记，也可以在「新增记录」留下今天的新发现。"
         : "点击「新增记录」，留下代码、思路和错因。每条易错点都会单独安排复习。"
     );
+    // 筛选条件下的"空"不代表没有记录，只在没有任何筛选时给出下一步按钮。
+    const unfiltered = !zoneParam && !tagParam && !listCreatedOn;
+    window.Onboarding?.emptyNext(view, $("#detail .empty-state"), unfiltered
+      ? (view === "all" ? { total: 0, view: "all" } : { view: "today" }) : null);
     return;
   }
 
@@ -3047,6 +3061,8 @@ document.addEventListener("mistake:tags-changed", (event) => {
   card.querySelector(".record-tags")?.remove();
   if (tags.length && window.TagEditor) card.append(window.TagEditor.chips(tags));
 });
+
+window.Onboarding?.configure({ api });
 
 $("#home-refresh").addEventListener("click", () => run(async () => {
   message();
