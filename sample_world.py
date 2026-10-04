@@ -452,7 +452,7 @@ def build(password):
 
     # ---- forum: a lively thread (with quotes and a deleted floor), the main account's own post, an empty one ----
     thread = world.clients["周知远"].post("/api/posts", json={
-        "title": "二分查找的边界总写错，大家是怎么自查的？",
+        "title": "二分查找的边界总写错，大家是怎么自查的？", "zone": "算法",
         "body": "最近三道二分题都栽在边界上：有时候死循环，有时候漏掉最后一个元素。\n\n我现在的做法是先写出区间定义，再写循环，但写到 mid 更新那一步还是容易凭感觉改。\n\n想听听大家有没有固定的检查清单，或者能一眼看出区间到底是开还是闭的小技巧。",
     }).json()
     script = [
@@ -469,16 +469,76 @@ def build(password):
     for who, body, _, reply_floor in script:
         comment_ids.append(world.comment(thread["id"], who, body, comment_ids[reply_floor - 1] if reply_floor else None))
     own = world.clients[MAIN].post("/api/posts", json={
-        "title": "我整理了一份二分查找自查清单", "body": "动笔前写不变量、用长度 1 和 2 的数组各走一遍、确认每次循环区间都在缩小。欢迎补充。",
+        "title": "我整理了一份二分查找自查清单", "zone": "算法", "body": "动笔前写不变量、用长度 1 和 2 的数组各走一遍、确认每次循环区间都在缩小。欢迎补充。",
     }).json()
     own_comments = [
         world.comment(own["id"], "苏晚", "第三条很关键，我之前就因为区间没缩小死循环过 😭"),
         world.comment(own["id"], "周知远", "已收藏，今晚按这份清单复盘 📌"),
     ]
     quiet = world.clients["苏晚"].post("/api/posts", json={
-        "title": "整理了一份数据库索引失效的清单", "body": "函数、隐式类型转换、联合索引最左前缀……整理在这里，欢迎补充。",
+        "title": "整理了一份数据库索引失效的清单", "zone": "数据库", "body": "函数、隐式类型转换、联合索引最左前缀……整理在这里，欢迎补充。",
     }).json()
+    # More threads so the board home shows every state: solved + hot + code, unanswered, mine, one per zone.
+    def board_post(owner, title, zone, body):
+        response = world.clients[owner].post("/api/posts", json={"title": title, "zone": zone, "body": body})
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    window = board_post(
+        "陈一鸣", "滑动窗口：最长无重复子串，左指针到底什么时候该移动？", "算法",
+        "我的写法在 \"abba\" 这种输入上会得到错误答案：\n\n```python\ndef longest(s):\n    seen, left, best = {}, 0, 0\n"
+        "    for right, ch in enumerate(s):\n        if ch in seen:\n            left = seen[ch] + 1\n"
+        "        seen[ch] = right\n        best = max(best, right - left + 1)\n    return best\n```\n\n"
+        "是哪一步让 left 往回走了？",
+    )
+    window_script = [
+        ("苏晚", "问题在 left = seen[ch] + 1：left 只能前进，要写成 left = max(left, seen[ch] + 1)。\n\n```python\nleft = max(left, seen[ch] + 1)\n```\n"
+                 "\"abba\" 里第二个 a 的旧位置在 left 左边，直接赋值就把窗口拉回去了。", 3500),
+        ("周知远", "附议，我之前也是这里栽的。可以再加一条断言：每轮结束 left 不减 🧪", 3300),
+        (MAIN, "换成“记录每个字符最后出现的位置 + 取最大值”的写法之后，我的三道滑窗题都过了 ✅", 2900),
+        ("何以安", "能不能顺便讲讲为什么用 if ch in seen 而不是 while？", 1500),
+        ("苏晚", "if 够用：每个字符进来最多触发一次更新；while 是用集合版本的写法，要一个个删到不重复为止。", 1400),
+        ("许朝", "收藏了，下周刷题前再看一遍 📌", 600),
+        ("陈一鸣", "已经改好，感谢各位！把 苏晚 的回答设为采纳 🙏", 240),
+    ]
+    window_comments = [world.comment(window["id"], who, body) for who, body, _ in window_script]
+    grid = board_post(
+        "何以安", "CSS Grid 和 Flexbox 做整页布局，到底怎么选？", "前端",
+        "一直在两者之间摇摆：导航栏用 flex 没问题，但整页的“侧栏 + 内容 + 页脚”该用哪个？有没有判断标准？",
+    )
+    grid_comments = [
+        world.comment(grid["id"], "周知远", "二维布局（行和列同时要管）用 Grid，一维排列用 Flex，我自己就按这一句判断 👍"),
+        world.comment(grid["id"], MAIN, "补充：内容大小决定布局用 Flex，布局决定内容大小用 Grid。"),
+    ]
+    stats = board_post(
+        "许朝", "条件概率里“独立”和“互斥”总是混，怎么记？", "概率统计",
+        "两个概念的定义都背了，做题时还是会把 P(AB)=P(A)P(B) 和 P(AB)=0 搞反。有没有好记的对照方法？",
+    )
+    stats_comments = [
+        world.comment(stats["id"], "苏晚", "互斥：不能同时发生（P(AB)=0）；独立：一个发生不影响另一个。互斥的两件事（概率都大于 0）一定不独立 🤝"),
+        world.comment(stats["id"], "周知远", "画韦恩图：互斥是两个圆不相交，独立没有图可画，只能算 P(AB)。"),
+    ]
+    design = board_post(
+        "苏晚", "短链服务的发号器怎么设计，雪花算法够用吗？", "系统设计",
+        "预计日活几十万，短链长度希望控制在 7 位以内。发号器用雪花算法会不会太长？还有别的方案吗？",
+    )
+    algebra = board_post(
+        MAIN, "矩阵的秩和向量组线性相关，能用一句话说清关系吗？", "线性代数",
+        "列向量组的秩就是矩阵的秩，这句话我背得出，但没有直觉。想听听大家的理解。",
+    )
+    algebra_comment = world.comment(algebra["id"], "苏晚", "把矩阵看成“列向量能撑起多大的空间”，秩就是这个空间的维数；相关就是有些列是多余的。")
+    new_posts = (
+        (window["id"], 74, window_comments, [m for _, _, m in window_script]),
+        (grid["id"], 5, grid_comments, (240, 150)),
+        (stats["id"], 9 * 24, stats_comments, (8 * 24 * 60, 7 * 24 * 60 + 600)),
+        (design["id"], 3, [], ()),
+        (algebra["id"], 35 * 24, [algebra_comment], (34 * 24 * 60,)),
+    )
     with world.connect(write=True) as conn:
+        for post_id, hours, ids, minutes in new_posts:
+            conn.execute("UPDATE posts SET created_at = ? WHERE id = ?", (world.ts(0, hours), post_id))
+            for comment_id, minute in zip(ids, minutes):
+                conn.execute("UPDATE post_comments SET created_at = ? WHERE id = ?", (world.ts(0, 0, minute), comment_id))
         for comment_id, (_, _, minutes, _) in zip(comment_ids, script):
             conn.execute("UPDATE post_comments SET created_at = ? WHERE id = ?", (world.ts(0, 0, minutes), comment_id))
         for comment_id, minutes in zip(own_comments, (1300, 1200)):
@@ -505,6 +565,14 @@ def build(password):
             vote = world.clients[name].put(f"/api/comments/{comment_ids[comment_index]}/helpful")
             assert vote.status_code == 200, vote.text
             assert vote.json() == {"helpful_count": count, "viewer_helpful": True}
+
+    # The tall solved thread: its owner accepts 苏晚's answer, and others find it helpful.
+    solved = world.clients["陈一鸣"].put(f"/api/posts/{window['id']}/accepted", json={"comment_id": window_comments[0]})
+    assert solved.status_code == 200, solved.text
+    for voter in ("周知远", MAIN, "何以安", "许朝", "陈一鸣"):
+        assert world.clients[voter].put(f"/api/comments/{window_comments[0]}/helpful").status_code == 200
+    for voter in ("苏晚", "许朝"):
+        assert world.clients[voter].put(f"/api/comments/{window_comments[1]}/helpful").status_code == 200
 
     # A manually written sample shows the feature without any provider request.
     from thread_summary import thread_signature

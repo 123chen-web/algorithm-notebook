@@ -318,6 +318,8 @@ class ManualPaymentSettings(InputModel):
 class PostFields(InputModel):
     title: PostTitle
     body: PostBody
+    # 分区是否合法在接口里检查（400“分区不存在”）；省略或 null 表示未分区。
+    zone: str | None = None
 
 
 class NewPost(PostFields):
@@ -3136,7 +3138,58 @@ def delete_group(group_id: int, user=Depends(current_user)):
     return {"ok": True}
 
 
-POST_LIST_LIMIT = 100
+POST_LIST_DEFAULT_LIMIT = 20
+POST_LIST_MAX_LIMIT = 50
+POST_EXCERPT_LENGTH = 140
+POST_HOT_SCORE = 5
+POST_HOT_WINDOW = timedelta(days=7)
+POST_PARTICIPANT_LIMIT = 4
+POST_LIST_SORTS = {
+    "activity": "last_activity_at DESC, id DESC",
+    "new": "created_at DESC, id DESC",
+    "hot": "hot_score DESC, last_activity_at DESC, id DESC",
+}
+# 筛选条件只来自这张白名单（值是写死的 SQL 片段，用户输入只作为绑定参数）。
+POST_LIST_FILTERS = {
+    "all": "1",
+    "unanswered": "comment_count = 0",
+    "solved": "solved = 1",
+    "mine": "user_id = :me",
+    "participated": (
+        "(user_id = :me OR EXISTS(SELECT 1 FROM post_comments m WHERE m.post_id = board.id "
+        "AND m.user_id = :me AND m.deleted_at IS NULL))"
+    ),
+}
+# 每个帖子的统计在一次分组查询里取齐，列表翻页和各项统计共用。
+POST_BOARD_CTE = """
+WITH comment_stats AS (
+    SELECT post_id, COUNT(*) AS comment_count, MAX(created_at) AS last_comment_at,
+           SUM(created_at >= :since) AS recent_comments
+    FROM post_comments WHERE deleted_at IS NULL GROUP BY post_id
+), vote_stats AS (
+    SELECT c.post_id, COUNT(*) AS helpful_total
+    FROM comment_votes v JOIN post_comments c ON c.id = v.comment_id
+    WHERE c.deleted_at IS NULL GROUP BY c.post_id
+), board AS (
+    SELECT p.id, p.title, p.body, p.created_at, p.user_id, p.zone,
+           u.username, u.avatar_version,
+           COALESCE(cs.comment_count, 0) AS comment_count,
+           CASE WHEN cs.last_comment_at > p.created_at
+                THEN cs.last_comment_at ELSE p.created_at END AS last_activity_at,
+           EXISTS(
+               SELECT 1 FROM post_comments accepted
+               WHERE accepted.id = p.accepted_comment_id
+                 AND accepted.post_id = p.id AND accepted.deleted_at IS NULL
+           ) AS solved,
+           COALESCE(vs.helpful_total, 0) AS helpful_total,
+           COALESCE(cs.recent_comments, 0) + COALESCE(vs.helpful_total, 0) AS hot_score
+    FROM posts p
+    JOIN users u ON u.id = p.user_id
+    LEFT JOIN comment_stats cs ON cs.post_id = p.id
+    LEFT JOIN vote_stats vs ON vs.post_id = p.id
+    WHERE p.deleted_at IS NULL
+)
+"""
 
 
 def require_not_trial(user, action):
@@ -3279,58 +3332,185 @@ def serialize_comment(conn, row, post_author_id, viewer_id):
     return comment_response(row, post_author_id, context["floor"], reply_to, votes)
 
 
+def post_excerpt(body):
+    """帖子摘要：去掉围栏代码块、折叠空白、按 140 字（表情安全）截断。
+
+    围栏规则与 static/thread.js 的 renderBody 一致：以 ``` 开头的行开始，
+    遇到只有 ``` 的行结束，未闭合则一直到结尾。
+    """
+    kept = []
+    in_fence = False
+    for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if in_fence:
+            if re.fullmatch(r"```[ \t]*", line):
+                in_fence = False
+        elif line.startswith("```"):
+            in_fence = True
+            kept.append(" ")
+        else:
+            kept.append(line)
+    text = " ".join(" ".join(kept).split())
+    shortened, was_cut = truncate_text(text, POST_EXCERPT_LENGTH)
+    return shortened + ("…" if was_cut else "")
+
+
+def has_fenced_code(body):
+    return re.search(r"^```", body, re.MULTILINE) is not None
+
+
 @app.get("/api/posts")
-def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
-    search_filter = ""
-    params = []
+def list_posts(
+    q: PostSearchQuery = "",
+    sort: Literal["activity", "new", "hot"] = "activity",
+    filter: Literal["all", "unanswered", "solved", "mine", "participated"] = "all",
+    zone: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=POST_LIST_MAX_LIMIT)] = POST_LIST_DEFAULT_LIMIT,
+    offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0,
+    user=Depends(current_user),
+):
+    if zone is not None and zone != "none" and zone not in PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
+    # 体验账号不能发帖也不能评论，“我的 / 参与过”恒为空，is_mine 恒为 false。
+    me = None if user["is_trial"] else user["id"]
+    since = (datetime.now(timezone.utc) - POST_HOT_WINDOW).isoformat(timespec="seconds")
+    conditions = [POST_LIST_FILTERS[filter]]
+    params = {"since": since, "me": me}
     if q:
         # Escape LIKE metacharacters (including the escape character itself).
         # SQLite LIKE is case-insensitive for ASCII letters by default.
         keyword = q.replace("!", "!!").replace("%", "!%").replace("_", "!_")
-        pattern = f"%{keyword}%"
-        search_filter = "AND (p.title LIKE ? ESCAPE '!' OR p.body LIKE ? ESCAPE '!')"
-        params.extend((pattern, pattern))
-    params.append(POST_LIST_LIMIT)
+        params["pattern"] = f"%{keyword}%"
+        conditions.append("(title LIKE :pattern ESCAPE '!' OR body LIKE :pattern ESCAPE '!')")
+    if zone == "none":
+        conditions.append("zone IS NULL")
+    elif zone is not None:
+        params["zone"] = zone
+        conditions.append("zone = :zone")
+    where = " AND ".join(conditions)
     with connect() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT p.id, p.title, p.created_at, p.user_id, u.username,
-                   u.avatar_version,
-                   (
-                       SELECT COUNT(*) FROM post_comments c
-                       WHERE c.post_id = p.id AND c.deleted_at IS NULL
-                   ) AS comment_count,
-                   EXISTS(
-                       SELECT 1 FROM post_comments accepted
-                       WHERE accepted.id = p.accepted_comment_id
-                         AND accepted.post_id = p.id AND accepted.deleted_at IS NULL
-                   ) AS solved
-            FROM posts p
-            JOIN users u ON u.id = p.user_id
-            WHERE p.deleted_at IS NULL
-            {search_filter}
-            ORDER BY p.created_at DESC
-            LIMIT ?
+        # 总数、读数和本页数据共用同一个只读快照。
+        conn.execute("BEGIN")
+        total = conn.execute(
+            f"{POST_BOARD_CTE} SELECT COUNT(*) FROM board WHERE {where}", params
+        ).fetchone()[0]
+        counts = {"all": 0, "unanswered": 0, "solved": 0, "mine": 0}
+        zone_counts = {}
+        # counts / zone_counts 不受 q / filter / zone 影响：全站可见帖子的口径。
+        for row in conn.execute(
+            f"""{POST_BOARD_CTE}
+            SELECT COALESCE(zone, 'none') AS zone_key, COUNT(*) AS total,
+                   SUM(comment_count = 0) AS unanswered, SUM(solved) AS solved,
+                   SUM(CASE WHEN user_id = :me THEN 1 ELSE 0 END) AS mine
+            FROM board GROUP BY zone_key
             """,
-            params,
+            {"since": since, "me": me},
+        ):
+            zone_counts[row["zone_key"]] = row["total"]
+            counts["all"] += row["total"]
+            counts["unanswered"] += row["unanswered"]
+            counts["solved"] += row["solved"]
+            counts["mine"] += row["mine"]
+        rows = conn.execute(
+            f"""{POST_BOARD_CTE}
+            SELECT * FROM board WHERE {where}
+            ORDER BY {POST_LIST_SORTS[sort]} LIMIT :limit OFFSET :offset
+            """,
+            {**params, "limit": limit, "offset": offset},
         ).fetchall()
-    return {
-        "posts": [
-            {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file(),
-             "solved": bool(row["solved"])}
-            for row in rows
+        participation = {}
+        coded_posts = set()
+        if rows:
+            marks = ",".join("?" * len(rows))
+            ids = [row["id"] for row in rows]
+            # 参与者、最后评论者：整页一次分组查询取齐（key 用来比较“谁更晚”）。
+            for item in conn.execute(
+                f"""
+                SELECT c.post_id, c.user_id, u.username, u.avatar_version,
+                       MAX(c.created_at || '|' || printf('%020d', c.id)) AS last_key
+                FROM post_comments c JOIN users u ON u.id = c.user_id
+                WHERE c.deleted_at IS NULL AND c.post_id IN ({marks})
+                GROUP BY c.post_id, c.user_id
+                """,
+                ids,
+            ):
+                participation.setdefault(item["post_id"], []).append(item)
+            for item in conn.execute(
+                f"""
+                SELECT post_id, body FROM post_comments
+                WHERE deleted_at IS NULL AND post_id IN ({marks}) AND body LIKE '%```%'
+                """,
+                ids,
+            ):
+                if has_fenced_code(item["body"]):
+                    coded_posts.add(item["post_id"])
+
+    avatars = {}
+
+    def person(user_id, username, avatar_version):
+        if user_id not in avatars:
+            avatars[user_id] = avatar_path(user_id).is_file()
+        return {"user_id": user_id, "username": username,
+                "avatar_version": avatar_version, "has_avatar": avatars[user_id]}
+
+    posts = []
+    for row in rows:
+        commenters = sorted(
+            participation.get(row["id"], []), key=lambda item: item["last_key"], reverse=True
+        )
+        last_commenter = None
+        if commenters:
+            latest = commenters[0]
+            last_commenter = person(latest["user_id"], latest["username"], latest["avatar_version"])
+        people = [person(row["user_id"], row["username"], row["avatar_version"])]
+        people += [
+            person(item["user_id"], item["username"], item["avatar_version"])
+            for item in commenters if item["user_id"] != row["user_id"]
         ]
+        posts.append({
+            "id": row["id"],
+            "title": row["title"],
+            "created_at": row["created_at"],
+            "user_id": row["user_id"],
+            "username": row["username"],
+            "avatar_version": row["avatar_version"],
+            "has_avatar": people[0]["has_avatar"],
+            "zone": row["zone"],
+            "excerpt": post_excerpt(row["body"]),
+            "comment_count": row["comment_count"],
+            "last_activity_at": row["last_activity_at"],
+            "last_commenter": last_commenter,
+            "participants": people[:POST_PARTICIPANT_LIMIT],
+            "participant_count": len(people),
+            "has_code": has_fenced_code(row["body"]) or row["id"] in coded_posts,
+            "solved": bool(row["solved"]),
+            "helpful_total": row["helpful_total"],
+            "hot": row["hot_score"] >= POST_HOT_SCORE,
+            "is_mine": me is not None and row["user_id"] == me,
+        })
+    return {
+        "posts": posts,
+        "total": total,
+        "has_more": offset + len(posts) < total,
+        "counts": counts,
+        "zone_counts": zone_counts,
     }
+
+
+def checked_post_zone(zone):
+    if zone is not None and zone not in PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
+    return zone
 
 
 @app.post("/api/posts", status_code=201)
 def create_post(data: NewPost, user=Depends(current_user)):
     require_not_trial(user, "发帖")
+    zone = checked_post_zone(data.zone)
     with connect(write=True) as conn:
         recheck_account(conn, user["id"])
         cursor = conn.execute(
-            "INSERT INTO posts(user_id, title, body, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], data.title, data.body, utc_now()),
+            "INSERT INTO posts(user_id, title, body, zone, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user["id"], data.title, data.body, zone, utc_now()),
         )
         row = conn.execute(
             """
@@ -3409,12 +3589,15 @@ def get_post(post_id: int, user=Depends(current_user)):
 @app.put("/api/posts/{post_id}")
 def edit_post(post_id: int, data: PostEdit, user=Depends(current_user)):
     require_not_trial(user, "发帖")
+    # 省略 zone 表示不改；显式传 null 表示改回“未分区”。
+    change_zone = "zone" in data.model_fields_set
+    zone = checked_post_zone(data.zone)
     with connect(write=True) as conn:
         recheck_account(conn, user["id"])
-        owned_post(conn, post_id, user["id"])
+        post = owned_post(conn, post_id, user["id"])
         conn.execute(
-            "UPDATE posts SET title = ?, body = ?, updated_at = ? WHERE id = ?",
-            (data.title, data.body, utc_now(), post_id),
+            "UPDATE posts SET title = ?, body = ?, zone = ?, updated_at = ? WHERE id = ?",
+            (data.title, data.body, zone if change_zone else post["zone"], utc_now(), post_id),
         )
         row = conn.execute(
             """

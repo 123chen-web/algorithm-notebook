@@ -35,11 +35,11 @@ const context = {
     body: { classList: { remove() {} } },
     querySelectorAll: () => [],
   },
-  window: {},
+  window: { Board: { resetCount: 0, reset() { this.resetCount += 1; } } },
   location: { hash: "", pathname: "/", search: "" },
   history: { replaceState(_state, _unused, url) { context.location.hash = url.slice(url.indexOf("#")); } },
   finishHomeOpening: null, sealStamps: [], resetToken: null,
-  planPurchase: null, forumPost: null, forumSearchQuery: "", forumCommentOrder: "earliest",
+  planPurchase: null, forumPost: null, forumCommentOrder: "earliest",
   forumOnlyOp: false, forumListGeneration: 0,
   forumDetailGeneration: 0, forumSummaryController: null, forumCodeOnly: false,
   forumMentionOnly: false, forumCurrentComment: null, forumMutations: new Map(), forumPreview: false,
@@ -71,7 +71,6 @@ const deferred = () => {
 };
 const primeForum = () => {
   context.forumPost = { id: 42 };
-  context.forumSearchQuery = "binary";
   context.forumCommentOrder = "helpful";
   context.forumOnlyOp = context.forumCodeOnly = context.forumMentionOnly = true;
   context.forumCurrentComment = 101;
@@ -89,7 +88,8 @@ const assertForumReset = () => {
   assert.equal(context.forumCurrentComment, null);
   assert.equal(context.forumMutations.size, 0);
   assert.equal(context.forumPreview, false);
-  assert.equal(context.forumSearchQuery, "");
+  // 列表、搜索词、发帖表单现在由 static/board.js 的控制器管理；登出必须通知它重置。
+  assert.equal(context.window.Board.resetCount, 1);
   assert.equal(context.forumCommentOrder, "earliest");
   assert.equal(context.forumOnlyOp, false);
   assert.equal(context.forumListGeneration, 1);
