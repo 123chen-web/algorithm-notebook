@@ -530,3 +530,20 @@ def test_now_with_other_offset_is_normalised_to_utc(client, admin):
                                                    tzinfo=timezone(timedelta(hours=7))))
     assert result["daily"][-1]["date"] == "2026-09-28"
     assert result["new_users"]["current"] == 1
+
+
+def test_rows_dated_after_today_are_excluded_everywhere(client, admin):
+    tomorrow = "2026-09-29T00:00:00+00:00"
+    with connect(write=True) as conn:
+        user = add_user(conn, "future", tomorrow)
+        add_problem(conn, user, tomorrow)
+        add_review(conn, user, tomorrow)
+        add_post(conn, user, tomorrow)
+        add_ai(conn, "variant", tomorrow, ok=0, prompt=500)
+        add_code(conn, 1, created_at=tomorrow, redeemed_by=user, redeemed_at=tomorrow)
+    result = metrics(client)
+    assert result["new_users"]["current"] == 0
+    assert result["active_users"] == {"current": 0, "previous": 0}
+    assert result["ai"]["calls"]["current"] == 0 and result["ai"]["tokens"]["prompt"] == 0
+    assert result["redeem"] == {"created": 0, "redeemed": 0, "unused": 0}
+    assert result["funnel"]["registered"] == 0

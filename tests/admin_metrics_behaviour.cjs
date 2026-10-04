@@ -408,6 +408,16 @@ test("a late answer after logout / account switch is dropped", async () => {
   assert.equal(env.cards().length, 0);
 });
 
+test("a late answer is dropped when the same admin signed out and back in (epoch changed, same id)", async () => {
+  const env = setup();
+  const loading = env.api.load();
+  env.state.epoch += 1;
+  env.requests[0].resolve(payload());
+  assert.equal(await loading, false);
+  assert.equal(env.cards().length, 0);
+  assert.equal(env.$("admin-metrics-body").hidden, true);
+});
+
 test("a late answer after leaving the admin page or after reset is dropped", async () => {
   const env = setup();
   const loading = env.api.load();
