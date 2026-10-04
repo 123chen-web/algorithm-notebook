@@ -12,7 +12,8 @@
   let restoreTitle = null;
 
   const canAnimate = () => !intro.hidden && app.hidden && !document.hidden
-    && !motionQuery.matches && intro.getClientRects().length > 0;
+    && !motionQuery.matches && intro.getClientRects().length > 0
+    && !window.IntroFilm?.ownsOpening(); // 本次加载放过开场短片时不再叠一段欢迎页动效。
 
   const later = (callback, delay) => {
     const timer = window.setTimeout(() => {
