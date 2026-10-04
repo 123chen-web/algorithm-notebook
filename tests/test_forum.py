@@ -44,7 +44,8 @@ def test_list_posts_orders_newest_first_with_comment_count(client):
     create_comment(client, first["id"], "评论一")
     create_comment(client, first["id"], "评论二")
 
-    posts = client.get("/api/posts").json()["posts"]
+    # 默认排序改成“最新活动”（有新评论的旧帖会上浮），“最新发布”要显式传 sort=new。
+    posts = client.get("/api/posts", params={"sort": "new"}).json()["posts"]
     assert [p["id"] for p in posts] == [second["id"], first["id"]]
     counts = {p["id"]: p["comment_count"] for p in posts}
     assert counts[first["id"]] == 2
@@ -86,7 +87,9 @@ def test_search_posts_returns_empty_list_when_nothing_matches(client):
     response = client.get("/api/posts", params={"q": "不存在的关键词"})
 
     assert response.status_code == 200
-    assert response.json() == {"posts": []}
+    # 列表响应现在还带 total / counts 等字段（旧的 posts 键不变）。
+    assert response.json()["posts"] == []
+    assert response.json()["total"] == 0
 
 
 @pytest.mark.parametrize(
@@ -170,7 +173,9 @@ def test_search_posts_limits_trimmed_keyword_to_200_unicode_characters(client, c
     assert too_long.status_code == 422
 
 
-def test_search_posts_finds_old_match_beyond_latest_100_posts(client):
+def test_search_posts_finds_old_match_beyond_the_first_page(client):
+    # 原来列表只返回最新 100 条；现在改成 limit / offset 翻页，
+    # 不带参数时返回前 20 条，搜索和翻页都仍能找到很久以前的帖子。
     user = register(client)
     with connect(write=True) as conn:
         old_post_id = conn.execute(
@@ -188,17 +193,21 @@ def test_search_posts_finds_old_match_beyond_latest_100_posts(client):
             ],
         )
 
-    recent = client.get("/api/posts").json()["posts"]
-    assert len(recent) == 100
-    assert old_post_id not in {post["id"] for post in recent}
+    recent = client.get("/api/posts").json()
+    assert len(recent["posts"]) == 20
+    assert recent["total"] == 102 and recent["has_more"] is True
+    assert old_post_id not in {post["id"] for post in recent["posts"]}
 
     response = client.get("/api/posts", params={"q": "目标"})
 
     assert response.status_code == 200
     assert [post["id"] for post in response.json()["posts"]] == [old_post_id]
+    last_page = client.get("/api/posts", params={"limit": 50, "offset": 100}).json()
+    assert old_post_id in {post["id"] for post in last_page["posts"]}
+    assert last_page["has_more"] is False
 
 
-def test_search_posts_orders_matches_by_created_at_and_limits_results_to_100(client):
+def test_search_posts_orders_matches_by_created_at_and_pages_through_results(client):
     user = register(client)
     with connect(write=True) as conn:
         # 插入顺序与时间顺序相反，确保搜索沿用 created_at 排序。
@@ -213,12 +222,17 @@ def test_search_posts_orders_matches_by_created_at_and_limits_results_to_100(cli
             ],
         )
 
-    response = client.get("/api/posts", params={"q": "算法"})
-
-    assert response.status_code == 200
-    assert [post["title"] for post in response.json()["posts"]] == [
-        f"算法帖子 {index}" for index in range(100)
-    ]
+    # 原来一次最多返回 100 条；现在每页最多 50 条，翻页拼起来仍是同样的顺序。
+    titles = []
+    for offset in (0, 50, 100):
+        response = client.get(
+            "/api/posts", params={"q": "算法", "sort": "new", "limit": 50, "offset": offset}
+        )
+        assert response.status_code == 200
+        assert response.json()["total"] == 105
+        titles += [post["title"] for post in response.json()["posts"]]
+    assert titles == [f"算法帖子 {index}" for index in range(105)]
+    assert client.get("/api/posts", params={"limit": 51}).status_code == 422
 
 
 def test_get_post_detail_includes_comments_with_username(client):
