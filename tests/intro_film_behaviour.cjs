@@ -106,12 +106,12 @@ test("timeline: every act arrives on its cue and the ending offers Continue / Wa
   assert.equal(page.focused(), "intro-film-continue", "focus moves to Continue");
   assert.match(live.textContent, /开场结束/);
   page.byId("intro-film-continue").click();
-  assert.equal(page.film(), null, "Continue closes the film");
+  assert.ok(!page.film(), "Continue closes the film");
   assert.equal(page.focused(), "intro-title", "focus returns to the welcome page's main heading");
   assert.equal(page.container.inert, false, "the page is interactive again");
   assert.equal(page.document.documentElement.classList.contains("intro-film-open"), false);
   advance(60000);
-  assert.equal(page.film(), null, "no timer survives closing");
+  assert.ok(!page.film(), "no timer survives closing");
 });
 
 for (const [label, skip] of [
@@ -125,12 +125,12 @@ for (const [label, skip] of [
     advance(12000);
     assert.equal(page.film().dataset.act, "3");
     skip(page);
-    assert.equal(page.film(), null);
+    assert.ok(!page.film());
     assert.equal(page.IntroFilm.isOpen(), false);
     assert.equal(page.focused(), "intro-title");
     assert.equal(page.container.inert, false);
     advance(60000);
-    assert.equal(page.film(), null);
+    assert.ok(!page.film());
   });
 }
 
@@ -143,7 +143,7 @@ test("keys: space prevents page scrolling while playing but is left to the butto
   assert.ok(page.film(), "space on the final frame does not dismiss it");
   const escape = page.key("Escape");
   assert.equal(escape.defaultPrevented, true);
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
 });
 
 test("storage: a throwing localStorage is treated as a first visit without errors", () => {
@@ -152,9 +152,9 @@ test("storage: a throwing localStorage is treated as a first visit without error
   assert.doesNotThrow(() => page.IntroFilm.route("welcome"));
   assert.ok(page.film(), "plays as a first visit");
   assert.doesNotThrow(() => page.key("Escape"));
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
   page.IntroFilm.route("welcome");
-  assert.equal(page.film(), null, "but still only once per page load");
+  assert.ok(!page.film(), "but still only once per page load");
 });
 
 test("storage: a localStorage accessor that throws on access is also tolerated", () => {
@@ -168,7 +168,7 @@ test("returning visitor: once recorded the film does not autoplay and the old op
   const page = setup();
   page.window.localStorage.setItem("oy-intro-film-seen", "1");
   page.IntroFilm.route("welcome");
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
   assert.equal(page.IntroFilm.ownsOpening(), false);
 });
 
@@ -191,7 +191,7 @@ test("replay: the footer link plays again, Watch again restarts, and focus retur
   advance(CUES[1]);
   assert.equal(page.film().dataset.act, "2", "the restarted timeline runs");
   page.key("Escape");
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
   assert.equal(page.focused(), "intro-film-replay", "focus goes back to the replay link");
   assert.equal(page.container.inert, false);
 });
@@ -212,7 +212,7 @@ test("reduced motion: the static brand frame with Continue is shown and nothing 
   advance(60000);
   assert.equal(root.dataset.act, "6");
   page.byId("intro-film-continue").click();
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
   assert.equal(page.focused(), "intro-title");
 });
 
@@ -238,9 +238,9 @@ for (const [label, options, view] of [
   test(`no autoplay: ${label}`, () => {
     const page = setup(options);
     page.IntroFilm.route(view);
-    assert.equal(page.film(), null);
+    assert.ok(!page.film());
     page.IntroFilm.route("welcome"); // 之后再回到欢迎页（例如登出）也不补放
-    assert.equal(page.film(), null);
+    assert.ok(!page.film());
     assert.equal(page.window.localStorage.getItem("oy-intro-film-seen"), null);
   });
 }
@@ -307,7 +307,7 @@ test("routing away while the film is open closes it without stealing focus", () 
   assert.equal(page.document.documentElement.querySelectorAll("#intro-film").length, 1);
   page.intro.hidden = true;
   page.IntroFilm.route("auth");
-  assert.equal(page.film(), null);
+  assert.ok(!page.film());
   assert.notEqual(page.focused(), "intro-title");
   assert.equal(page.container.inert, false);
 });
