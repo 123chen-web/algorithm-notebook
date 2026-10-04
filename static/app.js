@@ -32,6 +32,17 @@ let orderPollGeneration = 0;
 let forumPost = null;
 let forumCommentOrder = "earliest";
 let forumOnlyOp = false;
+let forumCodeOnly = false;
+let forumMentionOnly = false;
+let forumPreview = false;
+let forumDetailGeneration = 0;
+let forumCurrentComment = null;
+let forumSummaryController = null;
+let forumMapFrame = null;
+let forumMapModel = null;
+let forumMapDrag = null;
+let forumMapDragFrame = null;
+const forumMutations = new Map();
 let forumReplyTarget = null;
 let forumSearchQuery = "";
 let forumListGeneration = 0;
@@ -419,6 +430,7 @@ $("#auth-switch").addEventListener("keydown", (event) => {
 
 function signedOut() {
   sessionEpoch += 1;
+  window.Account?.reset();
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
   stopOrderPolling();
@@ -460,6 +472,13 @@ function signedOut() {
   $("#leaderboard-table-wrap").hidden = true;
   $("#leaderboard-page").setAttribute("aria-busy", "false");
   forumPost = null;
+  forumDetailGeneration += 1;
+  forumSummaryController?.reset();
+  forumCodeOnly = false;
+  forumMentionOnly = false;
+  forumCurrentComment = null;
+  forumMutations.clear();
+  setForumPreview(false);
   forumSearchQuery = "";
   forumCommentOrder = "earliest";
   forumOnlyOp = false;
@@ -597,6 +616,9 @@ function timestamp(value) {
 
 function renderUserInfo() {
   const wrap = $("#user-info-wrap");
+  for (const id of ["account-password", "account-revoke-others", "account-delete"]) {
+    $("#" + id).hidden = Boolean(user.is_trial);
+  }
 
   function readOnly() {
     finishHomeOpening?.();
@@ -1911,10 +1933,10 @@ function planFacts(entries) {
   return facts;
 }
 
-async function refreshPlanSubscription() {
+async function refreshPlanSubscription(isCurrent = () => true) {
   const currentUser = user;
   const updated = await api("/api/me");
-  if (user !== currentUser || !user || view !== "plan") return false;
+  if (user !== currentUser || !user || view !== "plan" || !isCurrent()) return false;
   user = updated;
   updateUserInfo();
   const entries = [
@@ -2158,6 +2180,7 @@ function startOrderPolling() {
 }
 
 async function loadPlanPage() {
+  configureRedeem();
   stopOrderPolling();
   if (!await refreshPlanSubscription()) return;
   if (user.is_trial) planPurchase = null;
@@ -2166,6 +2189,8 @@ async function loadPlanPage() {
   if (user !== currentUser || !user || view !== "plan") return;
   renderPlans(plans);
   renderPlanOrder();
+  await window.Redeem?.loadPlan(plans);
+  if (user !== currentUser || !user || view !== "plan") return;
   if (!await loadPlanOrders()) return;
   if (planPurchase) {
     if (planPurchase.order.status === "pending") startOrderPolling();
@@ -2744,9 +2769,12 @@ $("#register-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   run(async () => {
+    if (!form.querySelector('[name="accept_terms"]').checked) {
+      throw new Error("请先阅读并同意服务条款和隐私政策");
+    }
     await api("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify(formObject(form)),
+      body: JSON.stringify({ ...formObject(form), accept_terms: true }),
     });
     form.reset();
     await enterApp();
@@ -2831,7 +2859,7 @@ $("#email-prompt").addEventListener("submit", (event) => {
   run(async () => {
     const updated = await api("/api/me/email", {
       method: "PUT",
-      body: JSON.stringify({ email: form.email.value }),
+      body: JSON.stringify({ email: form.email.value, password: form.password.value }),
     });
     user.email = updated.email;
     $("#email-prompt").hidden = true;
@@ -3242,7 +3270,14 @@ $("#problem-form").addEventListener("submit", (event) => {
 });
 
 async function showForumList() {
+  forumDetailGeneration += 1;
+  forumSummaryController?.reset();
   forumPost = null;
+  forumCurrentComment = null;
+  forumMapModel = null;
+  forumMapDrag = null;
+  $("#forum-minimap").hidden = true;
+  $("#forum-floor-nav").hidden = true;
   clearForumReply();
   $("#forum-search").value = forumSearchQuery;
   $("#forum-compose").hidden = true;
@@ -3286,7 +3321,10 @@ async function loadForumPosts() {
         `${post.username} · ${timestamp(post.created_at)} · ${post.comment_count} 条评论`
       )
     );
-    row.append(element("strong", post.title), authorLine);
+    const title = element("strong", "", "forum-list-post-title");
+    if (post.solved === true) title.append(element("span", "✓ 已解决", "thread-solved"));
+    title.append(post.title);
+    row.append(title, element("small", `#${String(post.id).padStart(4, "0")} · ${post.comment_count} 回复`, "thread-list-meta"), authorLine);
     row.dataset.postId = String(post.id);
     row.addEventListener("click", () => run(() => openForumPost(post.id)));
     list.append(row);
@@ -3302,16 +3340,30 @@ function restoreForumListPosition(postId) {
 }
 
 function showForumCompose() {
+  forumDetailGeneration += 1;
+  forumSummaryController?.reset();
+  forumMapModel = null;
+  forumMapDrag = null;
   $("#forum-list").hidden = true;
   $("#forum-detail").hidden = true;
   $("#forum-compose").hidden = false;
 }
 
 async function openForumPost(postId) {
+  const generation = ++forumDetailGeneration;
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  forumSummaryController?.reset();
   const post = await api(`/api/posts/${postId}`);
+  if (generation !== forumDetailGeneration || epoch !== sessionEpoch || owner !== user?.id || view !== "forum") return;
   if (forumPost?.id !== post.id) {
     clearForumReply();
     $("#forum-comment-form").reset();
+    forumOnlyOp = forumCodeOnly = forumMentionOnly = false;
+    forumCurrentComment = null;
+    forumMapModel = null;
+    forumMapDrag = null;
+    setForumPreview(false);
   }
   forumPost = post;
   if (forumReplyTarget && !post.comments.some((comment) => comment.id === forumReplyTarget.id)) {
@@ -3322,6 +3374,8 @@ async function openForumPost(postId) {
   $("#forum-detail").hidden = false;
   renderForumPost(post);
   renderForumComments(post.comments);
+  if (user.ai_enabled && post.comments.length >= 2) forumSummary().load(post);
+  else $("#forum-summary").hidden = true;
 }
 
 function forumRelativeTime(value) {
@@ -3343,7 +3397,13 @@ function forumTime(value, relative = false) {
 }
 
 function forumTextAction(label, ariaLabel, callback, danger = false) {
-  const button = element("button", label, `forum-text-action link-button${danger ? " danger" : ""}`);
+  const button = element("button", "", `forum-text-action link-button thread-act${danger ? " danger" : ""}`);
+  const iconName = /^回复/.test(label) ? "reply" : /有用/.test(label) ? "up"
+    : /^编辑/.test(label) ? "edit" : /^删除/.test(label) ? "delete"
+      : /^举报/.test(label) ? "flag" : /采纳/.test(label) ? "check"
+        : /^跳到原楼层|^展开全文|^收起/.test(label) ? "down" : null;
+  if (iconName) button.append(window.Thread.actionIcon(iconName));
+  button.append(element("span", label, "thread-action-label"));
   button.type = "button";
   button.setAttribute("aria-label", ariaLabel);
   button.addEventListener("click", callback);
@@ -3354,24 +3414,30 @@ function clearForumReply() {
   forumReplyTarget = null;
   $("#forum-reply-target").hidden = true;
   $("#forum-reply-label").textContent = "";
+  $("#forum-composer-title").textContent = "> 发表你的看法";
 }
 
 function selectForumReply(comment) {
   if (user.is_trial) return;
   forumReplyTarget = comment;
   $("#forum-reply-label").textContent = `回复 ${comment.floor} 楼 @${comment.username}`;
+  $("#forum-composer-title").textContent = `> 回复 #${String(comment.floor).padStart(2, "0")} ${comment.username}`;
   $("#forum-reply-target").hidden = false;
   $("#forum-reply-cancel").setAttribute("aria-label", `取消回复 ${comment.floor} 楼`);
   const form = $("#forum-comment-form");
-  form.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
+  setForumPreview(false);
+  form.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
   $("#forum-comment-body").focus({ preventScroll: true });
 }
 
-function scrollToForumComment(commentId) {
-  // A quoted floor may be hidden by "only OP". Reveal it before navigating.
+function scrollToForumComment(commentId, { clearFilters = false } = {}) {
+  if (!forumPost) return;
   let target = $(`#forum-comment-${commentId}`);
-  if ((!target || target.hidden) && forumPost.comments.some((comment) => comment.id === commentId)) {
+  if (((clearFilters && (forumOnlyOp || forumCodeOnly || forumMentionOnly)) || !target || target.hidden)
+    && forumPost.comments.some((comment) => comment.id === commentId)) {
     forumOnlyOp = false;
+    forumCodeOnly = false;
+    forumMentionOnly = false;
     renderForumComments(forumPost.comments);
     target = $(`#forum-comment-${commentId}`);
     $("#forum-comment-status").textContent = "已显示全部评论，跳转到被引用的楼层。";
@@ -3381,16 +3447,14 @@ function scrollToForumComment(commentId) {
     return;
   }
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  target.scrollIntoView({ behavior: reduced ? "instant" : "smooth", block: "center" });
+  target.expandForumComment?.();
+  forumCurrentComment = commentId;
+  target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
   target.focus({ preventScroll: true });
-  if (!reduced) {
-    window.clearTimeout(target.forumHighlightTimer);
-    target.classList.remove("forum-floor-highlight");
-    // Restart the feedback when the same quote is activated twice.
-    void target.offsetWidth;
-    target.classList.add("forum-floor-highlight");
-    target.forumHighlightTimer = window.setTimeout(() => target.classList.remove("forum-floor-highlight"), 1800);
-  }
+  window.clearTimeout(target.forumHighlightTimer);
+  target.classList.add("forum-floor-highlight");
+  target.forumHighlightTimer = window.setTimeout(() => target.classList.remove("forum-floor-highlight"), 1800);
+  scheduleForumMap();
 }
 
 // 与服务器的 truncate_text 同一套规则：按字符截断，但不把一个表情（肤色、连接序列、国旗、键帽）劈成两半。
@@ -3414,23 +3478,255 @@ function truncateExcerpt(text, limit) {
 
 function updateForumCommentCount() {
   const count = $("#forum-comment-body").value.length;
-  $("#forum-comment-count").textContent = `${count}/2000`;
+  $("#forum-comment-count").textContent = `${count} / 2000`;
+  $("#forum-comment-progress").style.setProperty("--thread-progress", `${Math.min(100, count / 20)}%`);
+  if (forumPreview) $("#forum-comment-preview").replaceChildren(forumBody($("#forum-comment-body").value));
 }
 
 function renderForumCommentControls() {
   const count = forumPost.comments.length;
-  $("#forum-comments-title").textContent = `全部评论 · ${count}`;
-  const postCount = $("#forum-post-comment-count");
-  if (postCount) postCount.textContent = `${count} 条评论`;
+  $("#forum-comments-title").replaceChildren("回复 ", element("span", String(count), "thread-count-badge"));
+  const helpful = forumPost.comments.some((comment) => Number.isInteger(comment.helpful_count));
+  if (!helpful && forumCommentOrder === "helpful") forumCommentOrder = "earliest";
   document.querySelectorAll("#forum-comment-sort button").forEach((button) => {
+    if (button.dataset.forumOrder === "helpful") button.hidden = !helpful;
     button.setAttribute("aria-pressed", String(button.dataset.forumOrder === forumCommentOrder));
   });
   $("#forum-only-op").setAttribute("aria-pressed", String(forumOnlyOp));
+  const codeCount = forumPost.comments.filter((comment) => window.Thread.hasCode(comment.body)).length;
+  const mentionCount = forumPost.comments.filter((comment) => window.Thread.mentionsMe(comment, forumPost.comments, user)).length;
+  $("#forum-code-count").textContent = String(codeCount);
+  $("#forum-mention-count").textContent = String(mentionCount);
+  setForumDisabled($("#forum-code-only"), codeCount === 0);
+  setForumDisabled($("#forum-mention-only"), mentionCount === 0);
+  $("#forum-code-only").setAttribute("aria-pressed", String(forumCodeOnly));
+  $("#forum-mention-only").setAttribute("aria-pressed", String(forumMentionOnly));
   $("#forum-comment-form").hidden = user.is_trial;
   $("#forum-comment-trial-note").hidden = !user.is_trial;
   const avatar = $("#forum-comment-avatar");
   avatar.replaceChildren(avatarElement(user.id, user.username, user.avatar_version, { hasAvatar: user.has_avatar }));
   updateForumCommentCount();
+  updateForumPostStats();
+  updateForumPostSignal();
+  renderForumAccepted();
+}
+
+function forumFilters() {
+  return { order: forumCommentOrder, onlyOp: forumOnlyOp, codeOnly: forumCodeOnly, mentionOnly: forumMentionOnly, me: user };
+}
+
+function forumDetailVisible() {
+  return Boolean(user && view === "forum" && forumPost && !$("#forum-detail").hidden && !$("#forum-page").hidden);
+}
+
+function forumAnnounce(text) {
+  $("#forum-comment-status").textContent = text;
+}
+
+// The application's existing global busy switch respects data-blocked. Keep
+// forum-local pending and unavailable controls disabled when that switch ends.
+function setForumDisabled(button, blocked) {
+  button.dataset.blocked = blocked ? "1" : "0";
+  button.disabled = blocked || busy;
+}
+
+function forumBody(text) {
+  return window.Thread.renderBody(text, { mentionMe: user?.username, onCopyStatus: forumAnnounce });
+}
+
+function setForumPreview(preview) {
+  forumPreview = preview;
+  $("#forum-comment-body").hidden = preview;
+  $("#forum-comment-preview").hidden = !preview;
+  $("#forum-editor-tab").setAttribute("aria-pressed", String(!preview));
+  $("#forum-preview-tab").setAttribute("aria-pressed", String(preview));
+  if (preview) updateForumCommentCount();
+}
+
+function updateForumPostStats() {
+  if (!forumPost) return;
+  const target = $("#forum-post-stats");
+  if (!target) return; // An inline post editor deliberately replaces the read panel.
+  const stats = window.Thread.stats(forumPost);
+  target.replaceChildren();
+  for (const [value, label, id] of [
+    [stats.replies, "回复", "forum-post-comment-count"],
+    [stats.participants, "人参与"], [stats.codeBlocks, "段代码"],
+  ]) {
+    const stat = element("span", "", "thread-stat");
+    const number = element("b", String(value));
+    if (id) number.id = id;
+    stat.append(number, ` ${label}`);
+    target.append(stat);
+  }
+  const recent = element("span", "最近活动 ", "thread-stat");
+  recent.append(element("b", forumRelativeTime(stats.lastActivity)));
+  target.append(recent);
+}
+
+function updateForumPostSignal() {
+  const status = $("#forum-post-signal");
+  if (!status || !forumPost) return;
+  const supported = Object.hasOwn(forumPost, "accepted_comment_id");
+  status.hidden = !supported;
+  if (!supported) return;
+  const solved = forumPost.comments.some((item) => item.id === forumPost.accepted_comment_id);
+  status.classList.toggle("is-solved", solved);
+  status.replaceChildren(element("i", "", "thread-signal-dot"), solved ? "已解决" : "讨论中");
+}
+
+function renderForumAccepted() {
+  const root = $("#forum-accepted");
+  const comment = forumPost?.comments.find((item) => item.id === forumPost.accepted_comment_id);
+  root.hidden = !comment;
+  root.replaceChildren();
+  if (!comment) return;
+  const heading = element("header", "", "thread-answer-head");
+  const title = element("h3", "楼主已采纳的答案");
+  title.id = "forum-accepted-title";
+  heading.append(element("span", "✓", "thread-answer-icon"), title,
+    element("span", `#${String(comment.floor).padStart(2, "0")} · ${comment.username}`, "thread-answer-who"));
+  const excerpt = element("div", "", "thread-answer-excerpt");
+  excerpt.append(forumBody(window.Thread.excerpt(comment.body, 160)));
+  const footer = element("div", "", "thread-answer-foot");
+  const jump = forumTextAction("跳到原楼层 ⌄", `跳转到 ${comment.floor} 楼的已采纳答案`, () => scrollToForumComment(comment.id, { clearFilters: true }));
+  jump.classList.add("thread-link");
+  footer.append(jump);
+  if (!user.is_trial && user.id === forumPost.user_id) {
+    const cancel = forumTextAction("取消采纳", "取消采纳此答案", () => updateForumAccepted(comment, cancel));
+    cancel.dataset.threadAccept = "1";
+    setForumDisabled(cancel, forumMutations.has(`accepted:${forumPost.id}`));
+    footer.append(cancel);
+  }
+  if (Number.isInteger(comment.helpful_count)) footer.append(element("span", `${comment.helpful_count} 人觉得有用`, "thread-answer-meta"));
+  root.append(heading, excerpt, footer);
+}
+
+function forumSummary() {
+  if (!forumSummaryController) forumSummaryController = window.Thread.createSummaryController({
+    api,
+    getIdentity: () => ({ postId: forumPost?.id, sessionEpoch, userId: user?.id, visible: forumDetailVisible() }),
+    onState: renderForumSummary,
+  });
+  return forumSummaryController;
+}
+
+function renderForumSummary(state) {
+  const root = $("#forum-summary");
+  const enabled = user?.ai_enabled && forumPost?.comments.length >= 2 && forumDetailVisible();
+  root.hidden = !enabled;
+  if (!enabled) { root.replaceChildren(); return; }
+  root.setAttribute("aria-busy", String(state.phase === "generating" || state.phase === "loading"));
+  const heading = element("h3", "✦ AI 要点");
+  heading.id = "forum-summary-title";
+  root.replaceChildren(heading);
+  if (state.phase === "generating" || state.phase === "loading") {
+    root.append(element("p", `正在阅读 ${forumPost.comments.length} 条回复…`, "thread-summary-status"));
+    for (let i = 0; i < 3; i += 1) {
+      const skeleton = element("span", "", "thread-summary-skeleton");
+      skeleton.setAttribute("aria-hidden", "true");
+      root.append(skeleton);
+    }
+  } else if (state.summary) {
+    const summary = state.summary;
+    root.append(element("p", summary.tldr, "thread-summary-tldr"));
+    const points = element("ul", "", "thread-summary-points");
+    for (const point of summary.points) {
+      const item = element("li", point.text);
+      for (const floor of point.floors.filter((floor) => forumPost.comments.some((comment) => comment.floor === floor))) {
+        const chip = forumTextAction(`#${String(floor).padStart(2, "0")}`, `跳转到 ${floor} 楼`, () => forumJumpFloor(floor));
+        chip.classList.add("thread-floor");
+        item.append(chip);
+      }
+      points.append(item);
+    }
+    root.append(points);
+    if (summary.open_questions.length) {
+      root.append(element("h4", "待解决的问题"));
+      const questions = element("ul");
+      summary.open_questions.forEach((question) => questions.append(element("li", question)));
+      root.append(questions);
+    }
+    root.append(element("p", `基于 ${summary.comment_count} 条回复 · 生成于 ${timestamp(summary.generated_at)}`, "thread-summary-meta"));
+    if (summary.stale) root.append(element("p", "之后又有新回复，要点可能过时", "thread-summary-stale"));
+  } else if (state.phase !== "error") {
+    root.append(element("p", "把讨论提炼成一句结论和可跳转的楼层要点。", "thread-summary-status"));
+  }
+  if (state.error) root.append(element("p", state.error, "thread-summary-error"));
+  if (!user.is_trial && (!state.summary || state.summary.stale || state.phase === "error")) {
+    const button = forumTextAction(state.summary ? "重新生成（用 1 次 AI 额度）" : "AI 提炼要点（用 1 次 AI 额度）",
+      "AI 提炼要点，使用 1 次 AI 额度", () => forumSummary().generate(forumPost));
+    setForumDisabled(button, state.phase === "generating" || state.phase === "loading");
+    root.append(button);
+  }
+}
+
+function forumJumpFloor(floor) {
+  const comment = forumPost?.comments.find((item) => item.floor === floor);
+  if (comment) scrollToForumComment(comment.id);
+}
+
+async function updateForumHelpful(comment, button) {
+  const post = forumPost;
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  const generation = forumDetailGeneration;
+  const key = `helpful:${comment.id}`;
+  if (!post || forumMutations.has(key)) return;
+  const token = {};
+  forumMutations.set(key, token);
+  try { await window.Thread.performMutation({
+    button,
+    request: () => api(`/api/comments/${comment.id}/helpful`, { method: comment.viewer_helpful ? "DELETE" : "PUT" }),
+    isCurrent: () => post === forumPost && epoch === sessionEpoch && owner === user?.id && generation === forumDetailGeneration && forumDetailVisible(),
+    onSuccess: (result) => {
+      comment.helpful_count = result.helpful_count;
+      comment.viewer_helpful = result.viewer_helpful;
+      if (forumMutations.get(key) === token) forumMutations.delete(key);
+      renderForumComments(post.comments);
+      forumAnnounce(result.viewer_helpful ? "已标记有用。" : "已取消有用。");
+      $(`#forum-comment-${comment.id} [data-thread-helpful]`)?.focus({ preventScroll: true });
+    },
+    onError: forumAnnounce,
+  }); } finally {
+    if (forumMutations.get(key) === token) forumMutations.delete(key);
+    const current = post === forumPost ? $(`#forum-comment-${comment.id} [data-thread-helpful]`) : null;
+    if (current) setForumDisabled(current, forumMutations.has(key));
+  }
+}
+
+async function updateForumAccepted(comment, button) {
+  const post = forumPost;
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  const generation = forumDetailGeneration;
+  const key = `accepted:${post?.id}`;
+  if (!post || forumMutations.has(key)) return;
+  const cancel = post.accepted_comment_id === comment.id;
+  const token = {};
+  forumMutations.set(key, token);
+  const controls = [...document.querySelectorAll("#forum-page [data-thread-accept]")];
+  controls.forEach((control) => setForumDisabled(control, true));
+  try {
+    await window.Thread.performMutation({
+      button,
+      request: () => api(`/api/posts/${post.id}/accepted`, cancel ? { method: "DELETE" }
+        : { method: "PUT", body: JSON.stringify({ comment_id: comment.id }) }),
+      isCurrent: () => post === forumPost && epoch === sessionEpoch && owner === user?.id && generation === forumDetailGeneration && forumDetailVisible(),
+      onSuccess: (result) => {
+        post.accepted_comment_id = result.accepted_comment_id;
+        if (forumMutations.get(key) === token) forumMutations.delete(key);
+        renderForumComments(post.comments);
+        forumAnnounce(result.accepted_comment_id === null ? "已取消采纳。" : "已采纳这条答案。");
+        $(`#forum-comment-${comment.id} [data-thread-accept]`)?.focus({ preventScroll: true });
+      },
+      onError: forumAnnounce,
+    });
+  } finally {
+    if (forumMutations.get(key) === token) forumMutations.delete(key);
+    const currentControls = post === forumPost ? document.querySelectorAll("#forum-page [data-thread-accept]") : controls;
+    currentControls.forEach((control) => setForumDisabled(control, forumMutations.has(key)));
+  }
 }
 
 function renderForumPost(post) {
@@ -3443,6 +3739,11 @@ function renderForumPost(post) {
 
   function readOnly() {
     root.replaceChildren();
+    const bar = element("div", "", "thread-post-bar");
+    const signal = element("span", "", "thread-status");
+    signal.id = "forum-post-signal";
+    bar.append(element("span", `THREAD #${String(post.id).padStart(4, "0")}`, "thread-id"), signal);
+    root.append(bar);
     const authorLine = element("div", "", "forum-post-author");
     const authorInfo = element("div", "", "forum-post-author-info");
     const authorName = element("div", "", "forum-author-name");
@@ -3457,17 +3758,19 @@ function renderForumPost(post) {
       }),
       authorInfo
     );
-    const title = element("h2", post.title);
+    const title = element("h2", post.title, "thread-post-title");
     title.id = "forum-detail-title";
+    const body = element("div", "", "forum-post-body thread-post-body thread-prose");
+    body.append(forumBody(post.body));
     root.append(
       authorLine,
       title,
-      element("p", post.body, "forum-post-body multiline")
+      body
     );
-    const footer = element("footer", "", "forum-post-footer");
-    const count = element("span", `${post.comments.length} 条评论`);
-    count.id = "forum-post-comment-count";
-    footer.append(count);
+    const footer = element("footer", "", "forum-post-footer thread-post-foot");
+    const stats = element("div", "", "thread-stats");
+    stats.id = "forum-post-stats";
+    footer.append(stats);
     if (user.id === post.user_id) {
       const editBtn = forumTextAction("编辑", "编辑这条帖子", editForm);
       const deleteBtn = forumTextAction("删除", "删除这条帖子", () => run(async () => {
@@ -3497,6 +3800,8 @@ function renderForumPost(post) {
       footer.append(actions);
     }
     root.append(footer);
+    updateForumPostStats();
+    updateForumPostSignal();
   }
 
   function editForm() {
@@ -3578,6 +3883,7 @@ function renderForumComment(comment) {
   wrap.setAttribute("aria-labelledby", `forum-comment-heading-${comment.id}`);
   let inlineForm = null;
   let editing = false;
+  let expanded = false;
 
   function restoreActions() {
     inlineForm = null;
@@ -3594,51 +3900,91 @@ function renderForumComment(comment) {
 
   function readOnly() {
     wrap.replaceChildren();
+    wrap.classList.toggle("is-op", Boolean(comment.is_op));
+    wrap.classList.toggle("is-me", comment.user_id === user.id);
+    const accepted = post.accepted_comment_id === comment.id;
+    wrap.classList.toggle("is-accepted", accepted);
+    wrap.classList.toggle("has-code", window.Thread.hasCode(comment.body));
+    wrap.dataset.floor = String(comment.floor);
     // Keep an open editor when a quoted floor changes elsewhere in the thread.
     if (editing) {
       wrap.append(floorHeading(), inlineForm);
       return;
     }
-    const author = element("div", "", "forum-comment-author");
-    const authorName = element("div", "", "forum-comment-author-name");
-    authorName.append(element("strong", comment.username));
-    const badges = element("span", "", "forum-author-badges");
-    if (comment.is_op) badges.append(element("span", "楼主", "forum-op-stamp"));
-    if (comment.user_id === user.id) badges.append(element("span", "我", "forum-self-badge"));
-    authorName.append(badges);
-    author.append(
-      avatarElement(comment.user_id, comment.username, comment.avatar_version, {
-        hasAvatar: comment.has_avatar,
-      }),
-      authorName
-    );
-    const content = element("div", "", "forum-comment-content");
-    const meta = element("div", "", "forum-comment-meta");
-    meta.append(element("span", `${comment.floor} 楼`, "forum-floor-number"), forumTime(comment.created_at, true));
+    const author = element("div", "", "thread-avatar-slot");
+    author.append(avatarElement(comment.user_id, comment.username, comment.avatar_version, { hasAvatar: comment.has_avatar }));
+    const content = element("div", "", "forum-comment-content thread-card");
+    const meta = element("header", "", "forum-comment-meta thread-head");
+    meta.append(element("strong", comment.username));
+    if (comment.is_op) meta.append(element("span", "楼主", "forum-op-stamp"));
+    if (comment.user_id === user.id) meta.append(element("span", "我", "forum-self-badge"));
+    meta.append(element("span", `#${String(comment.floor).padStart(2, "0")}`, "forum-floor-number thread-floor"), forumTime(comment.created_at, true));
     if (comment.updated_at) {
       const edited = element("span", "编辑于 ", "forum-comment-edited");
       edited.append(forumTime(comment.updated_at, true));
       meta.append(edited);
     }
+    if (accepted) {
+      const flags = element("span", "", "thread-flags");
+      flags.append(element("span", "✓ 已采纳", "thread-flag is-accepted"));
+      meta.append(flags);
+    }
     content.append(meta);
     if (comment.reply_to) {
       const reply = comment.reply_to;
       if (reply.deleted) {
-        content.append(element("div", "回复的楼层已删除", "forum-quote is-deleted"));
+        const deleted = element("button", "回复的楼层已删除", "forum-quote thread-reply-chip is-deleted");
+        deleted.type = "button";
+        deleted.disabled = true;
+        content.append(deleted);
       } else {
-        const quote = element("button", "", "forum-quote");
+        const quote = element("button", "", "forum-quote thread-reply-chip");
         quote.type = "button";
         quote.setAttribute("aria-label", `跳转到 ${reply.floor} 楼 ${reply.username} 的评论`);
-        quote.append(element("span", `回复 ${reply.floor} 楼 @${reply.username}：`, "forum-quote-author"), element("span", reply.excerpt));
+        quote.append(element("b", `↳ #${String(reply.floor).padStart(2, "0")} ${reply.username} `, "forum-quote-author"), element("span", reply.excerpt || ""));
         quote.addEventListener("click", () => scrollToForumComment(reply.id));
         content.append(quote);
       }
     }
-    content.append(element("p", comment.body, "forum-comment-body multiline"));
-    const actions = element("div", "", "forum-actions");
+    const body = element("div", "", "forum-comment-body thread-prose");
+    body.append(forumBody(comment.body));
+    const more = forumTextAction("展开全文", `展开 ${comment.floor} 楼全文`, () => {
+      expanded = !expanded;
+      applyExpanded();
+      scheduleForumMap();
+    });
+    more.classList.add("thread-more");
+    more.hidden = true;
+    function applyExpanded() {
+      body.dataset.collapsed = String(!expanded);
+      more.setAttribute("aria-expanded", String(expanded));
+      more.querySelector(".thread-action-label").textContent = expanded ? "收起" : "展开全文";
+      more.setAttribute("aria-label", `${expanded ? "收起" : "展开"} ${comment.floor} 楼全文`);
+    }
+    if (accepted) expanded = true;
+    applyExpanded();
+    wrap.expandForumComment = () => { expanded = true; applyExpanded(); };
+    wrap.readForumMeasure = () => ({ body, more, height: body.scrollHeight,
+      limit: parseFloat(window.getComputedStyle(body).fontSize) * 11.5 });
+    content.append(body, more);
+    const actions = element("footer", "", "forum-actions thread-actions");
     if (!user.is_trial) {
       actions.append(forumTextAction("回复", `回复 ${comment.floor} 楼`, () => selectForumReply(comment)));
     }
+    if (!user.is_trial && comment.user_id !== user.id && Number.isInteger(comment.helpful_count) && typeof comment.viewer_helpful === "boolean") {
+      const helpful = forumTextAction(`有用 ${comment.helpful_count}`, `标记 ${comment.floor} 楼有用`, () => updateForumHelpful(comment, helpful));
+      helpful.dataset.threadHelpful = "1";
+      helpful.setAttribute("aria-pressed", String(comment.viewer_helpful));
+      setForumDisabled(helpful, forumMutations.has(`helpful:${comment.id}`));
+      actions.append(helpful);
+    }
+    if (!user.is_trial && user.id === post.user_id && comment.user_id !== user.id && Object.hasOwn(post, "accepted_comment_id")) {
+      const accept = forumTextAction(accepted ? "取消采纳" : "采纳", `${accepted ? "取消采纳" : "采纳"} ${comment.floor} 楼`, () => updateForumAccepted(comment, accept));
+      accept.dataset.threadAccept = "1";
+      setForumDisabled(accept, forumMutations.has(`accepted:${post.id}`));
+      actions.append(accept);
+    }
+    actions.append(element("span", "", "push"));
     if (!user.is_trial && user.id === comment.user_id) {
       const editBtn = forumTextAction("编辑", `编辑 ${comment.floor} 楼`, editForm);
       const deleteBtn = forumTextAction("删除", `删除 ${comment.floor} 楼`, () => run(async () => {
@@ -3651,6 +3997,7 @@ function renderForumComment(comment) {
         const nextFloorId = nextFloor?.id || previousFloor?.id;
         wrap.remove();
         post.comments = post.comments.filter((item) => item.id !== comment.id);
+        if (post.accepted_comment_id === comment.id) post.accepted_comment_id = null;
         // Clear all quoted copies immediately, including comments hidden by the filter.
         for (const item of post.comments) {
           if (item.reply_to?.id === comment.id) item.reply_to = { id: comment.id, floor: comment.floor, deleted: true };
@@ -3782,11 +4129,14 @@ function renderForumComments(comments) {
   }
   list.forumCommentsEmpty?.remove();
   list.forumCommentsEmpty = null;
-  const ordered = [...comments]
-    .sort((a, b) => forumCommentOrder === "latest" ? b.floor - a.floor : a.floor - b.floor);
+  if (forumCommentOrder === "helpful" && !comments.some((item) => Number.isInteger(item.helpful_count))) forumCommentOrder = "earliest";
+  const ordered = window.Thread.arrange(comments, { ...forumFilters(), onlyOp: false, codeOnly: false, mentionOnly: false });
+  const visible = new Set(window.Thread.arrange(comments, forumFilters()).map((comment) => comment.id));
+  let animationIndex = 0;
   for (const comment of ordered) {
-    const signature = JSON.stringify([user.is_trial, comment]);
+    const signature = JSON.stringify([user.is_trial, forumPost.accepted_comment_id, comment]);
     let entry = nodes.get(comment.id);
+    const isNew = !entry || entry.node.parentNode !== list;
     if (!entry || entry.node.parentNode !== list) {
       entry = { node: renderForumComment(comment), signature };
       nodes.set(comment.id, entry);
@@ -3797,15 +4147,20 @@ function renderForumComments(comments) {
       entry.node.refreshForumComment(comment, false);
     }
     // Native hidden + inert also remove every control in a filtered floor from Tab navigation.
-    entry.node.hidden = forumOnlyOp && !comment.is_op;
+    entry.node.hidden = !visible.has(comment.id);
     entry.node.inert = entry.node.hidden;
+    if (isNew && !entry.node.hidden && animationIndex < 8) {
+      entry.node.classList.add("is-entering");
+      entry.node.style.setProperty("--i", String(animationIndex));
+    }
+    if (!entry.node.hidden) animationIndex += 1;
     list.append(entry.node);
   }
-  if (!ordered.some((comment) => !forumOnlyOp || comment.is_op)) {
+  if (!visible.size) {
     const empty = element("div", "", "forum-comments-empty");
     const seal = element("span", comments.length ? "候" : "首", "forum-empty-seal");
     seal.setAttribute("aria-hidden", "true");
-    empty.append(seal, element("p", comments.length ? "楼主还没有评论，先看看大家的讨论吧。" : "还没有评论，来抢沙发吧"));
+    empty.append(seal, element("p", comments.length ? "没有符合条件的回复，试试取消筛选。" : "还没有评论，来抢沙发吧"));
     list.append(empty);
     list.forumCommentsEmpty = empty;
   }
@@ -3819,6 +4174,98 @@ function renderForumComments(comments) {
     }
   }
   renderForumCommentControls();
+  if (forumSummaryController) {
+    const state = forumSummaryController.getState();
+    if (state.summary && state.summary.comment_count !== comments.length) state.summary.stale = true;
+    renderForumSummary(state);
+  }
+  scheduleForumMap();
+}
+
+// One animation frame reads every floor before writing sticky offset, folds, and map indicators.
+function scheduleForumMap() {
+  if (forumMapFrame !== null) return;
+  forumMapFrame = window.requestAnimationFrame(() => {
+    forumMapFrame = null;
+    updateForumMap();
+  });
+}
+
+function updateForumMap() {
+  if (!forumDetailVisible()) {
+    $("#forum-minimap").hidden = true;
+    $("#forum-floor-nav").hidden = true;
+    return;
+  }
+  const visible = window.Thread.arrange(forumPost.comments, forumFilters());
+  const nodes = visible.map((item) => $(`#forum-comment-${item.id}`));
+  const rects = nodes.map((node) => node.getBoundingClientRect());
+  const measurements = nodes.map((node) => node.readForumMeasure?.()).filter(Boolean);
+  const topbar = $(".header");
+  const topRect = topbar?.getBoundingClientRect();
+  const sticky = Math.max(12, (topRect?.bottom || 0) + 12);
+  const mapItems = visible.map((item) => ({ ...item, isAccepted: item.id === forumPost.accepted_comment_id }));
+  const model = window.Thread.mapModel(mapItems, rects, window.innerHeight);
+  // All geometry above is read before any style or DOM write below.
+  $("#forum-page").style.setProperty("--thread-sticky-top", `${sticky}px`);
+  let geometryChanged = false;
+  for (const { body, more, height, limit } of measurements) {
+    const collapsible = Number.isFinite(height) && Number.isFinite(limit) && height > limit;
+    if (body.classList.contains("is-collapsible") !== collapsible || more.hidden === collapsible) geometryChanged = true;
+    body.classList.toggle("is-collapsible", collapsible);
+    more.hidden = !collapsible;
+  }
+  if (geometryChanged) scheduleForumMap();
+  forumMapModel = model;
+  $("#forum-minimap").hidden = model.hidden;
+  $("#forum-floor-nav").hidden = model.hidden;
+  if (model.hidden) return;
+  $("#forum-map-floor").textContent = `#${String(model.currentFloor).padStart(2, "0")}`;
+  $("#forum-map-total").textContent = `共 ${model.total} 条`;
+  $("#forum-floor-current").textContent = `#${String(model.currentFloor).padStart(2, "0")}`;
+  $("#forum-floor-total").textContent = String(model.total);
+  const ticks = $("#forum-map-ticks");
+  const signature = JSON.stringify(model.ticks);
+  if (ticks.threadSignature !== signature) {
+    ticks.threadSignature = signature;
+    ticks.replaceChildren();
+    for (const tick of model.ticks) {
+      const mark = element("span", "", "thread-map-tick");
+      mark.classList.toggle("is-op", tick.isOp);
+      mark.classList.toggle("has-code", tick.hasCode);
+      mark.classList.toggle("is-accepted", tick.isAccepted);
+      mark.style.setProperty("--thread-tick-position", `${tick.position * 100}%`);
+      ticks.append(mark);
+    }
+  }
+  [...ticks.children].forEach((tick, index) => {
+    if (index === model.currentIndex) tick.setAttribute("aria-current", "true");
+    else tick.removeAttribute("aria-current");
+  });
+  $("#forum-map-thumb").style.setProperty("--thread-thumb-top", `${model.thumb.top * 100}%`);
+  $("#forum-map-thumb").style.setProperty("--thread-thumb-height", `${model.thumb.height * 100}%`);
+}
+
+function forumMoveFloor(direction) {
+  if (!forumPost) return;
+  const visible = window.Thread.arrange(forumPost.comments, forumFilters());
+  if (!visible.length) return;
+  const focused = document.activeElement?.closest(".forum-comment");
+  const id = focused ? Number(focused.id.replace("forum-comment-", "")) : forumCurrentComment;
+  const current = visible.findIndex((comment) => comment.id === id);
+  const index = current < 0 ? (direction > 0 ? 0 : visible.length - 1) : Math.max(0, Math.min(visible.length - 1, current + direction));
+  scrollToForumComment(visible[index].id);
+}
+
+function forumPointerJump(event) {
+  if (!forumMapModel || forumMapModel.hidden || !forumDetailVisible()) return;
+  const box = $("#forum-map-track").getBoundingClientRect();
+  const position = Math.max(0, Math.min(1, (event.clientY - box.top) / Math.max(1, box.height)));
+  const index = Math.round(position * (forumMapModel.ticks.length - 1));
+  const tick = forumMapModel.ticks[index];
+  if (forumMapDrag?.lastId === tick.id) return;
+  if (forumMapDrag) forumMapDrag.lastId = tick.id;
+  scrollToForumComment(tick.id);
 }
 
 function resetAdminDashboard() {
@@ -3927,10 +4374,16 @@ async function loadAdminDashboard() {
 }
 
 async function loadAdminPage() {
-  // 两个区块独立加载，看板失败不会阻断原有的举报处理。
-  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports()]);
+  configureRedeem();
+  // 各区块独立加载，看板失败不会阻断原有的举报处理。
+  const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin()]);
   if (reports.status === "rejected") throw reports.reason;
   return dashboard.status === "fulfilled" && dashboard.value;
+}
+
+function configureRedeem() {
+  window.Redeem?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch,
+    getView: () => view, refreshPlanSubscription });
 }
 
 function removeReportCard(card) {
@@ -4137,16 +4590,141 @@ document.querySelectorAll("#forum-back, #forum-back-bottom").forEach((button) =>
 
 document.querySelectorAll("#forum-comment-sort button").forEach((button) => {
   button.addEventListener("click", () => {
+    if (!forumPost || button.hidden) return;
     forumCommentOrder = button.dataset.forumOrder;
     renderForumComments(forumPost.comments);
-    $("#forum-comment-status").textContent = `已按${forumCommentOrder === "latest" ? "最新" : "最早"}排序，楼层号保持不变。`;
+    $("#forum-comment-status").textContent = `已按${{ earliest: "最早", latest: "最新", helpful: "最有用" }[forumCommentOrder]}排序，楼层号保持不变。`;
   });
 });
 
 $("#forum-only-op").addEventListener("click", () => {
+  if (!forumPost) return;
   forumOnlyOp = !forumOnlyOp;
   renderForumComments(forumPost.comments);
   $("#forum-comment-status").textContent = forumOnlyOp ? "已切换为只看楼主。" : "已显示全部评论。";
+});
+
+$("#forum-code-only").addEventListener("click", () => {
+  if (!forumPost) return;
+  forumCodeOnly = !forumCodeOnly;
+  renderForumComments(forumPost.comments);
+  forumAnnounce(forumCodeOnly ? "已筛选含代码的评论，筛选条件取交集。" : "已取消含代码筛选。");
+});
+$("#forum-mention-only").addEventListener("click", () => {
+  if (!forumPost) return;
+  forumMentionOnly = !forumMentionOnly;
+  renderForumComments(forumPost.comments);
+  forumAnnounce(forumMentionOnly ? "已筛选提及或回复我的评论，筛选条件取交集。" : "已取消 @我 筛选。");
+});
+
+$("#forum-editor-tab").addEventListener("click", () => {
+  setForumPreview(false);
+  $("#forum-comment-body").focus();
+});
+$("#forum-preview-tab").addEventListener("click", () => setForumPreview(true));
+$("#forum-insert-code").addEventListener("click", () => {
+  setForumPreview(false);
+  const body = $("#forum-comment-body");
+  const start = body.selectionStart;
+  const end = body.selectionEnd;
+  const selected = body.value.slice(start, end);
+  const before = start && body.value[start - 1] !== "\n" ? "\n" : "";
+  const after = end < body.value.length && body.value[end] !== "\n" ? "\n" : "";
+  const insertion = `${before}\x60\x60\x60\n${selected}\n\x60\x60\x60${after}`;
+  if (body.value.length - (end - start) + insertion.length > 2000) {
+    forumAnnounce("插入代码块后超过 2000 字，请先缩短回复。");
+    return;
+  }
+  body.setRangeText(insertion, start, end, "end");
+  body.setSelectionRange(start + before.length + 4, start + before.length + 4 + selected.length);
+  body.focus();
+  updateForumCommentCount();
+});
+
+document.addEventListener("keydown", (event) => {
+  const dialogOpen = [...document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]')]
+    .some((node) => !node.hidden && !node.closest("[hidden]") && node.getAttribute("aria-hidden") !== "true");
+  if (!forumDetailVisible() || dialogOpen || event.defaultPrevented || event.isComposing) return;
+  const body = $("#forum-comment-body");
+  const inBody = event.target === body;
+  if (inBody && event.key === "Escape" && forumReplyTarget) {
+    event.preventDefault();
+    clearForumReply();
+    forumAnnounce("已取消回复目标，草稿保留。");
+    return;
+  }
+  if ((inBody || forumPreview && $("#forum-comment-form").contains(event.target))
+    && (event.ctrlKey || event.metaKey) && !event.altKey && event.key === "Enter" && !user.is_trial) {
+    event.preventDefault();
+    submitForumComment();
+    return;
+  }
+  if (!window.Thread.keyboardAllowed(event, { detailVisible: true, dialogOpen })) return;
+  const key = event.key.toLowerCase();
+  if (key === "j" || key === "k") {
+    event.preventDefault();
+    forumMoveFloor(key === "j" ? 1 : -1);
+  } else if (key === "r") {
+    const focused = document.activeElement?.closest(".forum-comment");
+    const id = focused ? Number(focused.id.replace("forum-comment-", "")) : forumCurrentComment;
+    const comment = window.Thread.arrange(forumPost.comments, forumFilters()).find((item) => item.id === id);
+    if (comment && !user.is_trial) { event.preventDefault(); selectForumReply(comment); }
+  }
+});
+
+$("#forum-map-top").addEventListener("click", () => {
+  $("#forum-post").scrollIntoView({ behavior: sealMotion.matches ? "auto" : "smooth", block: "start" });
+});
+$("#forum-map-latest").addEventListener("click", () => {
+  const visible = window.Thread.arrange(forumPost?.comments || [], forumFilters());
+  const latest = visible.reduce((found, item) => !found || item.floor > found.floor ? item : found, null);
+  if (latest) scrollToForumComment(latest.id);
+});
+$("#forum-floor-prev").addEventListener("click", () => {
+  forumCurrentComment = forumMapModel?.ticks[forumMapModel.currentIndex]?.id ?? forumCurrentComment;
+  forumMoveFloor(-1);
+});
+$("#forum-floor-next").addEventListener("click", () => {
+  forumCurrentComment = forumMapModel?.ticks[forumMapModel.currentIndex]?.id ?? forumCurrentComment;
+  forumMoveFloor(1);
+});
+$("#forum-map-track").addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || !forumDetailVisible()) return;
+  event.preventDefault();
+  forumMapDrag = { pointerId: event.pointerId, lastId: null, clientY: event.clientY };
+  event.currentTarget.setPointerCapture(event.pointerId);
+  forumPointerJump(event);
+});
+$("#forum-map-track").addEventListener("pointermove", (event) => {
+  if (!forumMapDrag || forumMapDrag.pointerId !== event.pointerId) return;
+  forumMapDrag.clientY = event.clientY;
+  if (forumMapDragFrame !== null) return;
+  forumMapDragFrame = window.requestAnimationFrame(() => {
+    forumMapDragFrame = null;
+    if (forumMapDrag) forumPointerJump(forumMapDrag);
+  });
+});
+function endForumMapDrag() {
+  if (forumMapDrag) forumPointerJump(forumMapDrag);
+  forumMapDrag = null;
+}
+$("#forum-map-track").addEventListener("pointerup", endForumMapDrag);
+$("#forum-map-track").addEventListener("pointercancel", () => { forumMapDrag = null; });
+window.addEventListener("scroll", scheduleForumMap, { passive: true });
+window.addEventListener("resize", scheduleForumMap);
+if (typeof ResizeObserver !== "undefined") {
+  const observer = new ResizeObserver(scheduleForumMap);
+  observer.observe($(".header"));
+  observer.observe($("#forum-comments"));
+}
+document.addEventListener("app:view-changed", () => {
+  if (view !== "forum") {
+    forumDetailGeneration += 1;
+    forumSummaryController?.reset();
+    forumMapDrag = null;
+    $("#forum-floor-nav").hidden = true;
+    $("#forum-minimap").hidden = true;
+  }
 });
 
 $("#forum-reply-cancel").addEventListener("click", () => {
@@ -4161,9 +4739,29 @@ window.EmojiPicker?.attach($("#forum-compose-form textarea[name=body]"));
 
 $("#forum-comment-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  const form = event.currentTarget;
+  submitForumComment();
+});
+
+function submitForumComment() {
+  const form = $("#forum-comment-form");
+  const body = $("#forum-comment-body");
+  if (!forumDetailVisible() || user.is_trial || busy) return;
+  if (!body.value.trim()) {
+    setForumPreview(false);
+    body.focus();
+    body.reportValidity();
+    forumAnnounce("请输入回复内容。");
+    return;
+  }
+  if (!form.checkValidity()) {
+    setForumPreview(false);
+    form.reportValidity();
+    return;
+  }
   run(async () => {
     const post = forumPost;
+    const epoch = sessionEpoch;
+    const generation = forumDetailGeneration;
     const data = new FormData(form);
     const payload = { body: data.get("body") };
     if (forumReplyTarget) payload.reply_to_id = forumReplyTarget.id;
@@ -4172,16 +4770,20 @@ $("#forum-comment-form").addEventListener("submit", (event) => {
       body: JSON.stringify(payload),
     });
     post.comments.push(created);
-    if (post !== forumPost) return;
+    if (post !== forumPost || epoch !== sessionEpoch || generation !== forumDetailGeneration) return;
     form.reset();
     clearForumReply();
-    // Always show the new floor, even when the author-only filter was active.
+    setForumPreview(false);
+    const wasHidden = !window.Thread.arrange([created, ...post.comments.filter((item) => item.id !== created.id)], forumFilters()).some((item) => item.id === created.id);
     if (forumOnlyOp && !created.is_op) forumOnlyOp = false;
+    if (forumCodeOnly && !window.Thread.hasCode(created.body)) forumCodeOnly = false;
+    if (forumMentionOnly && !window.Thread.mentionsMe(created, post.comments, user)) forumMentionOnly = false;
     renderForumComments(post.comments);
     scrollToForumComment(created.id);
+    forumAnnounce(wasHidden ? "评论已发表，已清除会隐藏新评论的筛选。" : "评论已发表。");
     message("评论已发表。");
   });
-});
+}
 
 $("#timezone").value =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";

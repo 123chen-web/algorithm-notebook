@@ -217,7 +217,7 @@ def test_ripple_pause_and_destroy_clear_ambient_timeout(cursor_source):
     "filename",
     [
         "style.css", "intro.css", "shell.css", "overview.css", "activity.css",
-        "emoji.css", "palette.css", "focus.css", "tags.css", "mastery.css", "clusters.css", "print.css",
+        "emoji.css", "palette.css", "focus.css", "tags.css", "mastery.css", "clusters.css", "print.css", "account.css",
     ],
 )
 def test_backdrop_blur_is_limited_to_fine_hover_pointers(filename):

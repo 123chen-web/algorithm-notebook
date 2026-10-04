@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import warnings
 from collections import defaultdict, deque
 from contextlib import ExitStack, asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -19,7 +20,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from pydantic import (
@@ -36,10 +39,13 @@ import ai
 import clusters
 import mailer
 import payments
+from payments import activate_plan
+import thread_summary
 from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
-from ai_limits import ai_slot, track_call
-from db import ROOT, connect, init_db, schema_version
+from ai_limits import ai_slot, release_attempt, track_call
+from db import ROOT, connect, init_db, normalize_username, schema_version
+from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
 from scheduler import schedule, today_in_timezone
@@ -133,6 +139,8 @@ def normalize_timezone(value):
 
 
 class Registration(Credentials):
+    password: str = Field(min_length=1, max_length=128)
+    accept_terms: bool = False
     invite_code: str = Field(min_length=1, max_length=256)
     email: str = Field(min_length=3, max_length=254)
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=64)
@@ -175,11 +183,12 @@ class ForgotPassword(InputModel):
 
 class ResetPassword(InputModel):
     token: str = Field(min_length=1, max_length=512)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class EmailUpdate(InputModel):
     email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
 
     @field_validator("email")
     @classmethod
@@ -191,6 +200,15 @@ class UsernameUpdate(InputModel):
     username: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
     ]
+
+
+class PasswordChange(InputModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+
+
+class AccountDeletion(InputModel):
+    password: str = Field(min_length=1, max_length=128)
 
 
 class NewGroup(InputModel):
@@ -272,6 +290,29 @@ class NewOrder(InputModel):
     channel: Literal["alipay", "wechat"]
 
 
+class RedeemInput(InputModel):
+    code: str = Field(strict=True, max_length=64)
+
+
+class NewRedeemCodes(InputModel):
+    plan_id: int = Field(strict=True, gt=0)
+    count: int = Field(strict=True, ge=1, le=50)
+    days: int | None = Field(default=None, strict=True, ge=1, le=3650)
+    note: str = Field(default="", strict=True, max_length=100)
+    expires_in_days: int | None = Field(default=None, strict=True, ge=1, le=365)
+
+
+class ManualGrant(InputModel):
+    username: str = Field(strict=True, min_length=1, max_length=128)
+    plan_id: int = Field(strict=True, gt=0)
+    days: int | None = Field(default=None, strict=True, ge=1, le=3650)
+
+
+class ManualPaymentSettings(InputModel):
+    enabled: bool = Field(strict=True)
+    contact: str = Field(strict=True, max_length=200)
+
+
 class PostFields(InputModel):
     title: PostTitle
     body: PostBody
@@ -292,6 +333,10 @@ class NewComment(InputModel):
 
 class CommentEdit(InputModel):
     body: CommentBody
+
+
+class AcceptedComment(InputModel):
+    comment_id: StrictInt
 
 
 class ReportInput(InputModel):
@@ -327,7 +372,7 @@ def ai_quota(conn, user_id, day):
         FROM users u
         LEFT JOIN plans p ON p.id = u.plan_id
         LEFT JOIN ai_usage a ON a.user_id = u.id AND a.day = ?
-        WHERE u.id = ?
+        WHERE u.id = ? AND u.deleted_at IS NULL
         """,
         (day, user_id),
     ).fetchone()
@@ -467,14 +512,116 @@ def password_hash(password):
 
 
 def password_matches(password, stored):
-    salt, expected = stored.split(":")
+    if not isinstance(stored, str):
+        return False
+    parts = stored.split(":")
+    if len(parts) != 2:
+        return False
+    salt, expected = parts
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", salt) or not re.fullmatch(
+        r"[0-9a-fA-F]{64}", expected
+    ):
+        return False
     actual = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
         bytes.fromhex(salt),
         PASSWORD_ITERATIONS,
     ).hex()
-    return secrets.compare_digest(actual, expected)
+    return secrets.compare_digest(actual, expected.lower())
+
+
+COMMON_PASSWORDS = frozenset("""
+12345678 123456789 1234567890 password password1 password123 qwertyui qwerty123
+iloveyou abc12345 11111111 00000000 1q2w3e4r admin123 letmein1 welcome1
+12341234 12344321 87654321 987654321 01234567 0123456789 123456abc abcdefgh
+abcdefghij qwertyuiop asdfghjk asdfghjkl zxcvbnmm zxcvbnm1 zxcvbnm123
+asdf1234 abcd1234 1234abcd 1qaz2wsx 1qazxsw2 1q2w3e4r5t 1q2w3e4r5t6y
+qazwsxed qazwsx123 zaq12wsx qazwsx12 password12 password1234 password12345
+password! password01 passw0rd passw0rd1 p@ssword p@ssw0rd p@ssw0rd1
+changeme changeme1 letmein123 welcome123 welcome1234 welcome! admin1234
+admin12345 administrator root1234 root12345 secret123 sunshine sunshine1
+princess princess1 football football1 baseball baseball1 basketball superman
+superman1 batman123 dragon123 michael1 jennifer computer computer1 internet
+internet1 whatever whatever1 trustno1 freedom1 hello123 hello1234 hello12345
+test1234 test12345 testing123 guest123 guest1234 login123 login1234 default1
+88888888 66666666 99999999 22222222 33333333 44444444 55555555 77777777
+12121212 123123123 11223344 1122334455 123456a1 123456q1 123456qq woaini520
+woaini1314 nihao123 nihao1234 woaini123 52013145 1314520a 65432100 15975300
+14725836 123456789a 123456789! 12345678a 12345678! 12345678910 20202020
+""".split())
+
+
+def check_new_password(password, *, username="", email=""):
+    if len(password) < 8:
+        raise HTTPException(400, "密码至少 8 位")
+    if len(password) > 128:
+        raise HTTPException(400, "密码最多 128 位")
+    lowered = password.lower()
+    if lowered in COMMON_PASSWORDS or len(set(lowered)) == 1:
+        raise HTTPException(400, "这个密码太常见，请换一个")
+    if lowered == username.lower() or (email and lowered == email.split("@", 1)[0].lower()):
+        raise HTTPException(400, "密码不能和用户名或邮箱相同")
+
+
+RESERVED_USERNAMES = frozenset({
+    "admin", "administrator", "root", "system", "support", "official",
+    "moderator", "staff", "官方", "管理员", "客服", "系统", "站长", "版主",
+    "欧叶", "欧叶oy", "算法错题本",
+})
+
+
+def configured_admin_username():
+    value = os.getenv("ADMIN_USERNAME", "")
+    if not value.strip():
+        return ""
+    return normalize_username(value)
+
+
+def normalized_username(value):
+    try:
+        return normalize_username(value)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+def check_username_available(username, *, allow_admin_name=False):
+    admin_name = configured_admin_username()
+    if username.startswith("已注销用户"):
+        raise HTTPException(400, "这个用户名已被保留")
+    if allow_admin_name and admin_name and username == admin_name:
+        return
+    if username in RESERVED_USERNAMES or (admin_name and username == admin_name):
+        raise HTTPException(400, "这个用户名已被保留")
+
+
+def bootstrap_admin():
+    username = configured_admin_username()
+    if not username:
+        return
+    with connect(write=True) as conn:
+        if conn.execute(
+            "SELECT 1 FROM users WHERE is_admin = 1 AND deleted_at IS NULL LIMIT 1"
+        ).fetchone():
+            return
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ? AND deleted_at IS NULL AND is_trial = 0",
+            (username,),
+        ).fetchone()
+        if existing is not None:
+            conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (existing["id"],))
+            return
+        rows = conn.execute(
+            "SELECT id, username FROM users WHERE deleted_at IS NULL AND is_trial = 0 ORDER BY id"
+        ).fetchall()
+        for row in rows:
+            try:
+                candidate = normalize_username(row["username"])
+            except ValueError:
+                continue
+            if candidate == username:
+                conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (row["id"],))
+                break
 
 
 def set_session(conn, user_id, response):
@@ -505,10 +652,11 @@ def current_user(request: Request):
         row = conn.execute(
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
-                   u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version
+                   u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version,
+                   u.is_admin, u.deleted_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
-            WHERE s.token_hash = ? AND s.expires_at > ?
+            WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL
             """,
             (token_hash(token), int(time.time())),
         ).fetchone()
@@ -523,9 +671,7 @@ def current_user(request: Request):
         raise HTTPException(401, "账号已被封禁，无法继续使用")
     user = dict(row)
     user["is_trial"] = bool(user["is_trial"])
-    # 单管理员账号：由环境变量指定用户名，不需要额外的数据库列或登录方式。
-    admin_username = os.getenv("ADMIN_USERNAME", "").strip().lower()
-    user["is_admin"] = bool(admin_username) and user["username"] == admin_username
+    user["is_admin"] = bool(user["is_admin"])
     return user
 
 
@@ -625,6 +771,7 @@ def client_ip(request: Request):
 @asynccontextmanager
 async def lifespan(app):
     init_db()
+    bootstrap_admin()
     yield
 
 
@@ -664,7 +811,13 @@ async def request_protection(request, call_next):
         "connect-src 'self'; img-src 'self' blob:; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     )
-    if request.url.path.startswith("/api/"):
+    manual_qr_response = (
+        request.method == "GET" and response.status_code == 200
+        and request.url.path in (
+            "/api/manual-payment/qr/alipay", "/api/manual-payment/qr/wechat"
+        )
+    )
+    if request.url.path.startswith("/api/") and not manual_qr_response:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -695,12 +848,31 @@ def home():
     )
 
 
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    return HTMLResponse(
+        render_legal_page("terms"), headers={"Cache-Control": "public, max-age=300"}
+    )
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return HTMLResponse(
+        render_legal_page("privacy"), headers={"Cache-Control": "public, max-age=300"}
+    )
+
+
 @app.post("/api/auth/register", status_code=201)
 def register(data: Registration, request: Request, response: Response):
     if rate_limited(
         f"register:{client_ip(request)}", REGISTER_LIMIT, REGISTER_WINDOW_SECONDS
     ):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
+
+    if not data.accept_terms:
+        raise HTTPException(400, "请先阅读并同意服务条款和隐私政策")
+    username = normalized_username(data.username)
+    check_new_password(data.password, username=username, email=data.email)
 
     expected = os.getenv("INVITE_CODE", "").strip()
     if not expected or expected == "change-me":
@@ -714,12 +886,21 @@ def register(data: Registration, request: Request, response: Response):
     hashed = password_hash(data.password)
     try:
         with connect(write=True) as conn:
+            admin_name = configured_admin_username()
+            has_admin = conn.execute(
+                "SELECT 1 FROM users WHERE is_admin = 1 AND deleted_at IS NULL LIMIT 1"
+            ).fetchone() is not None
+            is_admin = bool(admin_name and username == admin_name and not has_admin)
+            check_username_available(username, allow_admin_name=is_admin)
+            now = utc_now()
             cursor = conn.execute(
                 """
-                INSERT INTO users(username, password_hash, email, timezone, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users(username, password_hash, email, timezone, created_at,
+                                  is_admin, terms_accepted_at, terms_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (data.username.lower(), hashed, data.email, data.timezone, utc_now()),
+                (username, hashed, data.email, data.timezone, now,
+                 int(is_admin), now, TERMS_VERSION),
             )
             user_id = cursor.lastrowid
             set_session(conn, user_id, response)
@@ -728,7 +909,7 @@ def register(data: Registration, request: Request, response: Response):
             raise HTTPException(409, "这个邮箱已经被使用") from None
         raise HTTPException(409, "用户名已被使用") from None
 
-    return {"id": user_id, "username": data.username.lower()}
+    return {"id": user_id, "username": username}
 
 
 @app.post("/api/auth/trial", status_code=201)
@@ -770,11 +951,21 @@ def login(data: Credentials, request: Request, response: Response):
     if rate_limited(f"login:{client_ip(request)}", LOGIN_LIMIT, LOGIN_WINDOW_SECONDS):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
+    try:
+        username = normalize_username(data.username)
+    except ValueError:
+        # 旧名字可能在 NFKC 展开后超过新长度上限，仍允许按旧名字登录。
+        username = data.username.lower()
     with connect() as conn:
         user = conn.execute(
-            "SELECT * FROM users WHERE username = ?",
-            (data.username.lower(),),
+            "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL",
+            (username,),
         ).fetchone()
+        if user is None:
+            user = conn.execute(
+                "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL",
+                (data.username.lower(),),
+            ).fetchone()
 
     # 不存在的账号也执行一次密码计算。
     valid = password_matches(
@@ -789,6 +980,14 @@ def login(data: Credentials, request: Request, response: Response):
         raise HTTPException(403, "账号已被封禁，无法登录")
 
     with connect(write=True) as conn:
+        fresh = conn.execute(
+            "SELECT password_hash, is_banned FROM users WHERE id = ? AND deleted_at IS NULL",
+            (user["id"],),
+        ).fetchone()
+        if fresh is None or fresh["password_hash"] != user["password_hash"]:
+            raise HTTPException(401, "用户名或密码不正确")
+        if fresh["is_banned"]:
+            raise HTTPException(403, "账号已被封禁，无法登录")
         set_session(conn, user["id"], response)
     return {"ok": True}
 
@@ -797,12 +996,12 @@ def send_password_reset_email(to_address, username, token):
     link = f"{public_base_url()}/?reset_token={token}"
     body = (
         f"你好 {username}，\n\n"
-        "有人（希望是你）在欧叶OY申请了重置密码。\n"
+        f"有人（希望是你）在{PRODUCT_NAME}申请了重置密码。\n"
         f"30 分钟内点击下面的链接设置新密码：\n{link}\n\n"
         "如果这不是你本人操作，忽略这封邮件即可，密码不会被改动。"
     )
     try:
-        mailer.send_email(to_address, "欧叶OY：重置密码", body)
+        mailer.send_email(to_address, f"{PRODUCT_NAME}：重置密码", body)
     except Exception:
         # 发信失败不影响接口返回，避免把 SMTP 报错暴露给客户端；
         # 服务端日志里留一条记录方便自己排查。
@@ -821,7 +1020,7 @@ def forgot_password(data: ForgotPassword, request: Request):
     email = data.email.strip().lower()
     with connect() as conn:
         user = conn.execute(
-            "SELECT id, username FROM users WHERE email = ?", (email,)
+            "SELECT id, username FROM users WHERE email = ? AND deleted_at IS NULL", (email,)
         ).fetchone()
 
     if user is not None:
@@ -829,7 +1028,7 @@ def forgot_password(data: ForgotPassword, request: Request):
         with connect(write=True) as conn:
             # 邮箱可能在首次查询后被修改，写入前再次确认归属。
             user = conn.execute(
-                "SELECT id, username FROM users WHERE id = ? AND email = ?",
+                "SELECT id, username FROM users WHERE id = ? AND email = ? AND deleted_at IS NULL",
                 (user["id"], email),
             ).fetchone()
             if user is not None:
@@ -867,21 +1066,27 @@ def reset_password(data: ResetPassword, request: Request):
     hashed_token = token_hash(data.token)
     with connect() as conn:
         row = conn.execute(
-            "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+            """SELECT r.user_id, r.expires_at, u.username, u.email
+               FROM password_resets r JOIN users u ON u.id = r.user_id
+               WHERE r.token_hash = ? AND u.deleted_at IS NULL""",
             (hashed_token,),
         ).fetchone()
     if row is None or row["expires_at"] < int(time.time()):
         raise HTTPException(400, "重置链接无效或已过期，请重新申请")
 
+    check_new_password(data.password, username=row["username"], email=row["email"] or "")
     hashed_password = password_hash(data.password)
     with connect(write=True) as conn:
         # 哈希计算期间 token 可能被使用、替换或过期，必须在写事务中复查。
         row = conn.execute(
-            "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+            """SELECT r.user_id, r.expires_at, u.username, u.email
+               FROM password_resets r JOIN users u ON u.id = r.user_id
+               WHERE r.token_hash = ? AND u.deleted_at IS NULL""",
             (hashed_token,),
         ).fetchone()
         if row is None or row["expires_at"] < int(time.time()):
             raise HTTPException(400, "重置链接无效或已过期，请重新申请")
+        check_new_password(data.password, username=row["username"], email=row["email"] or "")
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (hashed_password, row["user_id"]),
@@ -998,7 +1203,7 @@ def export_data(user=Depends(current_user)):
         "username": user["username"],
         "problems": list(problems.values()),
     }
-    filename = f"欧叶OY导出_{user['username']}_{today_for(user).isoformat()}.json"
+    filename = f"{PRODUCT_NAME}导出_{user['username']}_{today_for(user).isoformat()}.json"
     return Response(
         content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
         media_type="application/json",
@@ -1012,8 +1217,10 @@ def export_data(user=Depends(current_user)):
 def update_email(data: EmailUpdate, user=Depends(current_user)):
     # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
     # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
+    stored = verify_current_password(user["id"], data.password)
     try:
         with connect(write=True) as conn:
+            recheck_account(conn, user["id"], stored)
             conn.execute(
                 "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
             )
@@ -1024,15 +1231,12 @@ def update_email(data: EmailUpdate, user=Depends(current_user)):
 
 @app.put("/api/me/username")
 def update_username(data: UsernameUpdate, user=Depends(current_user)):
-    # 用户名是讨论区里展示身份的字段，允许自己改；管理员身份是按当前
-    # 用户名跟 ADMIN_USERNAME 实时比较的，改名后不再匹配就会立刻失去
-    # 管理员权限——这是预期行为，不是 bug，改回原用户名或改环境变量都能恢复。
     require_not_trial(user, "修改用户名")
-    # 注册和登录都把用户名转成小写再比较，改名也必须这样存；否则改成 "Alice2" 之后
-    # 库里是 Alice2、登录查的是 alice2，这个账号用哪种写法都登录不了。
-    username = data.username.lower()
+    username = normalized_username(data.username)
     try:
         with connect(write=True) as conn:
+            fresh = recheck_account(conn, user["id"])
+            check_username_available(username, allow_admin_name=bool(fresh["is_admin"]))
             conn.execute(
                 "UPDATE users SET username = ? WHERE id = ?",
                 (username, user["id"]),
@@ -1040,6 +1244,138 @@ def update_username(data: UsernameUpdate, user=Depends(current_user)):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个用户名已经被使用") from None
     return {"ok": True, "username": username}
+
+
+def verify_current_password(user_id, password):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+    if not password_matches(password, row["password_hash"]):
+        raise HTTPException(400, "当前密码不正确")
+    return row["password_hash"]
+
+
+def recheck_account(conn, user_id, expected_hash=None):
+    row = conn.execute(
+        "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+    if expected_hash is not None and row["password_hash"] != expected_hash:
+        raise HTTPException(400, "当前密码不正确")
+    return row
+
+
+def revoke_other_sessions(conn, user_id, request):
+    current_token = token_hash(request.cookies.get("session", ""))
+    return conn.execute(
+        "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+        (user_id, current_token),
+    ).rowcount
+
+
+@app.post("/api/me/password")
+def change_password(data: PasswordChange, request: Request, user=Depends(current_user)):
+    require_not_trial(user, "修改密码")
+    if rate_limited(f"pwchange:{user['id']}", 5, 15 * 60):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+    stored = verify_current_password(user["id"], data.current_password)
+    check_new_password(data.new_password, username=user["username"], email=user["email"] or "")
+    if data.new_password == data.current_password:
+        raise HTTPException(400, "新密码不能和当前密码相同")
+    hashed = password_hash(data.new_password)
+    with connect(write=True) as conn:
+        fresh = recheck_account(conn, user["id"], stored)
+        check_new_password(data.new_password, username=fresh["username"], email=fresh["email"] or "")
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user["id"])
+        )
+        revoked = revoke_other_sessions(conn, user["id"], request)
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+    return {"ok": True, "revoked_sessions": revoked}
+
+
+@app.post("/api/me/sessions/revoke-others")
+def revoke_sessions(request: Request, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        revoked = revoke_other_sessions(conn, user["id"], request)
+    return {"ok": True, "revoked": revoked}
+
+
+def require_deletable_account(user):
+    if user["is_trial"]:
+        raise HTTPException(403, "体验账号到期会自动清理")
+    if user["is_admin"]:
+        raise HTTPException(403, "管理员账号不能自助注销，请先用 admin_tool.py 撤销管理员身份")
+
+
+def delete_account_data(conn, user_id, deleted_at):
+    groups = conn.execute(
+        """
+        SELECT g.name FROM study_groups g
+        WHERE g.created_by = ? AND EXISTS (
+            SELECT 1 FROM study_group_members m
+            WHERE m.group_id = g.id AND m.user_id != ?
+        ) ORDER BY g.id
+        """,
+        (user_id, user_id),
+    ).fetchall()
+    if groups:
+        names = "、".join(f"『{row['name']}』" for row in groups[:3])
+        if len(groups) > 3:
+            names += "等"
+        raise HTTPException(409, f"你创建的小组{names}里还有其他成员，请先让成员退出或解散小组")
+
+    for table in ("sessions", "password_resets", "problems", "mistake_tags",
+                  "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes"):
+        conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+    # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
+    conn.execute(
+        "DELETE FROM post_summaries WHERE post_id IN (SELECT id FROM posts WHERE user_id = ?) "
+        "OR post_id IN (SELECT post_id FROM post_comments WHERE user_id = ?)",
+        (user_id, user_id),
+    )
+    conn.execute(
+        "UPDATE posts SET accepted_comment_id = NULL WHERE user_id = ? "
+        "OR accepted_comment_id IN (SELECT id FROM post_comments WHERE user_id = ?)",
+        (user_id, user_id),
+    )
+    conn.execute(
+        "DELETE FROM avatar_reports WHERE reporter_user_id = ? OR avatar_owner_id = ?",
+        (user_id, user_id),
+    )
+    conn.execute("UPDATE ai_calls SET user_id = NULL WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM study_group_members WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM study_groups WHERE created_by = ?", (user_id,))
+    conn.execute(
+        """
+        UPDATE users SET username = ?, email = NULL, password_hash = ?,
+            avatar_version = 0, last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
+        WHERE id = ?
+        """,
+        (f"已注销用户 #{user_id}", DUMMY_PASSWORD, deleted_at, user_id),
+    )
+
+
+@app.post("/api/me/delete-account")
+def delete_account(
+    data: AccountDeletion, request: Request, response: Response, user=Depends(current_user)
+):
+    require_deletable_account(user)
+    if rate_limited(f"accdel:{user['id']}", 5, 15 * 60):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+    stored = verify_current_password(user["id"], data.password)
+    with connect(write=True) as conn:
+        fresh = recheck_account(conn, user["id"], stored)
+        require_deletable_account(fresh)
+        delete_account_data(conn, user["id"], utc_now())
+    avatar_path(user["id"]).unlink(missing_ok=True)
+    response.delete_cookie("session", path="/")
+    return {"ok": True}
 
 
 @app.post("/api/me/avatar")
@@ -1054,14 +1390,17 @@ async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)
     image = decode_uploaded_image(content)
     jpeg_bytes = await run_in_threadpool(resize_avatar_to_square_jpeg, image)
 
-    directory = avatar_dir()
-    final_path = avatar_path(user["id"])
-    # 先写临时文件再原子替换，避免另一个请求读到写了一半的文件。
-    temp_path = directory / f".{user['id']}-{secrets.token_hex(8)}.tmp"
-    temp_path.write_bytes(jpeg_bytes)
-    os.replace(temp_path, final_path)
-
     with connect(write=True) as conn:
+        # 解码期间账号可能已注销，写锁内复查后才落盘。
+        recheck_account(conn, user["id"])
+        directory = avatar_dir()
+        final_path = avatar_path(user["id"])
+        temp_path = directory / f".{user['id']}-{secrets.token_hex(8)}.tmp"
+        try:
+            temp_path.write_bytes(jpeg_bytes)
+            os.replace(temp_path, final_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
         conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
             (user["id"],),
@@ -1074,8 +1413,9 @@ async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)
 
 @app.delete("/api/me/avatar")
 def delete_own_avatar(user=Depends(current_user)):
-    avatar_path(user["id"]).unlink(missing_ok=True)
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        avatar_path(user["id"]).unlink(missing_ok=True)
         conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
             (user["id"],),
@@ -1101,6 +1441,305 @@ def get_avatar(user_id: int, user=Depends(current_user)):
 @app.get("/api/plans")
 def list_plans(user=Depends(current_user)):
     return {"plans": payments.list_plans()}
+
+
+REDEEM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+REDEEM_ERROR = "兑换码不正确、已使用或已过期"
+PAY_QR_MAX_BYTES = 2 * 1024 * 1024
+
+
+def normalize_redeem_code(value):
+    value = unicodedata.normalize("NFKC", value).upper()
+    return "".join(char for char in value if not char.isspace() and char != "-")
+
+
+def redeem_code_hash(value):
+    return hashlib.sha256(normalize_redeem_code(value).encode("utf-8")).hexdigest()
+
+
+def recheck_manual_account(conn, user_id, *, admin=False):
+    fresh = recheck_account(conn, user_id)
+    if fresh["is_banned"]:
+        raise HTTPException(401, "账号已被封禁，无法继续使用")
+    if admin:
+        require_admin(fresh)
+    return fresh
+
+
+def manual_plan(conn, plan_id):
+    # 已发行的码与已有订单一致，不因套餐停用而失效。
+    plan = conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+    if plan is None:
+        raise HTTPException(404, "套餐不存在")
+    return plan
+
+
+def pay_qr_path(channel):
+    if channel not in ("alipay", "wechat"):
+        raise HTTPException(404, "收款码不存在")
+    directory = Path(os.getenv("PAY_QR_DIR", "data/pay-qr")).expanduser()
+    if not directory.is_absolute():
+        directory = ROOT / directory
+    # 路径只取白名单渠道，不读取上传文件名；读取时不创建目录。
+    return directory / f"{channel}.png"
+
+
+def manual_payment_settings(conn):
+    settings = dict(conn.execute(
+        "SELECT key, value FROM app_settings WHERE key IN (?, ?)",
+        ("manual_payment_enabled", "manual_payment_contact"),
+    ).fetchall())
+    return {
+        "enabled": settings.get("manual_payment_enabled", "0") == "1",
+        "contact": settings.get("manual_payment_contact", ""),
+    }
+
+
+@app.get("/api/manual-payment")
+def get_manual_payment(user=Depends(current_user)):
+    with connect() as conn:
+        settings = manual_payment_settings(conn)
+    return {**settings, "qr": {
+        channel: pay_qr_path(channel).is_file() for channel in ("alipay", "wechat")
+    }}
+
+
+@app.get("/api/manual-payment/qr/{channel}")
+def get_manual_payment_qr(channel: str, user=Depends(current_user)):
+    path = pay_qr_path(channel)
+    if not path.is_file():
+        raise HTTPException(404, "收款码不存在")
+    return FileResponse(
+        path, media_type="image/png", headers={"Cache-Control": "private, max-age=300"}
+    )
+
+
+@app.post("/api/redeem")
+def redeem_code(data: RedeemInput, request: Request, user=Depends(current_user)):
+    if user["is_trial"]:
+        raise HTTPException(403, "体验账号不能兑换，请先注册正式账号")
+    # 两个桶分别计数，包含失败尝试，IP 取法与登录一致。
+    user_limited = rate_limited(f"redeem:{user['id']}", 10, 3600)
+    ip_limited = rate_limited(f"redeem-ip:{client_ip(request)}", 30, 3600)
+    if user_limited or ip_limited:
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+    code_hash = redeem_code_hash(data.code)
+    with connect(write=True) as conn:
+        fresh = recheck_manual_account(conn, user["id"])
+        if fresh["is_trial"]:
+            raise HTTPException(403, "体验账号不能兑换，请先注册正式账号")
+        now = utc_now()
+        claimed = conn.execute(
+            """
+            UPDATE redeem_codes SET redeemed_by = ?, redeemed_at = ?
+            WHERE code_hash = ? AND redeemed_by IS NULL AND revoked_at IS NULL
+              AND (expires_at IS NULL OR expires_at > ?)
+            """,
+            (user["id"], now, code_hash, now),
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(400, REDEEM_ERROR)
+        code = conn.execute(
+            "SELECT plan_id, period_days FROM redeem_codes WHERE code_hash = ?",
+            (code_hash,),
+        ).fetchone()
+        plan = manual_plan(conn, code["plan_id"])
+        expiry = activate_plan(conn, user["id"], code["plan_id"], code["period_days"], now)
+        return {"plan_name": plan["name"], "period_days": code["period_days"],
+                "plan_expires_at": expiry}
+
+
+@app.post("/api/admin/redeem-codes", status_code=201)
+def generate_redeem_codes(data: NewRedeemCodes, user=Depends(current_user)):
+    require_admin(user)
+    codes = []
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        plan = manual_plan(conn, data.plan_id)
+        now = utc_now()
+        expires = ((datetime.fromisoformat(now) + timedelta(days=data.expires_in_days))
+                   .isoformat(timespec="seconds")) if data.expires_in_days else None
+        for _ in range(data.count):
+            # 碰撞时重试；明文从不落库、不写日志，仅在这次响应返回。
+            for attempt in range(10):
+                raw = "".join(secrets.choice(REDEEM_ALPHABET) for _ in range(16))
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO redeem_codes(code_hash, code_hint, plan_id, period_days,
+                            note, created_by, created_at, expires_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (redeem_code_hash(raw), raw[-4:], data.plan_id,
+                         data.days if data.days is not None else plan["period_days"],
+                         data.note, user["id"], now, expires),
+                    )
+                    break
+                except sqlite3.IntegrityError:
+                    if attempt == 9:
+                        raise
+            codes.append("-".join(raw[index:index + 4] for index in range(0, 16, 4)))
+    return JSONResponse(status_code=201, content={"codes": codes},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/admin/redeem-codes")
+def list_redeem_codes(
+    status: Literal["all", "unused", "redeemed", "revoked"] = "all",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    user=Depends(current_user),
+):
+    require_admin(user)
+    filters = {
+        "all": "1 = 1",
+        "unused": "c.redeemed_by IS NULL AND c.revoked_at IS NULL",
+        "redeemed": "c.redeemed_by IS NOT NULL",
+        "revoked": "c.revoked_at IS NOT NULL",
+    }
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.code_hint AS hint, p.name AS plan_name, c.period_days,
+                   c.note, CASE WHEN c.redeemed_by IS NOT NULL THEN 'redeemed'
+                                WHEN c.revoked_at IS NOT NULL THEN 'revoked'
+                                ELSE 'unused' END AS status,
+                   c.created_at, c.expires_at, u.username AS redeemed_by, c.redeemed_at
+            FROM redeem_codes c JOIN plans p ON p.id = c.plan_id
+            LEFT JOIN users u ON u.id = c.redeemed_by
+            WHERE """ + filters[status] + " ORDER BY c.created_at DESC, c.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return {"codes": [dict(row) for row in rows]}
+
+
+@app.post("/api/admin/redeem-codes/{code_id}/revoke")
+def revoke_redeem_code(code_id: int, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        cursor = conn.execute(
+            "UPDATE redeem_codes SET revoked_at = ? "
+            "WHERE id = ? AND redeemed_by IS NULL AND revoked_at IS NULL",
+            (utc_now(), code_id),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(409, "只能撤销未使用的兑换码")
+    return {"ok": True}
+
+
+@app.post("/api/admin/manual-grant")
+def manual_grant(data: ManualGrant, user=Depends(current_user)):
+    require_admin(user)
+    try:
+        username = normalize_username(data.username)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        target = conn.execute(
+            "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL", (username,)
+        ).fetchone()
+        if target is None:
+            target = conn.execute(
+                "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL",
+                (data.username.strip().lower(),),
+            ).fetchone()
+        if target is None:
+            raise HTTPException(404, "用户不存在")
+        recheck_manual_account(conn, target["id"])
+        if target["is_trial"]:
+            raise HTTPException(403, "体验账号不能开通，请先注册正式账号")
+        plan = manual_plan(conn, data.plan_id)
+        days = data.days if data.days is not None else plan["period_days"]
+        now = utc_now()
+        expiry = activate_plan(conn, target["id"], data.plan_id, days, now)
+        # 此哈希没有对应的16位兑换码，同时已占用，用作直接开通的审计记录。
+        conn.execute(
+            """
+            INSERT INTO redeem_codes(code_hash, code_hint, plan_id, period_days, note,
+                created_by, created_at, redeemed_by, redeemed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (hashlib.sha256(secrets.token_bytes(32)).hexdigest(), "----", data.plan_id,
+             days, "管理员直接开通：" + target["username"], user["id"], now, target["id"], now),
+        )
+    return {"username": target["username"], "plan_name": plan["name"],
+            "plan_expires_at": expiry}
+
+
+def encode_pay_qr(content):
+    # warning 级别的炸弹也拒绝，复用头像的 verify + 完整 decode 校验。
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        try:
+            image = decode_uploaded_image(content)
+        except Image.DecompressionBombWarning:
+            raise HTTPException(400, "文件不是有效的图片") from None
+    if image.format not in ("PNG", "JPEG"):
+        image.close()
+        raise HTTPException(400, "只支持 PNG 或 JPEG 格式的图片")
+    try:
+        image.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
+        converted = image.convert("RGBA" if "A" in image.getbands() or
+                                  "transparency" in image.info else "RGB")
+        # 创建纯像素图片，丢弃 EXIF、PNG 文本、ICC 等上传元数据。
+        clean = Image.new(converted.mode, converted.size)
+        clean.paste(converted)
+        buffer = io.BytesIO()
+        clean.save(buffer, format="PNG")
+        clean.close()
+        converted.close()
+        return buffer.getvalue()
+    finally:
+        image.close()
+
+
+@app.put("/api/admin/manual-payment/qr/{channel}")
+async def upload_manual_payment_qr(
+    channel: str, user=Depends(current_user), file: UploadFile = File(...),
+):
+    require_admin(user)
+    path = pay_qr_path(channel)
+    if file.content_type not in ("image/png", "image/jpeg"):
+        raise HTTPException(400, "只支持 PNG 或 JPEG 格式的图片")
+    content = await file.read(PAY_QR_MAX_BYTES + 1)
+    if len(content) > PAY_QR_MAX_BYTES:
+        raise HTTPException(413, "图片太大，最多 2MB")
+    png = await run_in_threadpool(encode_pay_qr, content)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.parent / f".{channel}-{secrets.token_hex(8)}.tmp"
+        try:
+            temporary.write_bytes(png)
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/manual-payment/qr/{channel}")
+def delete_manual_payment_qr(channel: str, user=Depends(current_user)):
+    require_admin(user)
+    path = pay_qr_path(channel)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        path.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.put("/api/admin/manual-payment/settings")
+def update_manual_payment_settings(data: ManualPaymentSettings, user=Depends(current_user)):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        conn.executemany(
+            "INSERT INTO app_settings(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [("manual_payment_enabled", "1" if data.enabled else "0"),
+             ("manual_payment_contact", data.contact)],
+        )
+    return {"enabled": data.enabled, "contact": data.contact}
 
 
 @app.post("/api/orders", status_code=201)
@@ -1193,6 +1832,7 @@ def list_zones():
 def create_problem(data: NewProblem, user=Depends(current_user)):
     day = today_for(user).isoformat()
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         cursor = conn.execute(
             """
             INSERT INTO problems(
@@ -1324,6 +1964,7 @@ def get_weakness_analysis(user=Depends(current_user)):
 def create_weakness_analysis(user=Depends(current_user)):
     with ExitStack() as stack:
         with connect(write=True) as conn:
+            recheck_account(conn, user["id"])
             state = weakness_analysis_state(conn, user["id"])
             # 先判断数量，哪怕额度已用完或未配置 Key，也只返回积累材料的提示。
             if state["mistake_count"] < WEAKNESS_MIN_MISTAKES:
@@ -1365,6 +2006,7 @@ def create_weakness_analysis(user=Depends(current_user)):
                 evidence.update({key: source[key] for key in ("problem_id", "title", "zone")})
 
         with connect(write=True) as conn:
+            recheck_account(conn, user["id"])
             conn.execute(
                 """
                 INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)
@@ -1456,7 +2098,7 @@ def weakness_by_zone(conn, user_ids=None, min_cohort=COMMUNITY_MIN_COHORT):
         FROM mistakes m
         JOIN problems p ON p.id = m.problem_id
         JOIN users u ON u.id = p.user_id
-        WHERE u.is_trial = 0{user_filter}
+        WHERE u.is_trial = 0 AND u.deleted_at IS NULL{user_filter}
         GROUP BY p.zone, p.user_id
         """,
         params,
@@ -1857,12 +2499,14 @@ def review_mistake(
         if item["due_date"] > day.isoformat():
             raise HTTPException(409, "这条易错点尚未到期，今天不需要再次评分")
 
+        overdue_days = max(0, (day - date.fromisoformat(item["due_date"])).days)
         state = schedule(
             repetitions=item["repetitions"],
             interval_days=item["interval_days"],
             ease_factor=item["ease_factor"],
             quality=data.quality,
             reviewed_on=day,
+            overdue_days=overdue_days,
         )
         reviewed_at = utc_now()
 
@@ -1882,10 +2526,15 @@ def review_mistake(
         conn.execute(
             """
             INSERT INTO reviews(
-                mistake_id, quality, reviewed_at, next_due_date
-            ) VALUES (?, ?, ?, ?)
+                mistake_id, quality, reviewed_at, next_due_date,
+                elapsed_days, scheduled_days, ease_before, repetitions_before
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (mistake_id, data.quality, reviewed_at, state["due_date"]),
+            (
+                mistake_id, data.quality, reviewed_at, state["due_date"],
+                item["interval_days"] + overdue_days, item["interval_days"],
+                item["ease_factor"], item["repetitions"],
+            ),
         )
 
     return {**state, "version": item["version"] + 1}
@@ -2100,7 +2749,9 @@ def review_streaks_by_user(users, review_rows):
 @app.get("/api/leaderboard")
 def leaderboard(user=Depends(current_user)):
     with connect() as conn:
-        users = conn.execute("SELECT id, timezone, is_trial FROM users").fetchall()
+        users = conn.execute(
+            "SELECT id, timezone, is_trial FROM users WHERE deleted_at IS NULL"
+        ).fetchall()
         review_rows = conn.execute(
             """
             SELECT p.user_id AS user_id, r.reviewed_at
@@ -2197,7 +2848,7 @@ def group_members_by_id(conn, group_ids):
                gm.joined_at
         FROM study_group_members gm
         JOIN users u ON u.id = gm.user_id
-        WHERE gm.group_id IN ({placeholders})
+        WHERE gm.group_id IN ({placeholders}) AND u.deleted_at IS NULL
         ORDER BY gm.joined_at ASC, u.id ASC
         """,
         tuple(group_ids),
@@ -2300,6 +2951,7 @@ def group_detail(conn, group_id, user_id):
 def create_group(data: NewGroup, user=Depends(current_user)):
     # 限额检查、建组和加入在同一写事务中，避免并发请求突破限额或留下空组。
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         require_group_capacity_for_user(conn, user["id"])
         created_at = utc_now()
         for _ in range(2):
@@ -2331,7 +2983,9 @@ def list_groups(user=Depends(current_user)):
         groups = conn.execute(
             """
             SELECT g.id, g.name, g.created_by, g.created_at,
-                   (SELECT COUNT(*) FROM study_group_members WHERE group_id = g.id)
+                   (SELECT COUNT(*) FROM study_group_members gm
+                    JOIN users u ON u.id = gm.user_id
+                    WHERE gm.group_id = g.id AND u.deleted_at IS NULL)
                    AS member_count
             FROM study_groups g
             JOIN study_group_members m ON m.group_id = g.id
@@ -2378,6 +3032,7 @@ def join_group(data: JoinGroup, request: Request, user=Depends(current_user)):
     ):
         raise HTTPException(429, "加入尝试次数过多，请稍后再试")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         group = conn.execute(
             "SELECT id FROM study_groups WHERE invite_code = ?", (data.invite_code,)
         ).fetchone()
@@ -2465,6 +3120,8 @@ def require_not_trial(user, action):
 
 
 def visible_post(conn, post_id):
+    if not -(2**63) <= post_id <= 2**63 - 1:
+        raise HTTPException(404, "帖子不存在")
     row = conn.execute(
         "SELECT * FROM posts WHERE id = ? AND deleted_at IS NULL",
         (post_id,),
@@ -2482,6 +3139,8 @@ def owned_post(conn, post_id, user_id):
 
 
 def visible_comment(conn, comment_id):
+    if not -(2**63) <= comment_id <= 2**63 - 1:
+        raise HTTPException(404, "评论不存在")
     row = conn.execute(
         "SELECT * FROM post_comments WHERE id = ? AND deleted_at IS NULL",
         (comment_id,),
@@ -2547,17 +3206,19 @@ def comment_reply_to(target, floor):
     return reply_to
 
 
-def comment_response(row, post_author_id, floor, reply_to):
+def comment_response(row, post_author_id, floor, reply_to, votes=None):
     return {
         **dict(row),
         "has_avatar": avatar_path(row["user_id"]).is_file(),
         "floor": floor,
         "is_op": row["user_id"] == post_author_id,
         "reply_to": reply_to,
+        "helpful_count": votes["helpful_count"] if votes is not None else 0,
+        "viewer_helpful": bool(votes["viewer_helpful"]) if votes is not None else False,
     }
 
 
-def serialize_comment(conn, row, post_author_id):
+def serialize_comment(conn, row, post_author_id, viewer_id):
     context = conn.execute(
         """
         SELECT COUNT(*) AS floor,
@@ -2584,7 +3245,13 @@ def serialize_comment(conn, row, post_author_id):
         ).fetchone()
         if target is not None:
             reply_to = comment_reply_to(target, target["floor"])
-    return comment_response(row, post_author_id, context["floor"], reply_to)
+    votes = conn.execute(
+        "SELECT COUNT(*) AS helpful_count, "
+        "COALESCE(MAX(user_id = ?), 0) AS viewer_helpful "
+        "FROM comment_votes WHERE comment_id = ?",
+        (viewer_id, row["id"]),
+    ).fetchone()
+    return comment_response(row, post_author_id, context["floor"], reply_to, votes)
 
 
 @app.get("/api/posts")
@@ -2607,7 +3274,12 @@ def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
                    (
                        SELECT COUNT(*) FROM post_comments c
                        WHERE c.post_id = p.id AND c.deleted_at IS NULL
-                   ) AS comment_count
+                   ) AS comment_count,
+                   EXISTS(
+                       SELECT 1 FROM post_comments accepted
+                       WHERE accepted.id = p.accepted_comment_id
+                         AND accepted.post_id = p.id AND accepted.deleted_at IS NULL
+                   ) AS solved
             FROM posts p
             JOIN users u ON u.id = p.user_id
             WHERE p.deleted_at IS NULL
@@ -2619,7 +3291,8 @@ def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
         ).fetchall()
     return {
         "posts": [
-            {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file()}
+            {**dict(row), "has_avatar": avatar_path(row["user_id"]).is_file(),
+             "solved": bool(row["solved"])}
             for row in rows
         ]
     }
@@ -2629,6 +3302,7 @@ def list_posts(q: PostSearchQuery = "", user=Depends(current_user)):
 def create_post(data: NewPost, user=Depends(current_user)):
     require_not_trial(user, "发帖")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         cursor = conn.execute(
             "INSERT INTO posts(user_id, title, body, created_at) VALUES (?, ?, ?, ?)",
             (user["id"], data.title, data.body, utc_now()),
@@ -2645,6 +3319,8 @@ def create_post(data: NewPost, user=Depends(current_user)):
 
 @app.get("/api/posts/{post_id}")
 def get_post(post_id: int, user=Depends(current_user)):
+    if not -(2**63) <= post_id <= 2**63 - 1:
+        raise HTTPException(404, "帖子不存在")
     with connect() as conn:
         conn.execute("BEGIN")
         row = conn.execute(
@@ -2671,6 +3347,23 @@ def get_post(post_id: int, user=Depends(current_user)):
         ).fetchall()
         # Tombstones keep their floor; reply lookups all use the same snapshot.
         by_id = {row["id"]: (row, floor) for floor, row in enumerate(rows, 1)}
+        accepted, _ = by_id.get(post["accepted_comment_id"], (None, None))
+        if accepted is None or accepted["deleted_at"] is not None:
+            post["accepted_comment_id"] = None
+        votes_by_id = {
+            vote["comment_id"]: vote
+            for vote in conn.execute(
+                """
+                SELECT v.comment_id, COUNT(*) AS helpful_count,
+                       MAX(v.user_id = ?) AS viewer_helpful
+                FROM comment_votes v
+                JOIN post_comments c ON c.id = v.comment_id
+                WHERE c.post_id = ? AND c.deleted_at IS NULL
+                GROUP BY v.comment_id
+                """,
+                (user["id"], post_id),
+            )
+        }
         comments = sorted(
             (row for row in rows if row["deleted_at"] is None),
             key=lambda row: row["created_at"],
@@ -2682,6 +3375,7 @@ def get_post(post_id: int, user=Depends(current_user)):
                 comment_response(
                     row, post["user_id"], by_id[row["id"]][1],
                     comment_reply_to(target, target_floor),
+                    votes_by_id.get(row["id"]),
                 )
             )
     return post
@@ -2691,6 +3385,7 @@ def get_post(post_id: int, user=Depends(current_user)):
 def edit_post(post_id: int, data: PostEdit, user=Depends(current_user)):
     require_not_trial(user, "发帖")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         owned_post(conn, post_id, user["id"])
         conn.execute(
             "UPDATE posts SET title = ?, body = ?, updated_at = ? WHERE id = ?",
@@ -2710,6 +3405,7 @@ def edit_post(post_id: int, data: PostEdit, user=Depends(current_user)):
 def delete_post(post_id: int, user=Depends(current_user)):
     require_not_trial(user, "发帖")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         owned_post(conn, post_id, user["id"])
         # 软删除：标记 deleted_at，不物理删除，也不级联标记这个帖子下的
         # 评论——帖子对所有人不可见之后，正常业务路径本来就到达不了
@@ -2718,6 +3414,7 @@ def delete_post(post_id: int, user=Depends(current_user)):
             "UPDATE posts SET deleted_at = ? WHERE id = ?",
             (utc_now(), post_id),
         )
+        clear_deleted_thread_state(conn, post_id=post_id)
     return {"ok": True}
 
 
@@ -2725,6 +3422,7 @@ def delete_post(post_id: int, user=Depends(current_user)):
 def create_comment(post_id: int, data: NewComment, user=Depends(current_user)):
     require_not_trial(user, "评论")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         post = visible_post(conn, post_id)
         if data.reply_to_id is not None:
             # SQLite IDs are signed 64-bit integers; larger positive IDs are
@@ -2747,18 +3445,34 @@ def create_comment(post_id: int, data: NewComment, user=Depends(current_user)):
             """,
             (cursor.lastrowid,),
         ).fetchone()
-        comment = serialize_comment(conn, row, post["user_id"])
+        comment = serialize_comment(conn, row, post["user_id"], user["id"])
     return comment
+
+
+def next_comment_update(previous):
+    """Every edit changes the signature, including identical text in one clock tick."""
+    current = datetime.now(timezone.utc)
+    if previous:
+        try:
+            earlier = datetime.fromisoformat(previous)
+            if earlier.tzinfo is None:
+                earlier = earlier.replace(tzinfo=timezone.utc)
+            if current <= earlier:
+                current = earlier + timedelta(microseconds=1)
+        except ValueError:
+            pass
+    return current.isoformat(timespec="microseconds")
 
 
 @app.put("/api/comments/{comment_id}")
 def edit_comment(comment_id: int, data: CommentEdit, user=Depends(current_user)):
     require_not_trial(user, "评论")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         owned = owned_comment(conn, comment_id, user["id"])
         conn.execute(
             "UPDATE post_comments SET body = ?, updated_at = ? WHERE id = ?",
-            (data.body, utc_now(), comment_id),
+            (data.body, next_comment_update(owned["updated_at"]), comment_id),
         )
         row = conn.execute(
             """
@@ -2770,7 +3484,7 @@ def edit_comment(comment_id: int, data: CommentEdit, user=Depends(current_user))
         post_author = conn.execute(
             "SELECT user_id FROM posts WHERE id = ?", (owned["post_id"],)
         ).fetchone()
-        comment = serialize_comment(conn, row, post_author["user_id"])
+        comment = serialize_comment(conn, row, post_author["user_id"], user["id"])
     return comment
 
 
@@ -2778,12 +3492,219 @@ def edit_comment(comment_id: int, data: CommentEdit, user=Depends(current_user))
 def delete_comment(comment_id: int, user=Depends(current_user)):
     require_not_trial(user, "评论")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         owned_comment(conn, comment_id, user["id"])
         conn.execute(
             "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
             (utc_now(), comment_id),
         )
+        clear_deleted_thread_state(conn, comment_id=comment_id)
     return {"ok": True}
+
+
+def clear_deleted_thread_state(conn, *, post_id=None, comment_id=None):
+    """Clear private derived text and accepted references in the deletion transaction."""
+    if comment_id is not None:
+        conn.execute(
+            "UPDATE posts SET accepted_comment_id = NULL WHERE accepted_comment_id = ?",
+            (comment_id,),
+        )
+        conn.execute(
+            "DELETE FROM post_summaries WHERE post_id = "
+            "(SELECT post_id FROM post_comments WHERE id = ?)",
+            (comment_id,),
+        )
+    else:
+        conn.execute("UPDATE posts SET accepted_comment_id = NULL WHERE id = ?", (post_id,))
+        conn.execute("DELETE FROM post_summaries WHERE post_id = ?", (post_id,))
+
+
+@app.put("/api/posts/{post_id}/accepted")
+def accept_comment(post_id: int, data: AcceptedComment, user=Depends(current_user)):
+    require_not_trial(user, "采纳")
+    with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        owned_post(conn, post_id, user["id"])
+        if not -(2**63) <= data.comment_id <= 2**63 - 1:
+            raise HTTPException(400, "这条评论不存在或已删除")
+        comment = conn.execute(
+            "SELECT user_id FROM post_comments "
+            "WHERE id = ? AND post_id = ? AND deleted_at IS NULL",
+            (data.comment_id, post_id),
+        ).fetchone()
+        if comment is None:
+            raise HTTPException(400, "这条评论不存在或已删除")
+        if comment["user_id"] == user["id"]:
+            raise HTTPException(400, "不能采纳自己的评论")
+        conn.execute(
+            "UPDATE posts SET accepted_comment_id = ? WHERE id = ?",
+            (data.comment_id, post_id),
+        )
+    return {"accepted_comment_id": data.comment_id}
+
+
+@app.exception_handler(RequestValidationError)
+async def forum_action_validation_error(request: Request, exc: RequestValidationError):
+    if re.fullmatch(
+        r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful",
+        request.url.path,
+    ):
+        return JSONResponse(
+            status_code=422, content={"detail": "请求参数不正确，请检查后重试"},
+        )
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.delete("/api/posts/{post_id}/accepted")
+def unaccept_comment(post_id: int, user=Depends(current_user)):
+    require_not_trial(user, "采纳")
+    with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        owned_post(conn, post_id, user["id"])
+        conn.execute("UPDATE posts SET accepted_comment_id = NULL WHERE id = ?", (post_id,))
+    return {"accepted_comment_id": None}
+
+
+def change_comment_helpful(comment_id, user, *, helpful):
+    require_not_trial(user, "点有用")
+    with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
+        if not -(2**63) <= comment_id <= 2**63 - 1:
+            raise HTTPException(404, "评论不存在")
+        comment = conn.execute(
+            "SELECT c.user_id FROM post_comments c JOIN posts p ON p.id = c.post_id "
+            "WHERE c.id = ? AND c.deleted_at IS NULL AND p.deleted_at IS NULL",
+            (comment_id,),
+        ).fetchone()
+        if comment is None:
+            raise HTTPException(404, "评论不存在")
+        if comment["user_id"] == user["id"]:
+            raise HTTPException(400, "不能给自己的评论点有用")
+        if rate_limited(f"helpful:{user['id']}", 60, 60):
+            raise HTTPException(429, "操作过于频繁，请稍后再试")
+        if helpful:
+            conn.execute(
+                "INSERT INTO comment_votes(comment_id, user_id, created_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(comment_id, user_id) DO NOTHING",
+                (comment_id, user["id"], utc_now()),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM comment_votes WHERE comment_id = ? AND user_id = ?",
+                (comment_id, user["id"]),
+            )
+        count = conn.execute(
+            "SELECT COUNT(*) FROM comment_votes WHERE comment_id = ?", (comment_id,),
+        ).fetchone()[0]
+    return {"helpful_count": count, "viewer_helpful": helpful}
+
+
+@app.put("/api/comments/{comment_id}/helpful")
+def mark_comment_helpful(comment_id: int, user=Depends(current_user)):
+    return change_comment_helpful(comment_id, user, helpful=True)
+
+
+@app.delete("/api/comments/{comment_id}/helpful")
+def unmark_comment_helpful(comment_id: int, user=Depends(current_user)):
+    return change_comment_helpful(comment_id, user, helpful=False)
+
+
+def thread_privacy_state(conn, post, comments):
+    # Anonymous retention does not change text signatures. Detect account deletion
+    # during an AI call too, so a completed old request cannot recreate cleared text.
+    authors = {post["user_id"], *(comment["user_id"] for comment in comments)}
+    placeholders = ",".join("?" for _ in authors)
+    return tuple(
+        (row["id"], row["deleted_at"])
+        for row in conn.execute(
+            f"SELECT id, deleted_at FROM users WHERE id IN ({placeholders}) ORDER BY id",
+            tuple(authors),
+        )
+    )
+
+
+@app.get("/api/posts/{post_id}/summary")
+def get_thread_summary(post_id: int, user=Depends(current_user)):
+    with connect() as conn:
+        conn.execute("BEGIN")
+        post, comments = thread_summary.load_thread(conn, post_id)
+        row = conn.execute("SELECT * FROM post_summaries WHERE post_id = ?", (post_id,)).fetchone()
+        if row is None:
+            return {"summary": None}
+        signature = thread_summary.thread_signature(post, comments)
+        return {"summary": thread_summary.serialize_summary(row, signature)}
+
+
+@app.post("/api/posts/{post_id}/summary")
+def create_thread_summary(post_id: int, user=Depends(current_user)):
+    require_not_trial(user, " AI 要点")
+    with ExitStack() as stack:
+        with connect(write=True) as conn:
+            recheck_account(conn, user["id"])
+            post, comments = thread_summary.load_thread(conn, post_id)
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 OpenAI API Key")
+            if len(comments) < 2:
+                raise HTTPException(400, "回复太少，暂时不需要提炼")
+            if rate_limited(f"summary:{user['id']}", 10, 3600):
+                raise HTTPException(429, "AI 要点请求太频繁，请稍后再试")
+            signature = thread_summary.thread_signature(post, comments)
+            row = conn.execute("SELECT * FROM post_summaries WHERE post_id = ?", (post_id,)).fetchone()
+            if row is not None and row["signature"] == signature:
+                return {"summary": thread_summary.serialize_summary(row, signature), "cached": True}
+            reference = thread_summary.thread_reference(post, comments)
+            privacy_state = thread_privacy_state(conn, post, comments)
+            day = today_for(user).isoformat()
+            quota = ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_slot())
+            cursor = conn.execute(
+                """
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
+                """,
+                (user["id"], day, limit, limit),
+            )
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+
+        try:
+            with track_call(user["id"], "thread_summary"):
+                content = thread_summary.validate_summary(
+                    thread_summary.summarize_thread(reference), reference,
+                )
+        except HTTPException as exc:
+            if exc.status_code in (502, 503, 504):
+                with connect(write=True) as conn:
+                    release_attempt(conn, user["id"], day)
+            raise
+
+        created_at = utc_now()
+        with connect(write=True) as conn:
+            recheck_account(conn, user["id"])
+            current_post, current_comments = thread_summary.load_thread(conn, post_id)
+            if (thread_summary.thread_signature(current_post, current_comments) != signature
+                    or thread_privacy_state(conn, current_post, current_comments) != privacy_state):
+                raise HTTPException(409, "讨论内容已变化，请重新提炼")
+            conn.execute(
+                """
+                INSERT INTO post_summaries(post_id, signature, content, comment_count, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(post_id) DO UPDATE SET signature = excluded.signature,
+                    content = excluded.content, comment_count = excluded.comment_count,
+                    created_at = excluded.created_at
+                """,
+                (post_id, signature, json.dumps(content, ensure_ascii=False),
+                 len(reference["comments"]), created_at),
+            )
+        return {"summary": {**content, "generated_at": created_at,
+                            "comment_count": len(reference["comments"]), "stale": False},
+                "cached": False}
 
 
 def create_report(user, *, post_id=None, comment_id=None, reason):
@@ -2791,6 +3712,7 @@ def create_report(user, *, post_id=None, comment_id=None, reason):
     if rate_limited(f"report:{user['id']}", REPORT_LIMIT, REPORT_WINDOW_SECONDS):
         raise HTTPException(429, "举报过于频繁，请稍后再试")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         target = (
             visible_post(conn, post_id)
             if post_id is not None
@@ -2833,8 +3755,9 @@ def report_avatar(user_id: int, data: ReportInput, user=Depends(current_user)):
     if rate_limited(f"report:{user['id']}", REPORT_LIMIT, REPORT_WINDOW_SECONDS):
         raise HTTPException(429, "举报过于频繁，请稍后再试")
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         target = conn.execute(
-            "SELECT id FROM users WHERE id = ?", (user_id,)
+            "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
         ).fetchone()
         if target is None:
             raise HTTPException(404, "用户不存在")
@@ -2895,7 +3818,7 @@ def admin_dashboard(user=Depends(current_user)):
                    COUNT(CASE WHEN plan_id IS NOT NULL
                        AND julianday(plan_expires_at) > julianday(:now)
                        THEN 1 END) AS active_subscriptions
-            FROM users
+            FROM users WHERE deleted_at IS NULL
             """, bounds,
         ).fetchone())
         active_users = conn.execute(
@@ -2910,7 +3833,8 @@ def admin_dashboard(user=Depends(current_user)):
                 JOIN problems p ON p.id = m.problem_id
                 WHERE julianday(r.reviewed_at)
                     BETWEEN julianday(:since_7_days) AND julianday(:now)
-            )
+            ) active JOIN users u ON u.id = active.user_id
+            WHERE u.deleted_at IS NULL
             """, bounds,
         ).fetchone()[0]
         ai_usage = dict(conn.execute(
@@ -3004,6 +3928,7 @@ def list_reports(user=Depends(current_user)):
             JOIN users reporter ON reporter.id = a.reporter_user_id
             JOIN users owner ON owner.id = a.avatar_owner_id
             WHERE a.resolved_at IS NULL
+              AND reporter.deleted_at IS NULL AND owner.deleted_at IS NULL
             ORDER BY a.created_at ASC
             """
         ).fetchall()
@@ -3050,10 +3975,12 @@ def admin_resolve_avatar_report(report_id: int, user=Depends(current_user)):
 def admin_delete_post(post_id: int, user=Depends(current_user)):
     require_admin(user)
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         visible_post(conn, post_id)
         conn.execute(
             "UPDATE posts SET deleted_at = ? WHERE id = ?", (utc_now(), post_id)
         )
+        clear_deleted_thread_state(conn, post_id=post_id)
         resolve_reports_for(conn, post_id=post_id)
     return {"ok": True}
 
@@ -3062,11 +3989,13 @@ def admin_delete_post(post_id: int, user=Depends(current_user)):
 def admin_delete_comment(comment_id: int, user=Depends(current_user)):
     require_admin(user)
     with connect(write=True) as conn:
+        recheck_account(conn, user["id"])
         visible_comment(conn, comment_id)
         conn.execute(
             "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
             (utc_now(), comment_id),
         )
+        clear_deleted_thread_state(conn, comment_id=comment_id)
         resolve_reports_for(conn, comment_id=comment_id)
     return {"ok": True}
 
@@ -3077,7 +4006,7 @@ def admin_clear_avatar(user_id: int, user=Depends(current_user)):
     avatar_path(user_id).unlink(missing_ok=True)
     with connect(write=True) as conn:
         cursor = conn.execute(
-            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ? AND deleted_at IS NULL",
             (user_id,),
         )
         if cursor.rowcount != 1:
@@ -3099,7 +4028,7 @@ def admin_ban_user(user_id: int, user=Depends(current_user)):
         raise HTTPException(400, "不能封禁自己")
     with connect(write=True) as conn:
         cursor = conn.execute(
-            "UPDATE users SET is_banned = 1 WHERE id = ?", (user_id,)
+            "UPDATE users SET is_banned = 1 WHERE id = ? AND deleted_at IS NULL", (user_id,)
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "用户不存在")
@@ -3111,7 +4040,7 @@ def admin_unban_user(user_id: int, user=Depends(current_user)):
     require_admin(user)
     with connect(write=True) as conn:
         cursor = conn.execute(
-            "UPDATE users SET is_banned = 0 WHERE id = ?", (user_id,)
+            "UPDATE users SET is_banned = 0 WHERE id = ? AND deleted_at IS NULL", (user_id,)
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "用户不存在")

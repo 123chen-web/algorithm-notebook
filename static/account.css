@@ -1,0 +1,99 @@
+/* 账号安全：不透明的纸面，危险操作保持文字与描边。 */
+.account-menu-panel { max-height: calc(100dvh - 8rem); overflow-y: auto; }
+.account-menu-panel > :is(#account-password, #account-revoke-others, #account-delete) { min-height: 44px; }
+.account-danger { color: var(--danger); border-color: var(--danger); background: var(--surface); }
+.account-menu-panel > #account-delete {
+  width: calc(100% - 2 * var(--space-4));
+  margin: var(--space-1) var(--space-4);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: var(--surface);
+}
+.account-menu-panel > #account-delete:hover:not(:disabled), .account-danger:hover:not(:disabled) { color: var(--danger-hover); border-color: var(--danger-hover); background: var(--danger-soft); }
+
+.legal-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--space-5) auto 0;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-ui);
+  white-space: nowrap;
+}
+.legal-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-2); }
+.legal-links a:hover { color: var(--ink); }
+.account-legal-links { width: 100%; margin: var(--space-2) 0 0; padding: 0 var(--space-3); border-radius: var(--radius-flat); background: var(--surface); }
+.legal-consent, .account-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  margin: 0 0 var(--space-4);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: var(--lh-ui);
+  cursor: pointer;
+}
+.legal-consent input, .account-delete-confirm input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--accent-hover); }
+.legal-consent > span, .account-delete-confirm > span { min-width: 0; }
+.legal-consent a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hover); white-space: nowrap; }
+.legal-consent input:focus-visible, .account-delete-confirm input:focus-visible { outline: 3px solid var(--accent-hover); outline-offset: 4px; }
+
+#account-dialog {
+  width: min(28rem, calc(100% - 2 * var(--space-4)));
+  max-width: none;
+  max-height: calc(100dvh - 2 * var(--space-4));
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 var(--space-4) var(--space-7) rgba(var(--shadow-rgb), .22);
+}
+#account-dialog::backdrop { background: rgba(var(--shadow-rgb), .5); }
+.account-dialog-content { position: relative; padding: var(--space-5); }
+.account-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+#account-dialog-title { min-width: 0; margin: 0; color: var(--ink); font-size: var(--text-xl); line-height: var(--lh-heading); }
+.account-dialog-close { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; border: 1px solid var(--ink-2); background: var(--surface); color: var(--ink); font-size: var(--text-2xl); line-height: 1; }
+.account-dialog-form { margin: 0; }
+.account-dialog-field { display: block; margin-bottom: var(--space-4); color: var(--ink); font-size: var(--text-md); font-weight: 600; }
+.account-dialog-field input { min-height: 44px; border-color: var(--ink-2); background: var(--field-surface); }
+.account-dialog-field input:focus { border-color: var(--accent-hover); }
+.account-dialog-hint { margin: 0 0 var(--space-4); color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-prose); }
+.account-dialog-error { margin: var(--space-3) 0; color: var(--danger); font-size: var(--text-sm); line-height: var(--lh-prose); overflow-wrap: anywhere; }
+.account-dialog-error:empty { display: none; }
+.account-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+.account-dialog-actions button { min-height: 44px; border-color: var(--ink-2); background: var(--surface); }
+.account-dialog-submit { color: var(--accent-hover); }
+.account-dialog-actions .account-danger { color: var(--danger); border-color: var(--danger); }
+.account-dialog-actions .account-danger:hover:not(:disabled) { color: var(--danger-hover); border-color: var(--danger-hover); background: var(--danger-soft); }
+.account-delete-consequences { margin-bottom: var(--space-4); color: var(--ink); font-size: var(--text-sm); line-height: var(--lh-prose); }
+.account-delete-consequences p { margin: 0 0 var(--space-3); }
+.account-delete-consequences ul { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+.account-delete-consequences a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hover); }
+#account-dialog :is(button, input, a):focus-visible { outline: 3px solid var(--accent-hover); outline-offset: 3px; }
+
+@media (max-width: 520px) {
+  #account-dialog { width: calc(100% - 2 * var(--space-2)); max-height: calc(100dvh - 2 * var(--space-2)); }
+  .account-dialog-content { padding: var(--space-4); }
+  .account-dialog-actions { flex-direction: column-reverse; }
+  .account-dialog-actions button { width: 100%; }
+}
+@media (pointer: coarse) {
+  .account-menu-panel > :is(button, a, label), .account-menu-panel select { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #account-dialog :is(button, input), .account-menu-panel > #account-delete { transition: none; }
+}

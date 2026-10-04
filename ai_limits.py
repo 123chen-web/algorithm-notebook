@@ -18,6 +18,15 @@ _semaphore_state = None
 _call_usage = ContextVar("ai_call_usage", default=None)
 
 
+def release_attempt(conn, user_id, day):
+    """退回本次新接口已扣的一次额度；调用方提供写事务。"""
+    conn.execute(
+        "UPDATE ai_usage SET attempts = attempts - 1 "
+        "WHERE user_id = ? AND day = ? AND attempts > 0",
+        (user_id, day),
+    )
+
+
 def max_concurrency():
     try:
         limit = int(os.getenv("AI_MAX_CONCURRENCY", "6"))
@@ -79,7 +88,10 @@ def track_call(user_id, feature):
                     INSERT INTO ai_calls(
                         user_id, feature, model, prompt_tokens, completion_tokens,
                         ok, error, duration_ms, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (
+                        (SELECT id FROM users WHERE id = ? AND deleted_at IS NULL),
+                        ?, ?, ?, ?, ?, ?, ?, ?
+                    )
                     """,
                     (
                         user_id, feature, state["model"], state["prompt_tokens"],

@@ -139,6 +139,10 @@ def test_init_migrates_old_users_and_preserves_data(
             "plan_expires_at": None,
             "is_banned": 0,
             "avatar_version": 0,
+            "deleted_at": None,
+            "is_admin": 0,
+            "terms_accepted_at": None,
+            "terms_version": None,
         }
         plan_id = insert_plan(conn)
         conn.execute(

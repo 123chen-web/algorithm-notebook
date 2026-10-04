@@ -26,12 +26,25 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             )
         }
         assert {
-            "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters"
+            "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters",
+            "comment_votes", "post_summaries",
+            "redeem_codes", "app_settings",
         } <= tables
+        assert db.schema_version(conn) == 6
+        accepted = next(
+            row for row in conn.execute("PRAGMA table_info(posts)")
+            if row["name"] == "accepted_comment_id"
+        )
+        assert accepted["type"] == "INTEGER"
+        assert accepted["notnull"] == 0
+        assert accepted["dflt_value"] is None
         indexes = {
             row["name"] for row in conn.execute("PRAGMA index_list(ai_calls)")
         }
         assert {"idx_ai_calls_created_at", "idx_ai_calls_user_created_at"} <= indexes
+        assert "idx_comment_votes_user" in {
+            row["name"] for row in conn.execute("PRAGMA index_list(comment_votes)")
+        }
 
     def must_not_run(conn):
         pytest.fail("完整数据库重复启动时不应重新执行迁移")
@@ -255,3 +268,476 @@ def test_connect_without_create_does_not_make_database_or_parent(database_path):
             with db.connect(create=False):
                 pytest.fail("缺失数据库不能打开成功")
     assert not missing_path.parent.exists()
+
+
+def initialize_before_accounts_migration(monkeypatch):
+    migrations = [entry for entry in db.MIGRATIONS if entry[0] < 4]
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", migrations)
+        patch.setattr(db, "SCHEMA_VERSION", migrations[-1][0])
+        db.init_db()
+    return migrations[-1][0]
+
+
+def test_accounts_migration_preserves_old_user_and_adds_nullable_defaults(database_path, monkeypatch):
+    initialize_before_accounts_migration(monkeypatch)
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, timezone, created_at, "
+            "email, last_reminder_sent, avatar_version, is_banned) "
+            "VALUES (7, 'legacy', 'unchanged-hash', 'Asia/Taipei', ?, "
+            "'legacy@example.com', '2026-10-01', 5, 1)",
+            (CREATED_AT,),
+        )
+        before = dict(conn.execute("SELECT * FROM users WHERE id = 7").fetchone())
+        assert not {"deleted_at", "is_admin", "terms_accepted_at", "terms_version"} & before.keys()
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        user = dict(conn.execute("SELECT * FROM users WHERE id = 7").fetchone())
+        assert {key: user[key] for key in before} == before
+        assert user["deleted_at"] is None
+        assert user["is_admin"] == 0
+        assert user["terms_accepted_at"] is None
+        assert user["terms_version"] is None
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(users)")}
+        assert columns["is_admin"]["type"] == "INTEGER"
+        assert columns["is_admin"]["notnull"] == 1
+        assert columns["is_admin"]["dflt_value"] == "0"
+        for name in ("deleted_at", "terms_accepted_at", "terms_version"):
+            assert columns[name]["type"] == "TEXT"
+            assert columns[name]["notnull"] == 0
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_accounts_migration_defaults_on_fresh_database(database_path):
+    db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, timezone, created_at) "
+            "VALUES ('fresh', 'test-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        user = conn.execute("SELECT * FROM users WHERE username = 'fresh'").fetchone()
+        assert user["deleted_at"] is None
+        assert user["is_admin"] == 0
+        assert user["terms_accepted_at"] is None
+        assert user["terms_version"] is None
+
+
+def test_accounts_migration_rolls_back_all_new_columns_on_failure(database_path, monkeypatch):
+    before_version = initialize_before_accounts_migration(monkeypatch)
+    accounts_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 4)
+
+    def broken_accounts_migration(conn):
+        accounts_apply(conn)
+        raise ValueError("账号迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_accounts_migration if version == 4 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="账号迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == before_version
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        assert not {"deleted_at", "is_admin", "terms_accepted_at", "terms_version"} & columns
+
+
+@pytest.mark.parametrize("from_version_2", [False, True], ids=["fresh", "version-2"])
+def test_review_log_columns_preserve_old_reviews(database_path, monkeypatch, from_version_2):
+    # 单独验证 2 → 3，避免后续迁移掩盖这一版的行为。
+    migrations = [entry for entry in db.MIGRATIONS if entry[0] <= 3]
+    monkeypatch.setattr(db, "MIGRATIONS", migrations)
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 3)
+    old_review = (9, 7, 4, CREATED_AT, "2026-09-27")
+    before_state = None
+
+    if from_version_2:
+        with db.connect(write=True) as conn:
+            for version, _name, apply in migrations:
+                if version > 2:
+                    break
+                apply(conn)
+                conn.execute(f"PRAGMA user_version = {version}")
+            conn.execute(
+                "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+                "VALUES (5, 'alice', 'original-hash', 'Asia/Shanghai', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO problems(id, user_id, title, language, code, thinking, created_at) "
+                "VALUES (6, 5, '二分查找', 'Python', 'pass', '边界问题', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO mistakes(id, problem_id, description, repetitions, "
+                "interval_days, ease_factor, due_date) "
+                "VALUES (7, 6, '结束条件', 2, 6, 2.5, '2026-09-27')"
+            )
+            conn.execute(
+                "INSERT INTO reviews(id, mistake_id, quality, reviewed_at, next_due_date) "
+                "VALUES (?, ?, ?, ?, ?)",
+                old_review,
+            )
+            before_state = dict(conn.execute("SELECT * FROM mistakes WHERE id = 7").fetchone())
+            assert db.schema_version(conn) == 2
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
+        columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(reviews)")
+        }
+        new_columns = {
+            "elapsed_days": "INTEGER",
+            "scheduled_days": "INTEGER",
+            "ease_before": "REAL",
+            "repetitions_before": "INTEGER",
+        }
+        for name, column_type in new_columns.items():
+            assert columns[name]["type"] == column_type
+            assert columns[name]["notnull"] == 0
+            assert columns[name]["dflt_value"] is None
+
+        if from_version_2:
+            row = conn.execute("SELECT * FROM reviews WHERE id = 9").fetchone()
+            assert tuple(row[name] for name in (
+                "id", "mistake_id", "quality", "reviewed_at", "next_due_date"
+            )) == old_review
+            assert all(row[name] is None for name in new_columns)
+            assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 1
+            assert dict(conn.execute("SELECT * FROM mistakes WHERE id = 7").fetchone()) == before_state
+        else:
+            assert conn.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("from_version", range(5), ids=["fresh", "v1", "v2", "v3", "v4"])
+def test_forum_migration_to_v5_preserves_old_data_and_is_repeatable(
+    database_path, monkeypatch, from_version,
+):
+    # 隔离本次论坛迁移；并行追加的后续迁移不应掩盖版本 5 的验证。
+    monkeypatch.setattr(db, "MIGRATIONS", [entry for entry in db.MIGRATIONS if entry[0] <= 5])
+    monkeypatch.setattr(db, "SCHEMA_VERSION", 5)
+    before = None
+    if from_version:
+        old_migrations = [entry for entry in db.MIGRATIONS if entry[0] <= from_version]
+        with monkeypatch.context() as patch:
+            patch.setattr(db, "MIGRATIONS", old_migrations)
+            patch.setattr(db, "SCHEMA_VERSION", from_version)
+            db.init_db()
+        with db.connect(write=True) as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, timezone, created_at) "
+                "VALUES (7, 'legacy-forum', 'unchanged-hash', 'Asia/Taipei', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO posts (id, user_id, title, body, created_at, updated_at) "
+                "VALUES (11, 7, '历史问题', '历史正文', ?, ?)",
+                (CREATED_AT, CREATED_AT),
+            )
+            conn.execute(
+                "INSERT INTO post_comments (id, post_id, user_id, body, created_at, deleted_at) "
+                "VALUES (13, 11, 7, '历史评论', ?, ?)",
+                (CREATED_AT, CREATED_AT),
+            )
+            before = {
+                table: dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                for table in ("users", "posts", "post_comments")
+            }
+            assert "accepted_comment_id" not in before["posts"]
+            assert db.schema_version(conn) == from_version
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(posts)")}
+        assert columns["accepted_comment_id"]["type"] == "INTEGER"
+        assert columns["accepted_comment_id"]["notnull"] == 0
+        assert columns["accepted_comment_id"]["dflt_value"] is None
+        assert not any(
+            row["from"] == "accepted_comment_id"
+            for row in conn.execute("PRAGMA foreign_key_list(posts)")
+        )
+        if before:
+            for table, saved in before.items():
+                current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                assert {key: current[key] for key in saved} == saved
+            assert conn.execute("SELECT accepted_comment_id FROM posts WHERE id = 11").fetchone()[0] is None
+        else:
+            assert conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM comment_votes").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM post_summaries").fetchone()[0] == 0
+        votes = {row["name"]: row for row in conn.execute("PRAGMA table_info(comment_votes)")}
+        assert set(votes) == {"comment_id", "user_id", "created_at"}
+        assert [(name, votes[name]["pk"]) for name in ("comment_id", "user_id")] == [
+            ("comment_id", 1), ("user_id", 2),
+        ]
+        assert all(votes[name]["notnull"] == 1 for name in votes)
+        assert {
+            (row["from"], row["table"], row["to"], row["on_delete"])
+            for row in conn.execute("PRAGMA foreign_key_list(comment_votes)")
+        } == {
+            ("comment_id", "post_comments", "id", "CASCADE"),
+            ("user_id", "users", "id", "CASCADE"),
+        }
+        assert {
+            (row["from"], row["table"], row["to"], row["on_delete"])
+            for row in conn.execute("PRAGMA foreign_key_list(post_summaries)")
+        } == {("post_id", "posts", "id", "CASCADE")}
+        summaries = {row["name"]: row for row in conn.execute("PRAGMA table_info(post_summaries)")}
+        assert set(summaries) == {"post_id", "signature", "content", "comment_count", "created_at"}
+        assert summaries["post_id"]["type"] == "INTEGER"
+        assert summaries["post_id"]["pk"] == 1
+        for name, kind in (("signature", "TEXT"), ("content", "TEXT"),
+                           ("comment_count", "INTEGER"), ("created_at", "TEXT")):
+            assert summaries[name]["type"] == kind
+            assert summaries[name]["notnull"] == 1
+            assert summaries[name]["dflt_value"] is None
+        assert [row["name"] for row in conn.execute("PRAGMA index_info(idx_comment_votes_user)")] == ["user_id"]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_forum_migration_rolls_back_all_new_schema_on_failure(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        old_migrations = [entry for entry in db.MIGRATIONS if entry[0] < 5]
+        patch.setattr(db, "MIGRATIONS", old_migrations)
+        patch.setattr(db, "SCHEMA_VERSION", 4)
+        db.init_db()
+    forum_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 5)
+
+    def broken_forum_migration(conn):
+        forum_apply(conn)
+        raise ValueError("论坛迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_forum_migration if version == 5 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="论坛迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 4
+        assert "accepted_comment_id" not in {
+            row["name"] for row in conn.execute("PRAGMA table_info(posts)")
+        }
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('comment_votes', 'idx_comment_votes_user', 'post_summaries')"
+        ).fetchall() == []
+
+
+def test_forum_migration_vote_uniqueness_and_foreign_key_cascades(database_path):
+    db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (7, 'op', 'hash', 'Asia/Taipei', ?), (8, 'member', 'hash', 'Asia/Taipei', ?)",
+            (CREATED_AT, CREATED_AT),
+        )
+        conn.execute(
+            "INSERT INTO posts(id, user_id, title, body, created_at) VALUES (11, 7, '问题', '正文', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO post_comments(id, post_id, user_id, body, created_at) "
+            "VALUES (13, 11, 7, '评论', ?), (14, 11, 7, '另一评论', ?)",
+            (CREATED_AT, CREATED_AT),
+        )
+        conn.execute("INSERT INTO comment_votes VALUES (13, 7, ?), (13, 8, ?), (14, 7, ?)",
+                     (CREATED_AT, CREATED_AT, CREATED_AT))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO comment_votes VALUES (13, 8, ?)", (CREATED_AT,))
+        conn.execute("DELETE FROM users WHERE id = 8")
+        assert [tuple(row) for row in conn.execute("SELECT comment_id, user_id FROM comment_votes ORDER BY comment_id")] == [
+            (13, 7), (14, 7),
+        ]
+        conn.execute("DELETE FROM post_comments WHERE id = 13")
+        assert [tuple(row) for row in conn.execute("SELECT comment_id, user_id FROM comment_votes")] == [(14, 7)]
+        conn.execute("INSERT INTO post_summaries VALUES (11, 'signature', '{}', 1, ?)", (CREATED_AT,))
+        conn.execute("DELETE FROM posts WHERE id = 11")
+        assert conn.execute("SELECT * FROM post_summaries").fetchall() == []
+        assert conn.execute("SELECT * FROM comment_votes").fetchall() == []
+
+
+def initialize_before_redeem_migration(monkeypatch):
+    migrations = [entry for entry in db.MIGRATIONS if entry[0] < 6]
+    assert migrations[-1][0] == 5
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", migrations)
+        patch.setattr(db, "SCHEMA_VERSION", 5)
+        db.init_db()
+
+
+@pytest.mark.parametrize("from_version_5", [False, True], ids=["fresh", "v5"])
+def test_redeem_migration_schema_preserves_v5_data_and_repeated_startup(
+    database_path, monkeypatch, from_version_5,
+):
+    before_data = before_schema = None
+    if from_version_5:
+        initialize_before_redeem_migration(monkeypatch)
+        with db.connect(write=True) as conn:
+            conn.execute(
+                "INSERT INTO plans(id, name, period_days, ai_daily_limit, price_cents, "
+                "created_at) VALUES (3, '旧套餐', 30, 17, 990, ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO users(id, username, password_hash, timezone, created_at, "
+                "email, is_admin, plan_id, plan_expires_at) "
+                "VALUES (7, 'legacy-redeem', 'unchanged-hash', 'Asia/Taipei', ?, "
+                "'legacy@example.com', 1, 3, '2026-11-01T10:00:00+00:00')",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO orders(id, user_id, plan_id, amount_cents, channel, "
+                "status, provider_trade_no, created_at, paid_at) "
+                "VALUES ('old-order', 7, 3, 990, 'alipay', 'paid', 'old-trade', ?, ?)",
+                (CREATED_AT, CREATED_AT),
+            )
+            conn.execute(
+                "INSERT INTO posts(id, user_id, title, body, created_at) "
+                "VALUES (11, 7, '历史问题', '历史正文', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO post_comments(id, post_id, user_id, body, created_at) "
+                "VALUES (13, 11, 7, '历史评论', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute("UPDATE posts SET accepted_comment_id = 13 WHERE id = 11")
+            conn.execute("INSERT INTO comment_votes VALUES (13, 7, ?)", (CREATED_AT,))
+            conn.execute(
+                "INSERT INTO post_summaries VALUES (11, 'signature', '{}', 1, ?)",
+                (CREATED_AT,),
+            )
+            tables = [
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                )
+            ]
+            before_data = {
+                table: [tuple(row) for row in conn.execute(f'SELECT * FROM "{table}"')]
+                for table in tables
+            }
+            before_schema = [
+                tuple(row) for row in conn.execute(
+                    "SELECT type, name, sql FROM sqlite_master "
+                    "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+                )
+            ]
+            assert db.schema_version(conn) == 5
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 6
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(redeem_codes)")}
+        assert set(columns) == {
+            "id", "code_hash", "code_hint", "plan_id", "period_days", "note",
+            "created_by", "created_at", "expires_at", "redeemed_by", "redeemed_at",
+            "revoked_at",
+        }
+        for name in ("code_hash", "code_hint", "note", "created_at"):
+            assert columns[name]["type"] == "TEXT"
+            assert columns[name]["notnull"] == 1
+        for name in ("plan_id", "period_days"):
+            assert columns[name]["type"] == "INTEGER"
+            assert columns[name]["notnull"] == 1
+        assert columns["note"]["dflt_value"] == "''"
+        for name in ("created_by", "expires_at", "redeemed_by", "redeemed_at", "revoked_at"):
+            assert columns[name]["notnull"] == 0
+            assert columns[name]["dflt_value"] is None
+        assert columns["id"]["pk"] == 1
+        assert "AUTOINCREMENT" in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'redeem_codes'"
+        ).fetchone()[0]
+        assert {
+            (row["from"], row["table"], row["to"], row["on_delete"])
+            for row in conn.execute("PRAGMA foreign_key_list(redeem_codes)")
+        } == {
+            ("plan_id", "plans", "id", "NO ACTION"),
+            ("created_by", "users", "id", "NO ACTION"),
+            ("redeemed_by", "users", "id", "NO ACTION"),
+        }
+        indexes = list(conn.execute("PRAGMA index_list(redeem_codes)"))
+        assert "idx_redeem_codes_redeemed_by" in {row["name"] for row in indexes}
+        assert [row["name"] for row in conn.execute(
+            "PRAGMA index_info(idx_redeem_codes_redeemed_by)"
+        )] == ["redeemed_by"]
+        unique_columns = {
+            tuple(part["name"] for part in conn.execute(f'PRAGMA index_info("{row["name"]}")'))
+            for row in indexes if row["unique"]
+        }
+        assert ("code_hash",) in unique_columns
+        settings_columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(app_settings)")
+        }
+        assert set(settings_columns) == {"key", "value"}
+        assert settings_columns["key"]["type"] == "TEXT"
+        assert settings_columns["key"]["pk"] == 1
+        assert settings_columns["value"]["type"] == "TEXT"
+        assert settings_columns["value"]["notnull"] == 1
+        assert dict(conn.execute("SELECT key, value FROM app_settings")) == {
+            "manual_payment_enabled": "0", "manual_payment_contact": "",
+        }
+        assert conn.execute("SELECT COUNT(*) FROM redeem_codes").fetchone()[0] == 0
+        if before_data is not None:
+            for table, saved in before_data.items():
+                assert [tuple(row) for row in conn.execute(f'SELECT * FROM "{table}"')] == saved
+            current_schema = {
+                tuple(row) for row in conn.execute(
+                    "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+                )
+            }
+            assert set(before_schema) <= current_schema
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_redeem_migration_rolls_back_new_schema_and_settings_on_failure(
+    database_path, monkeypatch,
+):
+    initialize_before_redeem_migration(monkeypatch)
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (7, 'legacy-redeem', 'unchanged-hash', 'Asia/Taipei', ?)",
+            (CREATED_AT,),
+        )
+        before = dict(conn.execute("SELECT * FROM users WHERE id = 7").fetchone())
+    redeem_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 6)
+
+    def broken_redeem_migration(conn):
+        redeem_apply(conn)
+        raise ValueError("兑换码迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_redeem_migration if version == 6 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="兑换码迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 5
+        assert dict(conn.execute("SELECT * FROM users WHERE id = 7").fetchone()) == before
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('redeem_codes', 'idx_redeem_codes_redeemed_by', 'app_settings')"
+        ).fetchall() == []

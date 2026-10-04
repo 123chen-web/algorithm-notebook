@@ -38,6 +38,7 @@ def register(client, username="alice", email=None):
         json={
             "username": username,
             "password": "a-test-password-123",
+            "accept_terms": True,
             "invite_code": "test-invite",
             "email": email or f"{username}@example.com",
             "timezone": "Asia/Shanghai",
@@ -106,7 +107,7 @@ def test_sm2_success_failure_and_floor():
     failed = schedule(3, 15, 2.5, 0, day)
     assert failed["repetitions"] == 0
     assert failed["interval_days"] == 1
-    assert failed["ease_factor"] == 1.7
+    assert failed["ease_factor"] == 2.3
 
     floor = schedule(0, 1, 1.3, 0, day)
     assert floor["ease_factor"] == 1.3
@@ -839,6 +840,7 @@ def test_register_is_rate_limited(client):
             json={
                 "username": f"flooduser{index}",
                 "password": "a-test-password-123",
+                "accept_terms": True,
                 "invite_code": "wrong-code",
                 "email": f"flooduser{index}@example.com",
                 "timezone": "Asia/Shanghai",
@@ -851,6 +853,7 @@ def test_register_is_rate_limited(client):
         json={
             "username": "onemore",
             "password": "a-test-password-123",
+            "accept_terms": True,
             "invite_code": "test-invite",
             "email": "onemore@example.com",
             "timezone": "Asia/Shanghai",
@@ -901,7 +904,8 @@ def test_forgot_and_reset_password_flow(client, monkeypatch):
     weak = client.post(
         "/api/auth/reset-password", json={"token": token, "password": "short"}
     )
-    assert weak.status_code == 422
+    assert weak.status_code == 400
+    assert weak.json()["detail"] == "密码至少 8 位"
 
     reset = client.post(
         "/api/auth/reset-password",
@@ -1089,6 +1093,7 @@ def test_register_validates_and_dedupes_email(client):
         json={
             "username": "carol",
             "password": "a-test-password-123",
+            "accept_terms": True,
             "invite_code": "test-invite",
             "email": "not-an-email",
             "timezone": "Asia/Shanghai",
@@ -1104,6 +1109,7 @@ def test_register_validates_and_dedupes_email(client):
         json={
             "username": "dave",
             "password": "a-test-password-123",
+            "accept_terms": True,
             "invite_code": "test-invite",
             "email": "shared@example.com",
             "timezone": "Asia/Shanghai",
@@ -1116,13 +1122,13 @@ def test_register_validates_and_dedupes_email(client):
 def test_update_email_for_existing_account(client):
     register(client, "alice", email="old@example.com")
 
-    updated = client.put("/api/me/email", json={"email": "NEW@Example.com"})
+    updated = client.put("/api/me/email", json={"email": "NEW@Example.com", "password": "a-test-password-123"})
     assert updated.status_code == 200
     # 存进去之前会统一转小写，和注册时的处理保持一致。
     assert updated.json()["email"] == "new@example.com"
     assert client.get("/api/me").json()["email"] == "new@example.com"
 
-    invalid = client.put("/api/me/email", json={"email": "not-an-email"})
+    invalid = client.put("/api/me/email", json={"email": "not-an-email", "password": "a-test-password-123"})
     assert invalid.status_code == 422
 
 
@@ -1131,7 +1137,7 @@ def test_update_email_rejects_duplicate(client):
     client.post("/api/auth/logout")
     register(client, "bob", email="bob@example.com")
 
-    conflict = client.put("/api/me/email", json={"email": "alice@example.com"})
+    conflict = client.put("/api/me/email", json={"email": "alice@example.com", "password": "a-test-password-123"})
     assert conflict.status_code == 409
 
 
@@ -1213,15 +1219,28 @@ def test_trial_account_cannot_change_username(client):
     assert response.status_code == 403
 
 
-def test_renaming_away_from_admin_username_loses_admin_immediately(client, monkeypatch):
-    # is_admin 是按当前用户名跟 ADMIN_USERNAME 实时比较算出来的，不是存在
-    # 数据库里的角色列；改名后不再匹配就应该立刻失去管理员权限。
+def test_renaming_away_from_admin_username_keeps_admin_and_reserves_name(client, monkeypatch):
+    # 管理员身份存库，改名不丢权，原引导名也不能被其他账号占用。
     monkeypatch.setenv("ADMIN_USERNAME", "alice")
     register(client, "alice")
     assert client.get("/api/me").json()["is_admin"] is True
 
-    client.put("/api/me/username", json={"username": "alice_renamed"})
-    assert client.get("/api/me").json()["is_admin"] is False
+    updated = client.put("/api/me/username", json={"username": "alice_renamed"})
+    assert updated.status_code == 200
+    assert updated.json()["username"] == "alice_renamed"
+    assert client.get("/api/me").json()["is_admin"] is True
+    client.post("/api/auth/logout")
+    reserved = client.post("/api/auth/register", json={
+        "username": "alice", "password": "a-test-password-123",
+        "invite_code": "test-invite", "email": "replacement@example.com",
+        "timezone": "Asia/Shanghai", "accept_terms": True,
+    })
+    assert reserved.status_code == 400
+    assert "已被保留" in reserved.json()["detail"]
+    register(client, "bob")
+    renamed = client.put("/api/me/username", json={"username": "alice"})
+    assert renamed.status_code == 400
+    assert "已被保留" in renamed.json()["detail"]
 
 
 def test_forgot_password_is_rate_limited(client):

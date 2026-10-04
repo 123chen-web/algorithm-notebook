@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ink">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>评论区效果图 · 欧叶OY</title>
+  <!-- 效果图：真实令牌和基础样式来自仓库里的 static/，只有 thread.css 是新的。直接用浏览器打开本文件即可查看。 -->
+  <link rel="stylesheet" href="../../../../static/style.css?v=50">
+  <link rel="stylesheet" href="../../../../static/themes.css?v=13">
+  <link rel="stylesheet" href="../../../../static/emoji.css?v=2">
+  <link rel="stylesheet" href="thread.css">
+  <script src="thread.js" defer></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 7 7v2"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6"/><path d="m6 11 6-6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9 7V4h6v3"/><path d="m7 7 1 13h8l1-13"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13.5 5-3 14"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-top" viewBox="0 0 24 24"><path d="M6 6h12"/><path d="m6 14 6-6 6 6"/></symbol>
+  <symbol id="i-bottom" viewBox="0 0 24 24"><path d="M6 18h12"/><path d="m6 10 6 6 6-6"/></symbol>
+</svg>
+
+<div class="mock-note" role="note">
+  <strong>效果图</strong>（静态示意，按钮可点：排序 / 只看楼主 / 含代码 / 展开全文 / 复制 / J·K 切换楼层）。
+  <a href="thread.html?theme=ink">墨色</a> · <a href="thread.html?theme=qixi">栖间</a>
+</div>
+
+<div id="forum-page">
+  <section id="forum-detail">
+    <div class="forum-detail-navigation"><button type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button></div>
+
+    <div class="thread-grid">
+      <div class="thread-main">
+        <!-- ① 主帖 -->
+        <article id="forum-post" class="thread-post" aria-labelledby="forum-detail-title">
+          <header class="thread-post-bar">
+            <span class="thread-tag">THREAD <b>#0042</b></span>
+            <span class="thread-status is-solved"><i class="thread-led" aria-hidden="true"></i>已解决</span>
+          </header>
+          <div class="forum-post-author">
+            <span class="avatar thread-avatar-lg" data-hue="236">周</span>
+            <div class="forum-post-author-info">
+              <div class="forum-author-name"><strong>周知远</strong><span class="forum-op-stamp">楼主</span></div>
+              <div class="forum-post-date"><time datetime="2026-10-02T17:37:40">2026-10-02 17:37</time></div>
+            </div>
+          </div>
+          <h2 id="forum-detail-title">二分查找的边界总写错，大家是怎么自查的？</h2>
+          <div class="forum-post-body thread-prose">
+            <p>最近三道二分题都栽在边界上：有时候死循环，有时候漏掉最后一个元素。</p>
+            <p>我现在的做法是先写出区间定义，再写循环，但写到 <code>mid</code> 更新那一步还是容易凭感觉改。</p>
+            <p>想听听大家有没有固定的检查清单，或者能一眼看出区间到底是开还是闭的小技巧。</p>
+          </div>
+          <footer class="forum-post-footer">
+            <ul class="thread-stats" aria-label="帖子概况">
+              <li><b>7</b> 回复</li>
+              <li><b>4</b> 人参与</li>
+              <li><b>2</b> 段代码</li>
+              <li>最近活动 <b>16</b> 小时前</li>
+            </ul>
+            <div class="forum-actions">
+              <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+            </div>
+          </footer>
+        </article>
+
+        <!-- ② 已采纳的答案：置顶，一眼拿到结论 -->
+        <section class="thread-answer" aria-labelledby="answer-title">
+          <header class="thread-answer-head">
+            <svg class="thread-answer-icon" aria-hidden="true"><use href="#i-check"/></svg>
+            <h3 id="answer-title">楼主已采纳的答案</h3>
+            <span class="thread-answer-who">#02 · 苏晚</span>
+          </header>
+          <div class="thread-answer-excerpt">先固定约定：区间写成 <code>[lo, hi)</code>（左闭右开），循环条件 <code>lo &lt; hi</code>，<code>mid</code> 更新后区间必须缩小；再用长度 1、2 的数组各手动走一遍……</div>
+          <div class="thread-answer-foot">
+            <button type="button" class="thread-link" data-jump="2">跳到原楼层 <svg aria-hidden="true"><use href="#i-down"/></svg></button>
+            <span class="thread-answer-meta">3 人觉得有用</span>
+          </div>
+        </section>
+
+        <!-- ③ 评论区 -->
+        <section id="forum-comments-section" aria-labelledby="forum-comments-title">
+          <div class="thread-toolbar" role="toolbar" aria-label="评论筛选与排序">
+            <h3 id="forum-comments-title">回复 <span class="thread-count-badge">7</span></h3>
+            <div class="thread-controls">
+              <div class="thread-seg" role="group" aria-label="评论排序">
+                <button type="button" data-order="earliest" aria-pressed="true">最早</button>
+                <button type="button" data-order="latest" aria-pressed="false">最新</button>
+                <button type="button" data-order="helpful" aria-pressed="false">最有用</button>
+              </div>
+              <button type="button" class="thread-chip" data-filter="op" aria-pressed="false">只看楼主</button>
+              <button type="button" class="thread-chip" data-filter="code" aria-pressed="false">含代码 <span class="n">2</span></button>
+              <button type="button" class="thread-chip" data-filter="me" aria-pressed="false">@我 <span class="n">1</span></button>
+              <span class="thread-keys" aria-hidden="true"><kbd>J</kbd><kbd>K</kbd> 切换楼层 <kbd>R</kbd> 回复</span>
+            </div>
+          </div>
+          <p id="forum-comment-status" class="forum-sr-only" role="status" aria-live="polite"></p>
+
+          <div id="forum-comments" class="thread-list">
+            <!-- #01 -->
+            <article class="forum-comment is-me" id="forum-comment-1" data-floor="1" data-helpful="2" tabindex="-1" style="--i:0">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="176">样</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>样本同学</strong><span class="forum-self-badge">我</span>
+                  <span class="thread-floor">#01</span>
+                  <time datetime="2026-10-02T21:10:00">20 小时前</time>
+                </header>
+                <div class="thread-prose"><p>我也踩过这个坑 😅。我的办法是：动笔前先写下“[left, right) 里是还没判断的区间”，然后所有更新都围绕这句话。</p></div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用 <span class="n">2</span></button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-edit"/></svg>编辑</button>
+                  <button type="button" class="thread-act danger"><svg aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #02 已采纳 + 代码 -->
+            <article class="forum-comment is-accepted has-code" id="forum-comment-2" data-floor="2" data-helpful="3" data-code="1" tabindex="-1" style="--i:1">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="128">苏</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>苏晚</strong>
+                  <span class="thread-floor">#02</span>
+                  <time datetime="2026-10-02T21:25:00">20 小时前</time>
+                  <span class="thread-flags"><span class="thread-flag is-accepted">✓ 已采纳</span></span>
+                </header>
+                <div class="thread-prose">
+                  <p>补充一个检查清单：</p>
+                  <ol>
+                    <li>区间是开还是闭，写在注释里；</li>
+                    <li>循环条件是否和区间一致；</li>
+                    <li><code>mid</code> 更新后区间是否一定缩小；</li>
+                    <li>用长度 1、2 的数组各手动走一遍。</li>
+                  </ol>
+                  <p>下面是我自己用的模板，区间永远是 <code>[lo, hi)</code>：</p>
+                  <figure class="thread-code" data-lang="cpp">
+                    <figcaption><span class="thread-code-lang">CPP</span><button type="button" class="thread-copy"><svg aria-hidden="true"><use href="#i-copy"/></svg><span>复制</span></button></figcaption>
+<pre><code><span class="l">// 不变量：答案在 [lo, hi) 内</span><span class="l">int lo = 0, hi = n;</span><span class="l">while (lo &lt; hi) {</span><span class="l">    int mid = lo + (hi - lo) / 2;</span><span class="l">    if (a[mid] &lt; target) lo = mid + 1;</span><span class="l">    else hi = mid;          // 区间一定缩小</span><span class="l">}</span><span class="l">return lo;</span></code></pre>
+                  </figure>
+                  <p>基本能挡住 90% 的边界错误 👍</p>
+                </div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act is-on" aria-pressed="true"><svg aria-hidden="true"><use href="#i-up"/></svg>有用 <span class="n">3</span></button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #04 楼主 -->
+            <article class="forum-comment is-op" id="forum-comment-4" data-floor="4" data-helpful="0" data-op="1" tabindex="-1" style="--i:2">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="236">周</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>周知远</strong><span class="forum-op-stamp">楼主</span>
+                  <span class="thread-floor">#04</span>
+                  <time datetime="2026-10-02T23:40:00">18 小时前</time>
+                </header>
+                <div class="thread-prose"><p>谢谢！我今晚就按苏晚这份清单重做那三道题，再回来更新 🙏</p></div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用</button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #05 -->
+            <article class="forum-comment" id="forum-comment-5" data-floor="5" data-helpful="1" tabindex="-1" style="--i:3">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="28">何</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>何以安</strong>
+                  <span class="thread-floor">#05</span>
+                  <time datetime="2026-10-03T00:20:00">17 小时前</time>
+                </header>
+                <div class="thread-prose"><p>有没有可能把二分封装成一个模板函数，只改判定条件？这样边界只需要对一次 🤔</p></div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用 <span class="n">1</span></button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #06 回复 #5，含代码，较长 → 折叠 -->
+            <article class="forum-comment is-me has-code is-reply-to-me-target" id="forum-comment-6" data-floor="6" data-helpful="0" data-code="1" tabindex="-1" style="--i:4">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="176">样</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>样本同学</strong><span class="forum-self-badge">我</span>
+                  <span class="thread-floor">#06</span>
+                  <time datetime="2026-10-03T01:05:00">16 小时前</time>
+                </header>
+                <button type="button" class="thread-reply-chip" data-jump="5"><b>↳ #05 何以安</b><span>有没有可能把二分封装成一个模板函数，只改判定条件？这样边界只需要对一次</span></button>
+                <div class="thread-prose is-collapsible" data-collapsed="true">
+                  <p>可以的，不过模板里的区间定义也要先固定，不然换题时还是会混 💡 @何以安</p>
+                  <p>我是这样写的，判定函数返回“这个位置是否已经满足条件”：</p>
+                  <figure class="thread-code" data-lang="py">
+                    <figcaption><span class="thread-code-lang">PY</span><button type="button" class="thread-copy"><svg aria-hidden="true"><use href="#i-copy"/></svg><span>复制</span></button></figcaption>
+<pre><code><span class="l">def lower_bound(lo, hi, ok):</span><span class="l">    # 区间 [lo, hi)，ok 单调：False…False True…True</span><span class="l">    while lo &lt; hi:</span><span class="l">        mid = (lo + hi) // 2</span><span class="l">        if ok(mid):</span><span class="l">            hi = mid</span><span class="l">        else:</span><span class="l">            lo = mid + 1</span><span class="l">    return lo</span></code></pre>
+                  </figure>
+                  <p>换题只要换 <code>ok</code>：比如“第一个 ≥ target 的位置”就是 <code>ok = lambda i: a[i] &gt;= target</code>。</p>
+                  <p>最容易漏的是 hi 的初值：要查“可能不存在”的情况，hi 取 n 而不是 n-1。</p>
+                </div>
+                <button type="button" class="thread-more" data-more aria-expanded="false"><span>展开全文</span><svg aria-hidden="true"><use href="#i-down"/></svg></button>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用</button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-edit"/></svg>编辑</button>
+                  <button type="button" class="thread-act danger"><svg aria-hidden="true"><use href="#i-trash"/></svg>删除</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #07 楼主，回复 #2 -->
+            <article class="forum-comment is-op" id="forum-comment-7" data-floor="7" data-helpful="0" data-op="1" tabindex="-1" style="--i:5">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="236">周</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>周知远</strong><span class="forum-op-stamp">楼主</span>
+                  <span class="thread-floor">#07</span>
+                  <time datetime="2026-10-03T01:30:00">16 小时前</time>
+                </header>
+                <button type="button" class="thread-reply-chip" data-jump="2"><b>↳ #02 苏晚</b><span>补充一个检查清单： 1. 区间是开还是闭，写在注释里； 2. 循环条件是否和区间一致； 3. mid 更新后区间是否一定…</span></button>
+                <div class="thread-prose"><p>清单我收下了，今晚就按它复盘 ✅</p></div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用</button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+                </footer>
+              </div>
+            </article>
+
+            <!-- #08 -->
+            <article class="forum-comment" id="forum-comment-8" data-floor="8" data-helpful="0" tabindex="-1" style="--i:6">
+              <div class="thread-avatar-slot"><span class="avatar" data-hue="128">苏</span></div>
+              <div class="thread-card">
+                <header class="thread-head">
+                  <strong>苏晚</strong>
+                  <span class="thread-floor">#08</span>
+                  <time datetime="2026-10-03T01:42:00">16 小时前</time>
+                </header>
+                <button type="button" class="thread-reply-chip is-deleted" disabled><b>↳ #03</b><span>回复的楼层已删除</span></button>
+                <div class="thread-prose"><p>长度为 2 的数组确实最容易暴露问题，附议 🙌</p></div>
+                <footer class="thread-actions">
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-reply"/></svg>回复</button>
+                  <button type="button" class="thread-act" aria-pressed="false"><svg aria-hidden="true"><use href="#i-up"/></svg>有用</button>
+                  <span class="push"></span>
+                  <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-flag"/></svg>举报</button>
+                </footer>
+              </div>
+            </article>
+          </div>
+          <p class="thread-empty" id="thread-empty" hidden>没有符合条件的回复。</p>
+
+          <!-- ④ 写回复：控制台风格 -->
+          <form id="forum-comment-form" class="thread-composer" aria-labelledby="forum-composer-title">
+            <div class="thread-composer-bar">
+              <span class="thread-prompt" aria-hidden="true">&gt;</span>
+              <label id="forum-composer-title" for="forum-comment-body">发表你的看法</label>
+              <span class="thread-tabs" role="group" aria-label="编辑或预览">
+                <button type="button" aria-pressed="true">编辑</button>
+                <button type="button" aria-pressed="false">预览</button>
+              </span>
+            </div>
+            <textarea id="forum-comment-body" rows="3" maxlength="2000" placeholder="一起聊聊你的思路…  支持 ```代码块``` 和 `行内代码`"></textarea>
+            <div class="thread-composer-tools">
+              <button type="button" class="thread-act"><span aria-hidden="true">😊</span>表情</button>
+              <button type="button" class="thread-act"><svg aria-hidden="true"><use href="#i-code"/></svg>代码块</button>
+              <span class="thread-count"><span class="thread-meter" aria-hidden="true"><i></i></span><output>0 / 2000</output></span>
+              <button type="submit" class="primary thread-send">发送 <kbd>Ctrl ⏎</kbd></button>
+            </div>
+          </form>
+        </section>
+        <div class="forum-detail-navigation forum-detail-navigation-bottom"><button type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button></div>
+      </div>
+
+      <!-- ⑤ 楼层小地图（桌面）：像 Discourse 的时间轴，但更紧凑 -->
+      <aside class="thread-rail" aria-hidden="true">
+        <div class="thread-map">
+          <div class="thread-map-readout"><b id="map-now">#01</b><span id="map-total">共 8 楼</span></div>
+          <div class="thread-map-track" id="map-track"><div class="thread-map-thumb" id="map-thumb"></div></div>
+          <div class="thread-map-jumps">
+            <button type="button" class="thread-map-btn" data-map="top" tabindex="-1" title="回到顶部"><svg><use href="#i-top"/></svg></button>
+            <button type="button" class="thread-map-btn" data-map="bottom" tabindex="-1" title="到最新"><svg><use href="#i-bottom"/></svg></button>
+          </div>
+          <ul class="thread-map-legend"><li><i class="k-op"></i>楼主</li><li><i class="k-code"></i>代码</li><li><i class="k-ok"></i>采纳</li></ul>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ⑥ 手机端的悬浮楼层条 -->
+  <div class="thread-hud" aria-hidden="true">
+    <button type="button" data-hud="prev" tabindex="-1"><svg><use href="#i-up"/></svg></button>
+    <span><b id="hud-now">#01</b> / <span id="hud-total">8</span></span>
+    <button type="button" data-hud="next" tabindex="-1"><svg><use href="#i-down"/></svg></button>
+  </div>
+</div>
+</body>
+</html>

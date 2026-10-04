@@ -117,7 +117,10 @@ def test_account_menu_is_unique_and_owns_its_controls():
     assert len(panels) == 1
     panel_index, panel = panels[0]
     assert menu_index in panel["ancestors"]
-    for control_id in ("avatar-file-input", "remove-avatar-btn", "fx-toggle"):
+    for control_id in (
+        "avatar-file-input", "remove-avatar-btn", "fx-toggle", "account-password",
+        "account-revoke-others", "account-delete", "logout",
+    ):
         controls = [
             element for element in elements
             if element["attrs"].get("id") == control_id

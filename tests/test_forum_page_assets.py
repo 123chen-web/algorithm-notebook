@@ -1,10 +1,7 @@
 """Forum detail asset contracts without a browser, database, or temp files."""
 
 from pathlib import Path
-import json
 import re
-import shutil
-import subprocess
 
 import pytest
 
@@ -63,7 +60,7 @@ def test_forum_stylesheet_is_versioned_and_loaded_after_shared_styles(document, 
     ]
     assert len(matches) == 1
     forum_index, attrs = matches[0]
-    assert attrs["href"] == "/static/forum.css?v=3"
+    assert attrs["href"] == "/static/forum.css?v=5"
     shared_indices = [
         index for index, attrs in enumerate(links)
         if attrs.get("href", "").split("?", 1)[0] in (
@@ -144,7 +141,10 @@ def test_forum_preserves_unique_page_and_detail_ids(document):
     for element_id in (
         "forum-list", "forum-posts", "forum-detail", "forum-back", "forum-post",
         "forum-comments-section", "forum-comments-title", "forum-comments",
-        "forum-comment-form",
+        "forum-comment-form", "forum-comment-sort", "forum-only-op", "forum-comment-status",
+        "forum-comment-avatar", "forum-composer-title", "forum-reply-target", "forum-reply-label",
+        "forum-reply-cancel", "forum-comment-body", "forum-comment-count", "forum-comment-trial-note",
+        "forum-back-bottom",
     ):
         _, node = element_with_id(document, element_id)
         assert page_index in node["ancestors"], element_id
@@ -234,8 +234,8 @@ def test_forum_sort_filter_and_reply_cancel_are_native_keyboard_controls(documen
         node for node in document
         if "data-forum-order" in node["attrs"] and sort_index in node["ancestors"]
     ]
-    assert {node["attrs"]["data-forum-order"] for node in orders} == {"earliest", "latest"}
-    assert len(orders) == 2
+    assert {node["attrs"]["data-forum-order"] for node in orders} == {"earliest", "latest", "helpful"}
+    assert len(orders) == 3
     for node in orders:
         assert node["tag"] == "button"
         assert node["attrs"].get("type") == "button"
@@ -320,7 +320,8 @@ def test_forum_deleted_quotes_and_trial_restrictions_have_explicit_render_paths(
     assert "forum-comment-form" in controls and "user.is_trial" in controls
     assert "forum-comment-trial-note" in controls
     assert "还没有评论，来抢沙发吧" in comments
-    assert "is_op" in comments
+    assert "window.Thread.arrange" in comments
+    assert "forumFilters()" in comments
 
 
 def test_forum_has_visible_keyboard_focus_and_responsive_floor_layout(stylesheet):
@@ -330,302 +331,56 @@ def test_forum_has_visible_keyboard_focus_and_responsive_floor_layout(stylesheet
     assert re.search(r"overflow-wrap\s*:\s*(?:anywhere|break-word)", stylesheet)
 
 
+def test_thread_script_is_versioned_external_and_loaded_before_app(document):
+    scripts = [node["attrs"].get("src", "") for node in document if node["tag"] == "script"]
+    assert scripts.count("/static/thread.js?v=1") == 1
+    thread_index = scripts.index("/static/thread.js?v=1")
+    app_indices = [index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js"]
+    assert len(app_indices) == 1 and thread_index < app_indices[0]
+    assert scripts[app_indices[0]] == "/static/app.js?v=58"
+
+
+def test_thread_markup_uses_external_csp_safe_controls_and_shared_renderer(document, source):
+    page_index, _ = element_with_id(document, "forum-page")
+    for node in document:
+        if page_index not in node["ancestors"]:
+            continue
+        assert "style" not in node["attrs"]
+        assert not any(name.lower().startswith("on") for name in node["attrs"])
+    thread_source = (STATIC / "thread.js").read_text(encoding="utf-8")
+    assert not re.search(r"\.innerHTML\s*=|insertAdjacentHTML\s*\(", thread_source)
+    assert "window.Thread.renderBody" in function_body(source, "forumBody")
+    assert "forumBody(post.body)" in function_body(source, "renderForumPost")
+    assert "forumBody(comment.body)" in function_body(source, "renderForumComment")
+    for element_id in ("forum-code-only", "forum-mention-only", "forum-editor-tab", "forum-preview-tab"):
+        _, control = element_with_id(document, element_id)
+        assert control["tag"] == "button" and control["attrs"].get("type") == "button"
+        assert control["attrs"].get("aria-pressed") in ("true", "false")
+
+
+def test_thread_map_is_pointer_enhancement_excluded_from_keyboard_navigation(document, source):
+    _, hud = element_with_id(document, "forum-floor-nav")
+    assert hud["attrs"].get("aria-hidden") == "true"
+    map_index, _ = element_with_id(document, "forum-minimap")
+    assert any(document[index]["attrs"].get("aria-hidden") == "true" for index in document[map_index]["ancestors"])
+    for element_id in ("forum-map-top", "forum-map-latest", "forum-floor-prev", "forum-floor-next"):
+        _, button = element_with_id(document, element_id)
+        assert button["tag"] == "button" and button["attrs"].get("tabindex") == "-1"
+        assert button["attrs"].get("aria-label")
+    assert "requestAnimationFrame" in function_body(source, "scheduleForumMap")
+    assert "--thread-sticky-top" in function_body(source, "updateForumMap")
+    assert "getBoundingClientRect" in function_body(source, "updateForumMap")
+
+
+def test_thread_optional_panels_start_hidden_without_empty_static_shells(document):
+    for element_id in ("forum-accepted", "forum-summary"):
+        index, node = element_with_id(document, element_id)
+        assert node["tag"] == "section" and "hidden" in node["attrs"]
+        assert not any(index in child["ancestors"] for child in document)
+
+
 def test_forum_documentation_describes_stable_floors_and_private_deleted_quotes():
     readme = (STATIC.parent / "README.md").read_text(encoding="utf-8")
     section = readme.split("## 讨论区", 1)[1].split("\n## ", 1)[0]
     for text in ("楼主", "楼层", "reply_to_id", "60", "回复的楼层已删除", "不会重新编号"):
         assert text in section
-
-
-FORUM_RENDER_HARNESS = r"""
-const assert = require("node:assert/strict");
-const vm = require("node:vm");
-const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
-let focused = null;
-let pendingAction = null;
-class Node {
-  constructor(tag, text = "", className = "") {
-    this.tag = tag; this.textContent = text; this.className = className;
-    this.children = []; this.attributes = {}; this.listeners = {};
-    this.hidden = false; this.value = ""; this.focusCalls = [];
-    this.parentNode = null;
-    this.classList = {
-      add: (name) => { this.className += ` ${name}`; },
-      remove: (name) => { this.className = this.className.split(" ").filter((c) => c !== name).join(" "); },
-    };
-  }
-  append(...children) {
-    for (const child of children) {
-      if (child instanceof Node) {
-        child.remove(); child.parentNode = this;
-      }
-      this.children.push(child);
-    }
-  }
-  replaceChildren(...children) {
-    for (const child of [...this.children]) if (child instanceof Node) child.remove();
-    this.children = []; this.textContent = ""; this.append(...children);
-  }
-  remove() {
-    if (this.contains(focused)) focused = null;
-    if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((node) => node !== this);
-    this.parentNode = null;
-  }
-  replaceWith(node) {
-    const parent = this.parentNode;
-    const index = parent.children.indexOf(this);
-    this.remove(); node.remove(); node.parentNode = parent;
-    parent.children.splice(index, 0, node);
-  }
-  contains(node) { return !!node && walk(this).includes(node); }
-  matches(selector) { return selector.startsWith(".") ? this.className.split(" ").includes(selector.slice(1)) : this.tag === selector; }
-  closest(selector) { return this.matches(selector) ? this : this.parentNode?.closest(selector) ?? null; }
-  querySelector(selector) {
-    const parts = selector.split(" ");
-    return walk(this).slice(1).find((node) => node.matches(parts.at(-1))
-      && (parts.length === 1 || node.parentNode?.closest(parts[0]))) ?? null;
-  }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
-  getAttribute(name) { return this.attributes[name] ?? null; }
-  addEventListener(name, handler) { this.listeners[name] = handler; }
-  focus(options) { this.focusCalls.push(options); focused = this; }
-  setSelectionRange(start, end, direction = "none") { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; }
-  scrollIntoView(options) { this.scrollOptions = options; }
-  get childElementCount() { return this.children.filter((child) => child instanceof Node).length; }
-  get nextElementSibling() { return this.parentNode?.children[this.parentNode.children.indexOf(this) + 1] ?? null; }
-  get previousElementSibling() { return this.parentNode?.children[this.parentNode.children.indexOf(this) - 1] ?? null; }
-}
-function walk(root) {
-  return [root, ...root.children.filter((c) => c instanceof Node).flatMap(walk)];
-}
-function text(root) {
-  return root.textContent + root.children.map((child) => child instanceof Node ? text(child) : String(child)).join("");
-}
-const ids = {};
-for (const id of ["forum-comments", "forum-comments-title", "forum-post-comment-count", "forum-only-op",
-  "forum-comment-form", "forum-comment-avatar", "forum-comment-trial-note", "forum-comment-body",
-  "forum-comment-count", "forum-reply-target", "forum-reply-label", "forum-reply-cancel", "forum-comment-status"]) {
-  ids[id] = new Node("div"); ids[id].id = id;
-}
-const orderButtons = ["earliest", "latest"].map((order) => {
-  const button = new Node("button"); button.dataset = { forumOrder: order }; return button;
-});
-const context = {
-  user: { id: 1, username: "我", avatar_version: 0, has_avatar: false, is_trial: false },
-  forumPost: { id: 1, comments: [] }, forumOnlyOp: false, forumCommentOrder: "earliest", forumReplyTarget: null,
-  element: (tag, value = "", className = "") => new Node(tag, value, className),
-  avatarElement: (_id, name) => new Node("span", name, "avatar"),
-  timestamp: (value) => `完整时间 ${value}`, forumRelativeTime: () => "刚刚",
-  document: { get activeElement() { return focused; }, querySelectorAll: () => orderButtons, createElement: (tag) => new Node(tag) },
-  window: { matchMedia: () => ({ matches: true }), clearTimeout() {}, setTimeout: () => 1 },
-  message() {},
-  confirm: () => true,
-  run: (action) => { pendingAction = action(); return pendingAction; },
-  api: async (url, options) => {
-    if (options.method === "DELETE") return {};
-    assert.equal(options.method, "PUT");
-    const id = Number(url.split("/").at(-1));
-    return { ...context.forumPost.comments.find((row) => row.id === id),
-      body: JSON.parse(options.body).body, updated_at: "2026-10-02T09:00:00+00:00" };
-  },
-  $: (selector) => ids[selector.slice(1)] ?? Object.values(ids).flatMap(walk).find((node) => node.id === selector.slice(1)),
-};
-vm.createContext(context);
-vm.runInContext(payload.source, context);
-const comment = (id, floor, userId, isOp = false) => ({
-  id, post_id: 1, floor, user_id: userId, is_op: isOp, username: `作者${userId}`,
-  avatar_version: 0, has_avatar: false, body: `正文${floor}`, created_at: "2026-10-02T08:00:00+00:00",
-  updated_at: null, reply_to: null,
-});
-const order = () => ids["forum-comments"].children.filter((c) => c.tag === "article" && !c.hidden).map((c) => c.id);
-const actions = (root) => walk(root).filter((node) => node.tag === "button" && node.className.includes("forum-text-action"));
-if (payload.scenario === "sort_filter") {
-  const comments = [comment(1, 1, 1, true), comment(3, 3, 2), comment(5, 5, 1, true)];
-  context.forumPost.comments = comments;
-  context.renderForumComments(comments);
-  assert.deepEqual(order(), ["forum-comment-1", "forum-comment-3", "forum-comment-5"]);
-  context.forumCommentOrder = "latest";
-  context.renderForumComments(comments);
-  assert.deepEqual(order(), ["forum-comment-5", "forum-comment-3", "forum-comment-1"]);
-  context.forumOnlyOp = true;
-  context.renderForumComments(comments);
-  assert.deepEqual(order(), ["forum-comment-5", "forum-comment-1"]);
-  assert.deepEqual(comments.map((c) => [c.id, c.floor]), [[1, 1], [3, 3], [5, 5]]);
-  assert.equal(ids["forum-comments-title"].textContent, "全部评论 · 3");
-  assert.equal(ids["forum-only-op"].getAttribute("aria-pressed"), "true");
-  assert.deepEqual(orderButtons.map((b) => b.getAttribute("aria-pressed")), ["false", "true"]);
-} else if (payload.scenario === "ownership_quotes") {
-  for (const [userId, labels] of [[1, ["回复", "编辑", "删除"]], [2, ["回复", "举报", "举报头像"]]]) {
-    const row = comment(userId, 3, userId, userId === 1);
-    const root = context.renderForumComment(row);
-    assert.equal(root.tag, "article");
-    assert.equal(root.getAttribute("aria-labelledby"), `forum-comment-heading-${userId}`);
-    assert.deepEqual(actions(root).map((button) => button.textContent), labels);
-    for (const button of actions(root)) {
-      assert.equal(button.type, "button");
-      assert.match(button.getAttribute("aria-label"), /3 楼/);
-    }
-    context.user.is_trial = true;
-    assert.equal(actions(context.renderForumComment(row)).length, 0);
-    context.user.is_trial = false;
-  }
-  const row = comment(8, 8, 2);
-  row.reply_to = { id: 3, floor: 3, deleted: true, username: "已删秘密作者", excerpt: "已删秘密正文" };
-  const deleted = context.renderForumComment(row);
-  assert.match(text(deleted), /回复的楼层已删除/);
-  assert.doesNotMatch(text(deleted), /已删秘密作者|已删秘密正文/);
-  assert.equal(walk(deleted).filter((node) => node.tag === "button" && node.className.includes("forum-quote")).length, 0);
-  row.reply_to = { id: 3, floor: 3, deleted: false, username: "苏晚", excerpt: "边界检查" };
-  const quote = walk(context.renderForumComment(row)).find((node) => node.tag === "button" && node.className.includes("forum-quote"));
-  assert.equal(quote.type, "button");
-  assert.match(quote.getAttribute("aria-label"), /3 楼/);
-  assert.match(text(quote), /回复 3 楼 @苏晚：边界检查/);
-  assert.equal(typeof quote.listeners.click, "function");
-} else if (payload.scenario === "empty_trial") {
-  context.forumPost.comments = [comment(3, 3, 2)];
-  context.forumOnlyOp = true;
-  context.renderForumComments(context.forumPost.comments);
-  assert.match(text(ids["forum-comments"]), /楼主还没有评论/);
-  context.forumPost.comments = [];
-  context.renderForumComments([]);
-  assert.match(text(ids["forum-comments"]), /还没有评论，来抢沙发吧/);
-  context.user.is_trial = true;
-  context.renderForumComments([]);
-  assert.equal(ids["forum-comment-form"].hidden, true);
-  assert.equal(ids["forum-comment-trial-note"].hidden, false);
-  context.user.is_trial = false;
-  context.renderForumComments([]);
-  assert.equal(ids["forum-comment-form"].hidden, false);
-  assert.equal(ids["forum-comment-trial-note"].hidden, true);
-} else if (payload.scenario === "reply_reduced_motion") {
-  const row = comment(3, 3, 1, true);
-  ids["forum-comment-body"].value = "未提交的评论草稿";
-  context.selectForumReply(row);
-  assert.equal(context.forumReplyTarget.id, 3);
-  assert.equal(ids["forum-reply-target"].hidden, false);
-  assert.match(ids["forum-reply-label"].textContent, /回复 3 楼 @作者1/);
-  assert.equal(ids["forum-comment-body"].focusCalls.length, 1);
-  assert.equal(ids["forum-comment-form"].scrollOptions.behavior, "instant");
-  context.clearForumReply();
-  assert.equal(context.forumReplyTarget, null);
-  assert.equal(ids["forum-reply-target"].hidden, true);
-  assert.equal(ids["forum-comment-body"].value, "未提交的评论草稿");
-  context.forumPost.comments = [row];
-  context.renderForumComments([row]);
-  context.scrollToForumComment(3);
-  const target = ids["forum-comments"].children[0];
-  assert.equal(target.scrollOptions.behavior, "instant");
-  assert.equal(target.focusCalls.length, 1);
-  assert.equal(target.className.includes("forum-floor-highlight"), false);
-  context.updateForumCommentCount();
-  assert.equal(ids["forum-comment-count"].textContent, `${ids["forum-comment-body"].value.length}/2000`);
-} else if (payload.scenario === "draft_preservation") {
-  async function verifyDrafts() {
-    const comments = [comment(1, 1, 1, true), comment(2, 2, 1, true), comment(3, 3, 2), comment(4, 4, 3)];
-    for (const row of [comments[0], comments[2], comments[3]]) {
-      row.reply_to = { id: 2, floor: 2, deleted: false, username: "作者1", excerpt: "正文2" };
-    }
-    context.forumPost.comments = comments;
-    context.renderForumComments(comments);
-    const floor = (id) => context.$(`#forum-comment-${id}`);
-    const originalFloors = comments.map((row) => floor(row.id));
-    const open = (id, label, draft) => {
-      actions(floor(id)).find((button) => button.textContent === label).listeners.click();
-      const form = floor(id).querySelector("form");
-      const field = form.querySelector("textarea");
-      field.value = draft;
-      return { form, field };
-    };
-    const edit = open(1, "编辑", "未保存的编辑草稿");
-    const report = open(3, "举报", "未提交的举报草稿");
-    const avatar = open(4, "举报头像", "未提交的头像举报草稿");
-    edit.field.focus(); edit.field.setSelectionRange(2, 6, "backward");
-    const preserved = () => {
-      for (const [id, item, draft] of [[1, edit, "未保存的编辑草稿"], [3, report, "未提交的举报草稿"], [4, avatar, "未提交的头像举报草稿"]]) {
-        assert.equal(floor(id), originalFloors[id - 1]);
-        assert.equal(floor(id).querySelector("form"), item.form);
-        assert.equal(item.form.querySelector("textarea"), item.field);
-        assert.equal(item.field.value, draft);
-      }
-      assert.deepEqual([edit.field.selectionStart, edit.field.selectionEnd, edit.field.selectionDirection], [2, 6, "backward"]);
-    };
-    // Refreshing account details must not reset drafts for the same signed-in account.
-    context.user = { ...context.user, avatar_version: 1 };
-    context.renderForumComments(comments);
-    preserved(); assert.equal(focused, edit.field);
-    context.forumCommentOrder = "latest";
-    context.renderForumComments(comments);
-    preserved(); assert.equal(focused, edit.field);
-    assert.deepEqual(order(), ["forum-comment-4", "forum-comment-3", "forum-comment-2", "forum-comment-1"]);
-    context.forumOnlyOp = true;
-    context.renderForumComments(comments);
-    preserved(); assert.equal(focused, edit.field);
-    assert.deepEqual(order(), ["forum-comment-2", "forum-comment-1"]);
-    for (const id of [3, 4]) { assert.equal(floor(id).hidden, true); assert.equal(floor(id).inert, true); }
-    // Quote navigation must reveal a cached, hidden floor before focusing it.
-    context.scrollToForumComment(3);
-    assert.equal(context.forumOnlyOp, false);
-    assert.equal(floor(3).hidden, false); assert.equal(floor(3).inert, false);
-    assert.equal(focused, floor(3)); preserved();
-    // Saving a quoted comment changes the quote blocks but keeps every other live form.
-    const other = open(2, "编辑", "保存另一条评论后的新正文");
-    other.form.listeners.submit({ preventDefault() {} });
-    await pendingAction;
-    preserved();
-    assert.equal(floor(2).querySelector("form"), null);
-    assert.match(text(floor(2)), /保存另一条评论后的新正文/);
-    for (const id of [3, 4]) assert.match(text(floor(id)), /保存另一条评论后的新正文/);
-    // An unchanged save also closes only its own editor.
-    const unchanged = open(2, "编辑", comments[1].body);
-    unchanged.form.listeners.submit({ preventDefault() {} });
-    await pendingAction;
-    preserved(); assert.equal(floor(2).querySelector("form"), null);
-    actions(floor(2)).find((button) => button.textContent === "删除").listeners.click();
-    await pendingAction;
-    preserved(); assert.equal(floor(2), undefined);
-    for (const id of [3, 4]) {
-      assert.match(text(floor(id)), /回复的楼层已删除/);
-      assert.doesNotMatch(text(floor(id)), /保存另一条评论后的新正文/);
-    }
-    // Canceling the preserved editor returns to the latest deleted-quote state.
-    walk(edit.form).find((node) => node.tag === "button" && node.textContent === "取消").listeners.click();
-    assert.equal(floor(1).querySelector("form"), null);
-    assert.match(text(floor(1)), /回复的楼层已删除/);
-    // A different account must get fresh nodes without the former account's report drafts.
-    context.user = { ...context.user, id: 99, username: "另一账号" };
-    context.renderForumComments(context.forumPost.comments);
-    for (const id of [1, 3, 4]) {
-      assert.notEqual(floor(id), originalFloors[id - 1]);
-      assert.equal(floor(id).querySelector("form"), null);
-    }
-  }
-  verifyDrafts().catch((error) => { console.error(error); process.exitCode = 1; });
-} else { throw new Error(`Unknown scenario ${payload.scenario}`); }
-"""
-
-
-@pytest.mark.parametrize("scenario", [
-    "sort_filter", "ownership_quotes", "empty_trial", "reply_reduced_motion",
-    "draft_preservation",
-])
-def test_forum_render_behavior_uses_real_functions_without_temp_files(source, scenario):
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node.js is needed for forum render behavior checks")
-    functions = []
-    for name in (
-        "field", "textarea", "avatarReportForm",
-        "forumTime", "forumTextAction", "truncateExcerpt", "selectForumReply", "clearForumReply",
-        "scrollToForumComment", "updateForumCommentCount", "renderForumCommentControls",
-        "renderForumComment", "renderForumComments",
-    ):
-        declaration = re.search(rf"(?m)^function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{", source)
-        assert declaration, f"Missing {name} renderer or helper"
-        functions.append(declaration[0] + function_body(source, name) + "}")
-    result = subprocess.run(
-        [node, "-e", FORUM_RENDER_HARNESS],
-        input=json.dumps({"source": "\n".join(functions), "scenario": scenario}, ensure_ascii=False),
-        text=True, encoding="utf-8", capture_output=True, timeout=10,
-        cwd=STATIC.parent, check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr

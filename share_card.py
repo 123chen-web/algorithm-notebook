@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFont
 
 from learning_stats import LearningMetrics
+from legal import PRODUCT_NAME
 
 
 CARD_SIZE = (1080, 1350)
@@ -62,7 +63,7 @@ def render_achievement_card(
         )
 
     draw.rounded_rectangle((40, 40, 1040, 1310), radius=32, outline=SOFT, width=3)
-    text(100, 106, "欧叶OY", 52, ACCENT)
+    text(100, 106, PRODUCT_NAME, 52, ACCENT)
     text(100, 180, "把错误变成掌握", 30, MUTED)
     draw.line((100, 250, 980, 250), fill=SOFT, width=3)
 
@@ -101,7 +102,7 @@ def render_achievement_card(
 
     draw.line((100, 1210, 980, 1210), fill=SOFT, width=3)
     text(100, 1246, today.isoformat(), 24, MUTED, width=400)
-    text(980, 1246, "欧叶OY", 24, MUTED, width=400, anchor="rt")
+    text(980, 1246, PRODUCT_NAME, 24, MUTED, width=400, anchor="rt")
 
     output = BytesIO()
     card.save(output, format="PNG")

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ink">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>讨论区主页效果图 · 欧叶OY</title>
+  <link rel="stylesheet" href="../../../../static/style.css?v=50">
+  <link rel="stylesheet" href="../../../../static/themes.css?v=13">
+  <link rel="stylesheet" href="../../../../static/shell.css?v=3">
+  <link rel="stylesheet" href="../../../../static/emoji.css?v=2">
+  <link rel="stylesheet" href="../../forum-thread/mock/thread.css">
+  <link rel="stylesheet" href="list.css">
+  <script src="list.js" defer></script>
+</head>
+<body class="mock-body">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13.5 5-3 14"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 7 7v2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3.5-2 4.5-2 8a3 3 0 0 0 6 0c0-1-.4-1.8-1-2.6C17.5 9.7 19 11.7 19 14a7 7 0 0 1-14 0c0-4 4.5-5.5 7-11z"/></symbol>
+</svg>
+
+<div class="mock-note" role="note">
+  <strong>讨论区主页效果图</strong>（静态示意，可点：筛选标签 / 分区 / 排序 / 搜索 / J·K 选择 / 按 / 搜索）。
+  <a href="list.html?theme=ink">墨色</a> · <a href="list.html?theme=qixi">栖间</a> ·
+  <a href="../../forum-thread/mock/thread.html">评论区详情页效果图</a>
+</div>
+
+<div id="forum-page">
+  <section id="forum-list" aria-labelledby="forum-title">
+    <div class="board-grid">
+      <div class="board-main">
+        <!-- ① 页头面板：仪表读数 -->
+        <header class="board-head">
+          <div class="thread-post-bar">
+            <span class="thread-tag">BOARD <b>FORUM</b></span>
+            <span class="thread-status"><i class="thread-led" aria-hidden="true"></i><span id="board-count-live">8 个帖子</span></span>
+          </div>
+          <div class="board-head-main">
+            <div>
+              <h2 id="forum-title">讨论区</h2>
+              <p class="board-sub">问一个具体的错，分享一份清单。回复里的好答案，楼主可以「采纳」。</p>
+            </div>
+            <button type="button" class="primary board-new"><svg aria-hidden="true"><use href="#i-plus"/></svg>发帖 <kbd>N</kbd></button>
+          </div>
+          <ul class="board-readouts" aria-label="讨论区概况">
+            <li><b id="r-all">8</b><span>全部帖子</span></li>
+            <li class="is-open"><b id="r-open">3</b><span>等你回复</span></li>
+            <li class="is-solved"><b id="r-solved">3</b><span>已解决</span></li>
+            <li><b id="r-new">1</b><span>今日新帖</span></li>
+          </ul>
+        </header>
+
+        <!-- ② 指令栏：搜索 + 筛选 + 排序 -->
+        <div class="board-bar" role="search">
+          <label class="board-search">
+            <svg aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="forum-sr-only">搜索帖子</span>
+            <input id="forum-search" type="search" maxlength="200" placeholder="搜索标题或正文">
+            <kbd aria-hidden="true">/</kbd>
+          </label>
+          <div class="thread-seg" role="group" aria-label="帖子筛选" id="board-tabs">
+            <button type="button" data-tab="all" aria-pressed="true">全部</button>
+            <button type="button" data-tab="open" aria-pressed="false">待回复 <span class="n">3</span></button>
+            <button type="button" data-tab="solved" aria-pressed="false">已解决 <span class="n">3</span></button>
+            <button type="button" data-tab="mine" aria-pressed="false">我的</button>
+          </div>
+          <label class="board-sort"><span>排序</span>
+            <select id="board-sort" aria-label="排序方式">
+              <option value="activity">最新活动</option>
+              <option value="new">最新发布</option>
+              <option value="hot">最热门</option>
+            </select>
+          </label>
+        </div>
+        <div class="board-zones" role="group" aria-label="按分区筛选" id="board-zones">
+          <button type="button" class="board-zone" data-zone-filter="" aria-pressed="true">全部分区</button>
+          <button type="button" class="board-zone" data-zone="算法" data-zone-filter="算法" aria-pressed="false"><i></i>算法 <span class="n">3</span></button>
+          <button type="button" class="board-zone" data-zone="前端" data-zone-filter="前端" aria-pressed="false"><i></i>前端 <span class="n">1</span></button>
+          <button type="button" class="board-zone" data-zone="数据库" data-zone-filter="数据库" aria-pressed="false"><i></i>数据库 <span class="n">1</span></button>
+          <button type="button" class="board-zone" data-zone="系统设计" data-zone-filter="系统设计" aria-pressed="false"><i></i>系统设计 <span class="n">1</span></button>
+          <button type="button" class="board-zone" data-zone="线性代数" data-zone-filter="线性代数" aria-pressed="false"><i></i>线性代数 <span class="n">1</span></button>
+          <button type="button" class="board-zone" data-zone="概率统计" data-zone-filter="概率统计" aria-pressed="false"><i></i>概率统计 <span class="n">1</span></button>
+        </div>
+        <p id="forum-list-status" class="forum-sr-only" role="status" aria-live="polite"></p>
+
+        <!-- ③ 帖子列表 -->
+        <ol id="forum-posts" class="board-list">
+          <li class="board-item" data-state="solved" data-zone="算法" data-activity="16" data-created="46" data-hot="9" data-mine="" data-title="二分查找的边界总写错">
+            <article class="board-row is-solved is-hot" tabindex="-1">
+              <div class="board-stat" aria-label="7 条回复，已解决"><b>7</b><span>回复</span><svg class="board-stat-mark" aria-hidden="true"><use href="#i-check"/></svg></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="算法"><i></i>算法</span>
+                  <span class="board-pill is-solved"><svg aria-hidden="true"><use href="#i-check"/></svg>已解决</span>
+                  <span class="board-pill is-hot"><svg aria-hidden="true"><use href="#i-flame"/></svg>热门</span>
+                  <span class="board-pill"><svg aria-hidden="true"><use href="#i-code"/></svg>含代码</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">二分查找的边界总写错，大家是怎么自查的？</a></h3>
+                <p class="board-excerpt">最近三道二分题都栽在边界上：有时候死循环，有时候漏掉最后一个元素。我现在的做法是先写出区间定义，再写循环，但写到 mid 更新那一步还是容易凭感觉改……</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="236">周</span><span class="who">周知远</span><span class="id">#0042</span><span>2 天前发布</span>
+                  <span class="board-last"><svg aria-hidden="true"><use href="#i-reply"/></svg>苏晚 · 16 小时前</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="4 人参与"><span class="avatar" data-hue="236">周</span><span class="avatar" data-hue="128">苏</span><span class="avatar" data-hue="176">样</span><span class="avatar" data-hue="28">何</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="open" data-zone="数据库" data-activity="30" data-created="30" data-hot="1" data-mine="" data-title="数据库索引失效的清单">
+            <article class="board-row is-open" tabindex="-1">
+              <div class="board-stat" aria-label="还没有回复"><b>0</b><span>待回复</span></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="数据库"><i></i>数据库</span>
+                  <span class="board-pill is-open"><i class="thread-led" aria-hidden="true"></i>等你来回</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">整理了一份数据库索引失效的清单</a></h3>
+                <p class="board-excerpt">函数包住索引列、隐式类型转换、前导通配符、联合索引没按最左前缀……我踩过的 6 个坑，欢迎补充你们遇到过的。</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="128">苏</span><span class="who">苏晚</span><span class="id">#0040</span><span>3 天前发布</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="1 人参与"><span class="avatar" data-hue="128">苏</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="discussing" data-zone="算法" data-activity="26" data-created="50" data-hot="3" data-mine="1" data-title="我整理了一份二分查找自查清单">
+            <article class="board-row" tabindex="-1">
+              <div class="board-stat" aria-label="2 条回复"><b>2</b><span>回复</span></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="算法"><i></i>算法</span>
+                  <span class="board-pill is-mine">我发的</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">我整理了一份二分查找自查清单</a></h3>
+                <p class="board-excerpt">区间写成 [lo, hi) → 循环条件 lo &lt; hi → mid 更新后区间必须缩小 → 用长度 1、2 的数组各走一遍。想请大家帮忙看看还缺什么。</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="176">样</span><span class="who">样本同学</span><span class="id">#0041</span><span>3 天前发布</span>
+                  <span class="board-last"><svg aria-hidden="true"><use href="#i-reply"/></svg>何以安 · 1 天前</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="3 人参与"><span class="avatar" data-hue="176">样</span><span class="avatar" data-hue="28">何</span><span class="avatar" data-hue="128">苏</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="solved" data-zone="前端" data-activity="20" data-created="120" data-hot="8" data-mine="" data-title="React 状态更新为什么拿到的是旧值">
+            <article class="board-row is-solved" tabindex="-1">
+              <div class="board-stat" aria-label="9 条回复，已解决"><b>9</b><span>回复</span><svg class="board-stat-mark" aria-hidden="true"><use href="#i-check"/></svg></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="前端"><i></i>前端</span>
+                  <span class="board-pill is-solved"><svg aria-hidden="true"><use href="#i-check"/></svg>已解决</span>
+                  <span class="board-pill"><svg aria-hidden="true"><use href="#i-code"/></svg>含代码</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">React 里连续 setState 为什么拿到的还是旧值？</a></h3>
+                <p class="board-excerpt">在事件处理里连续调用两次 setCount(count + 1)，结果只加了 1。看了文档说是「闭包 + 批量更新」，但还是没真正想明白……</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="28">何</span><span class="who">何以安</span><span class="id">#0038</span><span>5 天前发布</span>
+                  <span class="board-last"><svg aria-hidden="true"><use href="#i-reply"/></svg>周知远 · 1 天前</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="5 人参与"><span class="avatar" data-hue="28">何</span><span class="avatar" data-hue="236">周</span><span class="avatar" data-hue="128">苏</span><span class="avatar" data-hue="176">样</span><span class="n">+1</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="discussing" data-zone="概率统计" data-activity="60" data-created="200" data-hot="4" data-mine="" data-title="先验后验总写反">
+            <article class="board-row" tabindex="-1">
+              <div class="board-stat" aria-label="5 条回复"><b>5</b><span>回复</span></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="概率统计"><i></i>概率统计</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">条件概率里「先验 / 后验」总是写反，大家怎么记？</a></h3>
+                <p class="board-excerpt">P(A|B) 和 P(B|A) 在贝叶斯公式里经常混。有没有一个一眼能分清「谁是条件」的口诀或者画图方法？</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="236">周</span><span class="who">周知远</span><span class="id">#0035</span><span>1 周前发布</span>
+                  <span class="board-last"><svg aria-hidden="true"><use href="#i-reply"/></svg>样本同学 · 2 天前</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="3 人参与"><span class="avatar" data-hue="236">周</span><span class="avatar" data-hue="176">样</span><span class="avatar" data-hue="128">苏</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="open" data-zone="系统设计" data-activity="3" data-created="3" data-hot="2" data-mine="" data-title="短链服务怎么选 ID 生成方案">
+            <article class="board-row is-open" tabindex="-1">
+              <div class="board-stat" aria-label="还没有回复"><b>0</b><span>待回复</span></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="系统设计"><i></i>系统设计</span>
+                  <span class="board-pill is-open"><i class="thread-led" aria-hidden="true"></i>等你来回</span>
+                  <span class="board-pill is-new">刚刚</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">系统设计：短链服务的 ID 生成，自增、雪花还是哈希？</a></h3>
+                <p class="board-excerpt">模拟面试时被问到，我答了自增 + base62，但面试官追问「分库之后怎么办」我就卡住了。想听听各位的取舍。</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="28">何</span><span class="who">何以安</span><span class="id">#0044</span><span>3 小时前发布</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="1 人参与"><span class="avatar" data-hue="28">何</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="open" data-zone="线性代数" data-activity="75" data-created="75" data-hot="1" data-mine="" data-title="特征值分解和 SVD">
+            <article class="board-row is-open" tabindex="-1">
+              <div class="board-stat" aria-label="还没有回复"><b>0</b><span>待回复</span></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="线性代数"><i></i>线性代数</span>
+                  <span class="board-pill is-open"><i class="thread-led" aria-hidden="true"></i>等你来回</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">特征值分解和 SVD 到底什么时候用哪个？</a></h3>
+                <p class="board-excerpt">复习时总把两者的适用条件搞混：方阵 / 非方阵、对称 / 非对称……有没有一张对照表？</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="128">苏</span><span class="who">苏晚</span><span class="id">#0033</span><span>2 周前发布</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="1 人参与"><span class="avatar" data-hue="128">苏</span></div>
+            </article>
+          </li>
+
+          <li class="board-item" data-state="solved" data-zone="算法" data-activity="96" data-created="300" data-hot="2" data-mine="" data-title="DP 状态定义">
+            <article class="board-row is-solved" tabindex="-1">
+              <div class="board-stat" aria-label="4 条回复，已解决"><b>4</b><span>回复</span><svg class="board-stat-mark" aria-hidden="true"><use href="#i-check"/></svg></div>
+              <div class="board-body">
+                <div class="board-tags">
+                  <span class="board-zone-chip" data-zone="算法"><i></i>算法</span>
+                  <span class="board-pill is-solved"><svg aria-hidden="true"><use href="#i-check"/></svg>已解决</span>
+                  <span class="board-pill"><svg aria-hidden="true"><use href="#i-code"/></svg>含代码</span>
+                </div>
+                <h3 class="board-title"><a class="board-open" href="../../forum-thread/mock/thread.html">背包问题的状态怎么定义才不容易漏掉「恰好装满」？</a></h3>
+                <p class="board-excerpt">每次一做到「恰好装满」就初始化错，dp[0] 到底该是 0 还是负无穷？</p>
+                <div class="board-meta">
+                  <span class="avatar" data-hue="176">样</span><span class="who">样本同学</span><span class="id">#0029</span><span>3 周前发布</span>
+                  <span class="board-last"><svg aria-hidden="true"><use href="#i-reply"/></svg>苏晚 · 4 天前</span>
+                </div>
+              </div>
+              <div class="board-people" aria-label="3 人参与"><span class="avatar" data-hue="176">样</span><span class="avatar" data-hue="128">苏</span><span class="avatar" data-hue="236">周</span></div>
+            </article>
+          </li>
+        </ol>
+        <p class="thread-empty" id="board-empty" hidden>没有符合条件的帖子。换个筛选，或者<button type="button" class="thread-link" id="board-reset">清除筛选</button>。</p>
+        <p class="board-foot">已显示全部 <b id="board-shown">8</b> 个帖子 · 想看更早的？用上面的搜索</p>
+      </div>
+
+      <!-- ④ 右侧栏（桌面） -->
+      <aside class="board-rail" aria-label="讨论区侧栏">
+        <section class="board-card">
+          <h3 class="board-card-title">PULSE · 论坛脉搏</h3>
+          <button type="button" class="board-help" id="rail-help">
+            <b>3</b><span>个帖子还没人回复</span><em>去帮忙 →</em>
+          </button>
+          <ul class="board-pulse">
+            <li><span>本周新帖</span><b>3</b></li>
+            <li><span>本周回复</span><b>12</b></li>
+            <li><span>我的未解决</span><b>1</b></li>
+          </ul>
+        </section>
+        <section class="board-card">
+          <h3 class="board-card-title">ZONES · 分区</h3>
+          <ul class="board-zonelist">
+            <li><button type="button" data-zone="算法" data-zone-filter="算法"><i></i>算法<b>3</b></button></li>
+            <li><button type="button" data-zone="前端" data-zone-filter="前端"><i></i>前端<b>1</b></button></li>
+            <li><button type="button" data-zone="数据库" data-zone-filter="数据库"><i></i>数据库<b>1</b></button></li>
+            <li><button type="button" data-zone="系统设计" data-zone-filter="系统设计"><i></i>系统设计<b>1</b></button></li>
+            <li><button type="button" data-zone="线性代数" data-zone-filter="线性代数"><i></i>线性代数<b>1</b></button></li>
+            <li><button type="button" data-zone="概率统计" data-zone-filter="概率统计"><i></i>概率统计<b>1</b></button></li>
+          </ul>
+        </section>
+        <section class="board-card board-tip">
+          <h3 class="board-card-title">ASK · 好问题模板</h3>
+          <ol>
+            <li>我想做什么 / 题目是什么</li>
+            <li>我已经试过什么</li>
+            <li>具体卡在哪一步（贴代码或报错）</li>
+          </ol>
+          <button type="button" class="thread-link">发帖时一键套用 <svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+        </section>
+        <p class="board-keys" aria-hidden="true"><kbd>/</kbd> 搜索 <kbd>J</kbd><kbd>K</kbd> 选择 <kbd>↵</kbd> 打开 <kbd>N</kbd> 发帖</p>
+      </aside>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -20,6 +20,7 @@ COMMENT_FIELDS = {
     "id", "post_id", "user_id", "username", "avatar_version", "has_avatar",
     "body", "created_at", "updated_at", "deleted_at", "reply_to_id",
     "floor", "is_op", "reply_to",
+    "helpful_count", "viewer_helpful",
 }
 
 
@@ -225,6 +226,8 @@ def test_is_op_and_existing_fields_are_consistent_for_create_get_edit(client):
     assert comment["username"] == "苏晚"
     assert comment["avatar_version"] == 0
     assert comment["has_avatar"] is False
+    assert comment["helpful_count"] == 0
+    assert comment["viewer_helpful"] is False
     assert get_comments(client, post["id"])[1] == comment
     updated = client.put(
         f"/api/comments/{comment['id']}", json={"body": "编辑后的读者评论"}
@@ -234,6 +237,8 @@ def test_is_op_and_existing_fields_are_consistent_for_create_get_edit(client):
     assert updated["updated_at"] is not None
     assert updated["floor"] == 2
     assert updated["is_op"] is False
+    assert updated["helpful_count"] == 0
+    assert updated["viewer_helpful"] is False
     assert get_comments(client, post["id"])[1] == updated
 
 
@@ -341,8 +346,8 @@ def test_edit_reply_in_deleted_post_does_not_read_hidden_reference(
     reply = create_comment(client, post["id"], "乙的回复", reply_to_id=target["id"])
     client.post("/api/auth/logout")
     if deleted_by == "admin":
-        monkeypatch.setenv("ADMIN_USERNAME", "moderator")
-        register(client, "moderator")
+        monkeypatch.setenv("ADMIN_USERNAME", "moderator_user")
+        register(client, "moderator_user")
         delete_url = f"/api/admin/posts/{post['id']}"
     else:
         assert client.post(

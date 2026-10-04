@@ -1,0 +1,44 @@
+.redeem-panel, .manual-payment-panel, .admin-redeem-card { margin: var(--space-4) 0; min-width: 0; }
+.redeem-panel p, .manual-payment-panel p, .admin-redeem-card p { overflow-wrap: anywhere; }
+.redeem-inline { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-3); }
+.redeem-inline label { flex: 1 1 160px; min-width: 0; }
+.redeem-inline button { flex: 0 0 auto; }
+.redeem-status { min-height: 1.5em; margin: var(--space-2) 0; color: var(--ink); }
+.redeem-status.error { color: var(--ink); font-weight: 600; }
+.manual-qr-grid, .redeem-form-grid, .redeem-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.manual-qr-grid { max-width: 620px; margin: var(--space-4) auto; }
+.manual-qr-button { width: 100%; display: grid; gap: var(--space-2); justify-items: center; color: var(--ink); background: var(--surface); padding: var(--space-3); }
+.manual-qr-button img { display: block; max-width: 100%; width: 240px; height: auto; }
+.manual-price-list { list-style: none; padding: 0; }
+.manual-price-list li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); border-bottom: 1px solid var(--line); padding: var(--space-2) 0; overflow-wrap: anywhere; }
+.admin-redeem-card > summary { min-height: 40px; cursor: pointer; font-size: var(--text-lg); font-weight: 650; color: var(--ink); }
+.admin-redeem-card section { padding-top: var(--space-4); margin-top: var(--space-4); border-top: 1px solid var(--line); min-width: 0; }
+.admin-redeem-card h4 { margin-top: 0; }
+.redeem-form-grid label { min-width: 0; }
+.redeem-check { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; }
+.redeem-check input { width: 20px; height: 20px; margin: 0; }
+.redeem-upload { min-width: 0; }
+.redeem-upload input[type="file"] { max-width: 100%; }
+.redeem-upload img { display: block; width: 140px; max-width: 100%; height: auto; margin: var(--space-3) 0; }
+.redeem-upload .actions, .redeem-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.redeem-plaintext { padding: var(--space-3); border: 2px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--ink); }
+.redeem-plaintext strong { display: block; margin-bottom: var(--space-2); }
+.redeem-plaintext textarea { font-family: Consolas, monospace; min-height: 130px; overflow-wrap: anywhere; }
+.redeem-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.redeem-filters button[aria-pressed="true"] { background: var(--paper-2); border-color: var(--ink); color: var(--ink); }
+.redeem-code-list { display: grid; gap: var(--space-3); }
+.redeem-code-row { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.redeem-code-row h5 { font-size: var(--text-md); margin: 0 0 var(--space-2); }
+.redeem-code-row dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3); margin: 0; }
+.redeem-code-row dt { color: var(--muted); }
+.redeem-code-row dd { margin: 0; overflow-wrap: anywhere; }
+.redeem-code-row button { margin-top: var(--space-3); }
+.manual-qr-dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: var(--space-4); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); }
+.manual-qr-dialog img { display: block; max-width: 100%; max-height: calc(100dvh - 160px); width: auto; height: auto; margin: var(--space-3) auto; }
+.manual-qr-dialog::backdrop { background: var(--paper); opacity: .88; }
+.redeem-panel :is(button, input, select), .admin-redeem-card :is(button, input, select) { min-height: 40px; }
+@media (max-width: 600px) {
+  .manual-qr-grid, .redeem-form-grid, .redeem-upload-grid { grid-template-columns: minmax(0, 1fr); }
+  .redeem-panel, .manual-payment-panel, .admin-redeem-card { padding: var(--space-4); }
+  .redeem-inline button { width: 100%; }
+}

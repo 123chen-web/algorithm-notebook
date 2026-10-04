@@ -41,10 +41,13 @@ const context = {
   finishHomeOpening: null, sealStamps: [], resetToken: null,
   planPurchase: null, forumPost: null, forumSearchQuery: "", forumCommentOrder: "earliest",
   forumOnlyOp: false, forumListGeneration: 0,
+  forumDetailGeneration: 0, forumSummaryController: null, forumCodeOnly: false,
+  forumMentionOnly: false, forumCurrentComment: null, forumMutations: new Map(), forumPreview: false,
 };
 for (const name of ["stopOrderPolling", "resetWeaknessAnalysis", "resetAchievements",
   "resetWeeklyRecap", "resetGroups", "resetHomeSummary", "closeAccountMenu", "showAuthPanels",
   "clearForumReply", "resetAdminDashboard", "addMistakeInput", "resetPhotoForm"]) context[name] = () => {};
+context.setForumPreview = (preview) => { context.forumPreview = preview; };
 context.loadZones = async () => {};
 context.showView = async () => {};
 context.updateUserInfo = () => node("#user-info-wrap").replaceChildren(vm.runInContext("user.username", context));
@@ -66,6 +69,31 @@ const deferred = () => {
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 };
+const primeForum = () => {
+  context.forumPost = { id: 42 };
+  context.forumSearchQuery = "binary";
+  context.forumCommentOrder = "helpful";
+  context.forumOnlyOp = context.forumCodeOnly = context.forumMentionOnly = true;
+  context.forumCurrentComment = 101;
+  context.forumPreview = true;
+  context.forumMutations.set("helpful:101", {});
+  context.forumSummaryResetCount = 0;
+  context.forumSummaryController = { reset() { context.forumSummaryResetCount += 1; } };
+};
+const assertForumReset = () => {
+  assert.equal(context.forumPost, null);
+  assert.equal(context.forumDetailGeneration, 1);
+  assert.equal(context.forumSummaryResetCount, 1);
+  assert.equal(context.forumCodeOnly, false);
+  assert.equal(context.forumMentionOnly, false);
+  assert.equal(context.forumCurrentComment, null);
+  assert.equal(context.forumMutations.size, 0);
+  assert.equal(context.forumPreview, false);
+  assert.equal(context.forumSearchQuery, "");
+  assert.equal(context.forumCommentOrder, "earliest");
+  assert.equal(context.forumOnlyOp, false);
+  assert.equal(context.forumListGeneration, 1);
+};
 async function verify() {
   await login(1, "账号 A");
   assert.equal(session().sessionEpoch, 1);
@@ -77,7 +105,9 @@ async function verify() {
     const pending = context.api("/api/insights/clusters");
     const rejected = assert.rejects(pending, (error) => error.status === 401 && error.message === "旧请求过期");
     await Promise.resolve();
+    primeForum();
     context.signedOut();
+    assertForumReset();
     assert.equal(session().sessionEpoch, 2);
     await login(2, "账号 B");
     assert.equal(session().sessionEpoch, 3);
@@ -94,9 +124,11 @@ async function verify() {
     assert.deepEqual(node("#user-info-wrap").children, ["账号 B"]);
     assert.deepEqual(node("#cards").children, ["账号 B 的错题"]);
   } else if (payload.scenario === "current_401") {
+    primeForum();
     node("#cards").replaceChildren("账号 A 的错题");
     context.fetch = async () => response(401, { detail: "请重新登录" });
     await assert.rejects(context.api("/api/me"), (error) => error.status === 401 && error.message === "请重新登录");
+    assertForumReset();
     assert.equal(session().user, null);
     assert.equal(session().sessionEpoch, 2);
     assert.equal(context.document.documentElement.dataset.view, "welcome");

@@ -15,6 +15,26 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def activate_plan(conn, user_id, plan_id, period_days, now=None):
+    """在调用方的写事务内开通套餐，沿用支付成功时的顺延规则。"""
+    now = utc_now() if now is None else now
+    current_expiry = conn.execute(
+        "SELECT plan_expires_at FROM users WHERE id = ?", (user_id,)
+    ).fetchone()["plan_expires_at"]
+    # 未过期则从当前到期时间顺延；否则从现在起算。切换套餐也不折算价格。
+    base = (
+        datetime.fromisoformat(current_expiry)
+        if current_expiry and current_expiry > now
+        else datetime.fromisoformat(now)
+    )
+    new_expiry = (base + timedelta(days=period_days)).isoformat(timespec="seconds")
+    conn.execute(
+        "UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
+        (plan_id, new_expiry, user_id),
+    )
+    return new_expiry
+
+
 def list_plans():
     with connect() as conn:
         rows = conn.execute(
@@ -205,23 +225,7 @@ def handle_callback(channel, raw_body, headers, *, user_id=None):
             plan = conn.execute(
                 "SELECT period_days FROM plans WHERE id = ?", (order["plan_id"],)
             ).fetchone()
-            current_expiry = conn.execute(
-                "SELECT plan_expires_at FROM users WHERE id = ?", (order["user_id"],)
-            ).fetchone()["plan_expires_at"]
-            # 未过期则从当前到期时间顺延，允许提前续费；否则（无套餐或
-            # 已过期）从现在开始算，不倒扣已经过去的时间。
-            base = (
-                datetime.fromisoformat(current_expiry)
-                if current_expiry and current_expiry > now
-                else datetime.fromisoformat(now)
-            )
-            new_expiry = (base + timedelta(days=plan["period_days"])).isoformat(
-                timespec="seconds"
-            )
-            conn.execute(
-                "UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
-                (order["plan_id"], new_expiry, order["user_id"]),
-            )
+            activate_plan(conn, order["user_id"], order["plan_id"], plan["period_days"], now)
 
         return dict(conn.execute(
             "SELECT * FROM orders WHERE id = ?", (order["id"],)

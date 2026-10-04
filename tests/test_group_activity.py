@@ -120,12 +120,12 @@ def test_shared_member_activity_streams_once_and_keeps_each_groups_daily_window(
     ]
     try:
         conn.executescript("""
-            CREATE TABLE users(id INTEGER, username TEXT, timezone TEXT, avatar_version INTEGER);
+            CREATE TABLE users(id INTEGER, username TEXT, timezone TEXT, avatar_version INTEGER, deleted_at TEXT);
             CREATE TABLE study_group_members(group_id INTEGER, user_id INTEGER, joined_at TEXT);
             CREATE TABLE problems(id INTEGER, user_id INTEGER, created_at TEXT);
             CREATE TABLE mistakes(id INTEGER, problem_id INTEGER);
             CREATE TABLE reviews(mistake_id INTEGER, reviewed_at TEXT);
-            INSERT INTO users VALUES (1, 'alice', 'Asia/Shanghai', 0);
+            INSERT INTO users VALUES (1, 'alice', 'Asia/Shanghai', 0, NULL);
             INSERT INTO mistakes VALUES (1, 1), (99, 99);
             INSERT INTO problems VALUES (99, 99, '2026-09-19T00:00:00+00:00');
             INSERT INTO reviews VALUES (99, '2026-09-19T00:00:00+00:00');

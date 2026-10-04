@@ -158,6 +158,10 @@ def create_clusters(user, today_reader, quota_reader):
     today = today_reader(user).isoformat()
     with ExitStack() as stack:
         with connect(write=True) as conn:
+            if conn.execute(
+                "SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,),
+            ).fetchone() is None:
+                raise HTTPException(401, "登录已过期，请重新登录")
             state = cluster_state(conn, user_id, today)
             if state["mistake_count"] < MIN_MISTAKES:
                 return state
@@ -196,6 +200,10 @@ def create_clusters(user, today_reader, quota_reader):
         }
         ids = [mistake_id for cluster in content["clusters"] for mistake_id in cluster["mistake_ids"]]
         with connect(write=True) as conn:
+            if conn.execute(
+                "SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,),
+            ).fetchone() is None:
+                raise HTTPException(401, "登录已过期，请重新登录")
             sources = _database_members(conn, user_id, ids)
             snapshots = []
             for cluster in content["clusters"]:

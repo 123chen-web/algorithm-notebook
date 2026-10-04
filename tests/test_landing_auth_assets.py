@@ -194,9 +194,10 @@ def test_authentication_view_removes_eyebrow_labels(document):
         }),
         ("register-form", "username", {"maxlength": "32", "autocomplete": "username"}),
         ("register-form", "password", {
-            "type": "password", "minlength": "6", "maxlength": "128",
+            "type": "password", "minlength": "8", "maxlength": "128",
             "autocomplete": "new-password",
         }),
+        ("register-form", "accept_terms", {"type": "checkbox"}),
         ("register-form", "email", {
             "type": "email", "maxlength": "254", "autocomplete": "email",
         }),
@@ -206,7 +207,7 @@ def test_authentication_view_removes_eyebrow_labels(document):
             "type": "email", "maxlength": "254", "autocomplete": "email",
         }),
         ("reset-form", "password", {
-            "type": "password", "minlength": "6", "maxlength": "128",
+            "type": "password", "minlength": "8", "maxlength": "128",
             "autocomplete": "new-password",
         }),
     ],
@@ -232,7 +233,7 @@ def test_authentication_input_validation_is_preserved(
     "form_id,endpoint,payload_fields",
     [
         ("login-form", "/api/auth/login", ("formObject(form)",)),
-        ("register-form", "/api/auth/register", ("formObject(form)",)),
+        ("register-form", "/api/auth/register", ("formObject(form)", "accept_terms: true")),
         ("forgot-form", "/api/auth/forgot-password", ("email: form.email.value",)),
         ("reset-form", "/api/auth/reset-password", ("token: resetToken", "password: form.password.value")),
     ],

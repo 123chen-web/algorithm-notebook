@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -7,6 +8,16 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
+
+
+def normalize_username(value):
+    value = unicodedata.normalize("NFKC", value).strip().lower()
+    if not value:
+        raise ValueError("用户名不能为空")
+    if len(value) > 32:
+        raise ValueError("用户名不能超过 32 个字符")
+    return value
+
 
 SCHEMA = """
 -- 套餐周期或额度变更时新建记录，旧套餐通过 is_active 停用。
@@ -457,11 +468,84 @@ def _apply_ai_calls(conn):
     )
 
 
+def _apply_accounts_and_privacy(conn):
+    conn.execute("ALTER TABLE users ADD COLUMN deleted_at TEXT")
+    conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE users ADD COLUMN terms_accepted_at TEXT")
+    conn.execute("ALTER TABLE users ADD COLUMN terms_version TEXT")
+
+
+def _apply_review_log_columns(conn):
+    conn.execute("ALTER TABLE reviews ADD COLUMN elapsed_days INTEGER")
+    conn.execute("ALTER TABLE reviews ADD COLUMN scheduled_days INTEGER")
+    conn.execute("ALTER TABLE reviews ADD COLUMN ease_before REAL")
+    conn.execute("ALTER TABLE reviews ADD COLUMN repetitions_before INTEGER")
+
+
+def _apply_forum_accept_votes_summaries(conn):
+    conn.execute("ALTER TABLE posts ADD COLUMN accepted_comment_id INTEGER")
+    conn.execute(
+        """
+        CREATE TABLE comment_votes (
+            comment_id INTEGER NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(comment_id, user_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_comment_votes_user ON comment_votes(user_id)")
+    conn.execute(
+        """
+        CREATE TABLE post_summaries (
+            post_id INTEGER PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+            signature TEXT NOT NULL,
+            content TEXT NOT NULL,
+            comment_count INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _apply_manual_payment_and_redeem_codes(conn):
+    conn.execute(
+        """
+        CREATE TABLE redeem_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code_hash TEXT NOT NULL UNIQUE,
+            code_hint TEXT NOT NULL,
+            plan_id INTEGER NOT NULL REFERENCES plans(id),
+            period_days INTEGER NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            created_by INTEGER REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            expires_at TEXT,
+            redeemed_by INTEGER REFERENCES users(id),
+            redeemed_at TEXT,
+            revoked_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_redeem_codes_redeemed_by ON redeem_codes(redeemed_by)"
+    )
+    conn.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute(
+        "INSERT INTO app_settings(key, value) VALUES "
+        "('manual_payment_enabled', '0'), ('manual_payment_contact', '')"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
     (1, "历史数据库基线", _apply_baseline),
     (2, "AI 调用记账", _apply_ai_calls),
+    (3, "复习日志补充列", _apply_review_log_columns),
+    (4, "账号安全与隐私", _apply_accounts_and_privacy),
+    (5, "论坛：采纳、有用、AI 要点", _apply_forum_accept_votes_summaries),
+    (6, "手动收款与兑换码", _apply_manual_payment_and_redeem_codes),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

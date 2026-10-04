@@ -233,6 +233,8 @@ def report_avatar(client, user_id, reason="头像不合适"):
 
 def become_admin(monkeypatch, username):
     monkeypatch.setenv("ADMIN_USERNAME", username)
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE username = ?", (username,))
 
 
 def test_report_avatar_creates_pending_report_visible_to_admin(client, monkeypatch):

@@ -10,6 +10,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
+from legal import PRODUCT_NAME
+
 
 PaymentReference = Annotated[
     str, StringConstraints(strict=True, min_length=1, max_length=128, pattern=r"\S")
@@ -165,7 +167,7 @@ class AlipayChannel:
         total_amount = f"{amount_cents // 100}.{amount_cents % 100:02d}"
         try:
             result = self._client.api_alipay_trade_precreate(
-                subject="欧叶OY订阅",
+                subject=f"{PRODUCT_NAME}订阅",
                 out_trade_no=order["id"],
                 total_amount=total_amount,
                 notify_url=self.notify_url,
@@ -412,7 +414,7 @@ class WechatPayChannel:
             raise PaymentChannelError("微信支付订单金额无效")
         result = self._call(
             self._client.pay,
-            description="欧叶OY订阅",
+            description=f"{PRODUCT_NAME}订阅",
             out_trade_no=order["id"],
             amount={"total": amount_cents},
             notify_url=self.notify_url,

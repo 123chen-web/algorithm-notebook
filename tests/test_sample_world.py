@@ -41,6 +41,9 @@ def login(name):
 mine, newcomer, admin = login(sw.MAIN), login(sw.NEWCOMER), login(sw.ADMIN)
 full_code = next(line for line in open(sw.CREDENTIALS, encoding="utf-8") if sw.FULL_GROUP in line and "已满员" in line).split("：")[-1].strip()
 join = newcomer.post("/api/groups/join", json={"invite_code": full_code})
+posts = mine.get("/api/posts").json()["posts"]
+thread = next(post for post in posts if post["title"].startswith("二分查找的边界"))
+detail = mine.get(f"/api/posts/{thread['id']}").json()
 print(json.dumps({
     "groups": [(g["name"], g["member_count"], g["level"]["number"]) for g in mine.get("/api/groups").json()["groups"]],
     "analysis": mine.get("/api/insights/weakness-analysis").json()["status"],
@@ -51,6 +54,12 @@ print(json.dumps({
     "main_is_admin": mine.get("/api/me").json()["is_admin"],
     "admin_is_admin": admin.get("/api/me").json()["is_admin"],
     "admin_reports": len(admin.get("/api/admin/reports").json()["reports"]),
+    "thread_solved": thread["solved"],
+    "accepted_floor": next(comment["floor"] for comment in detail["comments"]
+                           if comment["id"] == detail["accepted_comment_id"]),
+    "helpful": {comment["floor"]: [comment["helpful_count"], comment["viewer_helpful"]]
+                for comment in detail["comments"]},
+    "thread_summary": mine.get(f"/api/posts/{thread['id']}/summary").json()["summary"],
 }))
 '''
 
@@ -210,6 +219,49 @@ def test_forum_has_floors_quotes_a_deleted_floor_and_a_report(world):
                          "(SELECT id FROM posts WHERE title LIKE '二分查找的边界%')") == [(8,)]
 
 
+def test_forum_has_an_accepted_checklist_votes_and_a_fresh_manual_summary(world):
+    from thread_summary import thread_signature
+
+    folder, _ = world
+    with closing(sqlite3.connect((folder / "sample.db").as_uri() + "?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        post = dict(conn.execute("SELECT * FROM posts WHERE title LIKE '二分查找的边界%'").fetchone())
+        comments = [
+            {**dict(row), "floor": floor}
+            for floor, row in enumerate(conn.execute(
+                "SELECT c.*, u.username FROM post_comments c JOIN users u ON u.id = c.user_id "
+                "WHERE c.post_id = ? ORDER BY c.id", (post["id"],),
+            ), 1)
+        ]
+        assert post["accepted_comment_id"] == comments[1]["id"]
+        assert comments[1]["username"] == "苏晚" and "检查清单" in comments[1]["body"]
+        votes = conn.execute(
+            "SELECT c.id, u.username FROM comment_votes v JOIN post_comments c ON c.id = v.comment_id "
+            "JOIN users u ON u.id = v.user_id WHERE c.post_id = ? ORDER BY c.id, u.username",
+            (post["id"],),
+        ).fetchall()
+        assert {comment["floor"]: sorted(row["username"] for row in votes if row["id"] == comment["id"])
+                for comment in comments if any(row["id"] == comment["id"] for row in votes)} == {
+            1: ["苏晚", "许朝"],
+            2: ["周知远", "样本同学", "陈一鸣"],
+            5: ["周知远"],
+        }
+        assert conn.execute(
+            "SELECT COUNT(*) FROM comment_votes v JOIN post_comments c ON c.id = v.comment_id "
+            "WHERE v.user_id = c.user_id",
+        ).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM post_summaries").fetchone()[0] == 1
+        cached = conn.execute("SELECT * FROM post_summaries WHERE post_id = ?", (post["id"],)).fetchone()
+        assert cached["signature"] == thread_signature(post, comments)
+        assert cached["comment_count"] == 7
+        content = json.loads(cached["content"])
+        assert set(content) == {"tldr", "points", "open_questions"}
+        assert content["tldr"].startswith("（样本）")
+        assert [point["floors"] for point in content["points"]] == [[1, 2], [2], [2, 5, 6]]
+        assert len(content["open_questions"]) == 1
+        assert conn.execute("SELECT COUNT(*) FROM ai_calls WHERE feature = 'thread_summary'").fetchone()[0] == 0
+
+
 def test_accounts_log_in_with_the_shared_password_and_nothing_can_spend_money(world):
     folder, _ = world
     result = run_python(folder, "-c", LOGIN_AND_PROBE)
@@ -224,6 +276,17 @@ def test_accounts_log_in_with_the_shared_password_and_nothing_can_spend_money(wo
     assert facts["full_group_join"] == 403
     assert facts["main_is_admin"] is False and facts["admin_is_admin"] is True
     assert facts["admin_reports"] == 1
+    assert facts["thread_solved"] is True and facts["accepted_floor"] == 2
+    assert facts["helpful"] == {
+        "1": [2, False], "2": [3, True], "4": [0, False], "5": [1, False],
+        "6": [0, False], "7": [0, False], "8": [0, False],
+    }
+    summary = facts["thread_summary"]
+    assert set(summary) == {"tldr", "points", "open_questions", "generated_at", "comment_count", "stale"}
+    assert summary["stale"] is False and summary["comment_count"] == 7
+    assert summary["tldr"].startswith("（样本）")
+    assert [point["floors"] for point in summary["points"]] == [[1, 2], [2], [2, 5, 6]]
+    assert len(summary["open_questions"]) == 1
 
 
 def test_a_second_run_keeps_the_data_and_reset_keeps_the_password(world):

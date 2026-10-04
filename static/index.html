@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/static/new-record.css?v=4">
   <link rel="stylesheet" href="/static/weakness.css?v=3">
   <link rel="stylesheet" href="/static/groups.css?v=2">
-  <link rel="stylesheet" href="/static/forum.css?v=3">
+  <link rel="stylesheet" href="/static/forum.css?v=5">
   <link rel="stylesheet" href="/static/shell.css?v=3">
   <link rel="stylesheet" href="/static/overview.css?v=2">
   <link rel="stylesheet" href="/static/activity.css?v=2">
@@ -26,6 +26,8 @@
   <link rel="stylesheet" href="/static/tags.css?v=2">
   <link rel="stylesheet" href="/static/mastery.css?v=2">
   <link rel="stylesheet" href="/static/clusters.css?v=2">
+  <link rel="stylesheet" href="/static/account.css?v=1">
+  <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=12"></script>
@@ -38,9 +40,12 @@
   <script defer src="/static/mastery.js?v=2"></script>
   <script defer src="/static/clusters.js?v=4"></script>
   <script defer src="/static/print.js?v=2"></script>
-  <script defer src="/static/shell.js?v=3"></script>
+  <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=2"></script>
-  <script defer src="/static/app.js?v=54"></script>
+  <script defer src="/static/thread.js?v=1"></script>
+  <script defer src="/static/redeem.js?v=1"></script>
+  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
 <body>
@@ -133,6 +138,9 @@
               </label>
               <button id="remove-avatar-btn" type="button" hidden>移除头像</button>
               <a class="link-button" href="/api/export">导出我的数据</a>
+              <button id="account-password" type="button" hidden>修改密码…</button>
+              <button id="account-revoke-others" type="button" hidden>退出其他设备</button>
+              <button id="account-delete" type="button" class="account-danger" hidden>注销账号…</button>
               <button type="button" class="link-button fx-toggle" id="fx-toggle"></button>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
@@ -143,6 +151,11 @@
               <label class="account-preference" for="account-scene">风景
                 <select id="account-scene" data-scene-select aria-label="账号页面风景"></select>
               </label>
+              <nav class="legal-links account-legal-links" aria-label="法律信息">
+                <a href="/terms" target="_blank" rel="noopener">服务条款</a>
+                <span aria-hidden="true">·</span>
+                <a href="/privacy" target="_blank" rel="noopener">隐私政策</a>
+              </nav>
               <button id="logout" type="button" hidden>退出登录</button>
             </div>
           </details>
@@ -170,6 +183,11 @@
         <input name="email" type="email" required maxlength="254"
                autocomplete="email" aria-describedby="email-prompt-hint"
                placeholder="你常用的邮箱">
+      </label>
+      <label>
+        当前密码
+        <input name="password" type="password" required maxlength="128"
+               autocomplete="current-password" placeholder="输入当前密码">
       </label>
       <button type="submit" class="primary">绑定邮箱</button>
     </form>
@@ -252,6 +270,11 @@
           <button type="button" class="link-button fx-toggle" id="fx-toggle-intro"></button>
         </p>
       </div>
+      <nav class="legal-links" aria-label="法律信息">
+        <a href="/terms" target="_blank" rel="noopener">服务条款</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy" target="_blank" rel="noopener">隐私政策</a>
+      </nav>
     </section>
 
     <p id="notice" role="status" aria-live="polite"></p>
@@ -301,11 +324,11 @@
           <div>
             <label>
               密码
-              <input name="password" type="password" required minlength="6"
+              <input name="password" type="password" required minlength="8"
                      maxlength="128" autocomplete="new-password"
                      aria-describedby="register-password-hint">
             </label>
-            <p id="register-password-hint" class="field-hint" hidden>至少 6 个字符。</p>
+            <p id="register-password-hint" class="field-hint" hidden>至少 8 个字符。</p>
           </div>
         </div>
         <label>
@@ -328,6 +351,10 @@
           </label>
         </div>
         <p id="timezone-hint" class="field-hint" hidden>复习日期以此时区为准，注册后暂不支持修改。</p>
+        <label class="legal-consent">
+          <input name="accept_terms" type="checkbox" required>
+          <span>我已阅读并同意<a href="/terms" target="_blank" rel="noopener">《服务条款》</a>和<a href="/privacy" target="_blank" rel="noopener">《隐私政策》</a></span>
+        </label>
         <button type="submit" class="primary">注册并登录</button>
       </form>
 
@@ -353,14 +380,19 @@
         </div>
         <label>
           新密码
-          <input name="password" type="password" required minlength="6"
+          <input name="password" type="password" required minlength="8"
                  maxlength="128" autocomplete="new-password"
                  aria-describedby="reset-password-hint">
         </label>
-        <p id="reset-password-hint" class="field-hint" hidden>至少 6 个字符。</p>
+        <p id="reset-password-hint" class="field-hint" hidden>至少 8 个字符。</p>
         <button type="submit" class="primary">保存新密码</button>
       </form>
       <button id="auth-trial-start" type="button" class="link-button auth-trial" title="体验数据可能定期清理，长期保存请注册。">免注册体验</button>
+      <nav class="legal-links" aria-label="法律信息">
+        <a href="/terms" target="_blank" rel="noopener">服务条款</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy" target="_blank" rel="noopener">隐私政策</a>
+      </nav>
     </section>
 
     <main id="app" tabindex="-1" hidden>
@@ -930,39 +962,71 @@
           <div class="forum-detail-navigation">
             <button id="forum-back" type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button>
           </div>
-          <article id="forum-post" aria-labelledby="forum-detail-title"></article>
+          <div class="thread-grid">
+          <div class="thread-main">
+          <article id="forum-post" class="thread-post" aria-labelledby="forum-detail-title"></article>
+          <section id="forum-accepted" class="thread-answer thread-accepted" aria-labelledby="forum-accepted-title" hidden></section>
+          <section id="forum-summary" class="thread-summary" aria-labelledby="forum-summary-title" aria-live="polite" hidden></section>
           <section id="forum-comments-section" aria-labelledby="forum-comments-title">
-            <div class="forum-comments-heading">
-              <h3 id="forum-comments-title">全部评论 · 0</h3>
-              <div class="forum-comment-controls">
-                <div id="forum-comment-sort" class="forum-sort" role="group" aria-label="评论排序">
+            <div class="forum-comments-heading thread-toolbar" role="toolbar" aria-label="评论筛选与排序">
+              <h3 id="forum-comments-title">回复 <span class="thread-count-badge">0</span></h3>
+              <div class="forum-comment-controls thread-controls">
+                <div id="forum-comment-sort" class="forum-sort thread-seg" role="group" aria-label="评论排序">
                   <button type="button" data-forum-order="earliest" aria-pressed="true" aria-controls="forum-comments">最早</button>
                   <button type="button" data-forum-order="latest" aria-pressed="false" aria-controls="forum-comments">最新</button>
+                  <button type="button" data-forum-order="helpful" aria-pressed="false" aria-controls="forum-comments" hidden>最有用</button>
                 </div>
-                <button id="forum-only-op" type="button" aria-pressed="false" aria-controls="forum-comments">只看楼主</button>
+                <button id="forum-only-op" class="thread-filter thread-chip" type="button" aria-pressed="false" aria-controls="forum-comments">只看楼主</button>
+                <button id="forum-code-only" class="thread-filter thread-chip" type="button" aria-pressed="false" aria-controls="forum-comments">含代码 <span id="forum-code-count">0</span></button>
+                <button id="forum-mention-only" class="thread-filter thread-chip" type="button" aria-pressed="false" aria-controls="forum-comments">@我 <span id="forum-mention-count">0</span></button>
               </div>
+              <span class="thread-key-hint thread-keys" aria-hidden="true"><kbd>J</kbd> <kbd>K</kbd> 切换楼层 · <kbd>R</kbd> 回复</span>
             </div>
             <p id="forum-comment-status" class="forum-sr-only" role="status" aria-live="polite"></p>
-            <div id="forum-comments"></div>
-            <form id="forum-comment-form" aria-labelledby="forum-composer-title">
+            <div id="forum-comments" class="thread-list"></div>
+            <form id="forum-comment-form" class="thread-composer" aria-labelledby="forum-composer-title">
               <div id="forum-comment-avatar" aria-hidden="true"></div>
-              <div class="forum-composer-content">
-                <label id="forum-composer-title" for="forum-comment-body">发表你的看法</label>
+              <div class="thread-composer-head thread-composer-bar">
+                <label id="forum-composer-title" for="forum-comment-body"><span aria-hidden="true">&gt; </span>发表你的看法</label>
                 <div id="forum-reply-target" class="forum-reply-target" role="status" hidden>
                   <span id="forum-reply-label"></span>
                   <button id="forum-reply-cancel" type="button" class="forum-text-action" aria-label="取消回复">×</button>
                 </div>
-                <textarea id="forum-comment-body" name="body" required maxlength="2000" rows="3" placeholder="一起聊聊你的思路…" aria-describedby="forum-comment-count"></textarea>
-                <div class="forum-composer-footer">
-                  <output id="forum-comment-count" for="forum-comment-body">0/2000</output>
-                  <button type="submit" class="primary">发表评论</button>
+                <div class="thread-tabs" role="group" aria-label="回复编辑模式">
+                  <button id="forum-editor-tab" type="button" aria-pressed="true" aria-controls="forum-comment-body">编辑</button>
+                  <button id="forum-preview-tab" type="button" aria-pressed="false" aria-controls="forum-comment-preview">预览</button>
                 </div>
+              </div>
+              <div class="forum-composer-content">
+                <textarea id="forum-comment-body" name="body" required maxlength="2000" rows="3" placeholder="一起聊聊你的思路…  支持 ```代码块``` 和 `行内代码`" aria-describedby="forum-comment-count"></textarea>
+                <div id="forum-comment-preview" class="thread-rich thread-prose" role="region" aria-label="回复预览" hidden></div>
+              </div>
+              <div class="forum-composer-footer thread-composer-footer thread-composer-tools">
+                <button id="forum-insert-code" class="forum-text-action thread-code-insert thread-act" type="button" aria-label="插入代码块">⌘ 代码块</button>
+                <span class="thread-meter" aria-hidden="true"><span id="forum-comment-progress"></span></span>
+                <output id="forum-comment-count" for="forum-comment-body">0 / 2000</output>
+                <button id="forum-comment-send" type="submit" class="primary thread-send">发送 <kbd>Ctrl ⏎</kbd></button>
               </div>
             </form>
             <p id="forum-comment-trial-note" hidden>体验账号可以浏览，不能评论</p>
           </section>
           <div class="forum-detail-navigation forum-detail-navigation-bottom">
             <button id="forum-back-bottom" type="button" class="forum-back-button"><span aria-hidden="true">←</span> 返回讨论区</button>
+          </div>
+          </div>
+          <aside class="thread-rail" aria-hidden="true">
+            <div id="forum-minimap" class="thread-minimap thread-map" hidden>
+              <div class="thread-map-readout"><b id="forum-map-floor">#01</b><span id="forum-map-total">共 0 条</span></div>
+              <div id="forum-map-track" class="thread-map-track"><div id="forum-map-thumb" class="thread-map-thumb"></div><div id="forum-map-ticks" class="thread-map-ticks"></div></div>
+              <div class="thread-map-buttons thread-map-jumps"><button id="forum-map-top" class="thread-map-btn" type="button" tabindex="-1" aria-label="回到顶部">⌃</button><button id="forum-map-latest" class="thread-map-btn" type="button" tabindex="-1" aria-label="到最新">⌄</button></div>
+              <div class="thread-map-legend"><span class="is-op">— 楼主</span><span class="has-code">◆ 代码</span><span class="is-accepted">● 采纳</span></div>
+            </div>
+          </aside>
+          </div>
+          <div id="forum-floor-nav" class="thread-floor-nav thread-hud" aria-hidden="true" hidden>
+            <button id="forum-floor-prev" type="button" tabindex="-1" aria-label="上一条评论">↑</button>
+            <span><b id="forum-floor-current">#01</b> / <b id="forum-floor-total">0</b></span>
+            <button id="forum-floor-next" type="button" tabindex="-1" aria-label="下一条评论">↓</button>
           </div>
         </section>
       </section>
@@ -992,6 +1056,78 @@
             </section>
           </div>
         </section>
+        <details id="admin-redeem-card" class="panel admin-redeem-card" data-admin-only open hidden>
+          <summary>手动收款与兑换码</summary>
+          <section aria-labelledby="manual-settings-title">
+            <h4 id="manual-settings-title">收款设置</h4>
+            <form id="manual-settings-form">
+              <label class="redeem-check"><input id="manual-enabled" type="checkbox">启用内测期手动付款</label>
+              <label for="manual-contact">联系站长的方式（微信号 / 邮箱等）</label>
+              <input id="manual-contact" type="text" maxlength="200" autocomplete="off">
+              <div class="redeem-actions"><button id="manual-settings-save" type="submit">保存设置</button></div>
+              <p id="manual-settings-status" class="redeem-status" role="status" aria-live="polite"></p>
+            </form>
+            <div class="redeem-upload-grid">
+              <div class="redeem-upload">
+                <label for="manual-alipay-file">支付宝个人收款码（PNG / JPEG，最多 2 MB）</label>
+                <input id="manual-alipay-file" type="file" accept="image/png,image/jpeg">
+                <img id="manual-alipay-preview" alt="支付宝收款码预览" hidden>
+                <div class="actions"><button id="manual-alipay-upload" type="button">上传支付宝码</button><button id="manual-alipay-delete" type="button">删除支付宝码</button></div>
+                <p id="manual-alipay-status" class="redeem-status" role="status" aria-live="polite"></p>
+              </div>
+              <div class="redeem-upload">
+                <label for="manual-wechat-file">微信个人收款码（PNG / JPEG，最多 2 MB）</label>
+                <input id="manual-wechat-file" type="file" accept="image/png,image/jpeg">
+                <img id="manual-wechat-preview" alt="微信收款码预览" hidden>
+                <div class="actions"><button id="manual-wechat-upload" type="button">上传微信码</button><button id="manual-wechat-delete" type="button">删除微信码</button></div>
+                <p id="manual-wechat-status" class="redeem-status" role="status" aria-live="polite"></p>
+              </div>
+            </div>
+          </section>
+          <section aria-labelledby="redeem-generate-title">
+            <h4 id="redeem-generate-title">生成兑换码</h4>
+            <form id="redeem-generate-form">
+              <div class="redeem-form-grid">
+                <label>套餐<select id="redeem-plan" required></select></label>
+                <label>数量<input id="redeem-count" type="number" min="1" max="50" value="1" required></label>
+                <label>开通天数（留空为套餐默认）<input id="redeem-days" type="number" min="1" max="3650"></label>
+                <label>多少天内有效（留空为不过期）<input id="redeem-expiry" type="number" min="1" max="365"></label>
+              </div>
+              <label for="redeem-note">备注</label><input id="redeem-note" type="text" maxlength="100">
+              <div class="redeem-actions"><button id="redeem-generate" type="submit">生成兑换码</button></div>
+              <p id="redeem-generate-status" class="redeem-status" role="status" aria-live="polite"></p>
+            </form>
+            <div id="redeem-generated" class="redeem-plaintext" hidden>
+              <strong>关闭后不能再看到明文，请现在复制发给对方</strong>
+              <label for="redeem-generated-codes">本次生成的兑换码</label><textarea id="redeem-generated-codes" readonly spellcheck="false"></textarea>
+              <div class="redeem-actions"><button id="redeem-copy" type="button">复制全部</button><button id="redeem-generated-close" type="button">关闭并清空明文</button></div>
+              <p id="redeem-copy-status" class="redeem-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+          <section aria-labelledby="redeem-list-title">
+            <h4 id="redeem-list-title">兑换码记录（最近 50 条）</h4>
+            <div id="redeem-status-filters" class="redeem-filters" aria-label="兑换码状态筛选">
+              <button type="button" data-redeem-status="all" aria-pressed="true">全部</button>
+              <button type="button" data-redeem-status="unused" aria-pressed="false">未使用</button>
+              <button type="button" data-redeem-status="redeemed" aria-pressed="false">已兑换</button>
+              <button type="button" data-redeem-status="revoked" aria-pressed="false">已撤销</button>
+            </div>
+            <p id="redeem-list-status" class="redeem-status" role="status" aria-live="polite"></p>
+            <div id="redeem-code-list" class="redeem-code-list"></div>
+          </section>
+          <section aria-labelledby="manual-grant-title">
+            <h4 id="manual-grant-title">直接开通</h4>
+            <form id="manual-grant-form">
+              <div class="redeem-form-grid">
+                <label>用户名<input id="grant-username" type="text" required autocomplete="off"></label>
+                <label>套餐<select id="grant-plan" required></select></label>
+                <label>天数（留空为套餐默认）<input id="grant-days" type="number" min="1" max="3650"></label>
+              </div>
+              <div class="redeem-actions"><button id="manual-grant-submit" type="submit">开通套餐</button></div>
+              <p id="manual-grant-status" class="redeem-status" role="status" aria-live="polite"></p>
+            </form>
+          </section>
+        </details>
         <h3 class="admin-reports-heading">举报处理</h3>
         <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
         <p id="admin-status" class="muted" role="status" aria-live="polite"></p>
@@ -1012,6 +1148,30 @@
         </section>
 
         <p id="plan-trial-note" class="muted" hidden>体验账号不支持购买套餐，注册正式账号后可以购买。</p>
+
+        <section id="redeem-panel" class="panel redeem-panel" aria-labelledby="redeem-title" hidden>
+          <h3 id="redeem-title">有兑换码？</h3>
+          <form id="redeem-form" data-state="idle">
+            <div class="redeem-inline">
+              <label for="redeem-code">兑换码<input id="redeem-code" type="text" maxlength="64" autocomplete="off" spellcheck="false" inputmode="text" aria-describedby="redeem-status" placeholder="XXXX-XXXX-XXXX-XXXX"></label>
+              <button id="redeem-submit" class="primary" type="submit">兑换</button>
+            </div>
+            <p id="redeem-status" class="redeem-status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <p id="redeem-trial-note" class="muted" hidden>注册正式账号后可兑换。</p>
+        <p id="manual-payment-status" class="redeem-status" role="status" aria-live="polite"></p>
+        <section id="manual-payment-panel" class="panel manual-payment-panel" aria-labelledby="manual-payment-title" hidden>
+          <h3 id="manual-payment-title">手动付款（内测期）</h3>
+          <ul id="manual-payment-prices" class="manual-price-list"></ul>
+          <p>扫码付款，付款备注里写上你的用户名。付款后把截图发给站长，站长确认后会发给你兑换码；内测期间通常当天处理。</p>
+          <div id="manual-payment-qrs" class="manual-qr-grid"></div>
+          <p>联系站长：<span id="manual-payment-contact"></span></p>
+        </section>
+        <dialog id="manual-qr-dialog" class="manual-qr-dialog" aria-labelledby="manual-qr-title">
+          <div class="redeem-inline"><h3 id="manual-qr-title">收款码</h3><button id="manual-qr-close" type="button">关闭</button></div>
+          <img id="manual-qr-large" alt="放大的个人收款码">
+        </dialog>
 
         <section id="plan-catalog" aria-labelledby="plan-catalog-title">
           <h3 id="plan-catalog-title">可购买套餐</h3>
@@ -1063,6 +1223,9 @@
       <div class="more-foot"><button type="button" class="more-refresh" id="more-refresh"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span>刷新当前页</span></button></div>
     </div>
   </div>
+  <dialog id="account-dialog" aria-labelledby="account-dialog-title">
+    <div id="account-dialog-content" class="account-dialog-content"></div>
+  </dialog>
   <div id="seal-layer" aria-hidden="true"></div>
 </body>
 </html>

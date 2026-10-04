@@ -138,11 +138,14 @@ class FakeElement {
   }
   append(...items) {
     this._text = null;
-    this.children.push(...this._take(items));
+    const taken = this._take(items);
+    this.children.push(...taken);
   }
+  appendChild(node) { this.append(node); return node; }
   prepend(...items) {
     this._text = null;
-    this.children.unshift(...this._take(items));
+    const taken = this._take(items);
+    this.children.unshift(...taken);
   }
   replaceChildren(...items) {
     for (const child of this.children) child.parentNode = null;
@@ -153,6 +156,24 @@ class FakeElement {
   remove() {
     if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
     this.parentNode = null;
+  }
+  replaceWith(node) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    const index = parent.children.indexOf(this);
+    this.remove();
+    parent.children.splice(index, 0, ...parent._take([node]));
+  }
+  get nextElementSibling() {
+    const children = this.parentNode?.children.filter((node) => node.nodeType === 1) || [];
+    return children[children.indexOf(this) + 1] || null;
+  }
+  get previousElementSibling() {
+    const children = this.parentNode?.children.filter((node) => node.nodeType === 1) || [];
+    return children[children.indexOf(this) - 1] || null;
+  }
+  setSelectionRange(start, end, direction = "none") {
+    this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction;
   }
   setAttribute(name, value) {
     this.attributes[name] = String(value);
@@ -218,6 +239,30 @@ class FakeEvent {
   stopPropagation() {}
 }
 
+class FakeDialog extends FakeElement {
+  constructor(owner) {
+    super("dialog", owner);
+    this.open = false;
+    this.returnValue = "";
+  }
+  showModal() {
+    this.open = true;
+    this.setAttribute("open", "");
+  }
+  close(returnValue = "") {
+    if (!this.open) return;
+    this.open = false;
+    this.returnValue = String(returnValue);
+    this.removeAttribute("open");
+    this.dispatchEvent(new FakeEvent("close"));
+  }
+  dispatchEvent(event) {
+    const allowed = super.dispatchEvent(event);
+    if (event.type === "cancel" && allowed) this.close();
+    return allowed;
+  }
+}
+
 class FakeDocument {
   constructor() {
     this.documentElement = new FakeElement("html", this);
@@ -228,8 +273,9 @@ class FakeDocument {
     this.activeElement = null;
     this.hidden = false;
   }
-  createElement(tag) { return new FakeElement(tag, this); }
+  createElement(tag) { return String(tag).toLowerCase() === "dialog" ? new FakeDialog(this) : new FakeElement(tag, this); }
   createElementNS(_namespace, tag) { return new FakeElement(tag, this); }
+  createTextNode(text) { return new TextNode(text); }
   createDocumentFragment() { return new FakeElement("#fragment", this); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
   removeEventListener(type, listener) { this.listeners[type] = (this.listeners[type] || []).filter((item) => item !== listener); }
@@ -299,12 +345,13 @@ function load(files, { extra = {} } = {}) {
     window, document, fetch: fetchStub, console, setTimeout, clearTimeout, Promise,
     CustomEvent: FakeEvent, Event: FakeEvent, Intl, URLSearchParams, encodeURIComponent,
     ResizeObserver: undefined,
+    HTMLDialogElement: FakeDialog,
   });
   for (const file of files) vm.runInContext(fs.readFileSync(path.join(STATIC, file), "utf8"), context, { filename: file });
   const respond = (call, status, body) => call.resolve({
     ok: status >= 200 && status < 300, status, json: async () => body,
   });
-  return { window, document, calls, events, respond };
+  return { window, document, calls, events, respond, context };
 }
 
-module.exports = { load, tick, deferred, FakeElement };
+module.exports = { load, tick, deferred, FakeElement, FakeEvent, FakeDialog };

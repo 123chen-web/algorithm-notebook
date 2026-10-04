@@ -18,9 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mailer
 from db import connect, init_db
+from legal import PRODUCT_NAME
 from scheduler import today_in_timezone
 
-REMINDER_SUBJECT = "欧叶OY：今天有易错点待复习"
+REMINDER_SUBJECT = f"{PRODUCT_NAME}：今天有易错点待复习"
 REMINDER_ITEM_LIMIT = 8
 
 
@@ -73,7 +74,7 @@ def reminder_body(username, count, mistakes):
     if remaining > 0:
         lines.extend(["", f"还有 {remaining} 条易错点待复习，可在网站查看。"])
     lines.extend([
-        "", "打开欧叶OY，进入“今日复习”，从最早到期的一条开始吧。", "",
+        "", f"打开{PRODUCT_NAME}，进入“今日复习”，从最早到期的一条开始吧。", "",
         "（这是自动提醒邮件，回复不会被处理。）",
     ])
     return "\n".join(lines)
@@ -97,7 +98,8 @@ def main(argv=None):
 
     with connect(write=not args.dry_run) as conn:
         users = conn.execute(
-            "SELECT id, username, email, timezone, last_reminder_sent FROM users"
+            "SELECT id, username, email, timezone, last_reminder_sent FROM users "
+            "WHERE deleted_at IS NULL"
         ).fetchall()
 
         for user in users:

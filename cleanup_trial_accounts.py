@@ -48,7 +48,7 @@ def main(argv=None):
         expired = conn.execute(
             """
             SELECT id, username, created_at FROM users
-            WHERE is_trial = 1 AND created_at < ?
+            WHERE is_trial = 1 AND deleted_at IS NULL AND created_at < ?
             ORDER BY created_at
             """,
             (cutoff,),

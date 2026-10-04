@@ -183,6 +183,7 @@ class Builder:
         client = self.http()
         response = client.post("/api/auth/register", json={
             "username": name, "password": self.password, "invite_code": INVITE_CODE,
+            "accept_terms": True,
             "email": f"sample{len(self.clients) + 1}@example.com", "timezone": "Asia/Shanghai",
         })
         assert response.status_code in (200, 201), (name, response.text)
@@ -488,6 +489,50 @@ def build(password):
     assert world.clients["陈一鸣"].delete(f"/api/comments/{comment_ids[2]}").status_code == 200
     reported = world.clients["何以安"].post(f"/api/comments/{comment_ids[1]}/report", json={"reason": "（样本）演示举报队列，管理员可以直接忽略"})
     assert reported.status_code == 201, reported.text
+
+    # Use the same HTTP writes as a real visitor; nobody votes for their own comment.
+    accepted = world.clients["周知远"].put(
+        f"/api/posts/{thread['id']}/accepted", json={"comment_id": comment_ids[1]},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json() == {"accepted_comment_id": comment_ids[1]}
+    for comment_index, voters in (
+        (1, ("周知远", MAIN, "陈一鸣")),
+        (0, ("苏晚", "许朝")),
+        (4, ("周知远",)),
+    ):
+        for count, name in enumerate(voters, 1):
+            vote = world.clients[name].put(f"/api/comments/{comment_ids[comment_index]}/helpful")
+            assert vote.status_code == 200, vote.text
+            assert vote.json() == {"helpful_count": count, "viewer_helpful": True}
+
+    # A manually written sample shows the feature without any provider request.
+    from thread_summary import thread_signature
+
+    summary = {
+        "tldr": "（样本）二分边界自查先固定区间含义，再检查循环条件、更新后区间缩小，并手动验证长度 1、2 的数组。",
+        "points": [
+            {"text": "动笔前写下不变量，所有边界更新都围绕同一份区间定义。", "floors": [1, 2]},
+            {"text": "检查循环条件与开闭区间是否一致，确认每次 mid 更新都会缩小区间。", "floors": [2]},
+            {"text": "手动走长度 1、2 的数组；使用模板函数时也要先固定模板的区间定义。", "floors": [2, 5, 6]},
+        ],
+        "open_questions": ["楼主按清单重做三道题后，哪些边界错误仍会出现？"],
+    }
+    with world.connect(write=True) as conn:
+        current_post = dict(conn.execute("SELECT * FROM posts WHERE id = ?", (thread["id"],)).fetchone())
+        current_comments = [
+            {**dict(row), "floor": floor}
+            for floor, row in enumerate(conn.execute(
+                "SELECT * FROM post_comments WHERE post_id = ? ORDER BY id", (thread["id"],),
+            ), 1)
+        ]
+        conn.execute(
+            "INSERT INTO post_summaries(post_id, signature, content, comment_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (thread["id"], thread_signature(current_post, current_comments),
+             json.dumps(summary, ensure_ascii=False),
+             sum(comment["deleted_at"] is None for comment in current_comments), world.ts()),
+        )
 
 
 def invite_codes():

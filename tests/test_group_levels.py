@@ -437,12 +437,12 @@ def test_group_points_queries_batch_groups_and_keep_membership_windows():
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript("""
-            CREATE TABLE users(id INTEGER, username TEXT, timezone TEXT, avatar_version INTEGER);
+            CREATE TABLE users(id INTEGER, username TEXT, timezone TEXT, avatar_version INTEGER, deleted_at TEXT);
             CREATE TABLE study_group_members(group_id INTEGER, user_id INTEGER, joined_at TEXT);
             CREATE TABLE problems(id INTEGER, user_id INTEGER, created_at TEXT);
             CREATE TABLE mistakes(id INTEGER, problem_id INTEGER);
             CREATE TABLE reviews(mistake_id INTEGER, reviewed_at TEXT);
-            INSERT INTO users VALUES (1, 'alice', 'Asia/Shanghai', 0), (2, 'bob', 'UTC', 0);
+            INSERT INTO users VALUES (1, 'alice', 'Asia/Shanghai', 0, NULL), (2, 'bob', 'UTC', 0, NULL);
             INSERT INTO study_group_members VALUES
                 (1, 1, '2026-09-19T00:00:00+00:00'),
                 (1, 2, '2026-09-19T00:00:00+00:00'),

@@ -14,6 +14,8 @@ def schedule(
     ease_factor: float,
     quality: int,
     reviewed_on: date,
+    *,
+    overdue_days: int = 0,
 ) -> dict:
     """
     简化 SM-2。
@@ -33,6 +35,7 @@ def schedule(
     if quality < 3:
         next_repetitions = 0
         next_interval = 1
+        next_ease = max(1.3, ease_factor - 0.2)
     else:
         if repetitions == 0:
             next_interval = 1
@@ -40,13 +43,16 @@ def schedule(
             next_interval = 6
         else:
             # 使用本次评分前的易度系数计算间隔。
-            next_interval = max(1, ceil(interval_days * ease_factor))
+            effective_interval = interval_days
+            if repetitions >= 2 and overdue_days > 0:
+                credit = {3: 0.25, 4: 0.5, 5: 1.0}[quality]
+                effective_interval += credit * min(overdue_days, 2 * interval_days)
+            next_interval = max(1, ceil(effective_interval * ease_factor))
         next_repetitions = repetitions + 1
-
-    next_ease = max(
-        1.3,
-        ease_factor + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02),
-    )
+        next_ease = max(
+            1.3,
+            ease_factor + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02),
+        )
 
     return {
         "repetitions": next_repetitions,

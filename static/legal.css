@@ -1,0 +1,104 @@
+.legal-page {
+  background: var(--paper);
+  color: var(--ink);
+  line-height: var(--lh-prose);
+}
+
+.legal-document {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--space-6) max(16px, var(--space-5)) var(--space-8);
+  overflow-wrap: anywhere;
+}
+
+.legal-header {
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.legal-header h1 {
+  margin: var(--space-5) 0 var(--space-2);
+  color: inherit;
+  font-family: var(--serif);
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  line-height: var(--lh-heading);
+}
+
+.legal-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.legal-document section {
+  margin-top: var(--space-6);
+}
+
+.legal-document h2 {
+  margin: 0 0 var(--space-3);
+  color: inherit;
+  font-size: var(--text-lg);
+  line-height: var(--lh-heading);
+}
+
+.legal-document p {
+  margin: var(--space-3) 0;
+}
+
+.legal-document ul {
+  margin: var(--space-3) 0;
+  padding-left: 1.5em;
+}
+
+.legal-document li + li {
+  margin-top: var(--space-3);
+}
+
+.legal-footer {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.legal-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+@media (max-width: 480px) {
+  .legal-document {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .legal-page {
+    color-scheme: dark;
+    background: var(--code-surface);
+    color: var(--code-ink);
+  }
+
+  .legal-page .legal-meta {
+    color: var(--code-ink);
+    color: color-mix(in srgb, var(--code-ink) 80%, var(--code-surface));
+  }
+
+  .legal-page a {
+    color: var(--code-ink);
+  }
+
+  .legal-page a:hover {
+    color: color-mix(in srgb, var(--code-ink) 80%, var(--code-surface));
+  }
+
+  .legal-page a:focus-visible {
+    outline-color: var(--code-ink);
+  }
+
+  .legal-page :is(.legal-header, .legal-footer) {
+    border-color: color-mix(in srgb, var(--code-ink) 25%, var(--code-surface));
+  }
+}
