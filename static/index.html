@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=13">
   <link rel="stylesheet" href="/static/new-record.css?v=4">
+  <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=3">
   <link rel="stylesheet" href="/static/groups.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=5">
@@ -44,7 +45,8 @@
   <script defer src="/static/overview.js?v=2"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/app.js?v=58"></script>
+  <script defer src="/static/capture.js?v=1"></script>
+  <script defer src="/static/app.js?v=59"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -670,6 +672,32 @@
             <p class="muted">保留当时的想法，尤其是出错的那一步。</p>
           </div>
         </div>
+        <section id="capture-box" class="capture-box" aria-labelledby="capture-label">
+          <div>
+            <label id="capture-label" class="capture-label" for="capture-url">粘贴题目链接（LeetCode / 洛谷 / 牛客 / Codeforces / AtCoder）</label>
+            <div class="capture-input-row">
+              <input id="capture-url" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength="2100" placeholder="https://leetcode.cn/problems/two-sum/">
+              <button id="capture-go" type="button">识别</button>
+            </div>
+          </div>
+          <p id="capture-status" class="capture-status" role="status" aria-live="polite"></p>
+          <p id="capture-banner" class="capture-banner" hidden></p>
+          <details id="capture-bookmarklet-box" class="capture-bookmarklet-box">
+            <summary>安装书签小工具</summary>
+            <ol>
+              <li>显示浏览器的书签栏。</li>
+              <li>把下面的“收录到欧叶OY”按钮拖到书签栏。</li>
+              <li>在刷题网站的题目页点一下它，就会带着题名和链接跳到这里。</li>
+            </ol>
+            <p class="capture-actions">
+              <a id="capture-bookmarklet" class="capture-bookmarklet" href="#/app" draggable="true">收录到欧叶OY</a>
+              <button id="capture-copy" type="button">复制书签代码</button>
+            </p>
+            <p id="capture-copy-status" class="capture-copy-status" role="status" aria-live="polite"></p>
+            <textarea id="capture-code" class="code" readonly hidden rows="3" aria-label="书签代码"></textarea>
+          </details>
+          <p class="capture-mobile-note">书签小工具请在电脑上安装。</p>
+        </section>
         <div id="form-section-progress" class="form-section-progress" aria-hidden="true">
           <span data-form-progress="photo" class="is-current"></span>
           <span data-form-progress="basics"></span>

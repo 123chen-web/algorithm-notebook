@@ -30,8 +30,15 @@ THREAD_TEXT_PAIRS = (
     ("--danger-hover", "--danger-soft"),
     ("--code-ink", "--code-surface"),
 )
+# 收录（粘贴链接 / 书签小工具）：书签按钮（深色代码块配色）、顶部“已从书签带入”提示条。
+CAPTURE_TEXT_PAIRS = (
+    ("--code-ink", "--code-surface"),
+    ("--success-ink", "--success-soft"),
+    ("--ink", "--surface"),
+    ("--muted", "--surface"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + CAPTURE_TEXT_PAIRS for token in pair
 }
 
 
@@ -214,6 +221,30 @@ def test_thread_text_pairs_meet_contrast(context, tokens, foreground, background
         f"论坛主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
         f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
     )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", CAPTURE_TEXT_PAIRS)
+def test_capture_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"收录主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_capture_stylesheet_uses_the_checked_pairs():
+    source = (STATIC / "capture.css").read_text(encoding="utf-8")
+    assert re.search(r"\.capture-bookmarklet \{[^}]*background: var\(--code-surface\); color: var\(--code-ink\)", source)
+    assert re.search(r"\.capture-banner \{[^}]*background: var\(--success-soft\); color: var\(--success-ink\)", source)
 
 
 def mix_srgb(foreground, background, weight):
