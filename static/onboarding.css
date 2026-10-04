@@ -1,0 +1,76 @@
+/* 新用户首次清单 + 示例控制条 + 空状态的"下一步"。颜色全部走主题变量；
+   视觉语言沿用讨论页：青色信号线（--azurite）、等宽小标签、指示灯。 */
+
+.ob-card {
+  --ob-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--azurite);
+  border-radius: var(--radius-home);
+  background: var(--surface);
+  color: var(--ink);
+}
+.ob-card.ob-demo-only, .ob-card[data-mode="demo"] { padding: var(--space-4) var(--space-5); }
+.ob-head { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.ob-head-copy { flex: 1 1 auto; min-width: 0; }
+.ob-eyebrow { margin: 0; color: var(--azurite); font: 600 var(--text-meta)/var(--lh-ui) var(--ob-mono); letter-spacing: .16em; }
+.ob-title { margin: var(--space-1) 0 0; font: 500 var(--text-lg)/var(--lh-heading) var(--serif); text-wrap: balance; }
+.ob-sub { margin: var(--space-1) 0 0; color: var(--ink-2); font-size: var(--text-sm); }
+.ob-foot { display: flex; justify-content: flex-end; }
+.ob-dismiss { min-height: 40px; border-color: transparent; background: transparent; color: var(--ink-2); font-size: var(--text-sm); }
+
+/* 进度环 */
+.ob-ring { position: relative; flex: 0 0 auto; width: 56px; height: 56px; }
+.ob-ring-svg { display: block; width: 100%; height: 100%; }
+.ob-ring-track { stroke: var(--line); }
+.ob-ring-fill { stroke: var(--azurite); stroke-linecap: round; }
+.ob-ring-label { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font: 600 var(--text-xs)/1 var(--ob-mono); font-variant-numeric: tabular-nums; }
+
+/* 三步 */
+.ob-steps { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.ob-step { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.ob-step.is-current { border-color: var(--azurite); background: var(--paper-2); }
+.ob-check { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: var(--radius-round); background: var(--paper-2); color: var(--ink-2); font: 600 var(--text-xs)/1 var(--ob-mono); }
+.ob-step.is-current .ob-check { border-color: var(--azurite); color: var(--azurite); }
+.ob-step.is-done .ob-check { border-color: var(--success-line); background: var(--success-soft); color: var(--success-ink); }
+.ob-step-copy { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.ob-step-title { color: var(--ink); font-size: var(--text-base); font-weight: 600; overflow-wrap: anywhere; }
+.ob-step.is-done .ob-step-title { color: var(--ink-2); text-decoration: line-through; }
+.ob-step-detail { color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.ob-go { flex: 0 0 auto; min-width: 64px; min-height: 40px; }
+.ob-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* 示例控制条 */
+.ob-demo { display: grid; justify-items: start; gap: var(--space-2); }
+.ob-card > .ob-demo, .ob-slim > .ob-demo { padding-top: var(--space-3); border-top: 1px dashed var(--line); width: 100%; }
+.ob-demo-status { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+.ob-demo-status:empty { display: none; }
+.ob-demo-button { min-height: 40px; }
+.ob-demo-note { margin: 0; color: var(--ink-2); font-size: var(--text-xs); line-height: var(--lh-ui); }
+.ob-demo-error { margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--error-line); border-radius: var(--radius-sm); background: var(--error-surface); color: var(--error-ink); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.ob-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ob-confirm-text { flex: 1 1 100%; margin: 0; color: var(--ink); font-size: var(--text-sm); line-height: var(--lh-ui); }
+.ob-danger { border-color: var(--danger); color: var(--danger); }
+.ob-slim { display: grid; gap: var(--space-2); }
+.ob-slim-title { margin: 0; color: var(--azurite); font: 600 var(--text-meta)/var(--lh-ui) var(--ob-mono); letter-spacing: .16em; }
+
+/* 空状态里的"下一步" */
+.ob-next { display: grid; justify-items: center; gap: var(--space-3); margin-top: var(--space-4); max-width: 100%; }
+.ob-next-text { margin: 0; color: var(--ink-2); font-size: var(--text-base); line-height: var(--lh-ui); text-align: center; overflow-wrap: anywhere; }
+.ob-next-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+.ob-next-actions button { min-height: 40px; }
+.ob-next .ob-demo { justify-items: center; text-align: center; }
+
+@media (max-width: 480px) {
+  .ob-card { padding: var(--space-4); }
+  .ob-step { gap: var(--space-2); padding: var(--space-3) var(--space-2); }
+  .ob-go { min-width: 56px; padding-inline: var(--space-3); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ob-ring-fill { transition: stroke-dasharray var(--motion-fast) var(--motion-ease); }
+}
