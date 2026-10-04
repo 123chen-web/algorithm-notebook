@@ -1,77 +1,26 @@
-/* 首访开场短片。默认样式就是每一幕的最终状态；
-   起始的隐藏状态只由 no-preference 媒体查询里的动画（fill-mode: both）给出。 */
+/* 首访开场短片。默认样式就是每一幕的最终状态；起始的隐藏状态只由 no-preference 媒体查询里的动画给出。
+   时长、延迟、缓动全部来自 intro-film.js 顶部的 TIMING 表，经 --a{幕}-{节拍}、--rise、--stagger、--ease-* 传入。 */
 html.intro-film-open,
 html.intro-film-open body { overflow: hidden; }
 
-.intro-film {
-  --film-ease: cubic-bezier(.2, .7, .25, 1);
-  --film-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, Monaco, monospace;
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  overflow: hidden;
-  background: var(--paper);
-  color: var(--ink);
-  outline: none;
-}
+.intro-film { --film-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, Monaco, monospace; position: fixed; inset: 0; z-index: 200; overflow: hidden; background: var(--paper); color: var(--ink); outline: none; }
 
-.intro-film .film-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+.film-sr { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-.intro-film .film-dark {
-  position: absolute;
-  inset: 0;
-  background: var(--ink);
-  opacity: 0;
-  pointer-events: none;
-}
+.film-dark { position: absolute; inset: 0; background: var(--ink); opacity: 0; pointer-events: none; }
 .intro-film[data-act="1"] .film-dark { opacity: 1; }
 
-.intro-film .film-stage { position: absolute; inset: 0; }
+.film-stage { position: absolute; inset: 0; }
 
-.intro-film .film-act {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 80px 16px 72px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  opacity: 0;
-  visibility: hidden;
-}
-.intro-film .film-act.is-on { opacity: 1; visibility: visible; }
+.film-act { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 80px 16px 72px; overflow-x: hidden; overflow-y: auto; visibility: hidden; }
+.film-act:is(.is-on, .is-leaving) { visibility: visible; }
 
 /* margin: auto 居中，内容比视口高时仍从顶部开始可滚动。 */
-.intro-film .film-frame {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-5);
-  width: 100%;
-  max-width: 640px;
-  min-width: 0;
-  margin: auto;
-  text-align: center;
-}
+.film-frame { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); width: 100%; max-width: 640px; min-width: 0; margin: auto; text-align: center; }
 
-.intro-film .film-tag {
-  margin: 0;
-  color: var(--azurite);
-  font-family: var(--film-mono);
-  font-size: var(--text-meta);
-  letter-spacing: .06em;
-  line-height: 1.5;
-}
+.film-tag { margin: 0; color: var(--azurite); font-family: var(--film-mono); font-size: var(--text-meta); letter-spacing: .06em; line-height: 1.5; }
 
-.intro-film .film-skip {
+.film-skip {
   position: absolute;
   top: max(16px, env(safe-area-inset-top));
   right: max(16px, env(safe-area-inset-right));
@@ -87,65 +36,35 @@ html.intro-film-open body { overflow: hidden; }
   font-size: var(--text-sm);
   letter-spacing: .2em;
 }
-.intro-film .film-skip:hover:not(:disabled) { border-color: var(--ink-2); background: var(--paper); color: var(--ink); }
+.film-skip:hover:not(:disabled) { border-color: var(--ink-2); background: var(--paper); color: var(--ink); }
+.intro-film :is(button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.intro-film[data-act="1"] .film-skip:focus-visible { outline-color: var(--paper); }
 
-.intro-film .film-progress {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--azurite);
-  transform-origin: left center;
-  transform: scaleX(0);
-}
-.intro-film.is-ended .film-progress { opacity: 0; }
+/* 共享元素交接：真身在飞行期间隐藏，飞行层里的两个克隆负责连续运动。 */
+.intro-film .is-flown,
+.intro-film .is-landing { opacity: 0; }
+.film-flight { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 
 /* 第 1 幕 */
-.intro-film .film-line {
-  margin: 0;
-  color: var(--paper);
-  font-family: var(--serif);
-  font-size: clamp(22px, 6.4vw, 52px);
-  font-weight: 500;
-  letter-spacing: .06em;
-  line-height: 1.5;
-}
-.intro-film .film-word { display: inline-block; white-space: nowrap; }
-.intro-film .film-char { display: inline-block; }
+.film-line { margin: 0; color: var(--paper); font-family: var(--serif); font-size: clamp(22px, 6.4vw, 52px); font-weight: 500; letter-spacing: .06em; line-height: 1.5; }
+.film-word { display: inline-block; white-space: nowrap; }
+.film-char { display: inline-block; }
 
 /* 字幕 */
-.intro-film .film-caption {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  color: var(--ink);
-  font-family: var(--serif);
-  font-size: clamp(19px, 4.4vw, 32px);
-  font-weight: 500;
-  line-height: 1.55;
-  letter-spacing: .02em;
-}
-.intro-film .film-caption-line + .film-caption-line { color: var(--ink-2); }
+.film-caption { display: flex; flex-direction: column; gap: 6px; margin: 0; color: var(--ink); font-family: var(--serif); font-size: clamp(19px, 4.4vw, 32px); font-weight: 500; line-height: 1.55; letter-spacing: .02em; }
+.film-caption-line + .film-caption-line { color: var(--ink-2); }
 
 /* 第 2 幕 */
-.intro-film .film-chart { position: relative; width: min(560px, 100%); }
-.intro-film .film-chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
-.intro-film .film-axis { fill: none; stroke: var(--ink-2); stroke-opacity: .4; stroke-width: 1.2; }
-.intro-film .film-curve {
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-}
-.intro-film .film-axis-y { position: absolute; top: 0; left: 10%; }
-.intro-film .film-axis-x { position: absolute; right: 0; bottom: -4px; }
+.film-chart { position: relative; width: min(560px, 100%); }
+.film-axes { display: block; width: 100%; height: auto; overflow: visible; }
+.film-axes path { fill: none; stroke: var(--ink-2); stroke-opacity: .4; stroke-width: 1.2; }
+.film-curve-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.film-curve { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.film-axis-y { position: absolute; top: 0; left: 10%; }
+.film-axis-x { position: absolute; right: 0; bottom: -4px; }
 
 /* 第 3 幕 */
-.intro-film .film-draft {
+.film-draft {
   display: grid;
   gap: var(--space-3);
   width: min(440px, 100%);
@@ -158,50 +77,19 @@ html.intro-film-open body { overflow: hidden; }
   box-shadow: 0 10px 32px rgba(var(--shadow-rgb), .06);
   text-align: left;
 }
-.intro-film .film-code {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-flat);
-  background: none;
-  max-height: none;
-  overflow: visible;
-  color: var(--ink);
-  font: clamp(12px, 3.5vw, 15px)/1.75 var(--film-mono);
-  white-space: pre;
-}
-.intro-film .film-code-line { display: block; }
-.intro-film .film-wrong { position: relative; display: inline-block; }
-.intro-film .film-circle {
-  position: absolute;
-  inset: -.4em -.5em;
-  width: calc(100% + 1em);
-  height: calc(100% + .8em);
-  overflow: visible;
-  pointer-events: none;
-}
-.intro-film .film-circle path {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-}
-.intro-film .film-note {
-  margin: 0;
-  color: var(--accent);
-  font-family: var(--kai);
-  font-size: clamp(16px, 4.2vw, 19px);
-  line-height: 1.5;
-  transform: rotate(-2deg);
-  transform-origin: left center;
-}
+.film-code { display: grid; margin: 0; padding: 0; border: 0; border-radius: var(--radius-flat); background: none; max-height: none; overflow: visible; color: var(--ink); font: clamp(12px, 3.5vw, 15px)/1.75 var(--film-mono); white-space: pre; }
+.film-code-line { display: block; }
+.film-wrong { position: relative; display: inline-block; }
+.film-circle { position: absolute; inset: -.4em -.5em; width: calc(100% + 1em); height: calc(100% + .8em); overflow: visible; pointer-events: none; }
+.film-circle path { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.film-note { display: grid; justify-items: start; gap: 2px; }
+.film-note p { margin: 0; color: var(--accent); font-family: var(--kai); font-size: clamp(16px, 4.2vw, 19px); line-height: 1.5; }
+.film-mark { display: block; width: min(15em, 100%); height: 10px; overflow: visible; }
+.film-mark path { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; }
 
 /* 第 4 幕 */
-.intro-film .film-slips { display: grid; justify-items: center; gap: 8px; width: 100%; }
-.intro-film .film-slip {
+.film-slips { display: grid; justify-items: center; gap: 8px; width: 100%; }
+.film-slip {
   max-width: 100%;
   margin: 0;
   padding: 8px 14px;
@@ -214,101 +102,37 @@ html.intro-film-open body { overflow: hidden; }
   box-shadow: 0 4px 14px rgba(var(--shadow-rgb), .05);
   overflow-wrap: anywhere;
 }
-.intro-film .film-slip:nth-child(2) { transform: rotate(1.2deg); }
-.intro-film .film-slip:nth-child(3) { transform: rotate(-.8deg); }
-
-.intro-film .film-track { position: relative; width: min(520px, calc(100% - 72px)); height: 84px; }
-.intro-film .film-track-title { position: absolute; top: 0; left: 0; }
-.intro-film .film-track-line {
-  position: absolute;
-  top: 49px;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: var(--azurite);
-  transform-origin: left center;
-}
-.intro-film .film-nodes { margin: 0; padding: 0; list-style: none; }
-.intro-film .film-node {
-  position: absolute;
-  top: 26px;
-  left: var(--x, 0%);
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  transform: translateX(-50%);
-}
-.intro-film .film-node-card {
-  width: 18px;
-  height: 12px;
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  background: var(--paper-2);
-}
-.intro-film .film-dot {
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--azurite);
-  border-radius: var(--radius-round);
-  background: var(--accent);
-}
-.intro-film .film-node .film-tag { color: var(--ink-2); white-space: nowrap; }
+.film-track { position: relative; width: min(520px, calc(100% - 72px)); height: 84px; }
+.film-track-title { position: absolute; top: 0; left: 0; }
+.film-track-line { position: absolute; top: 49px; left: 0; width: 100%; height: 2px; overflow: visible; }
+.film-track-line path { fill: none; stroke: var(--azurite); stroke-width: 2; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.film-nodes { margin: 0; padding: 0; list-style: none; }
+.film-node { position: absolute; top: 26px; left: var(--x, 0%); display: grid; justify-items: center; gap: 6px; transform: translateX(-50%); }
+.film-node-card { width: 18px; height: 12px; border: 1px solid var(--accent); border-radius: 2px; background: var(--paper-2); }
+.film-dot { width: 12px; height: 12px; border: 2px solid var(--azurite); border-radius: var(--radius-round); background: var(--accent); }
+.film-node .film-tag { color: var(--ink-2); white-space: nowrap; }
 
 /* 第 5 / 6 幕 */
-.intro-film .film-act-5 .film-frame { gap: var(--space-4); }
-.intro-film .film-seal {
-  display: grid;
-  place-items: center;
-  width: 76px;
-  height: 76px;
-  border: 3px solid var(--accent);
-  border-radius: var(--radius-xs);
-  color: var(--accent);
-  font: 500 28px/1.02 var(--kai);
-  transform: rotate(-6deg);
-}
-.intro-film .film-brand {
-  margin: var(--space-2) 0 0;
-  font-family: var(--serif);
-  font-size: clamp(40px, 10vw, 80px);
-  font-weight: 500;
-  letter-spacing: .06em;
-  line-height: 1.15;
-}
-.intro-film .film-underline { display: block; width: 160px; height: 10px; overflow: visible; }
-.intro-film .film-underline path {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-}
-.intro-film .film-tagline {
-  margin: 0;
-  color: var(--ink-2);
-  font-family: var(--serif);
-  font-size: clamp(17px, 4.4vw, 24px);
-  line-height: 1.6;
-}
-.intro-film .film-end { display: grid; justify-items: center; gap: var(--space-4); width: 100%; margin-top: var(--space-5); }
-.intro-film .film-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-}
-.intro-film .film-actions button { min-height: 48px; padding: 12px 24px; }
-.intro-film :is(button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.intro-film[data-act="1"] .film-skip:focus-visible { outline-color: var(--paper); }
-.intro-film .film-transcript {
-  width: 100%;
-  color: var(--ink-2);
-  font-size: var(--text-sm);
-  text-align: left;
-}
-.intro-film .film-transcript summary {
+.film-act-5 .film-frame { gap: var(--space-4); }
+.film-stamp { position: relative; width: 64px; height: 64px; }
+.film-seal { display: grid; place-items: center; width: 100%; height: 100%; border: 3px solid var(--accent); border-radius: var(--radius-xs); color: var(--accent); font: 500 24px/1.02 var(--kai); }
+.film-ring { position: absolute; inset: -14px; border: 2px solid var(--azurite); border-radius: var(--radius-round); opacity: 0; }
+.intro-film:not(.is-static) .film-ring { opacity: 1; }
+.intro-film:not(.is-static) .film-ring.is-landing { opacity: 0; }
+.film-brand { display: flex; justify-content: center; max-width: 100%; margin-top: var(--space-2); }
+.film-glyphs { display: block; width: auto; max-width: 100%; height: clamp(52px, 14vw, 88px); overflow: visible; }
+.film-ink path { fill: var(--ink); }
+.film-ink-wipe { transform-box: fill-box; }
+.film-strokes { opacity: 0; }
+.film-strokes path { fill: none; stroke: var(--ink); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.film-strokes-press path { stroke-width: 30; stroke-opacity: .4; }
+.film-brand-text { font-family: var(--serif); font-size: clamp(40px, 10vw, 80px); font-weight: 500; letter-spacing: .06em; line-height: 1.15; }
+.film-tagline { margin: 0; color: var(--ink-2); font-family: var(--serif); font-size: clamp(17px, 4.4vw, 24px); line-height: 1.6; }
+.film-end { display: grid; justify-items: center; gap: var(--space-4); width: 100%; margin-top: var(--space-5); }
+.film-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); }
+.film-actions button { min-height: 48px; padding: 12px 24px; }
+.film-transcript { width: 100%; color: var(--ink-2); font-size: var(--text-sm); text-align: left; }
+.film-transcript summary {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -322,100 +146,97 @@ html.intro-film-open body { overflow: hidden; }
   letter-spacing: .12em;
   cursor: pointer;
 }
-.intro-film .film-transcript ol { max-width: 30em; margin: var(--space-2) auto 0; padding-left: 1.4em; line-height: var(--lh-prose); }
+.film-transcript ol { max-width: 30em; margin: var(--space-2) auto 0; padding-left: 1.4em; line-height: var(--lh-prose); }
+
+/* 飞行层里的克隆：外壳负责位置和运动，克隆本身铺满外壳。 */
+.film-ghost { position: absolute; top: var(--gy); left: var(--gx); width: var(--gw); height: var(--gh); transform-origin: 50% 50%; }
+.film-ghost > * { position: static; inset: auto; display: block; width: 100%; height: 100%; margin: 0; opacity: 1; transform: none; }
 
 /* 欢迎页底部的“重看开场”，外观与相邻的法律链接一致。 */
-.legal-links .intro-film-replay {
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-flat);
-  background: none;
-  color: var(--ink-2);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
+.legal-links .intro-film-replay { min-height: 44px; padding: 0; border: 0; border-radius: var(--radius-flat); background: none; color: var(--ink-2); font: inherit; text-decoration: underline; text-underline-offset: 4px; }
 .legal-links .intro-film-replay:hover:not(:disabled) { background: none; color: var(--ink); }
 
 @media (max-width: 480px) {
-  .intro-film .film-act { padding: 72px 16px 56px; }
-  .intro-film .film-frame { gap: var(--space-4); }
-  .intro-film .film-draft { padding: 14px 14px 16px; }
-  .intro-film .film-actions { flex-direction: column; align-items: stretch; width: min(320px, 100%); }
+  .film-act { padding: 72px 16px 56px; }
+  .film-frame { gap: var(--space-4); }
+  .film-draft { padding: 14px 14px 16px; }
+  .film-actions { flex-direction: column; align-items: stretch; width: min(320px, 100%); }
 }
 
-/* 动画只在用户没有要求减少动态效果时运行。 */
+/* 动画只在用户没有要求减少动态效果时运行；文字 10px 上浮 + 淡入，不弹跳、不旋转。 */
 @media (prefers-reduced-motion: no-preference) {
-  .intro-film.is-paused *,
-  .intro-film.is-paused { animation-play-state: paused; }
-  .intro-film:not(.is-static) .film-act { transition: opacity .9s ease, visibility 0s linear .9s; }
-  .intro-film:not(.is-static) .film-act.is-on { transition: opacity 1.1s ease .25s, visibility 0s; }
-  .intro-film:not(.is-static) .film-dark { transition: opacity 1.8s ease; }
-  .intro-film:not(.is-static) .film-progress { animation: film-progress 30.4s linear both; }
+  .intro-film.is-paused,
+  .intro-film.is-paused * { animation-play-state: paused; }
+  .film-dark { transition: opacity var(--a2-dark) var(--ease-move); }
 
-  .intro-film .film-act-1.is-on .film-char { animation: film-rise .9s var(--film-ease) calc(var(--i, 0) * 90ms + 600ms) both; }
+  .film-act.is-leaving .film-frame > * { animation: film-out var(--exit) var(--ease-move) both; }
 
-  .intro-film .film-act.is-on .film-caption-line { animation: film-rise 1s var(--film-ease) both; }
-  .intro-film .film-act-2.is-on .film-caption-line { animation-delay: calc(var(--i, 0) * 1000ms + 2200ms); }
-  .intro-film .film-act-3.is-on .film-caption-line { animation-delay: calc(var(--i, 0) * 800ms + 3700ms); }
-  .intro-film .film-act-4.is-on .film-caption-line { animation-delay: calc(var(--i, 0) * 700ms + 1000ms); }
+  .film-act-1.is-on .film-char { animation: film-in var(--rise) var(--ease-out) calc(var(--a1-lead) + var(--i) * var(--stagger)) both; }
 
-  .intro-film .film-act-2.is-on .film-axis { animation: film-fade .8s ease .6s both; }
-  .intro-film .film-act-2.is-on .film-curve { animation: film-draw 3.2s cubic-bezier(.45, 0, .3, 1) 1s both; }
-  .intro-film .film-act-2.is-on .film-chart .film-tag { animation: film-fade .8s ease 1.2s both; }
+  .film-act.is-on .film-caption-line { animation: film-in var(--rise) var(--ease-out) both; }
+  .film-act-2.is-on .film-caption-line { animation-delay: calc(var(--a2-text) + var(--i) * var(--stagger)); }
+  .film-act-3.is-on .film-caption-line { animation-delay: calc(var(--a3-text) + var(--i) * var(--stagger)); }
+  .film-act-4.is-on .film-caption-line { animation-delay: calc(var(--a4-text) + var(--i) * var(--stagger)); }
 
-  .intro-film .film-act-3.is-on .film-draft { animation: film-rise 1s var(--film-ease) .2s both; }
-  .intro-film .film-act-3.is-on .film-draft > .film-tag { animation: film-fade .6s ease .6s both; }
-  .intro-film .film-act-3.is-on .film-code-line { animation: film-fade .5s ease calc(var(--i, 0) * 250ms + 700ms) both; }
-  .intro-film .film-act-3.is-on .film-circle path { animation: film-draw .9s ease-out 2.6s both; }
-  .intro-film .film-act-3.is-on .film-note { animation: film-fade .6s ease 3.3s both; }
+  .film-act-2.is-on :is(.film-axes, .film-chart .film-tag) { animation: film-fade var(--rise) var(--ease-out) both; }
+  .film-act-2.is-on .film-curve { animation: film-draw var(--a2-draw) var(--ease-move) var(--a2-draw-at) both; }
 
-  .intro-film .film-act-4.is-on .film-slip { animation: film-slip 1s var(--film-ease) calc(var(--i, 0) * 300ms + 200ms) both; }
-  .intro-film .film-act-4.is-on .film-track-title { animation: film-fade .6s ease 1.4s both; }
-  .intro-film .film-act-4.is-on .film-track-line { animation: film-line 1.3s var(--film-ease) 1.6s both; }
-  .intro-film .film-act-4.is-on .film-node { animation: film-fade .4s ease calc(var(--i, 0) * 600ms + 2200ms) both; }
-  .intro-film .film-act-4.is-on :is(.film-dot, .film-node-card) { animation: film-light 1.2s ease-out calc(var(--i, 0) * 600ms + 2400ms) both; }
+  .film-act-3.is-on .film-draft { animation: film-in var(--rise) var(--ease-out) both; }
+  .film-act-3.is-on .film-code-line { animation: film-in var(--rise) var(--ease-out) calc(var(--a3-lines) + var(--i) * var(--stagger)) both; }
+  .film-act-3.is-on .film-circle path { animation: film-draw var(--a3-circle) var(--ease-move) var(--a3-circle-at) both; }
+  .film-act-3.is-on .film-note p { animation: film-in var(--rise) var(--ease-out) var(--a3-note-at) both; }
 
-  .intro-film:not(.is-static) .film-act-5.is-on .film-seal { animation: film-seal .6s cubic-bezier(.2, .9, .3, 1) .4s both; }
-  .intro-film:not(.is-static) .film-act-5.is-on .film-brand { animation: film-rise 1.1s var(--film-ease) 1s both; }
-  .intro-film:not(.is-static) .film-act-5.is-on .film-underline path { animation: film-draw .9s ease-out 1.6s both; }
-  .intro-film:not(.is-static) .film-act-5.is-on .film-tagline { animation: film-rise 1s var(--film-ease) 2s both; }
-  .intro-film:not(.is-static).is-ended .film-end { animation: film-rise .8s var(--film-ease) both; }
+  .film-act-4.is-on .film-slip { animation: film-in var(--rise) var(--ease-out) calc(var(--i) * var(--a4-slip-gap)) both; }
+  .film-act-4.is-on .film-track-title { animation: film-fade var(--rise) var(--ease-out) both; }
+  .film-act-4.is-on .film-track-line path { animation: film-draw var(--a4-track) var(--ease-move) var(--a4-track-at) both; }
+  .film-act-4.is-on .film-node:first-child > :not(.film-dot) { animation: film-fade var(--rise) var(--ease-out) var(--a4-track-at) both; }
+  .film-act-4.is-on .film-node:not(:first-child) > * { animation: film-light var(--rise) var(--ease-out) calc(var(--a4-light-at) + var(--n) * var(--a4-light-gap)) both; }
 
+  .film-act-5.is-on .film-strokes { animation: film-fade-out var(--a5-fill) var(--ease-move) calc(var(--a5-fill-at) + var(--a5-fill)) both; }
+  .film-act-5.is-on .film-strokes path { animation: film-draw var(--a5-stroke) var(--ease-move) calc(var(--a5-stroke-at) + var(--k) * var(--a5-stroke-gap)) both; }
+  .film-act-5.is-on .film-strokes-press path { animation-delay: calc(var(--a5-stroke-at) + var(--a5-press) + var(--k) * var(--a5-stroke-gap)); }
+  .film-act-5.is-on .film-ink { animation: film-fade var(--a5-fill) var(--ease-out) var(--a5-fill-at) both; }
+  .film-act-5.is-on .film-ink-wipe { animation: film-wipe var(--a5-fill) var(--ease-out) var(--a5-fill-at) both; }
+  .film-act-5.is-on .film-brand-text { animation: film-in var(--rise) var(--ease-out) var(--a5-stroke-at) both; }
+  .film-act-5.is-on .film-seal { animation: film-stamp var(--a5-seal) var(--ease-out) var(--a5-seal-at) both; }
+  .film-act-5.is-on .film-ring { animation: film-impact var(--a5-ring) var(--ease-out) var(--a5-ring-at) forwards; }
+  .film-act-5.is-on .film-tagline { animation: film-in var(--rise) var(--ease-out) var(--a5-text) both; }
+  .film-act-5.is-on .film-end { animation: film-in var(--rise) var(--ease-out) both; }
 
-  @keyframes film-rise {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
+  @keyframes film-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes film-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(-8px); }
   }
   @keyframes film-fade {
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  @keyframes film-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
   @keyframes film-draw {
     from { stroke-dashoffset: 1; }
     to { stroke-dashoffset: 0; }
   }
-  @keyframes film-line {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes film-progress {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
-  }
-  @keyframes film-slip {
-    from { opacity: 0; transform: translateY(36px) rotate(-4deg); }
-    to { opacity: 1; }
-  }
   @keyframes film-light {
-    0% { opacity: .25; transform: scale(.6); }
-    45% { opacity: 1; transform: scale(1.45); }
-    100% { opacity: 1; transform: scale(1); }
+    from { opacity: 0; transform: scale(.6); }
+    to { opacity: 1; transform: none; }
   }
-  @keyframes film-seal {
-    0% { opacity: 0; transform: scale(2.3) rotate(-18deg); }
-    65% { opacity: 1; transform: scale(.92) rotate(-6deg); }
-    100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+  @keyframes film-wipe {
+    from { transform: translateY(100%); }
+    to { transform: none; }
+  }
+  @keyframes film-stamp {
+    from { opacity: 0; transform: scale(1.2); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes film-impact {
+    from { opacity: .8; transform: none; }
+    to { opacity: 0; transform: scale(1.6); }
   }
 }
