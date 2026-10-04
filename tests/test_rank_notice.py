@@ -180,7 +180,7 @@ def test_migration_9_adds_the_column_index_and_table_to_an_old_database(tmp_path
     monkeypatch.setattr(db, "SCHEMA_VERSION", original[-1][0])
     db.init_db()
     with closing(sqlite3.connect(path)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == original[-1][0]
         assert conn.execute("SELECT public_rank_opt_out FROM users").fetchone()[0] == 0, "旧用户默认参与"
         indexes = {row[1] for row in conn.execute("PRAGMA index_list(reviews)")}
         assert "idx_reviews_reviewed_at" in indexes

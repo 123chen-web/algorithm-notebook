@@ -577,6 +577,14 @@ def _apply_rank_board(conn):
     )
 
 
+def _apply_review_feel(conn):
+    conn.execute("ALTER TABLE mistakes ADD COLUMN suspended_at TEXT")
+    conn.execute("ALTER TABLE reviews ADD COLUMN due_before TEXT")
+    conn.execute("ALTER TABLE reviews ADD COLUMN last_reviewed_before TEXT")
+    conn.execute("ALTER TABLE reviews ADD COLUMN version_after INTEGER")
+    conn.execute("ALTER TABLE users ADD COLUMN daily_review_cap INTEGER")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -586,9 +594,10 @@ MIGRATIONS = [
     (4, "账号安全与隐私", _apply_accounts_and_privacy),
     (5, "论坛：采纳、有用、AI 要点", _apply_forum_accept_votes_summaries),
     (6, "手动收款与兑换码", _apply_manual_payment_and_redeem_codes),
-    # 7 留给“复习手感”任务；合并时由审查者衔接。
+    # 历史版本未发布 7；复习手感追加为 10，保留已发布迁移编号。
     (8, "论坛：分区", _apply_forum_zones),
     (9, "榜单：公开参与设置、今日一条", _apply_rank_board),
+    (10, "复习手感：暂停、撤销日志、每日上限", _apply_review_feel),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

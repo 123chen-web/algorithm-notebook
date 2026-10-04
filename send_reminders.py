@@ -31,7 +31,7 @@ def due_count(conn, user_id, day_iso):
         SELECT COUNT(*) AS n
         FROM mistakes m
         JOIN problems p ON p.id = m.problem_id
-        WHERE p.user_id = ? AND m.due_date <= ?
+        WHERE p.user_id = ? AND m.due_date <= ? AND m.suspended_at IS NULL
         """,
         (user_id, day_iso),
     ).fetchone()
@@ -45,7 +45,7 @@ def due_mistakes(conn, user_id, day_iso):
         SELECT p.title, p.zone, m.description, m.due_date
         FROM mistakes m
         JOIN problems p ON p.id = m.problem_id
-        WHERE p.user_id = ? AND m.due_date <= ?
+        WHERE p.user_id = ? AND m.due_date <= ? AND m.suspended_at IS NULL
         ORDER BY m.due_date ASC, m.id ASC
         LIMIT ?
         """,

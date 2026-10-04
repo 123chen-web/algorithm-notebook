@@ -60,3 +60,21 @@ def schedule(
         "ease_factor": round(next_ease, 2),
         "due_date": (reviewed_on + timedelta(days=next_interval)).isoformat(),
     }
+
+
+def preview_all(
+    repetitions: int,
+    interval_days: int,
+    ease_factor: float,
+    reviewed_on: date,
+    *,
+    overdue_days: int = 0,
+) -> dict:
+    """按同一份评分前状态，纯计算五个评分档的下一次调度。"""
+    return {
+        str(quality): schedule(
+            repetitions, interval_days, ease_factor, quality, reviewed_on,
+            overdue_days=overdue_days,
+        )
+        for quality in (0, 2, 3, 4, 5)
+    }

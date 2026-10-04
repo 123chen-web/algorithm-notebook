@@ -23,8 +23,8 @@ STREAK_CHUNK_DAYS = 366
 
 
 def review_pool(alias="m"):
-    """哪些易错点参与「到期 / 逾期 / 预测」统计；目前是全部。"""
-    return "1 = 1"
+    """只有未暂停的易错点参与「到期 / 逾期 / 预测」，历史复习统计不受影响。"""
+    return f"{alias}.suspended_at IS NULL"
 
 
 def due_condition(alias="m", day=":today"):

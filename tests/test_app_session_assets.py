@@ -168,12 +168,22 @@ verify().catch((error) => { console.error(error); process.exitCode = 1; });
 """
 
 
+def review_session_support(source):
+    """真实登出 / 导航函数新增了 RVF 状态，摘录时连同其真实清理函数加载。"""
+    parts = re.findall(r"(?m)^let rvf\w+ = [^;]+;", source)
+    assert parts, "Missing RVF session state"
+    declaration = re.search(r"(?m)^function rvfClearDetail\(\) \{", source)
+    assert declaration, "Missing RVF detail cleanup helper"
+    parts.append(declaration[0] + function_body(source, "rvfClearDetail") + "}")
+    return "\n".join(parts)
+
+
 def run_session_scenario(scenario):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed for session behavior checks")
     source = (STATIC / "app.js").read_text(encoding="utf-8")
-    parts = []
+    parts = [review_session_support(source)]
     for name in ("user", "sessionReady", "sessionEpoch"):
         declaration = re.search(rf"(?m)^let {name} = [^;]+;", source)
         assert declaration, f"Missing {name} session state"

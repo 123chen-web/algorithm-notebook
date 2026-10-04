@@ -1,8 +1,8 @@
 "use strict";
 
 /* 专注复习：全屏一次只看一张卡，键盘 1–5 打分，上方进度条，可以只练某一个分区。
-   对外契约：window.FocusReview = { start({ zone, tag, ids }) → Promise（关闭时 resolve）, close, isOpen }。
-   数据与评分都走现有接口：GET /api/mistakes?due_only=true、POST /api/mistakes/{id}/review。
+   对外契约：window.FocusReview = { configure, start({ zone, tag, ids }) → Promise（关闭时 resolve）, close, isOpen }。
+   复习队列支持每日上限；新接口未部署时回退到原来的到期列表。
    用户文本一律 textContent；评分请求不经过 app.js 的 run()，所以不会触发全局"禁用所有按钮"。 */
 (() => {
   const GRADES = [
@@ -19,6 +19,44 @@
   let resolveClosed = null;
   let session = null;
   let returnFocus = null;
+  let focusConfig = {};
+  let focusClock = null;
+  let focusMenu = null;
+
+  function configure(options = {}) { focusConfig = { ...focusConfig, ...options }; }
+  function modern() { return Boolean(window.ReviewExtras); }
+  function userKey() {
+    const value = focusConfig.getUser?.();
+    return value && typeof value === "object" ? value.id : value;
+  }
+  function capture(active) {
+    const { epoch, user, view } = active.context;
+    return () => session === active && epoch === focusConfig.getEpoch?.()
+      && user === userKey() && view === focusConfig.getView?.();
+  }
+  function hiddenByDefault() {
+    try { return window.localStorage.getItem("review-hide-reason") !== "false"; } catch { return true; }
+  }
+  async function request(url, options = {}) {
+    if (!focusConfig.api) return fetch(url, { credentials: "same-origin", headers: { "X-CSRF-Protection": "1" }, ...options });
+    try {
+      const data = await focusConfig.api(url, options);
+      return { ok: true, status: 200, json: async () => data };
+    } catch (error) {
+      if (!error.status) throw error;
+      return { ok: false, status: error.status, json: async () => ({ detail: error.message }) };
+    }
+  }
+  function tickClock() {
+    if (!session) return;
+    renderProgress();
+    focusClock = setTimeout(tickClock, 1000);
+    focusClock.unref?.();
+  }
+  function clearMenu() {
+    focusMenu?.destroy?.();
+    focusMenu = null;
+  }
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -80,19 +118,21 @@
     const hint = node("p", "focus-hint", "空格 显示思路 · 1–5 打分 · S 稍后再看 · Esc 退出");
     grades.append(gradeRow, defer, hint);
 
-    const status = node("p", "focus-sr-only");
+    const status = node("p", "focus-status");
+    status.id = "focus-status";
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
 
     shell.append(bar, zones, stage, grades, status);
     root.append(shell);
     document.body.append(root);
-    parts = { shell, exit, track, fill, count, zones, stage, grades, gradeButtons, defer, hint, status };
+    parts = { shell, exit, track, fill, count, zones, stage, grades, gradeRow, gradeButtons, defer, hint, status };
     root.addEventListener("keydown", onKeydown);
   }
 
   /* ---------- 队列 ---------- */
   function remaining() {
+    if (!session) return [];
     return session.order
       .map((id) => session.items.get(id))
       .filter((item) => !session.finished.has(item.id) && (!session.zone || item.zone === session.zone));
@@ -107,7 +147,10 @@
   /* ---------- 渲染 ---------- */
   function renderProgress() {
     const total = totalCount();
-    parts.count.textContent = total ? `${Math.min(session.done + 1, total)} / ${total}` : "0 / 0";
+    const position = total ? `${Math.min(session.done + 1, total)} / ${total}` : "0 / 0";
+    const seconds = Math.max(0, Math.floor((Date.now() - session.startedAt) / 1000));
+    const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    parts.count.textContent = modern() ? `第 ${position} 条 · 已用 ${elapsed}` : position;
     parts.fill.style.width = total ? `${Math.round((session.done / total) * 100)}%` : "0%";
     parts.track.setAttribute("aria-valuemax", String(total));
     parts.track.setAttribute("aria-valuenow", String(session.done));
@@ -128,8 +171,10 @@
       chip.type = "button";
       chip.setAttribute("aria-pressed", String(session.zone === zone));
       chip.addEventListener("click", () => {
+        if (!session || session.submitting) return;
         session.zone = zone;
-        session.revealed = false;
+        session.revealed = modern() && !hiddenByDefault();
+        if (modern() && !session.ids && session.queueAvailable) { load(); return; }
         render();
         parts.stage.focus({ preventScroll: true });
       });
@@ -147,15 +192,18 @@
     meta.append(node("span", item.overdue_days > 0 ? "focus-late" : "", late));
     const title = node("h2", "focus-title", item.title);
     title.id = "focus-title";
+    const source = node("p", "focus-source", [item.zone, item.title, ...(item.tags || []).map((tag) => typeof tag === "string" ? tag : tag.name)].filter(Boolean).join(" · "));
+    card.append(meta, source, title);
     const cause = node("section", "focus-section");
     cause.append(node("h3", "focus-label", "你当时的错因"), node("p", "focus-text multiline", item.description || "错因待 AI 诊断"));
-    card.append(meta, title, cause);
+    if (!modern() || session.revealed) card.append(cause);
 
     const reveal = node("button", "focus-reveal");
     reveal.type = "button";
     reveal.setAttribute("aria-expanded", String(session.revealed));
     reveal.setAttribute("aria-keyshortcuts", "Space");
-    reveal.textContent = session.revealed ? "收起思路与代码" : "显示我当时的思路与代码（空格）";
+    reveal.textContent = modern() ? "显示错因（空格）" : (session.revealed ? "收起思路与代码" : "显示我当时的思路与代码（空格）");
+    reveal.hidden = modern() && session.revealed;
     reveal.addEventListener("click", () => toggleReveal());
     card.append(reveal);
 
@@ -175,6 +223,19 @@
         detail.append(code);
       }
       card.append(detail);
+    }
+    if (modern()) {
+      const active = session;
+      const valid = capture(active);
+      let committed = false;
+      const validCard = () => valid() && (committed || current()?.id === item.id);
+      focusMenu = window.ReviewExtras.menu({ item, isCurrent: validCard,
+        status: parts.status, onAction: (action, days, result) => {
+          if (!validCard()) return;
+          committed = true;
+          extraAction(active, item, action, days, result);
+        } });
+      card.append(focusMenu);
     }
     return card;
   }
@@ -210,6 +271,13 @@
       wrap.append(node("p", "focus-text", "到期的易错点都复习完了。去记录新的发现，或者回总览看看进度。"));
     }
     const actions = node("div", "focus-summary-actions");
+    if (session.queueCapped && session.capRemaining > 0) {
+      wrap.append(node("p", "focus-cap-note", `今天已达上限，还有 ${session.capRemaining} 条明天再复习`));
+      const more = node("button", "focus-continue", "再多练一点");
+      more.type = "button";
+      more.addEventListener("click", () => { if (session && !session.loading) { session.ignoreCap = true; load(); } });
+      actions.append(more);
+    }
     const done = node("button", "primary focus-done", "回到总览");
     done.type = "button";
     done.addEventListener("click", () => close({ view: "home" }));
@@ -223,6 +291,7 @@
 
   function render() {
     if (!session) return;
+    clearMenu();
     renderProgress();
     renderZones();
     if (session.loading) {
@@ -253,8 +322,17 @@
     }
     parts.stage.replaceChildren(renderCard(item));
     setGrading(true);
+    parts.gradeRow.hidden = modern() && !session.revealed;
+    for (const button of parts.gradeButtons) button.disabled = session.submitting;
     parts.defer.hidden = remaining().length < 2;
     parts.status.textContent = `${item.zone}：${item.title}`;
+    if (modern()) {
+      const active = session;
+      const valid = capture(active);
+      window.ReviewExtras.decorateGrades(parts.gradeButtons, item, () => valid() && current()?.id === item.id && current()?.version === item.version);
+      const next = remaining()[1];
+      if (next) window.ReviewExtras.preview(next, valid);
+    }
   }
 
   function setGrading(enabled) {
@@ -264,16 +342,18 @@
   /* ---------- 动作 ---------- */
   function toggleReveal() {
     if (!session || !current()) return;
+    if (modern() && session.revealed) return;
     session.revealed = !session.revealed;
     render();
-    parts.stage.focus({ preventScroll: true });
+    (modern() && session.revealed ? parts.gradeButtons[0] : parts.stage).focus({ preventScroll: true });
   }
 
   function deferCurrent() {
+    if (!session || session.submitting) return;
     const item = current();
     if (!item || remaining().length < 2) return;
     session.order = session.order.filter((id) => id !== item.id).concat(item.id);
-    session.revealed = false;
+    session.revealed = modern() && !hiddenByDefault();
     render();
     parts.stage.focus({ preventScroll: true });
   }
@@ -282,19 +362,22 @@
     // 评分请求回来时，这一轮可能已经被关掉、甚至换成了新的一轮：所有收尾都认准发请求时的那一轮。
     const active = session;
     const item = current();
-    if (!active || !item || active.submitting) return;
+    if (!active || !item || active.submitting || (modern() && !active.revealed)) return;
+    const valid = capture(active);
+    if (!valid()) return;
     active.submitting = true;
     parts.grades.setAttribute("aria-busy", "true");
+    let message = "";
     try {
-      const response = await fetch(`/api/mistakes/${item.id}/review`, {
+      const response = await request(`/api/mistakes/${item.id}/review`, {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "X-CSRF-Protection": "1" },
         body: JSON.stringify({ quality, version: item.version }),
       });
       const data = await response.json().catch(() => ({}));
-      if (session !== active) {
+      if (!valid()) {
         // 已经退出（或开了新一轮）：这条评分在服务器上是存下了的，通知各处刷新数字，但不碰界面和新一轮的状态。
-        if (response.ok) document.dispatchEvent(new CustomEvent("app:data-changed", { detail: { reason: "focus-review" } }));
+        if (!modern() && response.ok) document.dispatchEvent(new CustomEvent("app:data-changed", { detail: { reason: "focus-review" } }));
         return;
       }
       if (response.status === 401) {
@@ -304,7 +387,7 @@
       if (response.status === 409) {
         // 别处已经评过分或还没到期：跳过这一条，不算本轮成绩。
         active.finished.add(item.id);
-        parts.status.textContent = "这一条已在别处更新，已跳过。";
+        message = typeof data.detail === "string" ? data.detail : "这一条已在别处更新，已跳过。";
       } else if (!response.ok) {
         parts.status.textContent = typeof data.detail === "string" ? data.detail : "评分没有保存，请再试一次。";
         return;
@@ -313,28 +396,69 @@
         active.done += 1;
         active.graded += 1;
         active.results.push({ id: item.id, quality, next: data.interval_days });
+        if (modern()) window.ReviewExtras.rememberReview({ item, result: data, quality, isCurrent: valid,
+          onUndo: (result) => {
+            if (!valid()) return;
+            active.items.set(item.id, { ...item, ...result });
+            active.order = [item.id, ...active.order.filter((id) => id !== item.id)];
+            if (active.zone && active.zone !== item.zone) active.zone = item.zone;
+            active.finished.delete(item.id);
+            active.results = active.results.filter((entry) => entry.id !== item.id);
+            active.done = Math.max(0, active.done - 1);
+            active.graded = Math.max(0, active.graded - 1);
+            active.revealed = !hiddenByDefault();
+            active.summaryAnnounced = false;
+            render();
+            parts.status.textContent = "已撤销";
+            parts.stage.focus({ preventScroll: true });
+          } });
         const stamp = STAMPS.get(quality);
         if (stamp && typeof window.stampSeal === "function") {
           const button = parts.grades.querySelector(`[data-quality="${quality}"]`);
           window.stampSeal(stamp, { anchor: button });
         }
-        parts.status.textContent = `已保存，下次复习约 ${data.interval_days} 天后`;
+        message = `已保存，下次复习约 ${data.interval_days} 天后`;
       }
-      active.revealed = false;
+      active.revealed = modern() && !hiddenByDefault();
       render();
+      parts.status.textContent = message;
       parts.stage.focus({ preventScroll: true });
-    } catch {
-      if (session === active) parts.status.textContent = "网络出错，评分没有保存，请再试一次。";
+    } catch (error) {
+      if (valid()) parts.status.textContent = error.message || "网络出错，评分没有保存，请再试一次。";
     } finally {
       active.submitting = false;
-      if (session === active) parts.grades.removeAttribute("aria-busy");
+      if (valid()) {
+        parts.grades.removeAttribute("aria-busy");
+        for (const button of parts.gradeButtons) button.disabled = false;
+      }
     }
+  }
+
+  function extraAction(active, item, action, days, result) {
+    if (!capture(active)()) return;
+    active.items.set(item.id, { ...item, ...result });
+    if (action === "unsuspend") {
+      active.finished.delete(item.id);
+      active.order = [item.id, ...active.order.filter((id) => id !== item.id)];
+      if (active.zone && active.zone !== item.zone) active.zone = item.zone;
+    } else active.finished.add(item.id);
+    active.revealed = !hiddenByDefault();
+    active.summaryAnnounced = false;
+    render();
+    parts.status.textContent = action === "snooze" ? `已推迟 ${days} 天` : action === "suspend" ? "已暂停这条" : "已恢复复习";
+    document.dispatchEvent(new CustomEvent("app:data-changed", { detail: { reason: "focus-review" } }));
+    parts.stage.focus({ preventScroll: true });
   }
 
   /* ---------- 键盘 ---------- */
   function onKeydown(event) {
     if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented) return;
     if (event.key === "Escape") {
+      if (focusMenu?.querySelector('[role="menu"]:not([hidden])')) {
+        event.preventDefault(); event.stopPropagation(); focusMenu.close?.(true); return;
+      }
+      if (modern() && window.ReviewExtras.blockedKey(event)) return;
       event.preventDefault();
       event.stopPropagation();
       close();
@@ -342,7 +466,7 @@
     }
     if (event.key === "Tab") {
       // 只算真正能聚焦的：被全局"忙碌"状态临时禁用的按钮不能当首尾。
-      const items = [...parts.shell.querySelectorAll("button:not([hidden]):not(:disabled), pre[tabindex]")].filter((item) => item.offsetParent !== null);
+      const items = [...parts.shell.querySelectorAll("button:not([hidden]):not(:disabled), input, a[href], pre[tabindex]")].filter((item) => item.offsetParent !== null && !item.closest("[hidden]"));
       if (!items.length) {
         event.preventDefault();
         return;
@@ -358,8 +482,10 @@
       }
       return;
     }
+    if (modern() && window.ReviewExtras.blockedKey(event)) return;
     const onButton = Boolean(event.target.closest?.("button"));
-    if ((event.key === " " || event.key === "Enter") && !onButton) {
+    const protectedTarget = modern() && Boolean(event.target.closest?.("input, textarea, select, a, [contenteditable]"));
+    if ((event.key === " " || event.key === "Enter") && !onButton && !protectedTarget) {
       event.preventDefault();
       toggleReveal();
       return;
@@ -374,36 +500,76 @@
       event.preventDefault();
       deferCurrent();
     }
+    if (modern() && current() && !session.submitting) {
+      const action = event.key.toLowerCase() === "t" ? '[data-review-action="snooze"][data-days="1"]'
+        : event.key.toLowerCase() === "p" ? '[data-review-action="suspend"]' : "";
+      const button = action && focusMenu?.querySelector(action);
+      if (button && !focusMenu.hidden) { event.preventDefault(); button.click(); }
+    }
   }
 
   /* ---------- 加载 ---------- */
   async function load() {
-    session.loading = true;
-    session.error = "";
+    const active = session;
+    if (!active) return;
+    const valid = capture(active);
+    if (!valid()) return;
+    const ticket = ++active.loadTicket;
+    active.loading = true;
+    active.error = "";
     render();
-    const ticket = session.ticket;
     try {
-      // 始终取全部分区的到期条目，"只练某个分区"在本地过滤，随时能切回全部。
-      const params = new URLSearchParams({ due_only: "true" });
-      if (session.tag) params.set("tag", session.tag);
-      const response = await fetch(`/api/mistakes?${params}`, { credentials: "same-origin", headers: { "X-CSRF-Protection": "1" } });
-      if (!response.ok) throw new Error(`mistakes ${response.status}`);
-      const data = await response.json();
-      if (!session || ticket !== session.ticket) return;
+      let data;
+      if (modern() && active.ids) {
+        const items = await Promise.all(active.ids.map(async (id) => {
+          const response = await request(`/api/mistakes/${id}`);
+          const detail = await response.json();
+          if (!response.ok) throw new Error(typeof detail.detail === "string" ? detail.detail : "暂时取不到复习内容");
+          return detail;
+        }));
+        data = { today: items[0]?.today || new Date().toISOString().slice(0, 10), items };
+        active.queueCapped = false;
+      } else if (modern()) {
+        const params = new URLSearchParams();
+        if (active.zone) params.set("zone", active.zone);
+        if (active.tag) params.set("tag", active.tag);
+        if (active.ignoreCap) params.set("ignore_cap", "true");
+        const response = await request(`/api/review/queue?${params}`);
+        if (!valid() || ticket !== active.loadTicket) return;
+        data = await response.json();
+        if (response.status === 404) data = null;
+        else if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "暂时取不到复习内容");
+        if (data) {
+          active.queueAvailable = true;
+          active.queueCapped = Boolean(data.capped);
+          active.capRemaining = Math.max(0, Number(data.total_due || 0) - data.items.length);
+        }
+      }
+      if (!data) {
+        const params = new URLSearchParams({ due_only: "true" });
+        if (active.tag) params.set("tag", active.tag);
+        const response = await request(`/api/mistakes?${params}`);
+        data = await response.json();
+        if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "暂时取不到复习内容");
+        active.queueAvailable = false;
+        active.queueCapped = false;
+      }
+      if (!valid() || ticket !== active.loadTicket) return;
       const today = data.today;
       let items = data.items;
-      if (session.ids) items = items.filter((item) => session.ids.includes(item.id));
-      session.items = new Map(items.map((item) => [item.id, {
+      if (active.ids) items = items.filter((item) => active.ids.includes(item.id));
+      active.items = new Map(items.map((item) => [item.id, {
         ...item,
         overdue_days: Math.max(0, Math.round((Date.parse(today) - Date.parse(item.due_date)) / 86400000)),
       }]));
-      session.order = items.map((item) => item.id);
-      session.finished = new Set();
-      session.loading = false;
-    } catch {
-      if (!session || ticket !== session.ticket) return;
-      session.loading = false;
-      session.error = "请检查网络后重试。";
+      active.order = items.map((item) => item.id);
+      active.finished = new Set();
+      active.loading = false;
+      active.summaryAnnounced = false;
+    } catch (error) {
+      if (!valid() || ticket !== active.loadTicket) return;
+      active.loading = false;
+      active.error = error.message || "请检查网络后重试。";
     }
     render();
     parts.stage.focus({ preventScroll: true });
@@ -422,20 +588,25 @@
     if (!root) build();
     returnFocus = document.activeElement;
     session = {
-      ticket: Math.random(), zone, tag, ids, items: new Map(), order: [], finished: new Set(),
-      results: [], done: 0, graded: 0, revealed: false, loading: true, error: "", submitting: false, summaryAnnounced: false,
+      zone, tag, ids, items: new Map(), order: [], finished: new Set(),
+      results: [], done: 0, graded: 0, revealed: modern() && !hiddenByDefault(), loading: true, error: "", submitting: false, summaryAnnounced: false,
+      startedAt: Date.now(), loadTicket: 0, queueCapped: false, capRemaining: 0, queueAvailable: false, ignoreCap: false,
+      context: { epoch: focusConfig.getEpoch?.(), user: userKey(), view: focusConfig.getView?.() },
     };
     root.hidden = false;
     document.body.classList.add("focus-open");
     parts.shell.focus({ preventScroll: true });
     const closed = new Promise((resolve) => { resolveClosed = resolve; });
     load();
+    if (modern()) tickClock();
     return closed;
   }
 
   function close({ view = "" } = {}) {
     if (!isOpen()) return;
     const graded = session?.graded || 0;
+    clearTimeout(focusClock);
+    clearMenu();
     session = null;
     root.hidden = true;
     document.body.classList.remove("focus-open");
@@ -451,5 +622,5 @@
 
   document.addEventListener("app:view-changed", () => { if (isOpen()) close(); });
 
-  window.FocusReview = { start, close, isOpen };
+  window.FocusReview = { configure, start, close, isOpen };
 })();

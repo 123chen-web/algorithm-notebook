@@ -37,7 +37,7 @@ def load_mistakes(conn, user_id, timezone_name):
     items = {}
     for row in conn.execute(
         """
-        SELECT m.id, m.due_date, p.zone, p.created_at
+        SELECT m.id, m.due_date, m.suspended_at, p.zone, p.created_at
         FROM mistakes m JOIN problems p ON p.id = m.problem_id
         WHERE p.user_id = ?
         """,
@@ -48,6 +48,7 @@ def load_mistakes(conn, user_id, timezone_name):
             "zone": row["zone"],
             "created": created,
             "due": date.fromisoformat(row["due_date"]),
+            "suspended": row["suspended_at"] is not None,
             # 录入当天就是第一次"学习"，第一次复习安排在当天，所以间隔按 1 天算。
             "events": [(created, 1)],
         }
@@ -111,8 +112,9 @@ def mastery_report(conn, user_id, timezone_name, today, weeks):
         now_values = [retention_on(item, today) for item in members]
         mastery = sum(now_values) / len(now_values) * 100
         before = earlier_averages.get(zone)
-        due = sum(1 for item in members if item["due"] <= today)
-        overdue = sum(1 for item in members if item["due"] < today)
+        # 暂停只改变待复习工作量，掌握度 / 历史保持率 / at_risk 仍保留这些记录。
+        due = sum(1 for item in members if not item["suspended"] and item["due"] <= today)
+        overdue = sum(1 for item in members if not item["suspended"] and item["due"] < today)
         zones.append({
             "zone": zone,
             "total": len(members),

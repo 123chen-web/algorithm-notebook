@@ -26,7 +26,7 @@ body.focus-open { overflow: hidden; }
 .focus-exit { flex: 0 0 auto; width: 44px; min-height: 44px; padding: 0; border-radius: var(--radius-round); background: var(--surface); font-size: 26px; line-height: 1; }
 .focus-track { flex: 1; height: 8px; overflow: hidden; border-radius: var(--radius-pill); background: var(--quota-track); }
 .focus-fill { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); }
-.focus-count { min-width: 56px; color: var(--ink-2); font-size: var(--text-sm); font-variant-numeric: tabular-nums; text-align: right; }
+.focus-count { min-width: 56px; max-width: 58%; color: var(--ink-2); font-size: var(--text-sm); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: no-preference) {
   .focus-fill { transition: width var(--motion-enter) var(--motion-ease); }
 }
@@ -37,12 +37,14 @@ body.focus-open { overflow: hidden; }
 .focus-chip[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 .focus-chip[aria-pressed="true"]:hover:not(:disabled) { background: var(--ink); }
 
-.focus-stage { min-height: 0; padding: var(--space-2) 0; }
-.focus-card { padding: var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.focus-stage { min-width: 0; min-height: 0; padding: var(--space-2) 0; }
+.focus-card { min-width: 0; padding: var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .focus-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); color: var(--ink-2); font-size: var(--text-xs); }
+.focus-meta > * { max-width: 100%; overflow-wrap: anywhere; }
 .focus-zone { padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); font-weight: 600; line-height: 20px; }
 .focus-late { color: var(--accent-hover); font-weight: 650; }
-.focus-title { margin: var(--space-3) 0 var(--space-4); font-size: var(--text-3xl); line-height: 1.3; letter-spacing: -.01em; }
+.focus-title { margin: var(--space-3) 0 var(--space-4); font-size: var(--text-3xl); line-height: 1.3; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.focus-source { margin: var(--space-3) 0 0; color: var(--ink-2); font-family: var(--mono, ui-monospace, "Cascadia Code", Consolas, monospace); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .focus-section + .focus-section { margin-top: var(--space-4); }
 .focus-label { margin: 0 0 var(--space-1); color: var(--ink-2); font-family: inherit; font-size: var(--text-xs); font-weight: 600; letter-spacing: .08em; }
 .focus-text { margin: 0; font-size: var(--text-lg); line-height: 1.8; }
@@ -54,6 +56,7 @@ body.focus-open { overflow: hidden; }
 .focus-grades { position: sticky; bottom: 0; z-index: 1; display: grid; gap: var(--space-3); padding-top: var(--space-2); background: var(--paper); }
 .focus-grades[hidden] { display: none; }
 .focus-grade-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-2); }
+.focus-grade-row[hidden] { display: none; }
 .focus-grade {
   display: flex;
   flex-direction: column;
@@ -87,6 +90,8 @@ body.focus-open { overflow: hidden; }
 .focus-dist-good { background: var(--azurite); }
 .focus-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; color: var(--ink-2); font-size: var(--text-sm); list-style: none; }
 .focus-summary-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); }
+.focus-cap-note { color: var(--ink-2); line-height: 1.6; }
+.focus-status { min-height: 1.5em; margin: 0; color: var(--ink-2); font-size: var(--text-sm); line-height: 1.5; overflow-wrap: anywhere; }
 .focus-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .focus :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }

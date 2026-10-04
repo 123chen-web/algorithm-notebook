@@ -30,7 +30,7 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings",
         } <= tables
-        assert db.schema_version(conn) == 9
+        assert db.schema_version(conn) == 10
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -781,7 +781,7 @@ def test_forum_zone_migration_to_v8_preserves_old_data_and_is_repeatable(
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 9
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 10
         columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(posts)")}
         assert columns["zone"]["type"] == "TEXT"
         assert columns["zone"]["notnull"] == 0
@@ -827,3 +827,107 @@ def test_forum_zone_migration_rolls_back_on_failure(database_path, monkeypatch):
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE name = 'idx_post_comments_post_visible'"
         ).fetchone() is None
+
+
+REVIEW_FEEL_COLUMNS = {
+    "mistakes": {"suspended_at": "TEXT"},
+    "reviews": {
+        "due_before": "TEXT", "last_reviewed_before": "TEXT", "version_after": "INTEGER",
+    },
+    "users": {"daily_review_cap": "INTEGER"},
+}
+
+
+@pytest.mark.parametrize(
+    "from_version", [0, 1, 2, 3, 4, 5, 6, 8, 9, 10],
+    ids=["fresh", "v1", "v2", "v3", "v4", "v5", "v6", "v8", "v9", "v10"],
+)
+def test_review_feel_migration_to_v10_preserves_old_data_and_is_repeatable(
+    database_path, monkeypatch, from_version,
+):
+    before = None
+    if from_version:
+        with monkeypatch.context() as patch:
+            patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= from_version])
+            patch.setattr(db, "SCHEMA_VERSION", from_version)
+            db.init_db()
+        with db.connect(write=True) as conn:
+            conn.execute(
+                "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+                "VALUES (7, 'legacy-review', 'unchanged-hash', 'Asia/Taipei', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO problems(id, user_id, title, language, code, thinking, created_at) "
+                "VALUES (11, 7, '历史题目', 'Python', 'pass', '历史思路', ?)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO mistakes(id, problem_id, description, repetitions, interval_days, "
+                "ease_factor, due_date, last_reviewed_at, version) "
+                "VALUES (13, 11, '历史易错点', 3, 15, 2.36, '2026-10-06', ?, 8)",
+                (CREATED_AT,),
+            )
+            conn.execute(
+                "INSERT INTO reviews(id, mistake_id, quality, reviewed_at, next_due_date) "
+                "VALUES (17, 13, 3, ?, '2026-10-06')", (CREATED_AT,),
+            )
+            if from_version >= 3:
+                conn.execute(
+                    "UPDATE reviews SET elapsed_days = 6, scheduled_days = 6, "
+                    "ease_before = 2.5, repetitions_before = 2 WHERE id = 17"
+                )
+            before = {
+                table: dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                for table in ("users", "problems", "mistakes", "reviews")
+            }
+            assert db.schema_version(conn) == from_version
+            if from_version < 10:
+                for table, new_columns in REVIEW_FEEL_COLUMNS.items():
+                    assert not set(new_columns) & before[table].keys()
+
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 10
+        for table, new_columns in REVIEW_FEEL_COLUMNS.items():
+            columns = {row["name"]: row for row in conn.execute(f"PRAGMA table_info({table})")}
+            for name, kind in new_columns.items():
+                assert columns[name]["type"] == kind
+                assert columns[name]["notnull"] == 0
+                assert columns[name]["dflt_value"] is None
+        if before:
+            for table, saved in before.items():
+                current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                assert {key: current[key] for key in saved} == saved
+            for table, new_columns in REVIEW_FEEL_COLUMNS.items():
+                current = conn.execute(f"SELECT * FROM {table}").fetchone()
+                assert all(current[name] is None for name in new_columns)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_review_feel_migration_rolls_back_all_columns_on_failure(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 9])
+        patch.setattr(db, "SCHEMA_VERSION", 9)
+        db.init_db()
+    review_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 10)
+
+    def broken_review_migration(conn):
+        review_apply(conn)
+        raise ValueError("复习手感迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_review_migration if version == 10 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="复习手感迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 9
+        for table, new_columns in REVIEW_FEEL_COLUMNS.items():
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            assert not set(new_columns) & columns

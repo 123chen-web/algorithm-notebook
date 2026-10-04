@@ -10,6 +10,7 @@ import pytest
 
 from test_cursor_fx_assets import function_body
 from test_app_session_assets import (
+    review_session_support,
     test_stale_unauthorized_request_keeps_new_session,
     test_current_unauthorized_request_signs_out,
     test_api_keeps_success_and_error_behavior,
@@ -146,6 +147,7 @@ def test_real_page_rendering_and_async_guards(assets, scenario):
     focus = re.search(r'^document\.addEventListener\("focus:closed",[\s\S]*?^\}\);', app, re.M)
     assert focus, "Missing focus:closed listener"
     app_behavior = "\n".join((
+        review_session_support(app),
         f'function setBusy(value) {{{function_body(app, "setBusy")}\n}}',
         f'async function run(action) {{{function_body(app, "run")}\n}}',
         f'async function showView(nextView, {{ refreshUser = true }} = {{}}) {{{function_body(app, "showView")}\n}}',

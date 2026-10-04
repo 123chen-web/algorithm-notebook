@@ -3,10 +3,11 @@
 const $ = (selector) => document.querySelector(selector);
 
 const grades = [
-  [0, "忘记 / 答错"],
-  [3, "困难，但答对"],
+  [0, "完全忘了"],
+  [2, "答错了"],
+  [3, "很吃力"],
   [4, "记得"],
-  [5, "熟练"],
+  [5, "很熟"],
 ];
 
 const resultLabels = {
@@ -19,6 +20,13 @@ const resultLabels = {
 let user = null;
 let sessionReady = false;
 let sessionEpoch = 0;
+let rvfPageGeneration = 0;
+let rvfListGeneration = 0;
+let rvfDetailGeneration = 0;
+let rvfHeaderGeneration = 0;
+let rvfDetailState = null;
+let rvfListItems = new Map();
+let rvfQueue = null;
 let resetToken = new URLSearchParams(location.search).get("reset_token");
 let view = "today";
 // 上一次拍照识别成功的结果；非空时说明表单当前内容来自 AI 识别，
@@ -434,6 +442,13 @@ $("#auth-switch").addEventListener("keydown", (event) => {
 
 function signedOut() {
   sessionEpoch += 1;
+  rvfPageGeneration += 1;
+  rvfClearDetail();
+  rvfListGeneration += 1;
+  rvfHeaderGeneration += 1;
+  rvfListItems.clear();
+  rvfQueue = null;
+  window.ReviewExtras?.reset();
   window.Onboarding?.reset();
   if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
@@ -849,6 +864,13 @@ async function showView(nextView, { refreshUser = true } = {}) {
   }
   if (view === "groups" && nextView !== "groups") groupsGeneration += 1;
   const changedView = view !== nextView;
+  if (changedView) {
+    rvfPageGeneration += 1;
+    rvfListGeneration += 1;
+    rvfHeaderGeneration += 1;
+    rvfClearDetail();
+    window.ReviewExtras?.reset();
+  }
   view = nextView;
   document.body.classList.toggle("home-view", view === "home");
   $("#home-page").hidden = view !== "home";
@@ -2206,7 +2228,148 @@ async function loadPlanPage() {
   }
 }
 
+// 复习操作跨详情渲染仍可撤销，但跨页面 / 账号不可继续更新界面。
+function rvfPageGuard() {
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  const page = rvfPageGeneration;
+  return () => Boolean(user) && owner === user.id && epoch === sessionEpoch && page === rvfPageGeneration;
+}
+
+function rvfClearDetail() {
+  rvfDetailState?.menu?.destroy?.();
+  rvfDetailGeneration += 1;
+  rvfDetailState = null;
+}
+
+function rvfRecordButton(item, today) {
+  const button = element("button", "", "record-button");
+  button.type = "button";
+  button.dataset.id = String(item.id);
+  button.setAttribute("aria-pressed", "false");
+  button.append(element("strong", item.title));
+  // 今日队列也先保留问题，避免左栏直接透露待回忆的错因。
+  if (view !== "today" || window.ReviewExtras?.hideReason() === false) {
+    button.append(element("span", item.description || "错因待 AI 诊断", "record-description"));
+  }
+  button.append(element("small", `${item.zone} · ${item.due_date <= today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted"));
+  if (item.suspended_at) button.append(element("span", "已暂停", "review-suspended"));
+  if (item.tags?.length && window.TagEditor) button.append(window.TagEditor.chips(item.tags));
+  button.addEventListener("click", () => run(() => openMistake(item.id)));
+  return button;
+}
+
+function rvfRenderQueueHeader(queue) {
+  rvfQueue = queue;
+  $("#review-done-today").textContent = queue.cap == null
+    ? `今天已复习 ${queue.done_today} · 不限`
+    : `今天已复习 ${queue.done_today} / ${queue.cap}`;
+  const select = $("#review-daily-cap");
+  const value = queue.cap == null ? "" : String(queue.cap);
+  if (value && ![...select.querySelectorAll("option")].some((option) => option.value === value)) {
+    const option = element("option", value);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = value;
+  $("#review-cap-note").hidden = !queue.capped;
+  $("#review-cap-note").textContent = queue.capped ? `今日队列上限 ${queue.cap} 条，其余明天再说` : "";
+}
+
+async function rvfLoadQueueHeader(isCurrent = rvfPageGuard(), zone = $("#zone-filter").value, tag = $("#tag-filter").value) {
+  const generation = ++rvfHeaderGeneration;
+  const valid = () => isCurrent() && view === "today" && generation === rvfHeaderGeneration;
+  $("#review-cap-controls").hidden = true;
+  $("#review-cap-note").hidden = true;
+  $("#review-queue-status").textContent = "";
+  $("#review-daily-cap").disabled = false;
+  if (view !== "today") return;
+  const params = new URLSearchParams();
+  if (zone) params.set("zone", zone);
+  if (tag) params.set("tag", tag);
+  const [queue, settings] = await Promise.allSettled([
+    api(`/api/review/queue?${params}`), api("/api/me/review-settings"),
+  ]);
+  if (!valid()) return;
+  if (queue.status === "fulfilled") {
+    rvfRenderQueueHeader(queue.value);
+    $("#review-cap-controls").hidden = false;
+    rvfCapAvailable(settings.status === "fulfilled");
+  } else if (queue.reason.status !== 404) {
+    $("#review-queue-status").textContent = queue.reason.message;
+  }
+  if (settings.status === "rejected" && settings.reason.status !== 404) {
+    $("#review-queue-status").textContent = settings.reason.message;
+  }
+}
+
+function rvfCapAvailable(available) {
+  $("#review-daily-cap").closest("label").hidden = !available;
+}
+
+async function rvfSetDailyCap() {
+  if (view !== "today" || !user) return;
+  const isCurrent = rvfPageGuard();
+  const generation = ++rvfHeaderGeneration;
+  const select = $("#review-daily-cap");
+  const old = rvfQueue?.cap == null ? "" : String(rvfQueue.cap);
+  const selected = select.value;
+  const valid = () => isCurrent() && generation === rvfHeaderGeneration && view === "today";
+  select.disabled = true;
+  try {
+    await api("/api/me/review-settings", { method: "PUT", body: JSON.stringify({ daily_review_cap: selected ? Number(selected) : null }) });
+    if (!valid()) return;
+    await rvfLoadQueueHeader(isCurrent);
+  } catch (error) {
+    if (!valid()) return;
+    select.value = old;
+    if (error.status === 404) rvfCapAvailable(false);
+    else $("#review-queue-status").textContent = error.message;
+  } finally {
+    if (isCurrent()) select.disabled = false;
+  }
+}
+
+function rvfRemoveItem(item) {
+  rvfListGeneration += 1; // 已发出的旧列表不得把刚移除的卡片放回来。
+  if (view === "today") {
+    document.querySelectorAll(".record-button").forEach((button) => {
+      if (Number(button.dataset.id) === item.id) button.remove();
+    });
+    rvfListItems.delete(item.id);
+    $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）`;
+  } else {
+    rvfListItems.set(item.id, item);
+    document.querySelectorAll(".record-button").forEach((button) => {
+      if (Number(button.dataset.id) === item.id) button.replaceWith(rvfRecordButton(item, user.today));
+    });
+  }
+  clearDetail("已更新复习安排", "可以选择下一条继续复习。");
+  notifyDataChanged("review");
+  void rvfLoadQueueHeader(rvfPageGuard());
+}
+
+async function rvfRestoreItem(item, data) {
+  const restored = { ...item, ...data };
+  rvfListGeneration += 1;
+  rvfListItems.set(item.id, restored);
+  document.querySelectorAll(".record-button").forEach((button) => {
+    if (Number(button.dataset.id) === item.id) button.remove();
+  });
+  $("#cards").querySelectorAll(".empty-list").forEach((empty) => empty.remove());
+  if (view !== "today" || (!restored.suspended_at && restored.due_date <= user.today)) {
+    $("#cards").prepend(rvfRecordButton(restored, user.today));
+  }
+  if (view === "today") $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）`;
+  notifyDataChanged("review");
+  void rvfLoadQueueHeader(rvfPageGuard());
+  await openMistake(item.id);
+}
+
 async function loadList() {
+  const isCurrent = rvfPageGuard();
+  const generation = ++rvfListGeneration;
+  const valid = () => isCurrent() && generation === rvfListGeneration;
   const zoneParam = $("#zone-filter").value;
   const tagParam = $("#tag-filter").value;
   if (view !== "all") listCreatedOn = "";
@@ -2216,6 +2379,9 @@ async function loadList() {
     + (tagParam ? `&tag=${encodeURIComponent(tagParam)}` : "")
     + (listCreatedOn ? `&created_on=${encodeURIComponent(listCreatedOn)}` : "");
   const data = await api(`/api/mistakes?${query}`);
+  if (!valid()) return;
+  rvfListItems = new Map(data.items.map((item) => [item.id, item]));
+  void rvfLoadQueueHeader(valid, zoneParam, tagParam);
   $("#list-focus").hidden = !(view === "today" && data.items.length && window.FocusReview);
   $("#list-filter").hidden = !listCreatedOn;
   if (listCreatedOn) {
@@ -2254,23 +2420,16 @@ async function loadList() {
   }
 
   for (const item of data.items) {
-    const button = element("button", "", "record-button");
-    button.type = "button";
-    button.dataset.id = String(item.id);
-    button.setAttribute("aria-pressed", "false");
-    button.append(
-      element("strong", item.title),
-      element("span", item.description || "错因待 AI 诊断", "record-description"),
-      element("small", `${item.zone} · ${item.due_date <= data.today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted")
-    );
-    if (item.tags?.length && window.TagEditor) button.append(window.TagEditor.chips(item.tags));
-    button.addEventListener("click", () => run(() => openMistake(item.id)));
-    $("#cards").append(button);
+    $("#cards").append(rvfRecordButton(item, data.today));
   }
 }
 
 async function openMistake(id) {
+  const isCurrent = rvfPageGuard();
+  rvfClearDetail();
+  const generation = rvfDetailGeneration;
   const item = await api(`/api/mistakes/${id}`);
+  if (!isCurrent() || generation !== rvfDetailGeneration || !["today", "all"].includes(view)) return;
   user.today = item.today;
   updateUserInfo();
 
@@ -2538,6 +2697,7 @@ function clearDetail(
   title = "从一条易错点开始",
   description = "选中列表中的一条记录，先回忆如何避免这个错误，再对照笔记，给这次掌握程度打个分。"
 ) {
+  rvfClearDetail();
   const empty = element("div", "", "empty-state");
   const symbol = element("span", "≡", "empty-symbol");
   symbol.setAttribute("aria-hidden", "true");
@@ -2549,10 +2709,96 @@ function clearDetail(
   $("#detail").replaceChildren(empty);
 }
 
+function rvfRevealDetail() {
+  const state = rvfDetailState;
+  if (!state || state.revealed || !state.isCurrent()) return;
+  state.revealed = true;
+  for (const part of state.answers) part.hidden = false;
+  state.reveal.hidden = true;
+  state.reveal.setAttribute("aria-expanded", "true");
+  state.status.textContent = "错因与当时的思路已显示，可以对照回忆评分。";
+  const first = state.buttons.find((button) => !button.disabled);
+  (first || state.answers[0]).focus({ preventScroll: true });
+}
+
+function rvfDetailKeydown(event) {
+  const state = rvfDetailState;
+  if (!state || !state.isCurrent() || window.FocusReview?.isOpen() || window.ReviewExtras?.blockedKey(event)
+    || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  const target = event.target;
+  if (target?.closest?.("input, textarea, select, [contenteditable], dialog[open], [role=dialog], [role=menu]")) return;
+  if (event.key === " " && !state.revealed && !target?.closest?.("button, a")) {
+    event.preventDefault();
+    rvfRevealDetail();
+  } else if (/^[1-5]$/.test(event.key) && state.revealed) {
+    const button = state.buttons[Number(event.key) - 1];
+    if (!button.disabled) { event.preventDefault(); button.click(); }
+  } else if (/^[tTpP]$/.test(event.key) && state.menu) {
+    const action = state.menu.querySelector(event.key.toLowerCase() === "t" ? '[data-review-action="snooze"][data-days="1"]' : '[data-review-action="suspend"]');
+    if (action && !action.hidden && !action.disabled) { event.preventDefault(); action.click(); }
+  }
+}
+
 function renderDetail(item) {
+  rvfClearDetail();
   const root = $("#detail");
   root.replaceChildren();
   const isCodeZone = codeZones.has(item.zone);
+  const pageGuard = rvfPageGuard();
+  const state = { item, revealed: window.ReviewExtras?.hideReason() === false, submitting: false, removed: false, answers: [], buttons: [] };
+  state.isCurrent = () => pageGuard() && rvfDetailState === state;
+  rvfDetailState = state;
+  const toolbar = element("div", "", "review-toolbar");
+  const preference = element("label", "", "review-preference");
+  const hide = document.createElement("input");
+  hide.id = "review-hide-reason";
+  hide.type = "checkbox";
+  hide.checked = window.ReviewExtras?.hideReason() !== false;
+  preference.append(hide, element("span", "复习时先遮住错因"));
+  hide.addEventListener("change", () => {
+    window.ReviewExtras?.setHideReason(hide.checked);
+    if (!hide.checked) rvfRevealDetail();
+    else {
+      state.revealed = false;
+      for (const part of state.answers) part.hidden = true;
+      state.reveal.hidden = false;
+      state.reveal.setAttribute("aria-expanded", "false");
+      state.status.textContent = "先回忆，再显示错因。";
+    }
+    if (view === "today") {
+      for (const button of document.querySelectorAll(".record-button")) {
+        const record = rvfListItems.get(Number(button.dataset.id));
+        if (record) button.replaceWith(rvfRecordButton(record, user.today));
+      }
+    }
+  });
+  toolbar.append(preference);
+  const source = element("p", `${item.zone} · ${item.title} · ${(item.tags || []).join(" / ") || "无标签"}`, "review-source");
+  // 一键收录的来源行保留在题目上方，只展示来源，不透露其后的回忆笔记。
+  const sourceLine = (item.thinking || "").split("\n")[0];
+  if (/^(来源|题目链接)[：:]/.test(sourceLine)) source.append(element("span", sourceLine, "review-source-link"));
+  const recall = document.createElement("input");
+  recall.id = "review-recall";
+  recall.type = "text";
+  recall.maxLength = 2000;
+  recall.autocomplete = "off";
+  recall.placeholder = "可选，只留在这一页，不保存、不上传";
+  const recallField = field("先写下我的回忆", recall);
+  recallField.className = "review-recall";
+  const reveal = element("button", "显示错因（空格）", "review-reveal");
+  reveal.id = "review-reveal";
+  reveal.type = "button";
+  reveal.setAttribute("aria-keyshortcuts", "Space");
+  reveal.setAttribute("aria-expanded", String(state.revealed));
+  reveal.setAttribute("aria-controls", "review-reason review-original review-grade-row");
+  reveal.hidden = state.revealed;
+  reveal.addEventListener("click", rvfRevealDetail);
+  state.reveal = reveal;
+  const status = element("p", "", "review-detail-status");
+  status.id = "review-detail-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  state.status = status;
 
   const heading = element("div", "", "detail-heading");
   heading.append(
@@ -2560,11 +2806,15 @@ function renderDetail(item) {
     element("p", item.language ? `${item.zone} · ${item.language}` : item.zone, "language-badge")
   );
   let mistakeTextNode = renderMistakeText(item);
-  root.append(
-    heading,
+  const reason = element("section", "", "review-reason");
+  reason.id = "review-reason";
+  reason.tabIndex = -1;
+  reason.append(
     element("h3", "这次需要记住的错因", "section-label"),
     mistakeTextNode
   );
+  root.append(toolbar, source, heading, recallField, reveal, status, reason);
+  state.answers.push(reason);
   if (window.TagEditor) root.append(window.TagEditor.render(item));
   root.append(
     element(
@@ -2581,11 +2831,13 @@ function renderDetail(item) {
 
   const original = document.createElement("details");
   original.className = "original-record";
+  original.id = "review-original";
   original.append(
     element("summary", "查看当时的思路和代码"),
     renderProblemEditor(item)
   );
   root.append(original);
+  state.answers.push(original);
 
   const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
   deleteMistakeBtn.type = "button";
@@ -2626,7 +2878,10 @@ function renderDetail(item) {
 
   const reviewSection = element("section", "", "review-section");
   const reviewButtons = element("div", "", "actions review-actions");
-  const due = item.due_date <= item.today;
+  reviewButtons.id = "review-grade-row";
+  reviewButtons.setAttribute("role", "group");
+  reviewButtons.setAttribute("aria-label", "这次掌握程度，数字键一到五评分");
+  const due = !item.suspended_at && item.due_date <= item.today;
   reviewSection.append(
     element("h3", "这次，你掌握得怎么样？"),
     element(
@@ -2638,29 +2893,54 @@ function renderDetail(item) {
     )
   );
 
-  for (const [quality, label] of grades) {
-    const button = element("button", label);
+  for (const [index, [quality, label]] of grades.entries()) {
+    const button = element("button", "", "review-grade");
+    button.append(element("kbd", String(index + 1)), element("span", label));
     button.type = "button";
     button.dataset.quality = String(quality);
     button.dataset.blocked = due ? "0" : "1";
     button.disabled = !due;
-    button.addEventListener("click", () => {
+    button.setAttribute("aria-keyshortcuts", String(index + 1));
+    button.addEventListener("click", async () => {
+      if (!state.isCurrent() || !state.revealed || !due || state.submitting) return;
+      state.submitting = true;
+      for (const gradeButton of state.buttons) gradeButton.disabled = true;
+      reviewButtons.setAttribute("aria-busy", "true");
       const anchor = sealAnchorPoint(button);
-      run(async () => {
-        const state = await api(`/api/mistakes/${item.id}/review`, {
+      try {
+        const result = await api(`/api/mistakes/${item.id}/review`, {
           method: "POST",
           body: JSON.stringify({ quality, version: item.version }),
         });
-        stampSeal({ 0: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality], { anchor });
-        await loadList();
-        notifyDataChanged("review");
-        message(`评分已保存。${state.due_date} 再来复习这条易错点。`);
-      });
+        if (!state.isCurrent()) return;
+        stampSeal({ 0: "再练", 2: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality], { anchor });
+        rvfRemoveItem({ ...item, ...result });
+        window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
+          onUndo: (restored) => rvfRestoreItem(item, restored) });
+      } catch (error) {
+        if (state.isCurrent()) status.textContent = error.message;
+      } finally {
+        state.submitting = false;
+        if (state.isCurrent()) {
+          for (const gradeButton of state.buttons) gradeButton.disabled = !due;
+          reviewButtons.removeAttribute("aria-busy");
+        }
+      }
     });
     reviewButtons.append(button);
+    state.buttons.push(button);
   }
   reviewSection.append(reviewButtons);
   root.append(reviewSection);
+  state.answers.push(reviewSection);
+  void window.ReviewExtras?.decorateGrades(state.buttons, item, state.isCurrent);
+  const menu = window.ReviewExtras?.menu({ item, status, isCurrent: () => pageGuard() && (rvfDetailState === state || state.removed),
+    onAction: async (action, days, result) => {
+      if (!pageGuard()) return;
+      if (action === "unsuspend") await rvfRestoreItem(item, result);
+      else { state.removed = true; rvfRemoveItem({ ...item, ...result }); }
+    } });
+  if (menu) { state.menu = menu; toolbar.append(menu); }
 
   if (item.reviews.length) {
     const history = document.createElement("details");
@@ -2676,6 +2956,7 @@ function renderDetail(item) {
     }
     history.append(list);
     root.append(history);
+    state.answers.push(history);
   }
 
   const aiSection = element("section", "", "ai-section");
@@ -2733,6 +3014,8 @@ function renderDetail(item) {
 
   aiSection.append(generate, variants);
   root.append(aiSection, dangerZone);
+  state.answers.push(aiSection);
+  for (const part of state.answers) part.hidden = !state.revealed;
 }
 
 function addMistakeInput() {
@@ -4808,6 +5091,12 @@ window.Board?.mount({
 
 $("#timezone").value =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
+
+const rvfHooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view };
+window.ReviewExtras?.configure(rvfHooks);
+window.FocusReview?.configure(rvfHooks);
+document.addEventListener("keydown", rvfDetailKeydown);
+$("#review-daily-cap").addEventListener("change", rvfSetDailyCap);
 
 addMistakeInput();
 initReviewSpotlight();

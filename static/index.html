@@ -25,7 +25,8 @@
   <link rel="stylesheet" href="/static/activity.css?v=2">
   <link rel="stylesheet" href="/static/emoji.css?v=2">
   <link rel="stylesheet" href="/static/palette.css?v=2">
-  <link rel="stylesheet" href="/static/focus.css?v=2">
+  <link rel="stylesheet" href="/static/focus.css?v=3">
+  <link rel="stylesheet" href="/static/review-extras.css?v=1">
   <link rel="stylesheet" href="/static/tags.css?v=2">
   <link rel="stylesheet" href="/static/practice.css?v=1">
   <link rel="stylesheet" href="/static/mastery.css?v=3">
@@ -44,7 +45,8 @@
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
   <script defer src="/static/palette.js?v=2"></script>
-  <script defer src="/static/focus.js?v=2"></script>
+  <script defer src="/static/review-extras.js?v=1"></script>
+  <script defer src="/static/focus.js?v=3"></script>
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
@@ -61,7 +63,7 @@
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
   <script defer src="/static/plan.js?v=1"></script>
-  <script defer src="/static/app.js?v=69"></script>
+  <script defer src="/static/app.js?v=70"></script>
   <script defer src="/static/account.js?v=1"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -670,6 +672,21 @@
           <div>
             <h2 id="list-title">今日复习</h2>
             <p id="list-summary" class="muted"></p>
+            <div id="review-cap-controls" class="review-cap-controls" hidden>
+              <label class="zone-filter" for="review-daily-cap">今日上限
+                <select id="review-daily-cap">
+                  <option value="">不限</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="30">30</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <span id="review-done-today"></span>
+            </div>
+            <p id="review-cap-note" class="review-cap-note" hidden></p>
+            <p id="review-queue-status" role="status" aria-live="polite"></p>
             <p id="list-filter" class="list-filter" hidden><span id="list-filter-text"></span><button id="list-filter-clear" type="button" class="link-button">清除筛选</button></p>
           </div>
           <div class="list-tools">

@@ -55,7 +55,7 @@ from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
 from stats_summary import ALLOWED_DAYS as ALLOWED_SUMMARY_DAYS, summary as stats_summary
-from scheduler import schedule, today_in_timezone
+from scheduler import preview_all, schedule, today_in_timezone
 from mastery import mastery_report
 from search import search_all
 from tags import (
@@ -284,6 +284,25 @@ class MistakeTags(InputModel):
 class ReviewInput(InputModel):
     quality: int = Field(strict=True, ge=0, le=5)
     version: int = Field(strict=True, ge=0)
+
+
+class RvbVersionInput(InputModel):
+    version: int = Field(strict=True, ge=0)
+
+
+class RvbSnoozeInput(RvbVersionInput):
+    days: StrictInt
+
+    @field_validator("days")
+    @classmethod
+    def allowed_days(cls, value):
+        if value not in (1, 3, 7):
+            raise ValueError("推迟天数只能是 1、3 或 7")
+        return value
+
+
+class RvbSettingsInput(InputModel):
+    daily_review_cap: Annotated[StrictInt, Field(ge=5, le=200)] | None
 
 
 class VariantResult(InputModel):
@@ -1291,6 +1310,32 @@ def recheck_account(conn, user_id, expected_hash=None):
     return row
 
 
+def rvb_account(conn, user_id):
+    # 登录态检查之后仍可能被注销/封禁；写锁内重读账号，也读取最新时区/偏好。
+    user = recheck_account(conn, user_id)
+    if user["is_banned"]:
+        raise HTTPException(401, "账号已被封禁，无法继续使用")
+    return user
+
+
+@app.get("/api/me/review-settings")
+def rvb_get_settings(user=Depends(current_user)):
+    with connect() as conn:
+        fresh = rvb_account(conn, user["id"])
+        return {"daily_review_cap": fresh["daily_review_cap"]}
+
+
+@app.put("/api/me/review-settings")
+def rvb_update_settings(data: RvbSettingsInput, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        rvb_account(conn, user["id"])
+        conn.execute(
+            "UPDATE users SET daily_review_cap = ? WHERE id = ?",
+            (data.daily_review_cap, user["id"]),
+        )
+    return {"daily_review_cap": data.daily_review_cap}
+
+
 def revoke_other_sessions(conn, user_id, request):
     current_token = token_hash(request.cookies.get("session", ""))
     return conn.execute(
@@ -2220,8 +2265,8 @@ def get_overview(user=Depends(current_user)):
         counts = conn.execute(
             """
             SELECT COUNT(*) AS total,
-                   COALESCE(SUM(m.due_date <= :day), 0) AS due,
-                   COALESCE(SUM(m.due_date < :day), 0) AS overdue
+                   COALESCE(SUM(m.suspended_at IS NULL AND m.due_date <= :day), 0) AS due,
+                   COALESCE(SUM(m.suspended_at IS NULL AND m.due_date < :day), 0) AS overdue
             FROM mistakes m JOIN problems p ON p.id = m.problem_id
             WHERE p.user_id = :user_id
             """,
@@ -2230,7 +2275,7 @@ def get_overview(user=Depends(current_user)):
         zone_rows = conn.execute(
             """
             SELECT p.zone, COUNT(*) AS total,
-                   COALESCE(SUM(m.due_date <= ?), 0) AS due
+                   COALESCE(SUM(m.suspended_at IS NULL AND m.due_date <= ?), 0) AS due
             FROM mistakes m JOIN problems p ON p.id = m.problem_id
             WHERE p.user_id = ?
             GROUP BY p.zone ORDER BY total DESC, p.zone
@@ -2239,7 +2284,7 @@ def get_overview(user=Depends(current_user)):
         ).fetchall()
         preview_rows = conn.execute(
             MISTAKE_SELECT
-            + " WHERE p.user_id = ? AND m.due_date <= ?"
+            + " WHERE p.user_id = ? AND m.suspended_at IS NULL AND m.due_date <= ?"
             " ORDER BY m.due_date ASC, m.id ASC LIMIT 5",
             (user["id"], day),
         ).fetchall()
@@ -2415,7 +2460,7 @@ def list_mistakes(
     sql = MISTAKE_SELECT + " WHERE p.user_id = ?"
     params = [user["id"]]
     if due_only:
-        sql += " AND m.due_date <= ?"
+        sql += " AND m.suspended_at IS NULL AND m.due_date <= ?"
         params.append(day)
     if zone is not None:
         sql += " AND p.zone = ?"
@@ -2444,6 +2489,52 @@ def list_mistakes(
         "today": day,
         "items": [{**dict(row), "tags": tags_by_id[row["id"]]} for row in rows],
     }
+
+
+def rvb_review_queue(items, today, cap, done_today, ignore_cap=False):
+    """对已过滤的到期候选排序/截断；不修改输入或调度状态。"""
+    ordered = sorted(items, key=lambda item: (
+        -max(0, (today - date.fromisoformat(item["due_date"])).days)
+        / max(item["interval_days"], 1),
+        item["due_date"], item["id"],
+    ))
+    remaining = None if cap is None or ignore_cap else max(0, cap - done_today)
+    selected = ordered if remaining is None else ordered[:remaining]
+    return {
+        "today": today.isoformat(), "cap": cap, "done_today": done_today,
+        "remaining_today": remaining, "total_due": len(ordered),
+        "capped": len(ordered) > len(selected), "items": selected,
+    }
+
+
+@app.get("/api/review/queue")
+def rvb_get_queue(
+    ignore_cap: bool = False, zone: str | None = None,
+    tag: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None,
+    user=Depends(current_user),
+):
+    if zone is not None and zone not in PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
+    with connect() as conn:
+        conn.execute("BEGIN")
+        fresh = rvb_account(conn, user["id"])
+        today = today_for(fresh)
+        sql = MISTAKE_SELECT + (
+            " WHERE p.user_id = ? AND m.suspended_at IS NULL AND m.due_date <= ?"
+        )
+        params = [user["id"], today.isoformat()]
+        if zone is not None:
+            sql += " AND p.zone = ?"
+            params.append(zone)
+        if tag:
+            sql += " AND EXISTS (SELECT 1 FROM mistake_tags t WHERE t.mistake_id = m.id AND t.tag = ?)"
+            params.append(tag)
+        rows = conn.execute(sql, params).fetchall()
+        tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
+        items = [{**dict(row), "tags": tags_by_id[row["id"]]} for row in rows]
+        review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
+        done_today = review_days.get(today, 0)
+    return rvb_review_queue(items, today, fresh["daily_review_cap"], done_today, ignore_cap)
 
 
 @app.get("/api/tags")
@@ -2525,11 +2616,14 @@ def review_mistake(
     user=Depends(current_user),
 ):
     with connect(write=True) as conn:
+        fresh = rvb_account(conn, user["id"])
         item = owned_mistake(conn, mistake_id, user["id"])
-        day = today_for(user)
+        day = today_for(fresh)
 
         if item["version"] != data.version:
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        if item["suspended_at"] is not None:
+            raise HTTPException(409, "这条易错点已暂停，请先恢复")
         if item["due_date"] > day.isoformat():
             raise HTTPException(409, "这条易错点尚未到期，今天不需要再次评分")
 
@@ -2561,17 +2655,128 @@ def review_mistake(
             """
             INSERT INTO reviews(
                 mistake_id, quality, reviewed_at, next_due_date,
-                elapsed_days, scheduled_days, ease_before, repetitions_before
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                elapsed_days, scheduled_days, ease_before, repetitions_before,
+                due_before, last_reviewed_before, version_after
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 mistake_id, data.quality, reviewed_at, state["due_date"],
                 item["interval_days"] + overdue_days, item["interval_days"],
                 item["ease_factor"], item["repetitions"],
+                item["due_date"], item["last_reviewed_at"], item["version"] + 1,
             ),
         )
 
     return {**state, "version": item["version"] + 1}
+
+
+@app.get("/api/mistakes/{mistake_id}/preview")
+def rvb_preview(mistake_id: int, user=Depends(current_user)):
+    with connect() as conn:
+        conn.execute("BEGIN")
+        fresh = rvb_account(conn, user["id"])
+        item = owned_mistake(conn, mistake_id, user["id"])
+        day = today_for(fresh)
+        previews = preview_all(
+            repetitions=item["repetitions"], interval_days=item["interval_days"],
+            ease_factor=item["ease_factor"], reviewed_on=day,
+            overdue_days=max(0, (day - date.fromisoformat(item["due_date"])).days),
+        )
+    return {
+        "version": item["version"],
+        "previews": {
+            quality: {"interval_days": state["interval_days"], "due_date": state["due_date"]}
+            for quality, state in previews.items()
+        },
+    }
+
+
+@app.post("/api/mistakes/{mistake_id}/review/undo")
+def rvb_undo_review(mistake_id: int, data: RvbVersionInput, user=Depends(current_user)):
+    # connect(write=True) 持有 BEGIN IMMEDIATE；重读、恢复、删除日志一起提交。
+    with connect(write=True) as conn:
+        rvb_account(conn, user["id"])
+        item = owned_mistake(conn, mistake_id, user["id"])
+        if item["version"] != data.version:
+            raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        review = conn.execute(
+            "SELECT * FROM reviews WHERE mistake_id = ? ORDER BY id DESC LIMIT 1",
+            (mistake_id,),
+        ).fetchone()
+        if review is None:
+            raise HTTPException(409, "没有可以撤销的评分")
+        if review["due_before"] is None:
+            raise HTTPException(409, "这次评分太早，不能撤销")
+        if datetime.fromisoformat(utc_now()) - datetime.fromisoformat(review["reviewed_at"]) > timedelta(minutes=30):
+            raise HTTPException(409, "超过 30 分钟，不能撤销")
+        if item["version"] != review["version_after"]:
+            raise HTTPException(409, "这条记录之后又被修改过，不能撤销")
+        restored = {
+            "repetitions": review["repetitions_before"],
+            "interval_days": review["scheduled_days"],
+            "ease_factor": review["ease_before"],
+            "due_date": review["due_before"],
+            "last_reviewed_at": review["last_reviewed_before"],
+            "version": item["version"] + 1,
+        }
+        conn.execute(
+            """
+            UPDATE mistakes SET repetitions = :repetitions, interval_days = :interval_days,
+                ease_factor = :ease_factor, due_date = :due_date,
+                last_reviewed_at = :last_reviewed_at, version = :version
+            WHERE id = :id
+            """,
+            {**restored, "id": mistake_id},
+        )
+        conn.execute("DELETE FROM reviews WHERE id = ?", (review["id"],))
+    return restored
+
+
+@app.post("/api/mistakes/{mistake_id}/snooze")
+def rvb_snooze(mistake_id: int, data: RvbSnoozeInput, user=Depends(current_user)):
+    with connect(write=True) as conn:
+        fresh = rvb_account(conn, user["id"])
+        item = owned_mistake(conn, mistake_id, user["id"])
+        if item["version"] != data.version:
+            raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        if item["suspended_at"] is not None:
+            raise HTTPException(409, "这条易错点已暂停，请先恢复")
+        today = today_for(fresh)
+        if item["due_date"] > today.isoformat():
+            raise HTTPException(409, "这条还没到期")
+        due = (today + timedelta(days=data.days)).isoformat()
+        conn.execute(
+            "UPDATE mistakes SET due_date = ?, version = version + 1 WHERE id = ?",
+            (due, mistake_id),
+        )
+    return {"due_date": due, "version": item["version"] + 1}
+
+
+def rvb_set_suspension(mistake_id, data, user, suspended):
+    with connect(write=True) as conn:
+        rvb_account(conn, user["id"])
+        item = owned_mistake(conn, mistake_id, user["id"])
+        # 同一请求重试时携带的仍是旧版本；目标状态已达成就直接返回，不再写库。
+        if (item["suspended_at"] is not None) == suspended:
+            return {"suspended_at": item["suspended_at"], "version": item["version"]}
+        if item["version"] != data.version:
+            raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        suspended_at = utc_now() if suspended else None
+        conn.execute(
+            "UPDATE mistakes SET suspended_at = ?, version = version + 1 WHERE id = ?",
+            (suspended_at, mistake_id),
+        )
+    return {"suspended_at": suspended_at, "version": item["version"] + 1}
+
+
+@app.post("/api/mistakes/{mistake_id}/suspend")
+def rvb_suspend(mistake_id: int, data: RvbVersionInput, user=Depends(current_user)):
+    return rvb_set_suspension(mistake_id, data, user, True)
+
+
+@app.post("/api/mistakes/{mistake_id}/unsuspend")
+def rvb_unsuspend(mistake_id: int, data: RvbVersionInput, user=Depends(current_user)):
+    return rvb_set_suspension(mistake_id, data, user, False)
 
 
 def mastery_signal(conn, mistake_id):
@@ -3831,7 +4036,9 @@ def accept_comment(post_id: int, data: AcceptedComment, user=Depends(current_use
 @app.exception_handler(RequestValidationError)
 async def forum_action_validation_error(request: Request, exc: RequestValidationError):
     if re.fullmatch(
-        r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful",
+        r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful"
+        r"|/api/mistakes/[^/]+/(?:preview|review(?:/undo)?|snooze|suspend|unsuspend)"
+        r"|/api/me/review-settings|/api/review/queue",
         request.url.path,
     ):
         return JSONResponse(

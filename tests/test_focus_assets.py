@@ -89,9 +89,13 @@ def test_ime_and_modified_keys_are_ignored(script):
     assert "event.isComposing || event.ctrlKey || event.metaKey || event.altKey" in handler["body"].splitlines()[1]
 
 
-def test_zone_filter_is_local_so_all_zones_can_come_back(script):
+def test_queue_keeps_zone_and_tag_filters_and_legacy_fallback(script):
+    # RVF 从队列接口取得已排好序/截断的记录；改变分区时必须重新加载。
+    # 老后端缺少新接口时仍保留 due_only 列表回退。
     assert 'new URLSearchParams({ due_only: "true" })' in script
-    assert 'params.set("zone"' not in script
+    assert 'params.set("zone"' in script
+    assert 'params.set("tag"' in script
+    assert '/api/review/queue?' in script
 
 
 def test_closing_tells_the_app_what_happened(script, app_source):

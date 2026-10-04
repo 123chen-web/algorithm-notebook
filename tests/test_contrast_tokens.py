@@ -101,8 +101,17 @@ RANK_TEXT_PAIRS = (
     ("--azurite", "--surface"),
     ("--danger", "--surface"),
 )
+# RVF：详情回忆输入、评分间隔、更多菜单、撤销提示及上限工具栏。
+REVIEW_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink", "--paper"),
+    ("--ink-2", "--surface"),
+    ("--ink-2", "--paper"),
+    ("--azurite", "--surface"),
+    ("--azurite", "--paper"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS for token in pair
 }
 
 
@@ -226,6 +235,22 @@ THEMES = theme_tokens([
     (STATIC / filename).read_text(encoding="utf-8")
     for filename in ("style.css", "themes.css")
 ])
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(context, tokens, id="/".join(part for part in context if part) or "root")
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", REVIEW_TEXT_PAIRS)
+def test_review_feel_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"复习主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
 
 
 @pytest.mark.parametrize(
