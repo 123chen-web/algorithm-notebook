@@ -90,7 +90,7 @@
 
   /** 折线 / 面积图的几何：纵轴从 0 起、按比例，刻度取整。 */
   function chartModel(daily, key, width, height) {
-    const pad = { left: 40, right: 14, top: 12, bottom: 28 };
+    const pad = { left: 40, right: 24, top: 12, bottom: 28 };
     const plotWidth = Math.max(1, width - pad.left - pad.right);
     const plotHeight = Math.max(1, height - pad.top - pad.bottom);
     const values = daily.map((item) => Number(item[key]) || 0);
@@ -307,7 +307,6 @@
   function render(result) {
     data = result;
     renderStrip(result);
-    renderChart();
     renderFunnel(result);
     renderAi(result);
     renderOther(result);
@@ -353,6 +352,8 @@
       if (!current(request)) return false;
       render(result);
       setState("ready");
+      // 图要按容器实际宽度画：区块还藏着的时候量到的宽度是 0，所以放在显示之后。
+      renderChart();
       return true;
     } catch (error) {
       if (!current(request)) return false;

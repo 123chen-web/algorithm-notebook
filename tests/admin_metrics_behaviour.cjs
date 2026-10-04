@@ -290,6 +290,20 @@ test("chart: series switch redraws locally with accessible label and a data tabl
   assert.equal(table.children[2].children[0].getAttribute("scope"), "row");
 });
 
+test("chart is measured after the body is visible and uses the container width", async () => {
+  const env = setup();
+  const wrap = env.$("admin-metrics-chart-wrap");
+  let width = 300;
+  Object.defineProperty(wrap, "clientWidth", { get: () => (env.$("admin-metrics-body").hidden ? 0 : width) });
+  const loading = env.api.load();
+  env.requests[0].resolve(payload());
+  await loading;
+  assert.equal(env.$("admin-metrics-chart").getAttribute("viewBox"), "0 0 300 220");
+  width = 500;
+  env.buttons.reviews.click();
+  assert.equal(env.$("admin-metrics-chart").getAttribute("viewBox"), "0 0 500 220");
+});
+
 test("updated-at and the forum / redeem footnote are plain text", async () => {
   const env = setup();
   const loading = env.api.load();

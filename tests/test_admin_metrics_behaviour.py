@@ -19,4 +19,4 @@ def test_admin_metrics_behaviour_in_a_fake_browser():
     # 终端里是 "ℹ fail 0"，管道里（CI）是 TAP 的 "# fail 0"；两种都认，并确认测试真的跑了。
     assert re.search(r"(?m)^(?:ℹ|#) fail 0$", result.stdout), result.stdout[-1500:]
     passed = re.search(r"(?m)^(?:ℹ|#) pass (\d+)$", result.stdout)
-    assert passed and int(passed.group(1)) >= 23, result.stdout[-1500:]
+    assert passed and int(passed.group(1)) >= 24, result.stdout[-1500:]

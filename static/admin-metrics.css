@@ -18,10 +18,11 @@
 .am-range button { min-height: 40px; padding: 0 var(--space-4); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--ink); font-size: var(--text-md); }
 .am-range button[aria-pressed="true"] { background: var(--tile-azurite); border-color: var(--azurite); color: var(--ink); font-weight: 600; }
 #admin-metrics-retry { min-height: 40px; margin-bottom: var(--space-3); }
+@media (max-width: 420px) { .am-range button { padding: 0 8px; font-size: var(--text-sm); } }
 
 /* 指标条：宽屏换行成网格，手机横向滚动并吸附（页面本身不横向滚动）。 */
-.am-strip { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-4) 0; min-width: 0; }
-.am-metric { flex: 1 1 150px; min-width: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-top: 2px solid var(--azurite); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
+.am-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); margin: var(--space-4) 0; min-width: 0; }
+.am-metric { min-width: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-top: 2px solid var(--azurite); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
 .am-metric-label { margin: 0; color: var(--ink-2); font: 600 var(--text-xs)/var(--lh-ui) var(--am-mono); letter-spacing: .08em; }
 .am-metric-value { margin: var(--space-1) 0; color: var(--ink); font-size: var(--text-3xl); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .am-delta { margin: 0; font: 600 var(--text-sm)/var(--lh-ui) var(--am-mono); font-variant-numeric: tabular-nums; }
@@ -34,7 +35,7 @@
 .am-metric[data-alert="true"] .am-metric-value { color: var(--danger); }
 .am-link { display: inline-flex; align-items: center; min-height: 40px; color: var(--danger-hover); font-weight: 600; }
 @media (max-width: 700px) {
-  .am-strip { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--space-2); overscroll-behavior-x: contain; }
+  .am-strip { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: var(--space-2); overscroll-behavior-x: contain; }
   .am-metric { flex: 0 0 min(200px, 70%); scroll-snap-align: start; }
 }
 
