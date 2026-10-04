@@ -266,3 +266,79 @@ def test_thread_copy_text_inherits_checked_terminal_label_color():
         and declaration == "color: var(--code-ink)"
         for blocks, declaration in declarations
     )
+
+
+# 首访开场短片（static/intro-film.css）新增的文字 / 底色配对，两个主题、所有场景色调都算。
+INTRO_FILM_TEXT_PAIRS = (
+    ("--paper", "--ink"),       # 第 1 幕黑场上的字
+    ("--ink", "--paper"),       # 大字幕首行、品牌名
+    ("--ink-2", "--paper"),     # 字幕次行、副标题、“跳过”、文字版、时间轴刻度
+    ("--azurite", "--paper"),   # 等宽小标签（记忆 / 时间 / 间隔复习）
+    ("--ink", "--paper-2"),     # 草稿纸上的代码、错题纸条
+    ("--azurite", "--paper-2"), # 草稿纸标签
+    ("--ink-2", "--paper-2"),   # 欢迎页底部“重看开场”
+    ("--ink", "--surface"),     # “再看一遍”按钮
+)
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(
+            context, tokens, id="/".join(part for part in context if part) or "root",
+        )
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", INTRO_FILM_TEXT_PAIRS)
+def test_intro_film_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"开场短片 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def intro_film_accents():
+    """--accent 不是固定色：qixi 跟随当前场景（scenes.js），所以逐个场景展开。"""
+    style = (STATIC / "style.css").read_text(encoding="utf-8")
+    scenes = (STATIC / "scenes.js").read_text(encoding="utf-8")
+
+    def block(selector):
+        found = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", style)
+        assert found, selector
+        return found.group(1)
+
+    def full_hex(value):
+        return "#" + "".join(ch * 2 for ch in value[1:]) if len(value) == 4 else value
+
+    on_accent = full_hex(re.search(r"--on-accent:\s*(#[0-9a-fA-F]{3,6})\b", block(":root")).group(1))
+    ink = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})\b", block('html[data-theme="ink"]')).group(1)
+    qixi_rule = re.search(r"--accent:\s*([^;]+);", block('html[data-theme="qixi"]')).group(1)
+    fallback = re.fullmatch(r"var\(--scene-accent,\s*(#[0-9a-fA-F]{6})\)", qixi_rule.strip())
+    assert fallback, f"请扩展解析以支持 qixi 的 --accent：{qixi_rule}"
+    scene_accents = re.findall(r'accent:\s*"(#[0-9a-fA-F]{6})"', scenes)
+    assert scene_accents, "scenes.js 里找不到场景强调色"
+    variants = [("ink", None, ink, on_accent)]
+    variants += [("qixi", None, fallback.group(1), on_accent)]
+    variants += [("qixi", accent, accent, on_accent) for accent in scene_accents]
+    return variants
+
+
+@pytest.mark.parametrize(
+    "theme,scene,accent,on_accent",
+    [pytest.param(*variant, id=f"{variant[0]}-{variant[1] or 'default'}") for variant in intro_film_accents()],
+)
+@pytest.mark.parametrize("pair", [
+    ("--accent", "--paper"),      # 印章字
+    ("--accent", "--paper-2"),    # 草稿纸上的朱批
+    ("--on-accent", "--accent"),  # “继续探索”主按钮
+])
+def test_intro_film_accent_pairs_meet_contrast(theme, scene, accent, on_accent, pair):
+    tokens = dict(THEMES[(theme, None)], **{"--accent": accent, "--on-accent": on_accent})
+    foreground, background = pair
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"开场短片 {theme}/{scene or '默认'}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
