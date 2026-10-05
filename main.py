@@ -1034,66 +1034,6 @@ async def request_protection(request, call_next):
     return response
 
 
-@app.get("/healthz")
-def healthz():
-    headers = {"Cache-Control": "no-store"}
-    try:
-        with connect(create=False) as conn:
-            conn.execute("SELECT 1").fetchone()
-            version = schema_version(conn)
-        with connect(write=True, create=False):
-            pass
-    except Exception:
-        return JSONResponse(status_code=503, content={"status": "error"}, headers=headers)
-    return JSONResponse(content={"status": "ok", "schema_version": version}, headers=headers)
-
-
-@app.get("/")
-def home():
-    # 入口文档不能被浏览器无条件缓存：它引用的 CSS/JS 靠 ?v= 查询参数
-    # 手动失效，但前提是浏览器每次都真的重新请求这份 HTML 去看新的
-    # ?v= 号。no-cache 允许缓存副本，但强制每次先用 ETag 向服务端验证，
-    # 没变就是很快的 304，变了才重新下载，不会让用户长期卡在旧版本。
-    return FileResponse(
-        ROOT / "static" / "index.html",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.get("/sw.js")
-def service_worker():
-    # Service Worker 脚本放在站点根路径才能控制整站（/static/sw.js 只能控制 /static/）。
-    # no-cache：浏览器每次先验证，新版本发布后不会被旧缓存卡住；CSP 不需要放宽。
-    return FileResponse(
-        ROOT / "static" / "sw.js",
-        media_type="text/javascript",
-        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
-    )
-
-
-@app.get("/manifest.webmanifest")
-def web_manifest():
-    return FileResponse(
-        ROOT / "static" / "manifest.webmanifest",
-        media_type="application/manifest+json",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.get("/terms", response_class=HTMLResponse)
-def terms():
-    return HTMLResponse(
-        render_legal_page("terms"), headers={"Cache-Control": "public, max-age=300"}
-    )
-
-
-@app.get("/privacy", response_class=HTMLResponse)
-def privacy():
-    return HTMLResponse(
-        render_legal_page("privacy"), headers={"Cache-Control": "public, max-age=300"}
-    )
-
-
 @app.post("/api/auth/register", status_code=201)
 def register(data: Registration, request: Request, response: Response):
     if rate_limited(
@@ -5406,3 +5346,13 @@ def admin_unban_user(user_id: int, user=Depends(current_user)):
             raise HTTPException(404, "用户不存在")
     rank_cache.invalidate()
     return {"ok": True}
+
+
+# ===== [generated] routers 挂载（main.py 拆分脚本生成，请勿手改） =====
+# 路由 handlers 已按领域拆分到 routers/；此处按原有相对顺序挂载。
+# 共享依赖保留在 main 命名空间，routers 内以 main.xxx 引用，
+# 以保证测试中的 monkeypatch.setattr(main, ...) 继续生效。
+import routers.pages
+
+app.include_router(routers.pages.router)
+# ===== [generated] end =====
