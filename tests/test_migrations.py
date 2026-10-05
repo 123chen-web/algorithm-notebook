@@ -30,7 +30,7 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims",
         } <= tables
-        assert db.schema_version(conn) == 11
+        assert db.schema_version(conn) == 12
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"

@@ -624,6 +624,25 @@ def _apply_manual_payment_claims(conn):
     )
 
 
+def _apply_review_ops(conn):
+    # 离线评分补交的幂等记录：同一用户同一个 client_op_id 只生效一次，之后重复到达
+    # 直接返回第一次保存的响应。mistake_id 不设外键：题目被删后记录仍保留到过期清理。
+    conn.execute(
+        """
+        CREATE TABLE review_ops (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            client_op_id TEXT NOT NULL,
+            mistake_id INTEGER NOT NULL,
+            response TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, client_op_id)
+        )
+        """
+    )
+    # 评分请求按 created_at 清理 30 天前的记录。
+    conn.execute("CREATE INDEX idx_review_ops_created_at ON review_ops(created_at)")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -638,6 +657,7 @@ MIGRATIONS = [
     (9, "榜单：公开参与设置、今日一条", _apply_rank_board),
     (10, "复习手感：暂停、撤销日志、每日上限", _apply_review_feel),
     (11, "手动收款登记", _apply_manual_payment_claims),
+    (12, "离线评分补交的幂等记录", _apply_review_ops),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
