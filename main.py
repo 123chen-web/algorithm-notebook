@@ -2441,6 +2441,8 @@ def create_manual_claim(data: NewManualClaim, user=Depends(current_user)):
             )
         except manual_claims.ClaimError as error:
             raise claim_http_error(error) from None
+        # 注意：这里是"先落库后限流"——限流触发时抛出 HTTPException，依赖 with 块
+        # 的异常回滚撤销上面刚写入的申请。不要调整这个顺序（也不要在此处吞掉异常）。
         # 待处理上限通过后才计入每日次数，被拒的提交不占额度。
         if rate_limited(f"manual-claim:{user['id']}", manual_claims.DAILY_SUBMISSIONS, 86400):
             raise HTTPException(429, "今天提交的次数太多了，请明天再试或联系站长")
@@ -4413,9 +4415,9 @@ def delete_group(group_id: int, user=Depends(current_user)):
 
 
 POST_LIST_DEFAULT_LIMIT = 20
+POST_LIST_MAX_OFFSET = 10000
 POST_LIST_MAX_LIMIT = 50
 POST_EXCERPT_LENGTH = 140
-POST_LIST_MAX_OFFSET = 10000
 POST_HOT_SCORE = 5
 POST_HOT_WINDOW = timedelta(days=7)
 POST_PARTICIPANT_LIMIT = 4
@@ -5512,11 +5514,11 @@ def admin_clear_avatar(user_id: int, user=Depends(current_user)):
             """,
             (utc_now(), user_id),
         )
+    # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
+    avatar_path(user_id).unlink(missing_ok=True)
     return {"ok": True, "has_avatar": False}
 
 
-    # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
-    avatar_path(user_id).unlink(missing_ok=True)
 @app.post("/api/admin/users/{user_id}/ban")
 def admin_ban_user(user_id: int, user=Depends(current_user)):
     require_admin(user)

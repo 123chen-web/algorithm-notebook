@@ -417,6 +417,7 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS review_ops")
         conn.execute("DROP TABLE IF EXISTS mistake_scratch")
         conn.execute("DROP TABLE IF EXISTS user_push")
+        conn.execute("DROP TABLE IF EXISTS email_changes")
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:
