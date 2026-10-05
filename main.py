@@ -734,7 +734,19 @@ def check_username_available(username, *, allow_admin_name=False):
         raise HTTPException(400, "这个用户名已被保留")
 
 
-def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
+def cookie_secure(request):
+    """COOKIE_SECURE 显式设置时按显式值；未设置时按请求是否为 https 自动决定。"""
+    explicit = os.getenv("COOKIE_SECURE")
+    if explicit is not None and explicit.strip() != "":
+        return explicit.strip() == "1"
+    if os.getenv("TRUST_PROXY") == "1":
+        proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+        if proto:
+            return proto == "https"
+    return request.url.scheme == "https"
+
+
+def set_session(conn, user_id, response, request, *, sec_cleanup_expired=True):
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     if sec_cleanup_expired:
@@ -748,7 +760,7 @@ def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
         value=token,
         max_age=SESSION_SECONDS,
         httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "0") == "1",
+        secure=cookie_secure(request),
         samesite="lax",
         path="/",
     )
@@ -1135,7 +1147,7 @@ def register(data: Registration, request: Request, response: Response):
                   0, now, TERMS_VERSION),
             )
             user_id = cursor.lastrowid
-            set_session(conn, user_id, response)
+            set_session(conn, user_id, response, request)
     except sqlite3.IntegrityError as exc:
         if "users.email" in str(exc):
             raise HTTPException(409, "这个邮箱已经被使用") from None
@@ -1168,7 +1180,7 @@ def create_trial_account(data: TrialSignup, request: Request, response: Response
                     (username, hashed, data.timezone, utc_now()),
                 )
                 user_id = cursor.lastrowid
-                set_session(conn, user_id, response)
+                set_session(conn, user_id, response, request)
             break
         except sqlite3.IntegrityError:
             continue
@@ -1217,7 +1229,7 @@ def login(data: Credentials, request: Request, response: Response):
             raise HTTPException(401, "用户名或密码不正确")
         if fresh["is_banned"]:
             raise HTTPException(403, "账号已被封禁，无法登录")
-        set_session(conn, user["id"], response)
+        set_session(conn, user["id"], response, request)
     return {"ok": True}
 
 
@@ -1915,7 +1927,7 @@ def change_password(data: PasswordChange, request: Request, response: Response, 
         )
         revoked = revoke_other_sessions(conn, user["id"], request)
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
-        set_session(conn, user["id"], response, sec_cleanup_expired=False)
+        set_session(conn, user["id"], response, request, sec_cleanup_expired=False)
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
     return {"ok": True, "revoked_sessions": revoked}
 
