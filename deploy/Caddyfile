@@ -1,0 +1,22 @@
+# Caddy 生产配置
+#
+# {$SITE_DOMAIN} 从环境变量 SITE_DOMAIN 传入（见 deploy/docker-compose.prod.yml）。
+# Caddy 会自动向 Let's Encrypt 申请该域名的 HTTPS 证书并定期续期，
+# 站长不需要手动买证书、传证书、配续期。
+#
+# 注意：首次申请证书时，域名必须已经解析到本服务器 IP，
+# 且 80 端口能从公网访问，否则申请会失败。
+
+{$SITE_DOMAIN} {
+	# 所有请求反向代理到应用容器（内部网络，不走公网）
+	reverse_proxy app:8000
+
+	# 压缩，省流量
+	encode zstd gzip
+
+	# 访问日志打到 stdout，由 docker 的日志轮转接管
+	log {
+		output stdout
+		format json
+	}
+}
