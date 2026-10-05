@@ -703,6 +703,22 @@ def _apply_user_push(conn):
     )
 
 
+def _apply_email_changes(conn):
+    # 改邮箱要经新邮箱确认：待确认记录只存 token 的 SHA-256 哈希，
+    # user_id 为主键，同一用户只保留最新一条。
+    conn.execute(
+        """
+        CREATE TABLE email_changes (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            new_email TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -721,6 +737,7 @@ MIGRATIONS = [
     (13, "离线评分补交的幂等记录", _apply_review_ops),
     (14, "错题草稿演算区", _apply_mistake_scratch),
     (15, "微信提醒渠道配置", _apply_user_push),
+    (16, "改邮箱待确认记录", _apply_email_changes),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

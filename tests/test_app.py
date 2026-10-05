@@ -1119,14 +1119,15 @@ def test_register_validates_and_dedupes_email(client):
     assert "邮箱" in duplicate.json()["detail"]
 
 
-def test_update_email_for_existing_account(client):
+def test_update_email_for_existing_account(client, monkeypatch):
+    monkeypatch.setattr(mailer, "send_email", lambda *args: None)
     register(client, "alice", email="old@example.com")
 
     updated = client.put("/api/me/email", json={"email": "NEW@Example.com", "password": "a-test-password-123"})
     assert updated.status_code == 200
-    # 存进去之前会统一转小写，和注册时的处理保持一致。
+    # 申请时统一转小写，确认前账号邮箱不变。
     assert updated.json()["email"] == "new@example.com"
-    assert client.get("/api/me").json()["email"] == "new@example.com"
+    assert client.get("/api/me").json()["email"] == "old@example.com"
 
     invalid = client.put("/api/me/email", json={"email": "not-an-email", "password": "a-test-password-123"})
     assert invalid.status_code == 422
