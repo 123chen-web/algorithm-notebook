@@ -1314,11 +1314,6 @@ def delete_account_data(conn, user_id, deleted_at):
     )
 
 
-@app.get("/api/plans")
-def list_plans(user=Depends(current_user)):
-    return {"plans": payments.list_plans()}
-
-
 REDEEM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 REDEEM_ERROR = "兑换码不正确、已使用或已过期"
 PAY_QR_MAX_BYTES = 2 * 1024 * 1024
@@ -1369,60 +1364,6 @@ def manual_payment_settings(conn):
         "enabled": settings.get("manual_payment_enabled", "0") == "1",
         "contact": settings.get("manual_payment_contact", ""),
     }
-
-
-@app.get("/api/manual-payment")
-def get_manual_payment(user=Depends(current_user)):
-    with connect() as conn:
-        settings = manual_payment_settings(conn)
-    return {**settings, "qr": {
-        channel: pay_qr_path(channel).is_file() for channel in ("alipay", "wechat")
-    }}
-
-
-@app.get("/api/manual-payment/qr/{channel}")
-def get_manual_payment_qr(channel: str, user=Depends(current_user)):
-    path = pay_qr_path(channel)
-    if not path.is_file():
-        raise HTTPException(404, "收款码不存在")
-    return FileResponse(
-        path, media_type="image/png", headers={"Cache-Control": "private, max-age=300"}
-    )
-
-
-@app.post("/api/redeem")
-def redeem_code(data: RedeemInput, request: Request, user=Depends(current_user)):
-    if user["is_trial"]:
-        raise HTTPException(403, "体验账号不能兑换，请先注册正式账号")
-    # 两个桶分别计数，包含失败尝试，IP 取法与登录一致。
-    user_limited = rate_limited(f"redeem:{user['id']}", 10, 3600)
-    ip_limited = rate_limited(f"redeem-ip:{client_ip(request)}", 30, 3600)
-    if user_limited or ip_limited:
-        raise HTTPException(429, "尝试次数过多，请稍后再试")
-    code_hash = redeem_code_hash(data.code)
-    with connect(write=True) as conn:
-        fresh = recheck_manual_account(conn, user["id"])
-        if fresh["is_trial"]:
-            raise HTTPException(403, "体验账号不能兑换，请先注册正式账号")
-        now = utc_now()
-        claimed = conn.execute(
-            """
-            UPDATE redeem_codes SET redeemed_by = ?, redeemed_at = ?
-            WHERE code_hash = ? AND redeemed_by IS NULL AND revoked_at IS NULL
-              AND (expires_at IS NULL OR expires_at > ?)
-            """,
-            (user["id"], now, code_hash, now),
-        )
-        if claimed.rowcount != 1:
-            raise HTTPException(400, REDEEM_ERROR)
-        code = conn.execute(
-            "SELECT plan_id, period_days FROM redeem_codes WHERE code_hash = ?",
-            (code_hash,),
-        ).fetchone()
-        plan = manual_plan(conn, code["plan_id"])
-        expiry = activate_plan(conn, user["id"], code["plan_id"], code["period_days"], now)
-        return {"plan_name": plan["name"], "period_days": code["period_days"],
-                "plan_expires_at": expiry}
 
 
 @app.post("/api/admin/redeem-codes", status_code=201)
@@ -1622,33 +1563,6 @@ def claim_http_error(error):
     return HTTPException(error.status_code, error.detail)
 
 
-@app.post("/api/manual-claims", status_code=201)
-def create_manual_claim(data: NewManualClaim, user=Depends(current_user)):
-    if user["is_trial"]:
-        raise HTTPException(403, "体验账号不能登记付款，请先注册正式账号")
-    with connect(write=True) as conn:
-        fresh = recheck_manual_account(conn, user["id"])
-        if fresh["is_trial"]:
-            raise HTTPException(403, "体验账号不能登记付款，请先注册正式账号")
-        try:
-            claim = manual_claims.create_claim(
-                conn, user["id"], data.plan_id, data.payer_note, data.contact, utc_now()
-            )
-        except manual_claims.ClaimError as error:
-            raise claim_http_error(error) from None
-        # 待处理上限通过后才计入每日次数，被拒的提交不占额度。
-        if rate_limited(f"manual-claim:{user['id']}", manual_claims.DAILY_SUBMISSIONS, 86400):
-            raise HTTPException(429, "今天提交的次数太多了，请明天再试或联系站长")
-    return {"claim": claim}
-
-
-@app.get("/api/manual-claims")
-def list_manual_claims(user=Depends(current_user)):
-    with connect() as conn:
-        return {"claims": manual_claims.list_user_claims(conn, user["id"]),
-                "plans": manual_claims.purchasable_plans(conn)}
-
-
 @app.get("/api/admin/manual-claims")
 def admin_list_manual_claims(
     status: Literal["pending", "confirmed", "rejected", "all"] = "pending",
@@ -1690,87 +1604,6 @@ def admin_reject_manual_claim(
         except manual_claims.ClaimError as error:
             raise claim_http_error(error) from None
     return {"claim": claim}
-
-
-@app.post("/api/orders", status_code=201)
-def create_order(data: NewOrder, user=Depends(current_user)):
-    return payments.create_order(user["id"], data.plan_id, data.channel)
-
-
-@app.get("/api/orders/{order_id}")
-def get_order(order_id: str, user=Depends(current_user)):
-    return {"order": payments.get_order(user["id"], order_id)}
-
-
-@app.get("/api/orders")
-def list_orders(user=Depends(current_user)):
-    return {"orders": payments.list_orders(user["id"])}
-
-
-@app.post("/api/orders/{order_id}/refund")
-def refund_order(order_id: str, user=Depends(current_user)):
-    return {"order": payments.refund_order(user["id"], order_id)}
-
-
-@app.post("/api/payments/mock/{channel}/callback")
-async def mock_payment_callback(
-    channel: Literal["alipay", "wechat"],
-    request: Request,
-    user=Depends(current_user),
-):
-    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") != "1":
-        raise HTTPException(404, "接口不存在")
-    raw_body = await request.body()
-    order = await run_in_threadpool(
-        payments.handle_callback,
-        channel,
-        raw_body,
-        request.headers,
-        user_id=user["id"],
-    )
-    return {"ok": True, "order": order}
-
-
-@app.post("/api/payments/alipay/callback")
-async def alipay_payment_callback(request: Request):
-    # 公开通知入口绝不能在本地 mock 模式下接收 HMAC 回调。
-    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") == "1":
-        return PlainTextResponse("failure", status_code=404)
-    raw_body = await request.body()
-    try:
-        await run_in_threadpool(
-            payments.handle_callback,
-            "alipay",
-            raw_body,
-            request.headers,
-            user_id=None,
-        )
-    except HTTPException as exc:
-        return PlainTextResponse("failure", status_code=exc.status_code)
-    # 只有业务处理完成、事务提交后才确认；重复通知由业务层幂等处理。
-    return PlainTextResponse("success")
-
-
-@app.post("/api/payments/wechat/callback")
-async def wechat_payment_callback(request: Request):
-    # 公开通知入口绝不能在本地 mock 模式下接收 AEAD 回调。
-    if os.getenv("PAYMENTS_MOCK_ENABLED", "0") == "1":
-        return JSONResponse({"code": "FAILED", "message": "失败"}, status_code=404)
-    raw_body = await request.body()
-    try:
-        await run_in_threadpool(
-            payments.handle_callback,
-            "wechat",
-            raw_body,
-            request.headers,
-            user_id=None,
-        )
-    except HTTPException as exc:
-        return JSONResponse(
-            {"code": "FAILED", "message": "失败"}, status_code=exc.status_code
-        )
-    # 微信支付要求 2xx + {"code": "SUCCESS"}，纯文本 "success"/"failure" 是支付宝的约定。
-    return JSONResponse({"code": "SUCCESS", "message": "成功"})
 
 
 @app.get("/api/zones")
@@ -4745,11 +4578,10 @@ def admin_unban_user(user_id: int, user=Depends(current_user)):
 import routers.pages
 import routers.auth
 import routers.account
+import routers.payments
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
 app.include_router(routers.account.router)
-
-# 以下名字被测试或其它 routers 以 main.<name> 引用，在此重新导出：
-from routers.account import revoke_sessions  # noqa: F401
+app.include_router(routers.payments.router)
 # ===== [generated] end =====
