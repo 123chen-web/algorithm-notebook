@@ -1,5 +1,6 @@
 """讨论区主页的数据接口：分区、摘要、状态、筛选、排序、翻页和统计。"""
 
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -24,6 +25,19 @@ PERSON_FIELDS = {"user_id", "username", "avatar_version", "has_avatar"}
 
 def ago(**delta):
     return (NOW - timedelta(**delta)).isoformat(timespec="seconds")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_now(monkeypatch):
+    """每个测试开始时刷新模块级的 NOW。
+
+    全量套件跑下来很慢，模块 import 时刻与测试执行时刻可能相差十几分钟；
+    而被测接口用请求时刻计算 7 天热度窗口。NOW 若停留在 import 时刻，
+    test_hot_window_is_seven_days_in_utc 的 10 分钟边界余量会被耗尽而
+    偶发失败。这里在每个测试开始时把 NOW 刷新为当前时刻（测试内保持
+    稳定，ago() 的精确相等断言不受影响），不断言任何业务行为。
+    """
+    monkeypatch.setattr(sys.modules[__name__], "NOW", datetime.now(timezone.utc))
 
 
 class World:
