@@ -519,6 +519,8 @@ function signedOut() {
   window.AdminMetrics?.reset();
   window.RankAdmin?.reset();
   window.Rank?.reset();
+  window.GoalCard?.reset();
+  window.DuckPanel?.reset();
   window.ManualClaims?.reset();
   window.ManualClaimsAdmin?.reset();
   $("#admin-reports").replaceChildren();
@@ -976,6 +978,8 @@ async function loadHome({ refreshUser = true } = {}) {
     document.dispatchEvent(new CustomEvent("app:home-rendered", {
       detail: { overview: overview.value, user: { id: user.id, is_trial: Boolean(user.is_trial) } },
     }));
+    window.GoalCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.GoalCard?.mount(document.querySelector("#goal-card"));
   } else {
     window.Overview.renderError();
   }
@@ -2848,6 +2852,11 @@ function renderDetail(item) {
   );
   root.append(original);
   state.answers.push(original);
+
+  const duckHost = element("div", "", "duck-panel-host");
+  root.append(duckHost);
+  window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.DuckPanel?.mount(duckHost, item);
 
   const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
   deleteMistakeBtn.type = "button";

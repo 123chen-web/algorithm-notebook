@@ -25,6 +25,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    OpenAI,
+    RateLimitError,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -38,6 +45,7 @@ from pydantic import (
 
 import ai
 import clusters
+import goal
 import hot_problems
 import mailer
 import manual_claims
@@ -50,7 +58,8 @@ import thread_summary
 from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
 from admin_metrics import PERIOD_CHOICES, compute_metrics as compute_admin_metrics
-from ai_limits import ai_slot, release_attempt, track_call
+from ai_limits import ai_slot, note_usage, release_attempt, track_call
+from duck_prompt import build_messages, check_turns, validate_reply
 from db import ROOT, connect, init_db, normalize_username, schema_version, sec_username_key
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
@@ -215,6 +224,13 @@ class PasswordChange(InputModel):
 
 class AccountDeletion(InputModel):
     password: str = Field(min_length=1, max_length=128)
+
+
+class GoalSetting(InputModel):
+    # 这里只设物理上限；「名称 ≤ 30 字、日期是未来 1–365 天」由 goal.save 校验，
+    # 这样 422 的 detail 是给用户看的整句，而不是 pydantic 的字段错误列表。
+    name: str = Field(max_length=600)
+    goal_date: str = Field(max_length=32)
 
 
 class NewGroup(InputModel):
@@ -1443,7 +1459,7 @@ def delete_account_data(conn, user_id, deleted_at):
 
     for table in ("sessions", "password_resets", "problems", "mistake_tags",
                   "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes",
-                  "manual_payment_claims"):
+                  "manual_payment_claims", "goals"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -2369,6 +2385,33 @@ def get_stats_summary(days: Annotated[int, Query()] = 30, user=Depends(current_u
         return stats_summary(conn, user["id"], user["timezone"], today_for(user), days)
 
 
+@app.get("/api/goal")
+def get_goal(user=Depends(current_user)):
+    # 总览「目标」卡：倒计时 + 今天建议复习多少条。纯统计，不调用 AI、不占额度。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return {"goal": goal.read(conn, user["id"], user["timezone"], today_for(user))}
+
+
+@app.put("/api/goal")
+def put_goal(data: GoalSetting, user=Depends(current_user)):
+    # 设置或修改目标：名称 ≤ 30 字，日期是用户本地时区未来 1–365 天内（goal.save 校验）。
+    with connect(write=True) as conn:
+        shaped = goal.save(
+            conn, user["id"], user["timezone"], data.name, data.goal_date,
+            utc_now(), today_for(user),
+        )
+    return {"goal": shaped}
+
+
+@app.delete("/api/goal")
+def delete_goal(user=Depends(current_user)):
+    # 结束目标：只写 ended_at，行保留作历史；注销账号时才随用户整行删除。
+    with connect(write=True) as conn:
+        goal.end(conn, user["id"], utc_now())
+    return {"goal": None}
+
+
 @app.get("/api/stats/mastery")
 def get_mastery(
     weeks: Annotated[int, Query(ge=4, le=26)] = 12, user=Depends(current_user)
@@ -3005,6 +3048,145 @@ def create_variant(mistake_id: int, user=Depends(current_user)):
                 )
                 current["description"] = generated["mistake_summary"]
         return {"variants": variants, "mistake_description": current["description"]}
+
+
+class DuckTurn(InputModel):
+    role: Literal["user", "duck"]
+    # 单条上限略宽于前端输入框（600 字），总长度仍由 check_turns 的 4000 字封顶。
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class DuckInput(InputModel):
+    # 用户最多 6 轮发言，严格交替下来最多 12 条；check_turns 会再细查。
+    turns: list[DuckTurn] = Field(max_length=13)
+    finish: bool = False
+
+
+DUCK_RETRY_HINT = (
+    "刚才的回答不合格（{reason}）。请重新回答：只能提问或简短肯定，"
+    "不要给出答案、解法、代码或结论，不要使用 Markdown。"
+)
+DUCK_BAD_REPLY = "小黄鸭这次没答好，请再试一次"
+
+
+def duck_ai_reply(item, turns, finish):
+    """一次请求内的橡皮鸭对话：回复不合格时带上原因提示重试一次，仍不合格抛 502。
+
+    item 是 owned_mistake() 读出的当前用户记录；turns 已通过 check_turns 校验。
+    回复校验与清理全部复用 duck_prompt.validate_reply，不另起一套。
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    base_url = os.getenv("OPENAI_BASE_URL", "").strip() or None
+    notes = (item["thinking"] or "").strip()
+    if item["description"].strip():
+        notes = (notes + "\n当时的错因记录：" + item["description"].strip()).strip()
+    problem = {
+        "title": item["title"],
+        "zone": item["zone"],
+        "notes": notes,
+        "code": item["code"],
+    }
+    messages = build_messages(problem, turns, finish)
+    try:
+        # 与其他 AI 入口一致：禁止 SDK 自动重试（重试由这里的校验逻辑显式控制）。
+        with OpenAI(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=0) as client:
+            for attempt in range(2):
+                note_usage(model, None)
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    # 回复上限 120 字；带隐藏推理过程的模型会把推理 token 也算进去，多留余量。
+                    max_tokens=4000,
+                )
+                note_usage(model, response)
+                try:
+                    choice = response.choices[0]
+                    content = choice.message.content
+                    complete = choice.finish_reason == "stop"
+                except (AttributeError, IndexError, TypeError):
+                    content, complete = None, False
+                text = content.strip() if complete and isinstance(content, str) else ""
+                ok, result = validate_reply(text, finish)
+                if ok:
+                    return result
+                if attempt == 0:
+                    messages = messages + [
+                        {"role": "assistant", "content": text or "（空回复）"},
+                        {"role": "user", "content": DUCK_RETRY_HINT.format(reason=result)},
+                    ]
+    except APITimeoutError:
+        raise HTTPException(504, "小黄鸭回复超时，请稍后重试") from None
+    except RateLimitError:
+        raise HTTPException(503, "AI 服务暂时不可用，请检查额度或稍后重试") from None
+    except APIConnectionError:
+        raise HTTPException(502, "暂时无法连接 AI 服务") from None
+    except APIStatusError:
+        raise HTTPException(502, "AI 请求失败，请管理员检查模型和 API 配置") from None
+    raise HTTPException(502, DUCK_BAD_REPLY)
+
+
+@app.post("/api/mistakes/{mistake_id}/duck")
+def duck_panel_chat(mistake_id: int, data: DuckInput, user=Depends(current_user)):
+    """讲给小黄鸭听：与 create_variant 同一套额度/并发/记账写法。
+
+    校验失败（422）在扣额度之前；502/503/504 退回本次扣的额度，
+    回复不合格重试一次仍失败也按 502 退回，不消耗用户的当日额度。
+    """
+    turns = [{"role": turn.role, "text": turn.text} for turn in data.turns]
+    try:
+        check_turns(turns)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    if not turns:
+        raise HTTPException(422, "对话不能为空")
+    if data.finish:
+        if turns[-1]["role"] != "duck":
+            raise HTTPException(422, "请先完成至少一轮对话，再结束并总结")
+    elif turns[-1]["role"] != "user":
+        raise HTTPException(422, "新的发言必须以用户发言结尾")
+
+    with ExitStack() as stack:
+        with connect(write=True) as conn:
+            item = owned_mistake(conn, mistake_id, user["id"])
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
+
+            day = today_for(user).isoformat()
+            quota = ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_slot())
+            cursor = conn.execute(
+                """
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
+                """,
+                (user["id"], day, limit, limit),
+            )
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+
+        try:
+            with track_call(user["id"], "duck"):
+                reply = duck_ai_reply(item, turns, data.finish)
+        except HTTPException as exc:
+            if exc.status_code in (502, 503, 504):
+                with connect(write=True) as conn:
+                    release_attempt(conn, user["id"], day)
+            raise
+
+    return {
+        "reply": reply,
+        "turns_used": sum(1 for turn in turns if turn["role"] == "user"),
+        "ai_remaining": max(0, quota["ai_daily_remaining"] - 1),
+    }
 
 
 def normalize_math_answer(value: str) -> str:

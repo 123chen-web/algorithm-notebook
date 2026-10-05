@@ -624,6 +624,23 @@ def _apply_manual_payment_claims(conn):
     )
 
 
+def _apply_goals(conn):
+    # 目标卡：每个用户最多一个目标（user_id 唯一）；ended_at 非空表示已结束，
+    # 行保留作历史，注销账号时随用户删除。
+    conn.execute(
+        """
+        CREATE TABLE goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            goal_date TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            ended_at TEXT
+        )
+        """
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -638,6 +655,7 @@ MIGRATIONS = [
     (9, "榜单：公开参与设置、今日一条", _apply_rank_board),
     (10, "复习手感：暂停、撤销日志、每日上限", _apply_review_feel),
     (11, "手动收款登记", _apply_manual_payment_claims),
+    (12, "目标卡", _apply_goals),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

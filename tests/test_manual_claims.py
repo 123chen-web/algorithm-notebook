@@ -412,10 +412,13 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
     db.init_db()
     with connect(write=True) as conn:
         conn.execute("DROP TABLE manual_payment_claims")
+        # a real version-10 database has none of the tables added by later migrations
+        conn.execute("DROP TABLE IF EXISTS goals")
+        conn.execute("DROP TABLE IF EXISTS review_ops")
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 11
+        assert db.schema_version(conn) == db.SCHEMA_VERSION >= 11
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(manual_payment_claims)")]
         assert columns == ["id", "user_id", "plan_id", "payer_note", "contact", "status",
                            "reject_reason", "created_at", "decided_at", "decided_by"]
