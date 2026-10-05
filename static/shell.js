@@ -222,6 +222,7 @@
     window.TagFilters?.reset();
     window.Mastery?.reset();
     window.Clusters?.reset();
+    window.Typical?.reset();
     window.Account?.reset();
     window.PrintNotebook?.reset();
     window.ActivityWidgets?.reset();

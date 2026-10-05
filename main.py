@@ -51,6 +51,7 @@ import mailer
 import manual_claims
 import payments
 from payments import activate_plan
+import push_channels
 import rank_board
 import rank_cache
 import rank_notice
@@ -74,6 +75,7 @@ from mastery import (
 )
 from anki_export import build_anki_text
 from search import search_all
+from typical import typical_report
 from tags import (
     SUGGESTED_TAGS, TAG_MAX_LENGTH, TAGS_PER_MISTAKE, TagError, normalize_tags,
     replace_tags, tags_for_mistakes, user_tag_counts,
@@ -309,6 +311,14 @@ class ScratchPut(InputModel):
     code: Annotated[str, StringConstraints(strict=True)]
     fixed: Annotated[str, StringConstraints(strict=True)]
     table: dict | None
+
+
+class PushSettingsInput(InputModel):
+    # 微信提醒设置：渠道二选一；secret 为 null / 空串表示保持原密钥不变；
+    # 密钥格式在接口里复用 push_channels.valid_key 校验。
+    channel: Literal["serverchan", "pushplus"]
+    secret: Annotated[str, StringConstraints(strict=True, max_length=128)] | None = None
+    enabled: bool = Field(strict=True)
 
 
 CLIENT_OP_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
@@ -1676,6 +1686,109 @@ def rvb_update_settings(data: RvbSettingsInput, user=Depends(current_user)):
     return {"daily_review_cap": data.daily_review_cap}
 
 
+# ==================== 微信提醒（Server酱 / PushPlus） ====================
+
+PUSH_TEST_LIMIT = 5
+PUSH_TEST_WINDOW_SECONDS = 3600
+PUSH_TEST_TITLE = f"{PRODUCT_NAME}：微信提醒测试"
+PUSH_TEST_BODY = (
+    "这是一条测试消息。能在微信里收到它，说明每日复习提醒的推送配置正确。\n"
+    "（该消息由账号设置页的「发送测试消息」触发。）"
+)
+PUSH_RESULT_MESSAGES = {
+    "ok": "测试消息已发送，请在微信里确认收到。",
+    "network": "无法连接推送服务商，请检查服务器网络后稍后重试。",
+    "auth": "服务商拒绝了密钥（认证失败），请核对 SendKey/token 后重新保存。",
+    "rate_limited": "推送被服务商限流，请稍后再试。",
+    "provider": "推送服务商暂时不可用，请稍后重试或更换渠道。",
+}
+
+
+def push_settings_payload(conn, user_id):
+    """组装对外的设置状态：密钥任何时候都只回尾号 4 位，不回原文。"""
+    row = conn.execute(
+        "SELECT channel, secret, enabled, fail_count FROM user_push WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return {
+            "channel": None, "enabled": False, "configured": False,
+            "tail": "", "fail_count": 0,
+        }
+    secret = row["secret"]
+    return {
+        "channel": row["channel"],
+        "enabled": bool(row["enabled"]),
+        "configured": bool(secret),
+        "tail": secret[-4:] if secret else "",
+        "fail_count": row["fail_count"],
+    }
+
+
+@app.get("/api/me/push")
+def get_push_settings(user=Depends(current_user)):
+    require_not_trial(user, "微信提醒")
+    with connect() as conn:
+        rvb_account(conn, user["id"])
+        return push_settings_payload(conn, user["id"])
+
+
+@app.put("/api/me/push")
+def update_push_settings(data: PushSettingsInput, user=Depends(current_user)):
+    require_not_trial(user, "微信提醒")
+    # 空白输入等同于「保持原密钥不变」。
+    incoming_secret = data.secret.strip() or None if isinstance(data.secret, str) else None
+    with connect(write=True) as conn:
+        rvb_account(conn, user["id"])
+        row = conn.execute(
+            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+        if incoming_secret is None:
+            if row is None:
+                raise HTTPException(422, "请先填写 SendKey/token 后再保存。")
+            if row["channel"] != data.channel:
+                raise HTTPException(422, "切换推送渠道需要重新填写 SendKey/token。")
+            incoming_secret = row["secret"]
+        elif not push_channels.valid_key(data.channel, incoming_secret):
+            raise HTTPException(422, "SendKey/token 格式不正确，请核对后重新填写。")
+        # 只要这次显式提交了密钥，就把连续失败计数清零，给新配置一个干净起点。
+        reset_failures = isinstance(data.secret, str) and bool(data.secret.strip())
+        conn.execute(
+            "INSERT INTO user_push"
+            "(user_id, channel, secret, enabled, fail_count, last_ok_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 0, NULL, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "channel = excluded.channel, secret = excluded.secret, "
+            "enabled = excluded.enabled, "
+            "fail_count = CASE WHEN ? THEN 0 ELSE user_push.fail_count END, "
+            "updated_at = excluded.updated_at",
+            (user["id"], data.channel, incoming_secret, int(data.enabled),
+             utc_now(), int(reset_failures)),
+        )
+        return push_settings_payload(conn, user["id"])
+
+
+@app.post("/api/me/push/test")
+def send_push_test(user=Depends(current_user)):
+    require_not_trial(user, "微信提醒")
+    with connect() as conn:
+        rvb_account(conn, user["id"])
+        row = conn.execute(
+            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+    if row is None or not row["secret"]:
+        raise HTTPException(400, "尚未配置 SendKey/token，请先填写并保存。")
+    # 封禁 / 体验检查之后再占用限流名额；每用户每小时最多 5 条测试消息。
+    if rate_limited(
+        f"push-test-user:{user['id']}", PUSH_TEST_LIMIT, PUSH_TEST_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "测试消息发送太频繁，请每小时最多发送 5 条。")
+    result = push_channels.send(
+        row["channel"], row["secret"], PUSH_TEST_TITLE, PUSH_TEST_BODY
+    )
+    return {"ok": result["ok"], "message": PUSH_RESULT_MESSAGES[result["kind"]]}
+
+
 def sec_recheck_session(conn, user_id, request):
     token = request.cookies.get("session", "")
     row = conn.execute(
@@ -1751,7 +1864,7 @@ def delete_account_data(conn, user_id, deleted_at):
             names += "等"
         raise HTTPException(409, f"你创建的小组{names}里还有其他成员，请先让成员退出或解散小组")
 
-    for table in ("sessions", "password_resets", "mistake_scratch", "problems",
+    for table in ("sessions", "password_resets", "user_push", "mistake_scratch", "problems",
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops"):
@@ -2715,6 +2828,15 @@ def get_mastery(
     with connect() as conn:
         conn.execute("BEGIN")
         return mastery_report(conn, user["id"], user["timezone"], today_for(user), weeks)
+
+
+@app.get("/api/stats/typical")
+def get_typical_mistakes(user=Depends(current_user)):
+    # 错因专题页"我的三大典型失误"：按错因标签统计仍未掌握的高频失误，模板生成提醒与清单。
+    # 纯统计，不调用 AI、不占额度。
+    with connect() as conn:
+        conn.execute("BEGIN")
+        return typical_report(conn, user["id"], user["timezone"], today_for(user))
 
 
 def window_total(counter, first, last):

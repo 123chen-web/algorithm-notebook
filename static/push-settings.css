@@ -1,0 +1,131 @@
+/* 账号设置里的「微信提醒」卡片（push-settings.js）。
+   只用主题令牌，不写十六进制色、不靠优先级强压；动效只在
+   prefers-reduced-motion: no-preference 下。 */
+.ps-card {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.ps-title {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ps-desc {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.ps-field {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.ps-field-name {
+  color: var(--ink-2);
+}
+
+.ps-channel,
+.ps-secret {
+  min-height: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.ps-secret {
+  font-family: inherit;
+}
+
+.ps-tail {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.ps-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ps-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.ps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ps-save,
+.ps-test {
+  min-height: 40px;
+  min-width: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.ps-save {
+  border-color: var(--azurite);
+  color: var(--azurite);
+}
+
+.ps-save:disabled,
+.ps-test:disabled,
+.ps-channel:disabled,
+.ps-secret:disabled,
+.ps-enabled:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.ps-status {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.ps-status[data-kind="error"] {
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ps-save,
+  .ps-test {
+    transition: border-color 120ms ease, color 120ms ease;
+  }
+}

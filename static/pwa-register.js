@@ -77,7 +77,9 @@
     const bar = ensureNetBar();
     if (!online()) {
       bar.dataset.state = "offline";
-      bar.textContent = OFFLINE_TEXT;
+      bar.textContent = queueState.pending > 0
+        ? `离线中，${queueState.pending} 条评分待同步`
+        : OFFLINE_TEXT;
       bar.hidden = false;
       return;
     }

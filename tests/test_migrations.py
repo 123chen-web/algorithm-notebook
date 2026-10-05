@@ -29,9 +29,9 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters",
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
-            "mistake_scratch",
+            "mistake_scratch", "user_push",
         } <= tables
-        assert db.schema_version(conn) == 14
+        assert db.schema_version(conn) == 15
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -983,7 +983,7 @@ def test_scratch_migration_to_v14_creates_table_and_preserves_old_data(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 14
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         columns = {row["name"]: row for row in conn.execute(
             "PRAGMA table_info(mistake_scratch)"
         )}
@@ -1060,4 +1060,117 @@ def test_scratch_migration_rolls_back_on_failure(database_path, monkeypatch):
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE name IN "
             "('mistake_scratch', 'idx_mistake_scratch_user')"
+        ).fetchall() == []
+
+
+def test_push_migration_to_v15_creates_table_and_preserves_old_data(
+    database_path, monkeypatch,
+):
+    # 先在版本 14 的旧库上造好用户与草稿，再升到最新，验证 15 号迁移。
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 14])
+        patch.setattr(db, "SCHEMA_VERSION", 14)
+        db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (8, 'legacy-push', 'unchanged-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (9, 'legacy-push-2', 'unchanged-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        assert db.schema_version(conn) == 14
+
+    db.init_db()
+    db.init_db()
+    with db.connect(write=True) as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 15
+        columns = {row["name"]: row for row in conn.execute(
+            "PRAGMA table_info(user_push)"
+        )}
+        assert set(columns) == {
+            "user_id", "channel", "secret", "enabled",
+            "fail_count", "last_ok_at", "updated_at",
+        }
+        assert columns["user_id"]["pk"] == 1
+        assert columns["user_id"]["type"] == "INTEGER"
+        assert columns["channel"]["type"] == "TEXT"
+        assert columns["channel"]["notnull"] == 1
+        assert columns["secret"]["type"] == "TEXT"
+        assert columns["secret"]["notnull"] == 1
+        assert columns["enabled"]["type"] == "INTEGER"
+        assert columns["enabled"]["notnull"] == 1
+        assert columns["enabled"]["dflt_value"] == "1"
+        assert columns["fail_count"]["type"] == "INTEGER"
+        assert columns["fail_count"]["notnull"] == 1
+        assert columns["fail_count"]["dflt_value"] == "0"
+        assert columns["last_ok_at"]["notnull"] == 0
+        assert columns["updated_at"]["notnull"] == 1
+        assert {
+            (row["table"], row["to"], row["on_delete"])
+            for row in conn.execute("PRAGMA foreign_key_list(user_push)")
+        } == {("users", "id", "CASCADE")}
+
+        # 迁移后可以正常写入推送配置。
+        conn.execute(
+            "INSERT INTO user_push"
+            "(user_id, channel, secret, enabled, fail_count, last_ok_at, updated_at) "
+            "VALUES (8, 'serverchan', ?, 1, 0, NULL, ?)",
+            ("SCT" + "a1B2" * 10, CREATED_AT),
+        )
+        # CHECK 约束拒绝非法渠道 / 开关值 / 负数失败计数。
+        for values in (
+            "(9, 'wechat', 'abcdefgh', 1, 0, NULL, ?)",
+            "(9, 'serverchan', 'abcdefgh', 2, 0, NULL, ?)",
+            "(9, 'serverchan', 'abcdefgh', 1, -1, NULL, ?)",
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO user_push"
+                    "(user_id, channel, secret, enabled, fail_count, last_ok_at, updated_at) "
+                    f"VALUES {values}",
+                    (CREATED_AT,),
+                )
+        # 旧数据原样保留（14 号迁移的表与用户都在）。
+        assert conn.execute(
+            "SELECT password_hash FROM users WHERE id = 8"
+        ).fetchone()[0] == "unchanged-hash"
+        assert "mistake_scratch" in {
+            row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        # 删用户级联删推送配置。
+        conn.execute("DELETE FROM users WHERE id = 8")
+        assert conn.execute("SELECT COUNT(*) FROM user_push").fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_push_migration_rolls_back_on_failure(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 14])
+        patch.setattr(db, "SCHEMA_VERSION", 14)
+        db.init_db()
+    push_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 15)
+
+    def broken_push_migration(conn):
+        push_apply(conn)
+        raise ValueError("推送迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_push_migration if version == 15 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="推送迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 14
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'user_push'"
         ).fetchall() == []

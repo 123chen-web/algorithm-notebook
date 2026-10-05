@@ -682,6 +682,27 @@ def _apply_mistake_scratch(conn):
     )
 
 
+def _apply_user_push(conn):
+    # 账号设置里的「微信提醒」：每个用户至多一条渠道配置；密钥只保存在服务端，
+    # 任何接口都不回原文。连续发送失败由应用层把 enabled 置 0。
+    conn.execute(
+        """
+        CREATE TABLE user_push (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            channel TEXT NOT NULL
+                CHECK(channel IN ('serverchan', 'pushplus')),
+            secret TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1
+                CHECK(typeof(enabled) = 'integer' AND enabled IN (0, 1)),
+            fail_count INTEGER NOT NULL DEFAULT 0
+                CHECK(typeof(fail_count) = 'integer' AND fail_count >= 0),
+            last_ok_at TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -699,6 +720,7 @@ MIGRATIONS = [
     (12, "目标卡", _apply_goals),
     (13, "离线评分补交的幂等记录", _apply_review_ops),
     (14, "错题草稿演算区", _apply_mistake_scratch),
+    (15, "微信提醒渠道配置", _apply_user_push),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

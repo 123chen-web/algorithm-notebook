@@ -1,0 +1,122 @@
+/* 错因专题页"我的三大典型失误"卡与"考前一页纸"。屏幕颜色全部走主题令牌；
+   打印段落（@media print）只用黑白灰关键字，与 static/print.css 的考前打印版保持一致。 */
+
+.typical-card[hidden],
+#typical-sheet-wrap[hidden] { display: none; }
+
+.typical-card { margin-bottom: var(--space-4); }
+.typical-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.typical-head h3 { margin: 0; font-family: var(--kai); font-size: var(--text-xl); color: var(--ink); }
+
+#typical-status { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); line-height: 1.7; }
+#typical-status:empty { display: none; }
+#typical-guide { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); line-height: 1.7; }
+#typical-guide[hidden] { display: none; }
+
+.typical-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.typical-row {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.typical-row:hover:not(:disabled) { background: var(--paper-2); }
+.typical-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.typical-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+.typical-row-name { font-weight: 600; font-size: var(--text-base); }
+.typical-row-count { margin-left: auto; color: var(--ink-2); font-size: var(--text-xs); }
+.typical-row-meta { display: block; margin-top: 2px; color: var(--ink-2); font-size: var(--text-xs); }
+.typical-row-hint { display: block; margin-top: var(--space-1); color: var(--ink); font-size: var(--text-sm); line-height: 1.6; }
+
+/* 屏幕上的 A4 纸面预览，写法与 .print-sheet 一致。 */
+.typical-sheet-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.typical-sheet {
+  width: min(100%, 794px);
+  margin: var(--space-3) auto 0;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 6px 24px rgba(var(--shadow-rgb), .08);
+  font-size: var(--text-md);
+  line-height: 1.7;
+}
+.typical-sheet-title { margin: 0 0 var(--space-1); font-family: var(--kai); font-size: var(--text-2xl); color: var(--ink); }
+.typical-sheet-sub { margin: 0 0 var(--space-4); color: var(--ink-2); font-size: var(--text-sm); }
+.typical-sheet-category { margin-top: var(--space-4); break-inside: avoid; }
+.typical-sheet-category h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+.typical-sheet-count { color: var(--ink-2); font-family: inherit; font-size: var(--text-sm); font-weight: 400; }
+.typical-sheet-hint { margin: var(--space-1) 0; color: var(--ink-2); font-size: var(--text-sm); }
+.typical-sheet ol { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.typical-sheet-example { margin-bottom: var(--space-2); break-inside: avoid; }
+.typical-sheet-q { display: block; font-weight: 600; color: var(--ink); }
+.typical-sheet-why { display: block; color: var(--ink-2); font-size: var(--text-sm); }
+.typical-sheet-checklist { margin-top: var(--space-5); break-inside: avoid; }
+.typical-sheet-checklist h3 { margin: 0 0 var(--space-2); font-size: var(--text-xl); color: var(--ink); }
+.typical-sheet-checklist ul { list-style: none; margin: 0; padding: 0; }
+.typical-sheet-check { margin: 2px 0; color: var(--ink); }
+
+@media (max-width: 599px) {
+  .typical-sheet { padding: var(--space-4); }
+}
+
+/* ---------- 打印：只留下这张一页纸 ---------- */
+@page { size: A4; margin: 14mm 12mm; }
+@media print {
+  html.typical-sheet-open[data-view="app"] .app-sidebar, html.typical-sheet-open[data-view="app"] .app-tabbar,
+  html.typical-sheet-open[data-view="app"] .more-sheet, html.typical-sheet-open[data-view="app"] .header,
+  html.typical-sheet-open[data-view="app"] .skip-link, html.typical-sheet-open[data-view="app"] #notice,
+  html.typical-sheet-open[data-view="app"] #email-prompt, .scene-backdrop, .cursor-fx-canvas,
+  #seal-layer, .palette, .focus, .emoji-popover { display: none; }
+  html.typical-sheet-open[data-view="app"] .container { max-width: none; padding: 0; }
+  html.typical-sheet-open[data-view="app"] .container > #app { width: auto; margin: 0; padding: 0; }
+  html.typical-sheet-open[data-view="app"] #app > section { display: none; }
+  html.typical-sheet-open[data-view="app"] #app > #clusters-page { display: block; }
+  html.typical-sheet-open #clusters-page .page-heading,
+  html.typical-sheet-open #clusters-page .clusters-toolbar,
+  html.typical-sheet-open #clusters-page #clusters-status,
+  html.typical-sheet-open #clusters-page #clusters-empty,
+  html.typical-sheet-open #clusters-page #clusters-result,
+  html.typical-sheet-open #clusters-page #typical-card { display: none; }
+  html.typical-sheet-open #typical-sheet-wrap { display: block; margin: 0; }
+  html.typical-sheet-open .typical-no-print { display: none; }
+  html.typical-sheet-open .typical-sheet {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: white;
+    box-shadow: none;
+    color: black;
+    font-size: 10.5pt;
+  }
+  html.typical-sheet-open .typical-sheet-title,
+  html.typical-sheet-open .typical-sheet-category h3,
+  html.typical-sheet-open .typical-sheet-checklist h3,
+  html.typical-sheet-open .typical-sheet-q,
+  html.typical-sheet-open .typical-sheet-check { color: black; }
+  html.typical-sheet-open .typical-sheet-category h3 { border-bottom: 1px solid black; }
+  html.typical-sheet-open .typical-sheet-sub,
+  html.typical-sheet-open .typical-sheet-count,
+  html.typical-sheet-open .typical-sheet-hint,
+  html.typical-sheet-open .typical-sheet-why { color: black; }
+}

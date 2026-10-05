@@ -233,3 +233,163 @@ def test_send_failure_does_not_mark_as_sent(database, monkeypatch):
 def test_refuses_to_run_without_smtp_configured(database, monkeypatch):
     monkeypatch.setattr(mailer, "smtp_configured", lambda: False)
     assert send_reminders.main([]) == 1
+
+# ---------- 微信推送渠道（Server酱 / PushPlus） ----------
+
+PUSH_SECRET = "SCT" + "a1B2" * 10
+PP_SECRET = "abcdef0123456789" * 2
+
+
+def fake_poster(status=200, text='{"code": 0, "message": "ok"}', raising=None):
+    calls = []
+
+    def post(url, data, timeout):
+        calls.append({"url": url, "data": data, "timeout": timeout})
+        if raising is not None:
+            raise raising
+        return status, text
+
+    post.calls = calls
+    return post
+
+
+def set_push(username, channel="serverchan", secret=PUSH_SECRET, enabled=1, fail_count=0):
+    with connect(write=True) as conn:
+        user_id = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO user_push(user_id, channel, secret, enabled, fail_count, "
+            "last_ok_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, '2026-09-20 00:00:00') "
+            "ON CONFLICT(user_id) DO UPDATE SET channel = excluded.channel, "
+            "secret = excluded.secret, enabled = excluded.enabled, "
+            "fail_count = excluded.fail_count",
+            (user_id, channel, secret, enabled, fail_count),
+        )
+
+
+def push_state(username):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT up.* FROM user_push up JOIN users u ON u.id = up.user_id "
+            "WHERE u.username = ?",
+            (username,),
+        ).fetchone()
+
+
+def test_push_user_without_email_gets_wechat_and_email_user_keeps_mail(
+    database, sent_emails
+):
+    set_push("bob")  # bob 没有邮箱，但有一条到期记录
+    post = fake_poster()
+
+    assert send_reminders.main([], post=post) == 0
+
+    # bob 走微信：固定服务商地址、标题与正文。
+    assert len(post.calls) == 1
+    call = post.calls[0]
+    assert call["url"] == f"https://sctapi.ftqq.com/{PUSH_SECRET}.send"
+    assert call["data"]["title"] == send_reminders.REMINDER_SUBJECT
+    assert "今天有 1 条" in call["data"]["desp"]
+    assert "无邮箱用户的题目" in call["data"]["desp"]
+    # alice 仍走邮件。
+    assert [to for to, _, _ in sent_emails] == ["alice@example.com"]
+
+    state = push_state("bob")
+    assert state["fail_count"] == 0
+    assert state["last_ok_at"] is not None
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT last_reminder_sent FROM users WHERE username='bob'"
+        ).fetchone()["last_reminder_sent"] == "2026-09-20"
+
+
+def test_pushplus_uses_token_payload_and_fixed_url(database, sent_emails):
+    set_push("bob", channel="pushplus", secret=PP_SECRET)
+    post = fake_poster(text='{"code": 200, "msg": "ok"}')
+
+    assert send_reminders.main([], post=post) == 0
+    assert len(post.calls) == 1
+    assert post.calls[0]["url"] == "https://www.pushplus.plus/send"
+    assert post.calls[0]["data"]["token"] == PP_SECRET
+    assert "content" in post.calls[0]["data"]
+
+
+def test_push_dedupes_same_day(database, sent_emails):
+    set_push("bob")
+    post = fake_poster()
+    assert send_reminders.main([], post=post) == 0
+    assert send_reminders.main([], post=post) == 0
+    assert len(post.calls) == 1
+
+
+def test_push_failure_does_not_mark_sent_and_increments_fail_count(
+    database, sent_emails, capsys
+):
+    set_push("bob")
+    post = fake_poster(status=401, text="auth fail")
+    assert send_reminders.main([], post=post) == 0
+    assert len(post.calls) == 1
+    state = push_state("bob")
+    assert state["fail_count"] == 1
+    assert state["enabled"] == 1
+    assert state["last_ok_at"] is None
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT last_reminder_sent FROM users WHERE username='bob'"
+        ).fetchone()["last_reminder_sent"] is None
+    # 打印的失败信息里不能带密钥。
+    assert PUSH_SECRET not in capsys.readouterr().out
+
+
+def test_five_consecutive_failures_auto_disable_push(database, sent_emails):
+    set_push("bob")
+    post = fake_poster(status=401, text="auth fail")
+    for _ in range(5):
+        assert send_reminders.main([], post=post) == 0
+    state = push_state("bob")
+    assert state["fail_count"] == 5
+    assert state["enabled"] == 0
+    # 自动关闭后再跑：bob 没邮箱，直接跳过，不再请求服务商。
+    calls_before = len(post.calls)
+    assert send_reminders.main([], post=post) == 0
+    assert len(post.calls) == calls_before
+
+
+def test_successful_send_resets_fail_count(database, sent_emails):
+    set_push("bob", fail_count=4)
+    post = fake_poster()
+    assert send_reminders.main([], post=post) == 0
+    state = push_state("bob")
+    assert state["fail_count"] == 0
+    assert state["last_ok_at"] is not None
+
+
+def test_disabled_push_falls_back_to_email(database, sent_emails):
+    # alice 有邮箱；关闭微信开关后提醒仍走邮件。
+    set_push("alice", enabled=0, fail_count=5)
+    post = fake_poster()
+    assert send_reminders.main([], post=post) == 0
+    assert post.calls == []
+    assert [to for to, _, _ in sent_emails] == ["alice@example.com"]
+
+
+def test_dry_run_does_not_push_or_write(database, monkeypatch):
+    set_push("bob")
+    post = fake_poster()
+    monkeypatch.setattr(mailer, "send_email", lambda *args: None)
+    assert send_reminders.main(["--dry-run"], post=post) == 0
+    assert post.calls == []
+    assert push_state("bob")["fail_count"] == 0
+
+
+def test_runs_push_without_smtp_configured(database, monkeypatch):
+    # 没配 SMTP 时，微信用户照常推送；邮件用户跳过，进程仍以 0 退出。
+    monkeypatch.setattr(mailer, "smtp_configured", lambda: False)
+    sent = []
+    monkeypatch.setattr(mailer, "send_email", lambda *args: sent.append(args))
+    set_push("bob")
+    post = fake_poster()
+    assert send_reminders.main([], post=post) == 0
+    assert len(post.calls) == 1
+    assert sent == []

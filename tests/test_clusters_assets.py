@@ -75,7 +75,11 @@ def test_every_user_and_ai_field_uses_text_nodes(assets):
 def test_view_refresh_focus_and_logout_are_connected(assets):
     app = assets["app.js"]
     assert '$("#clusters-page").hidden = view !== "clusters";' in app
-    assert 'else if (view === "clusters") await window.Clusters.load();' in app
+    assert re.search(
+        r'else if \(view === "clusters"\) \{\s*await window\.Clusters\.load\(\);\s*'
+        r'window\.Typical\?\.mount\(\$\("#typical-card"\)\);[^\n]*\n\s*\}',
+        app,
+    )
     assert re.search(r'if \(view === "clusters"\) \{\s*message\(\);\s*await window\.Clusters\.load\(\);', app)
     assert 'window.Clusters?.reset();' in assets["shell.js"]
 

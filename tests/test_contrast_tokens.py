@@ -113,8 +113,27 @@ REVIEW_TEXT_PAIRS = (
     ("--azurite", "--surface"),
     ("--azurite", "--paper"),
 )
+# PWA：顶部网络/同步细条（.pwa-net）与底部「有新版本」条（.pwa-update）。
+PWA_TEXT_PAIRS = (
+    ("--ink", "--soft"),          # 顶部细条文字
+    ("--ink", "--surface"),       # 底部更新条文字
+    ("--on-accent", "--accent"),  # 更新条「刷新」按钮
+)
+# 细条状态圆点（::before，10px 非文字图形）按 WCAG 非文字控件/图形对象的 3:1 要求；
+# 同时它永远和文字一起出现，不靠颜色单独传达信息。
+PWA_GRAPHIC_PAIRS = (
+    ("--accent", "--soft"),
+)
+# 错因专题"我的三大典型失误"卡与考前一页纸屏幕预览（static/typical.css）。
+# 打印态（@media print）只用 black / white / gray 关键字，不参与令牌配对检查。
+TYPICAL_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink-2", "--surface"),
+    ("--ink", "--paper-2"),
+    ("--ink-2", "--paper-2"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS + PWA_TEXT_PAIRS + PWA_GRAPHIC_PAIRS + TYPICAL_TEXT_PAIRS for token in pair
 }
 
 
@@ -259,6 +278,38 @@ def test_review_feel_text_pairs_meet_contrast(context, tokens, foreground, backg
     assert ratio >= 4.5, (
         f"复习主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
         f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(context, tokens, id="/".join(part for part in context if part) or "root")
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", PWA_TEXT_PAIRS)
+def test_pwa_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"PWA 状态条主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(context, tokens, id="/".join(part for part in context if part) or "root")
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", PWA_GRAPHIC_PAIRS)
+def test_pwa_graphic_pairs_meet_non_text_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 3.0, (
+        f"PWA 状态圆点主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，非文字图形要求至少 3:1"
     )
 
 
@@ -751,3 +802,42 @@ def test_rank_css_text_color_and_background_pairs_are_the_checked_ones():
             assert (foreground, background) in allowed, f"{selector}: {(foreground, background)} 没有对比度检查"
     for selector, value in colors.items():
         assert re.fullmatch(r"var\(--[\w-]+\)", value), f"{selector}: 文字色必须是主题令牌"
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(context, tokens, id="/".join(part for part in context if part) or "root")
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", TYPICAL_TEXT_PAIRS)
+def test_typical_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"典型失误卡 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_typical_stylesheet_only_uses_checked_tokens():
+    """typical.css 屏幕规则里每个 color / background 令牌都必须落在检查过的配对里；
+    @media print 里的 black / white / gray 是打印专用关键字，不在此列。"""
+    source = (STATIC / "typical.css").read_text(encoding="utf-8")
+    checked = set(TYPICAL_TEXT_PAIRS)
+    foregrounds = {fg for fg, _ in checked}
+    backgrounds = {bg for _, bg in checked}
+    used_foregrounds, used_backgrounds = set(), set()
+    for blocks, declaration in css_declarations(source):
+        if any(block.startswith("@media print") for block in blocks):
+            continue
+        name, _, value = declaration.partition(":")
+        name = name.strip()
+        tokens = set(re.findall(r"var\((--[\w-]+)\)", value))
+        if name == "color":
+            used_foregrounds |= tokens
+        elif name in ("background", "background-color"):
+            used_backgrounds |= tokens
+    assert used_foregrounds, "没有解析到任何文字颜色，检查方式失效了"
+    assert used_foregrounds <= foregrounds, used_foregrounds - foregrounds
+    assert used_backgrounds <= backgrounds, used_backgrounds - backgrounds

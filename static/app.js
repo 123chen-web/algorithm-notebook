@@ -455,6 +455,9 @@ function signedOut() {
   rvfQueue = null;
   window.ReviewExtras?.reset();
   window.Onboarding?.reset();
+  window.OfflineReview?.onSignedOut(); // 先提示队列保留，再 reset（IndexedDB 里该用户的队列仍在）
+  window.OfflineSync?.reset();
+  window.OfflineReview?.reset();
   if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
   window.AnkiExport?.reset();
@@ -523,7 +526,9 @@ function signedOut() {
   window.GoalCard?.reset();
   window.DuckPanel?.reset();
   window.Scratch?.reset();
+window.PushSettings?.reset();
   window.NavFocus?.reset(); // 专注模式开关属于已注销的用户，收起状态与横幅一并还原
+  window.Typical?.reset(); // 典型失误卡与一页纸属于已注销的用户，请求代次一并作废
   window.ManualClaims?.reset();
   window.ManualClaimsAdmin?.reset();
   $("#admin-reports").replaceChildren();
@@ -722,6 +727,8 @@ function updateUserInfo() {
   configureRank();
   window.Rank?.syncSetting(user);
   window.NavFocus?.configure({ getUser: () => user, getView: () => view }); // 专注模式按用户 id 读取开关
+  window.PushSettings?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  $("#push-settings-host") && window.PushSettings?.mount($("#push-settings-host"));
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -846,6 +853,9 @@ async function enterApp() {
   user = await api("/api/me");
   sessionEpoch += 1;
   window.Onboarding?.reset(user);
+  window.OfflineSync?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.OfflineReview?.configure({ notify: (text) => message(text), getUser: () => user, getEpoch: () => sessionEpoch });
+  window.OfflineSync?.prefetch(); // 静默预取今日复习队列，断网时兜底
   if (resetToken) {
     resetToken = null;
     const url = new URL(location.href);
@@ -918,7 +928,10 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "achievements") await loadAchievements();
   else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "mastery") await window.Mastery.load();
-  else if (view === "clusters") await window.Clusters.load();
+  else if (view === "clusters") {
+    await window.Clusters.load();
+    window.Typical?.mount($("#typical-card")); // 我的三大典型失误：自带登录代次与视图守卫
+  }
   else if (view === "print") await window.PrintNotebook.load();
   else if (view === "groups") await loadGroups();
   else if (view === "plan") await loadPlanPage();
@@ -2317,10 +2330,10 @@ async function rvfLoadQueueHeader(isCurrent = rvfPageGuard(), zone = $("#zone-fi
     rvfRenderQueueHeader(queue.value);
     $("#review-cap-controls").hidden = false;
     rvfCapAvailable(settings.status === "fulfilled");
-  } else if (queue.reason.status !== 404) {
+  } else if (queue.reason.status !== 404 && !window.OfflineReview?.isNetworkError?.(queue.reason)) {
     $("#review-queue-status").textContent = queue.reason.message;
   }
-  if (settings.status === "rejected" && settings.reason.status !== 404) {
+  if (settings.status === "rejected" && settings.reason.status !== 404 && !window.OfflineReview?.isNetworkError?.(settings.reason)) {
     $("#review-queue-status").textContent = settings.reason.message;
   }
 }
@@ -2352,21 +2365,22 @@ async function rvfSetDailyCap() {
   }
 }
 
-function rvfRemoveItem(item) {
+function rvfRemoveItem(item, { offline = false } = {}) {
   rvfListGeneration += 1; // 已发出的旧列表不得把刚移除的卡片放回来。
   if (view === "today") {
     document.querySelectorAll(".record-button").forEach((button) => {
       if (Number(button.dataset.id) === item.id) button.remove();
     });
     rvfListItems.delete(item.id);
-    $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）`;
+    $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）${offline ? " · 离线模式，评分先存本机" : ""}`;
   } else {
     rvfListItems.set(item.id, item);
     document.querySelectorAll(".record-button").forEach((button) => {
       if (Number(button.dataset.id) === item.id) button.replaceWith(rvfRecordButton(item, user.today));
     });
   }
-  clearDetail("已更新复习安排", "可以选择下一条继续复习。");
+  clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : "可以选择下一条继续复习。");
+  if (offline) return; // 离线不触发会打网络的头部刷新与跨视图联动。
   notifyDataChanged("review");
   void rvfLoadQueueHeader(rvfPageGuard());
 }
@@ -2400,10 +2414,27 @@ async function loadList() {
   const query = `due_only=${view === "today"}` + (zoneParam ? `&zone=${encodeURIComponent(zoneParam)}` : "")
     + (tagParam ? `&tag=${encodeURIComponent(tagParam)}` : "")
     + (listCreatedOn ? `&created_on=${encodeURIComponent(listCreatedOn)}` : "");
-  const data = await api(`/api/mistakes?${query}`);
+  let data;
+  let offlineToday = false;
+  try {
+    data = await api(`/api/mistakes?${query}`);
+  } catch (error) {
+    // 今日复习在断网（或请求直接网络失败）时，用预取队列兜底；其他视图/无缓存照常报错。
+    if (view === "today" && window.OfflineReview?.isNetworkError(error)) {
+      data = await window.OfflineReview?.todayFallback();
+      if (data) offlineToday = true;
+    }
+    if (!offlineToday) throw error;
+  }
   if (!valid()) return;
   rvfListItems = new Map(data.items.map((item) => [item.id, item]));
-  void rvfLoadQueueHeader(valid, zoneParam, tagParam);
+  if (offlineToday) {
+    $("#review-cap-controls").hidden = true;
+    $("#review-cap-note").hidden = true;
+    $("#review-queue-status").textContent = "离线模式：展示的是联网时预取的今日队列，评分会先存在本机。";
+  } else {
+    void rvfLoadQueueHeader(valid, zoneParam, tagParam);
+  }
   $("#list-focus").hidden = !(view === "today" && data.items.length && window.FocusReview);
   $("#list-filter").hidden = !listCreatedOn;
   if (listCreatedOn) {
@@ -2416,7 +2447,7 @@ async function loadList() {
   $("#list-title").textContent =
     view === "today" ? "今日复习" : "全部记录";
   $("#list-summary").textContent = view === "today"
-    ? `${data.today} · 今天有 ${data.items.length} 条易错点待复习（含逾期）`
+    ? `${data.today} · 今天有 ${data.items.length} 条易错点待复习（含逾期）${offlineToday ? " · 离线模式，评分先存本机" : ""}`
     : `共 ${data.items.length} 条易错点 · 每一条，都有自己的复习节奏`;
 
   $("#cards").replaceChildren();
@@ -2450,7 +2481,18 @@ async function openMistake(id) {
   const isCurrent = rvfPageGuard();
   rvfClearDetail();
   const generation = rvfDetailGeneration;
-  const item = await api(`/api/mistakes/${id}`);
+  let item;
+  let offlineDetail = false;
+  try {
+    item = await api(`/api/mistakes/${id}`);
+  } catch (error) {
+    // 断网时详情接口拉不到：只允许用预取队列里缓存过的题兜底，不编造没见过的数据。
+    if (window.OfflineReview?.isNetworkError(error)) {
+      item = window.OfflineReview?.cachedItem(id);
+      if (item) offlineDetail = true;
+    }
+    if (!item) throw error;
+  }
   if (!isCurrent() || generation !== rvfDetailGeneration || !["today", "all"].includes(view)) return;
   user.today = item.today;
   updateUserInfo();
@@ -2460,7 +2502,7 @@ async function openMistake(id) {
     button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));
   });
 
-  renderDetail(item);
+  renderDetail(item, { offline: offlineDetail });
 }
 
 const VARIANT_SECTION_PATTERN =
@@ -2761,10 +2803,12 @@ function rvfDetailKeydown(event) {
   }
 }
 
-function renderDetail(item) {
+function renderDetail(item, options = {}) {
   rvfClearDetail();
   const root = $("#detail");
   root.replaceChildren();
+  // 离线详情来自预取缓存（options.offline），或当前确实处于断网状态。
+  const offline = Boolean(options.offline) || Boolean(window.OfflineReview?.isOffline?.());
   const isCodeZone = codeZones.has(item.zone);
   const pageGuard = rvfPageGuard();
   const state = { item, revealed: window.ReviewExtras?.hideReason() === false, submitting: false, removed: false, answers: [], buttons: [] };
@@ -2939,16 +2983,37 @@ function renderDetail(item) {
       for (const gradeButton of state.buttons) gradeButton.disabled = true;
       reviewButtons.setAttribute("aria-busy", "true");
       const anchor = sealAnchorPoint(button);
+      const sealText = { 0: "再练", 2: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality];
       try {
-        const result = await api(`/api/mistakes/${item.id}/review`, {
-          method: "POST",
-          body: JSON.stringify({ quality, version: item.version }),
-        });
+        let result = null;
+        if (offline) {
+          await window.OfflineReview?.grade(item.id, quality); // 内部已提示「已记下，联网后同步」
+        } else {
+          try {
+            result = await api(`/api/mistakes/${item.id}/review`, {
+              method: "POST",
+              body: JSON.stringify({ quality, version: item.version }),
+            });
+          } catch (error) {
+            // 在线详情打开后突然断网：POST 直接网络失败时转入离线队列，不让评分丢失。
+            if (window.OfflineReview?.isNetworkError(error)) {
+              await window.OfflineReview?.grade(item.id, quality);
+              window.OfflineReview?.restrictDetail(root);
+            } else {
+              throw error;
+            }
+          }
+        }
         if (!state.isCurrent()) return;
-        stampSeal({ 0: "再练", 2: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality], { anchor });
-        rvfRemoveItem({ ...item, ...result });
-        window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
-          onUndo: (restored) => rvfRestoreItem(item, restored) });
+        stampSeal(sealText, { anchor });
+        if (result) {
+          rvfRemoveItem({ ...item, ...result });
+          window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
+            onUndo: (restored) => rvfRestoreItem(item, restored) });
+        } else {
+          // 离线评分没有撤销入口（没发到服务器，无从撤销）。
+          rvfRemoveItem({ ...item }, { offline: true });
+        }
       } catch (error) {
         if (state.isCurrent()) status.textContent = error.message;
       } finally {
@@ -3048,6 +3113,7 @@ function renderDetail(item) {
   root.append(aiSection, dangerZone);
   state.answers.push(aiSection);
   for (const part of state.answers) part.hidden = !state.revealed;
+  if (offline) window.OfflineReview?.restrictDetail(root); // 禁用推迟/暂停、AI、变体保存、删除并说明原因
 }
 
 function addMistakeInput() {
@@ -3336,6 +3402,7 @@ document.addEventListener("focus:closed", (event) => {
       await window.Mastery.load();
     } else if (graded && view === "clusters") {
       await window.Clusters.load();
+      window.Typical?.mount($("#typical-card"));
     }
   });
 });
@@ -3357,6 +3424,10 @@ document.addEventListener("mistake:tags-changed", (event) => {
 });
 
 window.Onboarding?.configure({ api });
+window.OfflineSync?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+window.OfflineReview?.configure({ notify: (text) => message(text), getUser: () => user, getEpoch: () => sessionEpoch });
+window.PwaRegister?.configure({ version: "1" });
+window.PwaRegister?.register();
 
 $("#home-refresh").addEventListener("click", () => run(async () => {
   message();
@@ -3520,6 +3591,7 @@ $("#refresh").addEventListener("click", () => run(async () => {
   if (view === "clusters") {
     message();
     await window.Clusters.load();
+    window.Typical?.mount($("#typical-card"));
     message("已刷新。");
     return;
   }
@@ -4757,6 +4829,7 @@ function configureRank() {
   const hooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement, refreshPage: () => loadLeaderboard().catch(() => {}) };
   window.Rank?.configure(hooks);
   window.RankAdmin?.configure(hooks);
+  window.Typical?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, print: () => window.print() });
 }
 
 function removeReportCard(card) {

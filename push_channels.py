@@ -32,6 +32,22 @@ _KEY_PATTERNS = {
     "pushplus": re.compile(r"[a-f0-9]{16,64}\Z"),
 }
 
+# 支持的微信推送渠道；账号设置接口按这个顺序展示。
+CHANNELS = tuple(_URLS)
+
+
+def valid_key(channel: str, key) -> bool:
+    """账号设置接口复用的 key 规则：渠道受支持且 key 符合该渠道格式。
+
+    只返回布尔值，不抛异常、不回显 key 内容。
+    """
+    pattern = _KEY_PATTERNS.get(channel)
+    return (
+        pattern is not None
+        and isinstance(key, str)
+        and pattern.fullmatch(key) is not None
+    )
+
 # 除换行符 (\n) 以外的控制字符（含 DEL 与 C1 控制区）
 _CONTROL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f-\x9f​-‏‪-‮⁠⁦-⁩﻿]")
 

@@ -6,6 +6,8 @@
   <meta name="description" content="记录真实的算法错误，按时复习，让 AI 围绕薄弱点生成新的练习。欧叶OY，邀请内测中。">
   <title>欧叶OY：把错误变成掌握</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <meta name="theme-color" content="#c23a2b">
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
@@ -31,6 +33,7 @@
   <link rel="stylesheet" href="/static/practice.css?v=1">
   <link rel="stylesheet" href="/static/mastery.css?v=3">
   <link rel="stylesheet" href="/static/clusters.css?v=3">
+  <link rel="stylesheet" href="/static/typical.css?v=1">
   <link rel="stylesheet" href="/static/account.css?v=1">
   <link rel="stylesheet" href="/static/anki-export.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
@@ -39,8 +42,10 @@
   <link rel="stylesheet" href="/static/rank.css?v=2">
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
   <link rel="stylesheet" href="/static/scratch.css?v=1">
+  <link rel="stylesheet" href="/static/push-settings.css?v=1">
   <link rel="stylesheet" href="/static/duck-panel.css?v=1">
   <link rel="stylesheet" href="/static/plan.css?v=1">
+  <link rel="stylesheet" href="/static/pwa.css?v=1">
   <link rel="stylesheet" href="/static/manual-claims.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
@@ -57,6 +62,7 @@
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
   <script defer src="/static/clusters.js?v=6"></script>
+  <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=2"></script>
   <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=3"></script>
@@ -76,8 +82,13 @@
   <script defer src="/static/diff-lines.js?v=1"></script>
   <script defer src="/static/trace-table.js?v=1"></script>
   <script defer src="/static/scratch.js?v=2"></script>
+  <script defer src="/static/push-settings.js?v=1"></script>
   <script defer src="/static/anki-export.js?v=1"></script>
-  <script defer src="/static/app.js?v=77"></script>
+  <script defer src="/static/offline-queue.js?v=1"></script>
+  <script defer src="/static/pwa-register.js?v=1"></script>
+  <script defer src="/static/offline-sync.js?v=1"></script>
+  <script defer src="/static/offline-review.js?v=1"></script>
+  <script defer src="/static/app.js?v=78"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -204,6 +215,7 @@
                 <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
                 <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。</span>
               </label>
+              <div id="push-settings-host" class="push-settings-host"></div>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
                   <option value="ink">水墨红笔</option>
@@ -640,6 +652,22 @@
         <p id="clusters-new" hidden></p>
         <p id="clusters-status" role="status" aria-live="polite" aria-atomic="true"></p>
         <button id="clusters-retry" type="button" hidden>重新加载</button>
+        <section id="typical-card" class="panel typical-card" hidden>
+          <div class="typical-head">
+            <h3>我的三大典型失误</h3>
+            <button id="typical-print-open" type="button" class="primary" hidden>考前一页纸</button>
+          </div>
+          <p id="typical-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p id="typical-guide" class="typical-guide" hidden>再记录几条易错点、复习几次并给它们贴上错因标签，这里会自动整理出你最该补的三类失误。</p>
+          <div id="typical-list" class="typical-list" role="list"></div>
+        </section>
+        <div id="typical-sheet-wrap" hidden>
+          <div class="typical-sheet-toolbar typical-no-print">
+            <button id="typical-sheet-print" type="button" class="primary">打印 / 保存为 PDF</button>
+            <button id="typical-sheet-close" type="button">收起</button>
+          </div>
+          <article id="typical-sheet" class="typical-sheet" aria-label="考前一页纸"></article>
+        </div>
         <div id="clusters-empty" class="clusters-empty" hidden>
           <h3 id="clusters-empty-title"></h3>
           <p id="clusters-empty-text"></p>

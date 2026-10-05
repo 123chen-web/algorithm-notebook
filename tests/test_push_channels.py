@@ -280,3 +280,37 @@ def test_default_post_does_not_follow_redirects_and_reads_a_bounded_body(monkeyp
     monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
     assert _default_post("https://sctapi.ftqq.com/x.send", {"a": "b"}, 8) == (200, "{}")
     assert seen == {"size": MAX_RESPONSE, "timeout": 8}
+
+# ---------- 公开的 key 校验规则（账号设置接口复用） ----------
+
+from push_channels import CHANNELS, valid_key
+
+
+def test_channels_lists_two_known_providers():
+    assert CHANNELS == ("serverchan", "pushplus")
+
+
+@pytest.mark.parametrize("channel", ["serverchan", "pushplus"])
+def test_valid_key_accepts_known_good_keys(channel):
+    assert valid_key(channel, SC_KEY if channel == "serverchan" else PP_KEY) is True
+
+
+@pytest.mark.parametrize(
+    "channel,key",
+    [
+        ("serverchan", "short"),
+        ("serverchan", "with-dash-1234"),
+        ("serverchan", "a" * 65),
+        ("pushplus", "g" * 32),
+        ("pushplus", "ABCDEF0123456789" * 2),   # 大写不允许
+        ("pushplus", "abc"),
+        ("serverchan", None),
+        ("pushplus", 123456),
+        ("wechat", SC_KEY),
+        ("", SC_KEY),
+    ],
+    ids=["sc-short", "sc-dash", "sc-too-long", "pp-g", "pp-uppercase",
+         "pp-short", "sc-none", "pp-number", "unknown-channel", "empty-channel"],
+)
+def test_valid_key_rejects_bad_inputs(channel, key):
+    assert valid_key(channel, key) is False

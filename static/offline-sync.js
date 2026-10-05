@@ -282,10 +282,30 @@
         announceSyncState();
         if (result.stopped) break;
       }
+      announce("pwa:flush-result", result); // 界面据此提示成功 N 条 / 跳过 M 条 / 失败可重试
       return result;
     } finally {
       flushing = false;
     }
+  }
+
+  /* ---------- 失败重排（恢复联网后可重试） ---------- */
+  async function rearmFailed() {
+    const ready = await ensureState();
+    if (!ready) return false;
+    const next = queue().retryFailed(state);
+    if (next === state) return false;
+    state = next;
+    persist();
+    announceSyncState();
+    return true;
+  }
+
+  /** 手动/自动重试：先把 failed 的评分重新排队，再立即补交一轮。 */
+  async function retryFailed() {
+    if (!hooks || !hooks.getUser()) return emptyResult();
+    await rearmFailed();
+    return flush();
   }
 
   /* ---------- 对外 ---------- */
@@ -293,8 +313,9 @@
     return state ? queue().summary(state) : { pending: 0, failed: 0, total: 0 };
   }
 
-  function onOnline() {
-    flush(); // 内部自带守卫与结果汇总；这里 fire-and-forget
+  async function onOnline() {
+    await rearmFailed(); // 三次失败停摆的评分，恢复联网后给一次新机会
+    void flush(); // 内部自带守卫与结果汇总；fire-and-forget
   }
 
   function configure(options) {
@@ -326,6 +347,7 @@
     readTodayQueue,
     enqueueGrade,
     flush,
+    retryFailed,
     summary,
     reset,
     helpers: { sanitizeItems, makeOpId },
