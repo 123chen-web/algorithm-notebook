@@ -1,0 +1,77 @@
+/* PWA 客户端的两条 UI：顶部网络/同步状态细条（.pwa-net）与底部「有新版本」条（.pwa-update）。
+   只用主题令牌；文字色/底色配对见 INTEGRATION.md（都已纳入对比度检查清单）。 */
+
+/* 顶部细条插在文档流最上方，把内容自然往下推，不遮挡标题，也不会造成横向滚动。 */
+.pwa-net {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: var(--lh-ui);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+/* 状态不只靠颜色：离线/待同步都带一个实心圆符号，配合文字一起出现。 */
+.pwa-net::before {
+  content: "●";
+  font-size: 9px;
+  color: var(--accent);
+}
+.pwa-net[data-state="offline"]::before { content: "◌"; }
+.pwa-net[data-state="pending"]::before { content: "●"; }
+
+/* 底部「有新版本」条：盖在内容上方，不挤压布局；窄屏时自动换行且不超出屏幕。 */
+.pwa-update {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  z-index: 70;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  width: fit-content;
+  max-width: calc(100vw - 2 * var(--space-4));
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--lh-ui);
+}
+.pwa-update > p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pwa-update > button {
+  min-height: 40px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 520px) {
+  .pwa-net { padding-right: var(--space-3); padding-left: var(--space-3); }
+  .pwa-update { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pwa-update { animation: pwa-update-in var(--motion-enter) var(--motion-ease); }
+  .pwa-net { animation: pwa-net-in var(--motion-enter) var(--motion-ease); }
+  @keyframes pwa-update-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pwa-net-in { from { opacity: 0; } to { opacity: 1; } }
+}

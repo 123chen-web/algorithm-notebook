@@ -1,0 +1,86 @@
+/* 讲给小黄鸭听（static/duck-panel.js）：只用主题令牌；文字与底色配对见 INTEGRATION.md，
+   全部沿用 test_contrast_tokens.py 已逐主题检查的配对，两个主题都 ≥ 4.5:1。 */
+.duck-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.duck-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-4); min-width: 0; }
+.duck-title { margin: 0; font-size: var(--text-lg); overflow-wrap: anywhere; }
+.duck-round { margin: 0; color: var(--ink-2); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.duck-note { margin: 0; color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+
+.duck-log { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.duck-log:empty { display: none; }
+.duck-bubble {
+  min-width: 0;
+  max-width: 92%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.duck-user { justify-self: end; background: var(--soft); color: var(--ink); }
+.duck-duck { justify-self: start; background: var(--paper-2); color: var(--ink); }
+.duck-speaker { display: block; margin-bottom: 2px; font-size: var(--text-xs); font-weight: 600; }
+.duck-user .duck-speaker { color: var(--ink-2); }
+.duck-duck .duck-speaker { color: var(--ink-2); }
+.duck-text { margin: 0; font-size: var(--text-base); line-height: var(--lh-ui); white-space: pre-wrap; }
+
+.duck-status { margin: 0; min-height: 1.5em; color: var(--ink-2); font-size: var(--text-sm); }
+.duck-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--error-line);
+  border-radius: var(--radius-sm);
+  background: var(--error-surface);
+  color: var(--error-ink);
+}
+.duck-error[hidden] { display: none; }
+.duck-error-text { margin: 0; font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.duck-retry { min-height: 40px; }
+
+.duck-summary {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+.duck-summary[hidden] { display: none; }
+.duck-summary-title { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.duck-summary-text { margin: 0; font-size: var(--text-base); line-height: var(--lh-ui); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.duck-composer { display: grid; gap: var(--space-2); min-width: 0; }
+.duck-input { margin-top: 0; min-height: 72px; }
+.duck-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-width: 0; }
+.duck-count { color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.duck-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+.duck-actions button { min-height: 40px; max-width: 100%; white-space: normal; }
+.duck-hint { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+
+@media (max-width: 520px) {
+  .duck-panel { padding: var(--space-4) var(--space-3); }
+  .duck-bubble { max-width: 100%; }
+  .duck-actions { width: 100%; }
+  .duck-actions button { flex: 1 1 auto; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .duck-bubble { animation: duck-in var(--motion-enter) var(--motion-ease); }
+  @keyframes duck-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+}

@@ -1,0 +1,294 @@
+/* 草稿演算区（scratch.js）：宣纸 × 红笔的视觉语言，青色信号线 --azurite。
+   只用主题令牌，不写十六进制颜色、不靠优先级强压；动效只在 prefers-reduced-motion: no-preference 下。 */
+.sc-panel {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 100%;
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  overflow-x: hidden; /* 长行只在编辑区 / 对比列表内部滚动，页面不出现横向滚动条 */
+}
+
+.sc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.sc-tab {
+  min-height: 40px;
+  min-width: 40px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sc-tab[aria-selected="true"] {
+  border-color: var(--line);
+  background: var(--paper-2);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--azurite); /* 青色信号线标记当前标签，颜色之外还有下划线形状 */
+}
+
+.sc-tab:focus-visible,
+.sc-retry:focus-visible,
+.sc-conflict button:focus-visible,
+.sc-tool:focus-visible,
+.sc-text:focus-visible,
+.sc-grid-cell:focus-visible,
+.sc-grid-head:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sc-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.sc-status-text.is-saved { color: var(--azurite); }
+.sc-status-text.is-error { color: var(--danger); }
+
+.sc-retry {
+  min-height: 40px;
+  min-width: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-chip);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sc-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.sc-conflict button {
+  min-height: 40px;
+  min-width: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sc-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.sc-note.is-error { color: var(--danger); }
+
+.sc-page { display: grid; gap: var(--space-3); padding-top: var(--space-2); }
+.sc-page[hidden] { display: none; }
+
+.sc-sub {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+/* 带行号的编辑区：等宽字体，行号列与文本滚动同步。 */
+.sc-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+  overflow: hidden;
+}
+
+.sc-gutter {
+  padding: var(--space-2) var(--space-2);
+  border-right: 1px solid var(--line);
+  color: var(--ink-2);
+  font-family: "Cascadia Code", Consolas, Monaco, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  text-align: right;
+  white-space: pre;
+  overflow: hidden;
+  max-height: 320px;
+  user-select: none;
+}
+
+.sc-text {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 160px;
+  max-height: 320px;
+  margin: 0;
+  padding: var(--space-2);
+  border: none;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Cascadia Code", Consolas, Monaco, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  tab-size: 4;
+  white-space: pre; /* 长行横向滚动 */
+  overflow: auto;
+  resize: vertical;
+}
+
+.sc-editor-block { display: grid; gap: var(--space-1); max-width: 100%; }
+
+/* 对比列表：旧行号 / 新行号 / 符号 / 文字；符号保证色盲也能读。 */
+.sc-diff-summary {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: Consolas, monospace;
+  font-size: var(--text-sm);
+}
+
+.sc-diff-list {
+  display: grid;
+  max-width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: "Cascadia Code", Consolas, Monaco, monospace;
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+}
+
+.sc-diff-row {
+  display: grid;
+  grid-template-columns: 3.2em 3.2em 1.6em minmax(0, 1fr);
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  color: var(--ink);
+  white-space: pre;
+}
+
+.sc-diff-old,
+.sc-diff-new { color: var(--ink-2); text-align: right; }
+.sc-diff-sign { text-align: center; }
+.sc-diff-text { overflow: visible; }
+
+.sc-diff-row.is-added { background: var(--success-soft); color: var(--ink); }
+.sc-diff-row.is-added .sc-diff-sign { color: var(--success-ink); }
+.sc-diff-row.is-removed { background: var(--danger-soft); color: var(--ink); }
+.sc-diff-row.is-removed .sc-diff-sign { color: var(--danger); }
+
+/* 演算表 */
+.sc-grid-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sc-tool {
+  min-height: 40px;
+  min-width: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sc-tool:disabled {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.sc-grid-wrap { max-width: 100%; overflow-x: auto; }
+
+.sc-grid {
+  border-collapse: collapse;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.sc-grid th,
+.sc-grid td {
+  border: 1px solid var(--line);
+  padding: var(--space-1);
+}
+
+.sc-grid th { background: var(--paper-2); }
+
+.sc-grid-head,
+.sc-grid-cell {
+  width: 9em;
+  max-width: 40vw;
+  min-height: 40px;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink);
+  font-family: "Cascadia Code", Consolas, Monaco, monospace;
+  font-size: var(--text-sm);
+}
+
+.sc-grid-head { color: var(--ink-2); font-weight: 600; }
+
+/* 窄屏：标签与按钮换成整行堆叠，依旧不出现横向滚动。 */
+@media (max-width: 599px) {
+  .sc-panel { padding: var(--space-3); }
+  .sc-tabs { display: grid; grid-template-columns: 1fr; }
+  .sc-tab { border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .sc-diff-row { grid-template-columns: 2.4em 2.4em 1.4em minmax(0, 1fr); }
+  .sc-grid-head,
+  .sc-grid-cell { width: 7em; }
+}
+
+/* 悬停效果只给精确指针；动效只在用户不排斥动效时。 */
+@media (hover: hover) and (pointer: fine) {
+  .sc-tab:hover:not([aria-selected="true"]) { background: var(--soft); color: var(--ink); }
+  .sc-tool:hover:not(:disabled) { background: var(--soft); }
+  .sc-retry:hover { background: var(--surface); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sc-tab,
+  .sc-tool,
+  .sc-retry,
+  .sc-conflict button {
+    transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+  }
+}

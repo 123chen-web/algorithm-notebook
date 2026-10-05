@@ -1,0 +1,38 @@
+{
+  "name": "欧叶OY",
+  "short_name": "欧叶OY",
+  "description": "记录真实的算法错误，按时复习，让 AI 围绕薄弱点生成新的练习。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "theme_color": "#c23a2b",
+  "background_color": "#f5f0e6",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
