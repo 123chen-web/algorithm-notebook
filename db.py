@@ -597,6 +597,33 @@ def _apply_review_feel(conn):
     conn.execute("ALTER TABLE users ADD COLUMN daily_review_cap INTEGER")
 
 
+def _apply_manual_payment_claims(conn):
+    # 用户付款后登记“我已付款”，站长确认后开通套餐；注销账号时随用户删除。
+    conn.execute(
+        """
+        CREATE TABLE manual_payment_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            plan_id INTEGER NOT NULL REFERENCES plans(id),
+            payer_note TEXT NOT NULL,
+            contact TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending', 'confirmed', 'rejected')),
+            reject_reason TEXT,
+            created_at TEXT NOT NULL,
+            decided_at TEXT,
+            decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_manual_claims_user ON manual_payment_claims(user_id, status)"
+    )
+    conn.execute(
+        "CREATE INDEX idx_manual_claims_status ON manual_payment_claims(status, id)"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -610,6 +637,7 @@ MIGRATIONS = [
     (8, "论坛：分区", _apply_forum_zones),
     (9, "榜单：公开参与设置、今日一条", _apply_rank_board),
     (10, "复习手感：暂停、撤销日志、每日上限", _apply_review_feel),
+    (11, "手动收款登记", _apply_manual_payment_claims),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
