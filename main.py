@@ -4415,6 +4415,7 @@ def delete_group(group_id: int, user=Depends(current_user)):
 POST_LIST_DEFAULT_LIMIT = 20
 POST_LIST_MAX_LIMIT = 50
 POST_EXCERPT_LENGTH = 140
+POST_LIST_MAX_OFFSET = 10000
 POST_HOT_SCORE = 5
 POST_HOT_WINDOW = timedelta(days=7)
 POST_PARTICIPANT_LIMIT = 4
@@ -4639,7 +4640,7 @@ def list_posts(
     filter: Literal["all", "unanswered", "solved", "mine", "participated"] = "all",
     zone: str | None = None,
     limit: Annotated[int, Query(ge=1, le=POST_LIST_MAX_LIMIT)] = POST_LIST_DEFAULT_LIMIT,
-    offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0,
+    offset: Annotated[int, Query(ge=0, le=POST_LIST_MAX_OFFSET)] = 0,
     user=Depends(current_user),
 ):
     if zone is not None and zone != "none" and zone not in PROBLEM_ZONES:
