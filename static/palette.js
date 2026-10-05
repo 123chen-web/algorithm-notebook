@@ -11,7 +11,7 @@
   const ALIASES = {
     home: "首页 大厅 总览", today: "复习 今日 到期", all: "记录 列表 笔记 错题", new: "新增 添加 录入 记录",
     insights: "薄弱 分析 规律", achievements: "成就 徽章", "weekly-recap": "战报 周报 本周",
-    groups: "小组 学习小组", forum: "讨论 评论 帖子 社区", leaderboard: "排行 排行榜 打卡",
+    groups: "小组 学习小组", forum: "讨论 评论 帖子 社区", leaderboard: "榜单 排行榜 排行 昨日之星 热门题目 打卡",
     plan: "套餐 会员 订阅 额度 支付", admin: "后台 管理 举报", clusters: "专题 归并 相似",
     print: "打印 考前 错题本", mastery: "掌握度 趋势 曲线 遗忘",
   };

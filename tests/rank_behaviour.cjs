@@ -496,3 +496,118 @@ test("admin: an older list answer cannot overwrite a newer one", async () => {
   await first;
   assert.match(ctx.$("#rank-admin-list").children[0].textContent, /新/);
 });
+
+/* ---------- 总览页“昨日之星”小卡片 Rank.mountCard ---------- */
+
+function cardSetup(options = {}) {
+  const calls = [];
+  const env = load(["rank.js"], {
+    extra: {
+      URL: "http://localhost:8000/static/index.html",
+      async fetch(url) {
+        calls.push({ url: String(url) });
+        if (options.fail) return { ok: false, status: 500, json: async () => ({}) };
+        const payload = options.payload || { day: "2026-10-04", entries: [], me: Object.prototype.hasOwnProperty.call(options, "me") ? options.me : null };
+        return { ok: true, status: 200, json: async () => payload };
+      },
+    },
+  });
+  const document = env.document;
+  const container = document.createElement("aside");
+  container.id = "ov-yesterday-card";
+  document.body.append(container);
+  let view = options.view || "home";
+  env.window.Rank.configure({
+    getUser: () => (options.signedOut ? null : { id: 1, username: "alice", is_admin: false }),
+    getEpoch: () => 1,
+    getView: () => view,
+    async api(path) {
+      const response = await env.window.fetch(path);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "请求失败");
+      return data;
+    },
+  });
+  return {
+    env,
+    calls,
+    container,
+    text: () => document.getElementById("ov-yesterday-card-text").textContent,
+    setView(next) { view = next; document.dispatchEvent(new FakeEvent("app:view-changed", { bubbles: true })); },
+  };
+}
+
+test("card: hidden and no request when signed out; mounted with guide copy before the answer arrives", async () => {
+  const signedOut = cardSetup({ signedOut: true });
+  signedOut.env.window.Rank.mountCard(signedOut.container);
+  assert.equal(signedOut.container.hidden, true);
+  assert.equal(signedOut.calls.length, 0);
+
+  const ctx = cardSetup({ me: null });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  assert.equal(ctx.container.hidden, false);
+  assert.equal(ctx.calls.length, 1);
+  assert.match(ctx.calls[0].url, /\/api\/rank\/yesterday/);
+  assert.match(ctx.text(), /今天复习一次，明天榜上就有你/);
+  assert.equal(ctx.env.window.document.getElementById("ov-yesterday-card-link").dataset.view, "leaderboard");
+  await tick();
+});
+
+test("card: in-board sentence says rank and count", async () => {
+  const ctx = cardSetup({ me: { count: 5, rank: 3, in_top: true, gap: null, is_trial: false, opted_out: false } });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  await tick();
+  assert.match(ctx.text(), /你昨天排第\s*3，复习\s*5\s*次/);
+});
+
+test("card: out-of-board sentence says how many reviews short of the top ten", async () => {
+  const ctx = cardSetup({ me: { count: 2, rank: null, in_top: false, gap: 4, is_trial: false, opted_out: false } });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  await tick();
+  assert.match(ctx.text(), /昨天你复习了\s*2\s*次，距离前十还差\s*4\s*次/);
+});
+
+test("card: opted-out sentence; trial account gets the trial sentence", async () => {
+  const optedOut = cardSetup({ me: { count: 0, rank: null, in_top: false, gap: null, is_trial: false, opted_out: true } });
+  optedOut.env.window.Rank.mountCard(optedOut.container);
+  await tick();
+  assert.equal(optedOut.text().trim(), "你已选择不参与公开榜单");
+
+  const trial = cardSetup({ me: { count: 2, rank: null, in_top: false, gap: null, is_trial: true, opted_out: false } });
+  trial.env.window.Rank.mountCard(trial.container);
+  await tick();
+  assert.match(trial.text(), /体验账号不参与榜单/);
+  assert.match(trial.text(), /复习\s*2\s*次/);
+});
+
+test("card: failed request keeps the guide copy instead of breaking", async () => {
+  const ctx = cardSetup({ fail: true });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  await tick();
+  assert.equal(ctx.container.hidden, false);
+  assert.match(ctx.text(), /今天复习一次，明天榜上就有你/);
+});
+
+test("card: late answers are dropped after reset or after leaving the overview page", async () => {
+  const ctx = cardSetup({ me: { count: 5, rank: 3, in_top: true, gap: null, is_trial: false, opted_out: false } });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  ctx.env.window.Rank.reset();
+  await tick();
+  assert.equal(ctx.container.hidden, true);
+  assert.equal(ctx.env.window.document.getElementById("ov-yesterday-card-text"), null);
+
+  const other = cardSetup({ me: { count: 5, rank: 3, in_top: true, gap: null, is_trial: false, opted_out: false } });
+  other.env.window.Rank.mountCard(other.container);
+  other.setView("leaderboard");
+  await tick();
+  assert.match(other.text(), /今天复习一次，明天榜上就有你/, "answer arriving after navigation is dropped");
+});
+
+test("card: remounting refreshes the sentence with a new request", async () => {
+  const ctx = cardSetup({ me: { count: 1, rank: 8, in_top: true, gap: null, is_trial: false, opted_out: false } });
+  ctx.env.window.Rank.mountCard(ctx.container);
+  await tick();
+  assert.match(ctx.text(), /排第\s*8/);
+  ctx.env.window.Rank.mountCard(ctx.container);
+  assert.equal(ctx.calls.length, 2);
+});

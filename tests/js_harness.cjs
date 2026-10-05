@@ -294,6 +294,11 @@ class FakeDocument {
     return created;
   }
   querySelectorAll(selector) { return this.documentElement.querySelectorAll(selector); }
+  /** 标准行为：找不到就返回 null（不像 querySelector 那样现造节点）。 */
+  getElementById(id) {
+    const found = this.documentElement.querySelector(`#${id}`);
+    return found || null;
+  }
 }
 
 function deferred() {

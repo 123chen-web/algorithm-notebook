@@ -660,6 +660,28 @@ def _apply_review_ops(conn):
     conn.execute("CREATE INDEX idx_review_ops_created_at ON review_ops(created_at)")
 
 
+def _apply_mistake_scratch(conn):
+    # 错题详情页的「草稿演算区」：每条易错点至多一份草稿，版本号从 1 开始
+    # （从未保存过时接口按 version 0 返回空草稿，不落库）。
+    conn.execute(
+        """
+        CREATE TABLE mistake_scratch (
+            mistake_id INTEGER PRIMARY KEY REFERENCES mistakes(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            version INTEGER NOT NULL
+                CHECK(typeof(version) = 'integer' AND version >= 1),
+            code TEXT NOT NULL DEFAULT '',
+            fixed TEXT NOT NULL DEFAULT '',
+            table_json TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_mistake_scratch_user ON mistake_scratch(user_id)"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
 MIGRATIONS = [
@@ -676,6 +698,7 @@ MIGRATIONS = [
     (11, "手动收款登记", _apply_manual_payment_claims),
     (12, "目标卡", _apply_goals),
     (13, "离线评分补交的幂等记录", _apply_review_ops),
+    (14, "错题草稿演算区", _apply_mistake_scratch),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

@@ -71,11 +71,17 @@
   }
 
   /* ---------- 内容快照与大小上限 ---------- */
+  /** TraceTable.toJSON 返回的是 JSON 字符串；接口要的是对象，所以统一在这里转成对象。 */
+  function tableObject(model) {
+    const value = trace().toJSON(model);
+    return typeof value === "string" ? JSON.parse(value) : value;
+  }
+
   function snapshot() {
     return {
       code: editors.code ? editors.code.area.value : lastGood.code,
       fixed: editors.fixed ? editors.fixed.area.value : lastGood.fixed,
-      table: tableModel && trace() ? trace().toJSON(tableModel) : null,
+      table: tableModel && trace() ? tableObject(tableModel) : null,
     };
   }
   function serializedSize(value) {
@@ -420,7 +426,7 @@
   let tableButtons = null;
 
   function tableData() {
-    return tableModel && trace() ? trace().toJSON(tableModel) : { cols: [], rows: [] };
+    return tableModel && trace() ? tableObject(tableModel) : { cols: [], rows: [] };
   }
 
   /** 纯函数给出的新模型先过大小上限，过了才提交。 */
@@ -429,7 +435,7 @@
     const proposed = {
       code: editors.code ? editors.code.area.value : "",
       fixed: editors.fixed ? editors.fixed.area.value : "",
-      table: trace().toJSON(nextModel),
+      table: tableObject(nextModel),
     };
     if (serializedSize(proposed) > SIZE_LIMIT) {
       sizeNote.hidden = false;

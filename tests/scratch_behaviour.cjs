@@ -30,7 +30,7 @@ function makeTrace() {
   return {
     create: (cols, rows) => validate({ cols, rows }),
     validate,
-    toJSON: clone,
+    toJSON: (model) => JSON.stringify(model),
     setCell(model, r, c, text) { const next = clone(model); next.rows[r][c] = String(text); return next; },
     setHeader(model, c, text) { const next = clone(model); next.cols[c] = String(text); return next; },
     addRow(model, index) {

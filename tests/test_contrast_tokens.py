@@ -88,7 +88,7 @@ ONBOARDING_TEXT_PAIRS = (
     ("--danger", "--surface"),
     ("--error-ink", "--error-surface"),
 )
-# 打卡排行榜页新区块（static/rank.css）：今日一条、昨日之星、本周热门题目、账号菜单开关、管理后台卡片。
+# 榜单页新区块（static/rank.css）：今日一条、昨日之星、本周热门题目、账号菜单开关、总览小卡片、管理后台卡片。
 # 红笔圈只是边框（--accent 不当文字色用）；文字都落在这些底色上，两个主题都要 ≥ 4.5:1。
 RANK_TEXT_PAIRS = (
     ("--ink", "--surface"),
@@ -100,6 +100,9 @@ RANK_TEXT_PAIRS = (
     ("--ink", "--tile-azurite"),
     ("--azurite", "--surface"),
     ("--danger", "--surface"),
+    # 总览“昨日之星”小卡片的实心按钮（默认 azurite，悬停 accent）。
+    ("--on-accent", "--azurite"),
+    ("--on-accent", "--accent"),
 )
 # RVF：详情回忆输入、评分间隔、更多菜单、撤销提示及上限工具栏。
 REVIEW_TEXT_PAIRS = (
@@ -178,6 +181,12 @@ def theme_tokens(stylesheets):
                 continue
             if re.fullmatch(r"#[0-9a-fA-F]{3}", value):  # #fff → #ffffff
                 value = "#" + "".join(character * 2 for character in value[1:])
+            # 运行时按场景覆盖的令牌（如 --scene-accent）静态分析取不到，按声明里的兜底色算。
+            scene_fallback = re.fullmatch(
+                r"var\(\s*--[\w-]+\s*,\s*(#[0-9a-fA-F]{6})\s*\)", value
+            )
+            if scene_fallback:
+                value = scene_fallback.group(1)
             assert re.fullmatch(r"#[0-9a-fA-F]{6}", value), (
                 f"请扩展颜色解析以支持 {name}: {value}；不能跳过令牌"
             )
@@ -715,6 +724,11 @@ def test_rank_css_text_color_and_background_pairs_are_the_checked_ones():
         ".rank-admin-item-link": ("--azurite", "--surface"),
         ".rank-admin-count[data-over=\"true\"]": ("--danger", "--surface"),
         ".account-rank-pref-note": ("--muted", "--surface"),
+        # 总览页“昨日之星”小卡片（.rank-mini-card）。
+        ".rank-mini-card": ("--ink", "--surface"),
+        ".rank-mini-title": ("--ink", "--surface"),
+        ".rank-mini-text": ("--ink-2", "--surface"),
+        ".rank-mini-link": ("--on-accent", "--azurite"),
     }
     source = (STATIC / "rank.css").read_text(encoding="utf-8")
     colors, backgrounds = {}, {}

@@ -15,7 +15,7 @@ from contextlib import ExitStack, asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
@@ -66,7 +66,13 @@ from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
 from stats_summary import ALLOWED_DAYS as ALLOWED_SUMMARY_DAYS, summary as stats_summary
 from scheduler import preview_all, schedule, today_in_timezone
-from mastery import mastery_report
+from mastery import (
+    AT_RISK_BELOW as MASTERY_AT_RISK_BELOW,
+    load_mistakes as mastery_load_mistakes,
+    mastery_report,
+    retention_on as mastery_retention_on,
+)
+from anki_export import build_anki_text
 from search import search_all
 from tags import (
     SUGGESTED_TAGS, TAG_MAX_LENGTH, TAGS_PER_MISTAKE, TagError, normalize_tags,
@@ -294,6 +300,15 @@ class MistakeTags(InputModel):
     # 单个标签的字数和每条的个数上限在 tags.normalize_tags 里统一校验并给出中文提示；
     # 这里只挡掉明显离谱的请求体大小。
     tags: list[str] = Field(max_length=50)
+
+
+class ScratchPut(InputModel):
+    # 草稿演算区：code/fixed 为代码文本，table 为 {cols, rows} 或 null；
+    # table 的结构校验在接口里按 static/trace-table.js 的 validate 规则做。
+    version: int = Field(strict=True, ge=0)
+    code: Annotated[str, StringConstraints(strict=True)]
+    fixed: Annotated[str, StringConstraints(strict=True)]
+    table: dict | None
 
 
 CLIENT_OP_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
@@ -807,6 +822,105 @@ def owned_problem(conn, problem_id, user_id):
     return dict(row)
 
 
+# ---- 草稿演算区（/api/mistakes/{id}/scratch）----
+# 与 static/scratch.js、static/trace-table.js 的前端常量保持一致。
+SCRATCH_MAX_LINES = 2000
+SCRATCH_SIZE_LIMIT = 40000
+TRACE_TABLE_MAX_COLS = 20
+TRACE_TABLE_MAX_ROWS = 60
+TRACE_TABLE_MAX_HEADER_LEN = 20
+TRACE_TABLE_MAX_CELL_LEN = 60
+TRACE_TABLE_MAX_SERIALIZED = 20000
+_SCRATCH_CONTROL_CHAR = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _js_string_length(value):
+    # JavaScript 的 string.length 与 JSON.stringify().length 都按 UTF-16
+    # 码元计数；Python 的 len() 按码点计数，emoji 等增补平面字符会少算。
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _scratch_line_count(value):
+    # 与 scratch.js 的 countLines 完全一致：空串算 1 行，否则按 \n 切。
+    return 1 if value == "" else value.count("\n") + 1
+
+
+def _scratch_sanitize_cell(value, max_len):
+    # 与 trace-table.js 的 sanitize 一致：控制字符（含换行、制表符、DEL）
+    # 换成普通空格，再截断到 max_len。
+    return _SCRATCH_CONTROL_CHAR.sub(" ", value)[:max_len]
+
+
+def normalize_scratch_table(value):
+    """按 trace-table.js validate 的规则归一化演算表；结构非法返回 None。
+
+    超出上限的行列丢弃；表头/单元格做控制字符替换与截断；短行补空字符串；
+    归一化后序列化超过 20000 字符同样判为非法。
+    """
+    if not isinstance(value, dict):
+        return None
+    cols = value.get("cols")
+    rows = value.get("rows")
+    if not isinstance(cols, list) or not isinstance(rows, list):
+        return None
+    kept_cols = cols[:TRACE_TABLE_MAX_COLS]
+    kept_rows = rows[:TRACE_TABLE_MAX_ROWS]
+    if len(kept_cols) < 1 or len(kept_rows) < 1:
+        return None
+    norm_cols = []
+    for col in kept_cols:
+        if not isinstance(col, str):
+            return None
+        norm_cols.append(_scratch_sanitize_cell(col, TRACE_TABLE_MAX_HEADER_LEN))
+    norm_rows = []
+    for row in kept_rows:
+        if not isinstance(row, list):
+            return None
+        norm_row = []
+        for index in range(len(norm_cols)):
+            cell = row[index] if index < len(row) else ""
+            if not isinstance(cell, str):
+                return None
+            norm_row.append(_scratch_sanitize_cell(cell, TRACE_TABLE_MAX_CELL_LEN))
+        norm_rows.append(norm_row)
+    model = {"cols": norm_cols, "rows": norm_rows}
+    if _js_string_length(
+        json.dumps(model, ensure_ascii=False, separators=(",", ":"))
+    ) > TRACE_TABLE_MAX_SERIALIZED:
+        return None
+    return model
+
+
+def scratch_serialized_size(code, fixed, table):
+    # 与 scratch.js 的 serializedSize 一致：
+    # code.length + fixed.length + (table ? JSON.stringify(table).length : 0)。
+    total = _js_string_length(code) + _js_string_length(fixed)
+    if table is not None:
+        total += _js_string_length(
+            json.dumps(table, ensure_ascii=False, separators=(",", ":"))
+        )
+    return total
+
+
+def scratch_state(conn, mistake_id):
+    """组装 GET / 409 current 用的草稿状态（调用方已确认属主）。"""
+    row = conn.execute(
+        "SELECT version, code, fixed, table_json, updated_at "
+        "FROM mistake_scratch WHERE mistake_id = ?",
+        (mistake_id,),
+    ).fetchone()
+    if row is None:
+        return {"version": 0, "code": "", "fixed": "", "table": None,
+                "updated_at": None}
+    return {
+        "version": row["version"],
+        "code": row["code"],
+        "fixed": row["fixed"],
+        "table": json.loads(row["table_json"]) if row["table_json"] else None,
+        "updated_at": row["updated_at"],
+    }
+
+
 # 单实例的简单防刷：按客户端 IP 计数，进程重启即清零。
 # 部署到多实例或反向代理之后，需要改用共享存储并校验可信的转发头。
 REGISTER_LIMIT = 5
@@ -825,6 +939,11 @@ RESET_TOKEN_SECONDS = 30 * 60
 # 举报是登录后的操作，按 user_id 限流比按 IP 更准（不会误伤同一 IP 下的其他人）。
 REPORT_LIMIT = 10
 REPORT_WINDOW_SECONDS = 60 * 60
+# Anki 导出是一次性带走整份学习内容的操作，按用户每小时限流；体验账号直接拒绝。
+ANKI_EXPORT_LIMIT = 10
+ANKI_EXPORT_WINDOW_SECONDS = 60 * 60
+ANKI_MAX_RECORDS = 5000
+ANKI_SCOPES = ("all", "zone", "weak", "mastered")
 
 _rate_lock = threading.Lock()
 _rate_buckets = defaultdict(deque)
@@ -1330,6 +1449,132 @@ def export_data(user=Depends(current_user)):
     )
 
 
+# 与 static/capture.js 的 renderThinking 同一套识别规则：只认真正以
+# “题目链接：”开头的行，取行内第一个 http(s) 链接，去掉句尾标点。
+_ANKI_LINK_PREFIX = "题目链接："
+_ANKI_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
+_ANKI_URL_TAIL_RE = re.compile(r"[.,;:!?)\u3001\u3002\uff0c\uff1b\uff01\uff1f\uff09]+$")
+
+
+def anki_url_from_thinking(thinking):
+    """从思路文字的“题目链接：”行提取第一个安全 http(s) 链接；没有则返回空串。"""
+    for line in str(thinking or "").split("\n"):
+        if not line.startswith(_ANKI_LINK_PREFIX):
+            continue
+        for match in _ANKI_URL_RE.finditer(line):
+            candidate = _ANKI_URL_TAIL_RE.sub("", match.group(0))
+            try:
+                parsed = urlsplit(candidate)
+            except ValueError:
+                continue
+            if parsed.scheme in ("http", "https") and parsed.netloc and not parsed.username:
+                return candidate
+    return ""
+
+
+def anki_mastery_sets(conn, user_id, timezone_name, today):
+    """按 mastery 的单条保持率把易错点分成 (薄弱 id 集合, 已掌握 id 集合)。
+
+    判定与 mastery.py 完全一致：retention_on(item, today) 低于 AT_RISK_BELOW
+    算还没掌握（薄弱），否则算已掌握；当天还不存在的记录不参与。
+    """
+    weak, mastered = set(), set()
+    items = mastery_load_mistakes(conn, user_id, timezone_name)
+    for mistake_id, item in items.items():
+        retention = mastery_retention_on(item, today)
+        if retention is None:
+            continue
+        (weak if retention < MASTERY_AT_RISK_BELOW else mastered).add(mistake_id)
+    return weak, mastered
+
+
+def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
+    """按 scope 取该用户未删除的易错点，组装成 build_anki_text 需要的 record 字典。"""
+    wanted_ids = None
+    if scope in ("weak", "mastered"):
+        weak, mastered = anki_mastery_sets(conn, user_id, timezone_name, today)
+        wanted_ids = weak if scope == "weak" else mastered
+
+    sql = [
+        """
+        SELECT m.id, p.title, p.zone, p.thinking, p.code, m.description AS cause,
+               (
+                   SELECT v.answer_code FROM variants v
+                   WHERE v.mistake_id = m.id AND v.result = 'solved'
+                     AND v.answer_code != '' AND v.result_updated_at IS NOT NULL
+                   ORDER BY v.result_updated_at DESC, v.id DESC LIMIT 1
+               ) AS fixed_code
+        FROM mistakes m JOIN problems p ON p.id = m.problem_id
+        WHERE p.user_id = ?
+        """
+    ]
+    params = [user_id]
+    if scope == "zone":
+        sql.append("AND p.zone = ?")
+        params.append(zone)
+    if wanted_ids is not None:
+        sql.append("AND m.id IN (SELECT value FROM json_each(?))")
+        params.append(json.dumps(sorted(wanted_ids)))
+    sql.append("ORDER BY m.id")
+    rows = conn.execute(" ".join(sql), params).fetchall()
+    tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
+    records = []
+    for row in rows:
+        records.append({
+            "id": row["id"],
+            "title": row["title"],
+            "zone": row["zone"],
+            "url": anki_url_from_thinking(row["thinking"]),
+            "cause": row["cause"],
+            "notes": row["thinking"],
+            "code": row["code"],
+            "fixed_code": row["fixed_code"] or "",
+            "tags": tags_by_id[row["id"]],
+        })
+    return records
+
+
+@app.get("/api/export/anki")
+def export_anki(
+    scope: str = "all",
+    zone: str | None = None,
+    user=Depends(current_user),
+):
+    # 参数校验先于账号限制和限流：格式不对的请求不消耗额度。
+    if scope not in ANKI_SCOPES:
+        raise HTTPException(400, "scope 只能是 all、zone、weak、mastered")
+    if scope == "zone" and not zone:
+        raise HTTPException(400, "按分区导出必须指定 zone")
+    if scope == "zone" and zone not in PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
+    # 体验账号到期会整体清理，导出成本地文件没有意义，直接拒绝。
+    require_not_trial(user, "导出到 Anki")
+    if rate_limited(
+        f"anki-export:{user['id']}", ANKI_EXPORT_LIMIT, ANKI_EXPORT_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "导出过于频繁，请一小时后再试")
+
+    today = today_for(user)
+    with connect() as conn:
+        # 只读快照：计数、掌握度和内容组装在同一视图里完成。
+        conn.execute("BEGIN")
+        records = anki_export_records(
+            conn, user["id"], user["timezone"], today, scope, zone
+        )
+        if len(records) > ANKI_MAX_RECORDS:
+            raise HTTPException(413, "记录超过 5000 条，请按分区导出")
+        body = build_anki_text(records)
+
+    filename = "oy-anki-{}.txt".format(
+        datetime.fromisoformat(utc_now()).strftime("%Y%m%d")
+    )
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.put("/api/me/email")
 def update_email(data: EmailUpdate, request: Request, user=Depends(current_user)):
     # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
@@ -1506,8 +1751,9 @@ def delete_account_data(conn, user_id, deleted_at):
             names += "等"
         raise HTTPException(409, f"你创建的小组{names}里还有其他成员，请先让成员退出或解散小组")
 
-    for table in ("sessions", "password_resets", "problems", "mistake_tags",
-                  "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes",
+    for table in ("sessions", "password_resets", "mistake_scratch", "problems",
+                  "mistake_tags", "weakness_insights", "mistake_clusters",
+                  "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
@@ -2827,6 +3073,76 @@ def delete_mistake(mistake_id: int, user=Depends(current_user)):
         owned_mistake(conn, mistake_id, user["id"])
         conn.execute("DELETE FROM mistakes WHERE id = ?", (mistake_id,))
     return {"ok": True}
+
+
+@app.get("/api/mistakes/{mistake_id}/scratch")
+def get_mistake_scratch(mistake_id: int, user=Depends(current_user)):
+    with connect() as conn:
+        owned_mistake(conn, mistake_id, user["id"])
+        return scratch_state(conn, mistake_id)
+
+
+@app.put("/api/mistakes/{mistake_id}/scratch")
+def put_mistake_scratch(mistake_id: int, data: ScratchPut,
+                        user=Depends(current_user)):
+    # 纯内容校验放在写事务之前：行数、演算表结构（422），合计大小（413）。
+    if (
+        _scratch_line_count(data.code) > SCRATCH_MAX_LINES
+        or _scratch_line_count(data.fixed) > SCRATCH_MAX_LINES
+    ):
+        raise HTTPException(422, f"代码草稿和修正代码最多各 {SCRATCH_MAX_LINES} 行")
+    table = None
+    if data.table is not None:
+        table = normalize_scratch_table(data.table)
+        if table is None:
+            raise HTTPException(422, "演算表结构不合法")
+    if scratch_serialized_size(data.code, data.fixed, table) > SCRATCH_SIZE_LIMIT:
+        raise HTTPException(413, f"草稿内容合计最多 {SCRATCH_SIZE_LIMIT} 字符")
+    table_json = (
+        json.dumps(table, ensure_ascii=False, separators=(",", ":"))
+        if table is not None else None
+    )
+
+    # connect(write=True) 已取得 BEGIN IMMEDIATE 写锁；版本比较与写入在同一
+    # 事务内，两个同版本并发 PUT 只有先拿到写锁的一个能成功。
+    with connect(write=True) as conn:
+        owned_mistake(conn, mistake_id, user["id"])
+        row = conn.execute(
+            "SELECT version FROM mistake_scratch WHERE mistake_id = ?",
+            (mistake_id,),
+        ).fetchone()
+        current_version = row["version"] if row is not None else 0
+        if data.version != current_version:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "草稿已在其他窗口被修改，请先选择处理方式",
+                    "current": scratch_state(conn, mistake_id),
+                },
+            )
+        updated_at = utc_now()
+        next_version = current_version + 1
+        if row is None:
+            conn.execute(
+                """
+                INSERT INTO mistake_scratch(
+                    mistake_id, user_id, version, code, fixed, table_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (mistake_id, user["id"], next_version, data.code, data.fixed,
+                 table_json, updated_at),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE mistake_scratch
+                SET version = ?, code = ?, fixed = ?, table_json = ?, updated_at = ?
+                WHERE mistake_id = ?
+                """,
+                (next_version, data.code, data.fixed, table_json, updated_at,
+                 mistake_id),
+            )
+    return {"version": next_version, "updated_at": updated_at}
 
 
 REVIEW_OP_RETENTION = timedelta(days=30)

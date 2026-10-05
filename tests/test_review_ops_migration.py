@@ -17,8 +17,10 @@ def database_path(tmp_path, monkeypatch):
 def test_migration_number_is_the_next_one_and_unique():
     versions = [version for version, _name, _apply in db.MIGRATIONS]
     assert versions == sorted(set(versions))
-    assert versions[-1] == 13 and versions[-2] == 12
-    assert db.SCHEMA_VERSION == 13
+    # review_ops 是 13 号，紧跟在 12 号目标卡之后；后续迁移追加在它后面。
+    review_index = versions.index(13)
+    assert versions[review_index - 1] == 12
+    assert db.SCHEMA_VERSION == versions[-1]
 
 
 def test_fresh_database_has_the_table_with_the_expected_shape(database_path):
@@ -38,7 +40,7 @@ def test_fresh_database_has_the_table_with_the_expected_shape(database_path):
 
 def test_upgrade_from_version_11_keeps_data_and_is_repeatable(database_path, monkeypatch):
     with monkeypatch.context() as old:
-        old.setattr(db, "MIGRATIONS", db.MIGRATIONS[:-2])
+        old.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 11])
         db.init_db()
     with db.connect(write=True) as conn:
         assert db.schema_version(conn) == 11
@@ -54,7 +56,7 @@ def test_upgrade_from_version_11_keeps_data_and_is_repeatable(database_path, mon
     db.init_db()
     db.init_db()  # 重复启动不报错
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == 13
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()[0] == "old-user"
         assert conn.execute("SELECT COUNT(*) FROM review_ops").fetchone()[0] == 0
         conn.execute(

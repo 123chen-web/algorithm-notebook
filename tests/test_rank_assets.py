@@ -49,14 +49,14 @@ def test_admin_card_is_admin_only_and_hidden_until_the_user_is_known():
 
 
 def test_assets_are_versioned_and_loaded_before_app_js():
-    assert '<link rel="stylesheet" href="/static/rank.css?v=1">' in HTML
+    assert '<link rel="stylesheet" href="/static/rank.css?v=2">' in HTML
     scripts = re.findall(r'<script defer src="/static/([\w.-]+\.js)\?v=(\d+)"></script>', HTML)
     names = [name for name, _ in scripts]
     assert names.count("rank.js") == names.count("rank-admin.js") == 1
     assert names.index("rank.js") < names.index("app.js") and names.index("rank-admin.js") < names.index("app.js")
     versions = dict(scripts)
-    assert versions["rank.js"] == "1" and versions["rank-admin.js"] == "1"
-    assert versions["app.js"] == "74", "app.js 改过，版本号随各任务递增（现为 74）"
+    assert versions["rank.js"] == "2" and versions["rank-admin.js"] == "1"
+    assert versions["app.js"] == "77", "app.js 改过，版本号随各任务递增（现为 77）"
 
 
 def test_csp_safe_markup_and_scripts():

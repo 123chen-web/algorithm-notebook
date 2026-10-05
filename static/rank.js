@@ -1,6 +1,7 @@
 "use strict";
 
-/* 打卡排行榜页的三个新区块：今日一条、昨日之星、本周热门题目，以及账号菜单里的“参与公开榜单”开关。
+/* 榜单页的三个新区块：今日一条、昨日之星、本周热门题目，账号菜单里的“参与公开榜单”开关，
+   以及总览页趋势区下面的“昨日之星”小卡片（Rank.mountCard）。
    请求走宿主传入的 api()；每个响应都按登录代次 / 页面 / 请求序号校验，晚到的响应直接丢弃；
    一切来自服务器的文字都用 textContent，链接只允许 http(s) 且带 rel="noopener noreferrer" target="_blank"。 */
 (() => {
@@ -56,10 +57,17 @@
     return { name, sequence: sequence[name], generation, epoch: hooks.getEpoch(), userId: hooks.getUser()?.id };
   }
 
-  function current(request) {
+  function current(request, view = "leaderboard") {
     const user = hooks?.getUser();
-    return Boolean(hooks && user && request.generation === generation && request.sequence === sequence[request.name]
-      && request.epoch === hooks.getEpoch() && request.userId === user.id && hooks.getView() === "leaderboard");
+    if (!hooks || !user) return false;
+    const common = request.epoch === hooks.getEpoch() && request.userId === user.id;
+    if (view !== "leaderboard") {
+      // 总览小卡片有自己的代次/序号，与榜单页三块互不串扰；视图守卫同样必过。
+      return common && request.generation === cardGeneration && request.sequence === cardSequence[request.name]
+        && hooks.getView() === view;
+    }
+    return common && request.generation === generation && request.sequence === sequence[request.name]
+      && hooks.getView() === "leaderboard";
   }
 
   function setBusy(root, busy) {
@@ -241,7 +249,7 @@
   const checkbox = $("#account-public-rank");
   const settingLabel = $("#account-public-rank-label");
   const settingNote = $("#account-public-rank-status");
-  const NOTE = "关闭后，你不会出现在“昨日之星”“本周热门题目”和打卡排行榜里。";
+  const NOTE = "关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。";
 
   function syncSetting(user) {
     if (!checkbox || !settingLabel) return;
@@ -287,11 +295,73 @@
     }
   }
 
+  /* ---------- 总览页趋势区下面的“昨日之星”小卡片 ---------- */
+
+  const CARD_GUIDE = "昨天还没有榜单数据。今天复习一次，明天榜上就有你。";
+  let cardGeneration = 0;
+  const cardSequence = { card: 0 };
+
+  function cardText(me) {
+    const count = Number(me?.count) || 0;
+    if (me?.opted_out) return "你已选择不参与公开榜单";
+    if (me?.is_trial) return `体验账号不参与榜单，昨天复习 ${count} 次。`;
+    if (me?.in_top) return `你昨天排第 ${Number(me.rank)}，复习 ${count} 次`;
+    const gap = Number(me?.gap) || 1;
+    return `昨天你复习了 ${count} 次，距离前十还差 ${gap} 次`;
+  }
+
+  function buildCard(container) {
+    if (container.querySelector("#ov-yesterday-card-title")) return;
+    const title = text("h3", "rank-mini-title", "昨日之星");
+    title.id = "ov-yesterday-card-title";
+    const sentence = text("p", "rank-mini-text", CARD_GUIDE);
+    sentence.id = "ov-yesterday-card-text";
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "rank-mini-link";
+    link.id = "ov-yesterday-card-link";
+    link.dataset.view = "leaderboard";
+    link.setAttribute("data-view", "leaderboard");
+    link.textContent = "查看榜单";
+    container.append(title, sentence, link);
+  }
+
+  async function mountCard(container) {
+    if (!container) return;
+    if (!hooks || !hooks.getUser()) { container.hidden = true; return; }
+    buildCard(container);
+    container.hidden = false;
+    const sentence = container.querySelector("#ov-yesterday-card-text");
+    if (sentence) sentence.textContent = CARD_GUIDE;
+    const user = hooks.getUser();
+    const request = {
+      name: "card",
+      sequence: (cardSequence.card += 1),
+      generation: cardGeneration,
+      epoch: hooks.getEpoch(),
+      userId: user?.id,
+    };
+    let data = null;
+    try {
+      data = await hooks.api("/api/rank/yesterday");
+    } catch {
+      if (!current(request, "home")) return;
+      if (sentence) sentence.textContent = CARD_GUIDE;
+      return;
+    }
+    if (!current(request, "home")) return;
+    if (sentence) sentence.textContent = cardText(data?.me);
+  }
+
   function reset() {
     generation += 1;
+    cardGeneration += 1;
+    cardSequence.card += 1;
     for (const name of [...SECTIONS, "setting"]) sequence[name] += 1;
     settingPending = false;
     clear();
+    const cardRoot = document.querySelector("#ov-yesterday-card");
+    if (cardRoot) { cardRoot.hidden = true; cardRoot.replaceChildren(); }
     syncSetting(null);
   }
 
@@ -305,6 +375,7 @@
     load,
     reset,
     syncSetting,
-    helpers: { safeLink, meText, rangeText },
+    mountCard,
+    helpers: { safeLink, meText, rangeText, cardText },
   };
 })();

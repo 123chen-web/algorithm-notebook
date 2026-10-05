@@ -1,5 +1,5 @@
-/* 打卡排行榜页的新区块（今日一条、昨日之星、本周热门题目）、账号菜单里的“参与公开榜单”开关、
-   管理后台“今日一条”。只用主题令牌；前三名用红笔圈，克制；动效仅在允许动画时出现。 */
+/* 榜单页的新区块（今日一条、昨日之星、本周热门题目）、账号菜单里的“参与公开榜单”开关、
+   总览页“昨日之星”小卡片、管理后台“今日一条”。只用主题令牌；前三名用红笔圈，克制；动效仅在允许动画时出现。 */
 #leaderboard-page, #rank-admin-card {
   --rank-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
 }
@@ -98,3 +98,15 @@ a.rank-hot-link:focus-visible, .rank-notice-link:focus-visible, .rank-admin-item
 .rank-admin-item[data-status="disabled"] .rank-admin-item-text, .rank-admin-item[data-status="expired"] .rank-admin-item-text { color: var(--ink-2); }
 .rank-admin-item-link { display: block; margin-top: var(--space-1); color: var(--azurite); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .rank-admin-item-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+
+/* ---------- 总览页“昨日之星”小卡片 ---------- */
+.rank-mini-card { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
+.rank-mini-card[hidden] { display: none; }
+.rank-mini-title { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-md); color: var(--ink); }
+.rank-mini-title::before { content: "★"; color: var(--azurite); }
+.rank-mini-text { flex: 1 1 16em; min-width: 0; margin: 0; color: var(--ink-2); font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }
+.rank-mini-link { flex: 0 0 auto; min-height: 40px; padding: 0 var(--space-4); border: 1px solid var(--azurite); border-radius: var(--radius-pill); background: var(--azurite); color: var(--on-accent); font-weight: 600; cursor: pointer; }
+.rank-mini-link:focus-visible { outline: 2px solid var(--azurite); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .rank-mini-link:hover { background: var(--accent); border-color: var(--accent); }
+}

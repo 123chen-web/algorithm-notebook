@@ -32,10 +32,13 @@
   <link rel="stylesheet" href="/static/mastery.css?v=3">
   <link rel="stylesheet" href="/static/clusters.css?v=3">
   <link rel="stylesheet" href="/static/account.css?v=1">
+  <link rel="stylesheet" href="/static/anki-export.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
-  <link rel="stylesheet" href="/static/rank.css?v=1">
+  <link rel="stylesheet" href="/static/nav-focus.css?v=1">
+  <link rel="stylesheet" href="/static/rank.css?v=2">
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
+  <link rel="stylesheet" href="/static/scratch.css?v=1">
   <link rel="stylesheet" href="/static/duck-panel.css?v=1">
   <link rel="stylesheet" href="/static/plan.css?v=1">
   <link rel="stylesheet" href="/static/manual-claims.css?v=1">
@@ -47,7 +50,7 @@
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
-  <script defer src="/static/palette.js?v=2"></script>
+  <script defer src="/static/palette.js?v=3"></script>
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/focus.js?v=3"></script>
   <script defer src="/static/tags.js?v=2"></script>
@@ -61,15 +64,20 @@
   <script defer src="/static/board.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
-  <script defer src="/static/rank.js?v=1"></script>
+  <script defer src="/static/rank.js?v=2"></script>
   <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
   <script defer src="/static/plan.js?v=1"></script>
   <script defer src="/static/manual-claims.js?v=1"></script>
+  <script defer src="/static/nav-focus.js?v=1"></script>
   <script defer src="/static/goal-card.js?v=1"></script>
   <script defer src="/static/duck-panel.js?v=1"></script>
-  <script defer src="/static/app.js?v=74"></script>
+  <script defer src="/static/diff-lines.js?v=1"></script>
+  <script defer src="/static/trace-table.js?v=1"></script>
+  <script defer src="/static/scratch.js?v=2"></script>
+  <script defer src="/static/anki-export.js?v=1"></script>
+  <script defer src="/static/app.js?v=77"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -103,7 +111,7 @@
           <p class="sidebar-heading" id="sidebar-g-community">社区</p>
           <button type="button" class="nav-item" data-view="groups"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><span class="nav-label">学习小组</span><span class="nav-badge" data-badge="groups" hidden></span></button>
           <button type="button" class="nav-item" data-view="forum"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span class="nav-label">讨论区</span></button>
-          <button type="button" class="nav-item" data-view="leaderboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span class="nav-label">打卡排行榜</span></button>
+          <button type="button" class="nav-item" data-view="leaderboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span class="nav-label">榜单</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-account">
           <p class="sidebar-heading" id="sidebar-g-account">账号</p>
@@ -120,6 +128,12 @@
         <ul id="sidebar-zones" class="sidebar-zones"></ul>
       </section>
       <div id="sidebar-tags" class="sidebar-tags"></div>
+      <div class="sidebar-focus">
+        <button type="button" class="nav-focus-toggle" id="nav-focus-toggle-sidebar" aria-pressed="false">
+          <svg class="nav-focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg>
+          <span class="nav-focus-label">专注模式：关</span>
+        </button>
+      </div>
     </aside>
     <header class="header">
       <div class="brand">
@@ -163,13 +177,32 @@
               </label>
               <button id="remove-avatar-btn" type="button" hidden>移除头像</button>
               <a class="link-button" href="/api/export">导出我的数据</a>
+              <div class="anki-export" id="anki-export">
+                <label class="anki-export-field" for="anki-scope">导出到 Anki
+                  <select id="anki-scope" name="anki-scope" aria-label="Anki 导出范围">
+                    <option value="all">全部记录</option>
+                    <option value="weak">还没掌握</option>
+                    <option value="mastered">已经掌握</option>
+                    <option value="zone">按分区…</option>
+                  </select>
+                </label>
+                <select id="anki-zone" class="anki-export-zone" name="anki-zone" aria-label="Anki 导出分区" hidden></select>
+                <button id="anki-download" type="button">下载 Anki 导入文件</button>
+                <p id="anki-status" class="anki-export-status" role="status" aria-live="polite"></p>
+                <ol class="anki-export-steps">
+                  <li>在 Anki 桌面版选择「文件 → 导入」，选中刚下载的 oy-anki-日期.txt。</li>
+                  <li>导入窗口里保持制表符（Tab）分隔、勾选允许 HTML；文件头已写好 #separator:tab 与 #html:true，通常会自动识别。</li>
+                  <li>第一列是稳定编号（GUID），重复导入同一个文件不会产生重复卡片；错因标签在第四列自动带入。</li>
+                </ol>
+              </div>
               <button id="account-password" type="button" hidden>修改密码…</button>
               <button id="account-revoke-others" type="button" hidden>退出其他设备</button>
               <button id="account-delete" type="button" class="account-danger" hidden>注销账号…</button>
               <button type="button" class="link-button fx-toggle" id="fx-toggle"></button>
+              <button type="button" class="link-button nav-focus-toggle" id="nav-focus-toggle-account" aria-pressed="false">专注模式：关</button>
               <label class="account-preference account-rank-pref" id="account-public-rank-label" for="account-public-rank" hidden>
                 <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
-                <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和打卡排行榜里。</span>
+                <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。</span>
               </label>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
@@ -427,6 +460,10 @@
     </section>
 
     <main id="app" tabindex="-1" hidden>
+      <div id="nav-focus-notice" class="nav-focus-notice" role="status" hidden>
+        <span class="nav-focus-notice-text">专注模式已开启，这个入口已收起</span>
+        <button type="button" id="nav-focus-notice-close" class="nav-focus-notice-close">关闭专注模式</button>
+      </div>
       <section id="home-page" class="overview" aria-labelledby="home-title" hidden>
         <div class="ov-greeting">
           <div class="ov-greeting-copy">
@@ -476,6 +513,8 @@
         <div id="goal-card"></div>
 
         <section id="home-trend" class="ov-trend" aria-busy="true"></section>
+
+        <aside id="ov-yesterday-card" class="panel rank-mini-card" aria-labelledby="ov-yesterday-card-title" hidden></aside>
 
         <div class="ov-columns">
           <section class="ov-due" aria-labelledby="ov-due-title">
@@ -885,7 +924,7 @@
       <section id="leaderboard-page" aria-labelledby="leaderboard-title" hidden>
         <div class="page-heading">
           <div>
-            <h2 id="leaderboard-title">连续打卡天数排行榜</h2>
+            <h2 id="leaderboard-title">榜单</h2>
             <p class="muted">每天完成至少一次复习评分，就算打卡。日期按每个人自己的时区计算，同一天多次评分只计一天。</p>
             <p class="muted">今天还没打卡时，保留截至昨天的连续天数；今天和昨天都没打卡则归零。</p>
           </div>
@@ -931,7 +970,7 @@
         </section>
 
         <section class="panel leaderboard-list" aria-labelledby="leaderboard-list-title">
-          <h3 id="leaderboard-list-title">排行榜</h3>
+          <h3 id="leaderboard-list-title">连续打卡天数排行榜</h3>
           <p id="leaderboard-rules" class="muted">仅展示连续打卡至少 1 天的正式账号，天数相同按用户编号升序排列。“用户 #”后的编号是匿名身份标识，和排名无关。</p>
           <p id="leaderboard-status" class="muted" role="status" aria-live="polite"></p>
           <div id="leaderboard-table-wrap" hidden>
@@ -1400,7 +1439,7 @@
         </details>
         <details id="rank-admin-card" class="panel rank-admin" data-admin-only open hidden>
           <summary>今日一条</summary>
-          <p class="muted">每天显示在“打卡排行榜”页顶部的一句话，由你手写，不会抓取任何网站。日期按北京时间自然日，含首尾；多条重叠时显示开始日期最近、最新建立的一条。</p>
+          <p class="muted">每天显示在“榜单”页顶部的一句话，由你手写，不会抓取任何网站。日期按北京时间自然日，含首尾；多条重叠时显示开始日期最近、最新建立的一条。</p>
           <form id="rank-admin-form" class="rank-admin-form" novalidate>
             <label for="rank-admin-text">一句话（最多 80 字）</label>
             <input id="rank-admin-text" type="text" maxlength="200" autocomplete="off" required>
@@ -1510,7 +1549,7 @@
     <button type="button" class="tab-item" data-view="today"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M13 3h8v8M21 3 11 13"/><path d="m7 13 4 4 5-5"/></svg><span class="tab-label">今日</span><span class="nav-badge" data-badge="today" hidden></span></button>
     <button type="button" class="tab-item" data-view="all"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg><span class="tab-label">记录</span></button>
     <button type="button" class="tab-item tab-item-new" data-view="new"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span class="tab-label">新增</span></button>
-    <button type="button" class="tab-item" data-view="groups"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><span class="tab-label">小组</span></button>
+    <button type="button" class="tab-item" id="tab-groups" data-view="groups"><svg class="tab-icon" data-nav-focus-icon="groups" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><svg class="tab-icon" data-nav-focus-icon="insights" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" hidden><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg><span class="tab-label">小组</span></button>
     <button type="button" class="tab-item" id="tab-more" aria-haspopup="dialog" aria-expanded="false" aria-controls="more-sheet"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span class="tab-label">更多</span></button>
   </nav>
   <div id="more-sheet" class="more-sheet" hidden>
@@ -1526,7 +1565,7 @@
         <button type="button" class="more-item" data-view="achievements"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg><span>成就徽章</span></button>
         <button type="button" class="more-item" data-view="weekly-recap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg><span>本周战报</span></button>
         <button type="button" class="more-item" data-view="forum"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>讨论区</span></button>
-        <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>打卡排行榜</span></button>
+        <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>榜单</span></button>
         <button type="button" class="more-item" data-view="plan"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span>我的套餐</span></button>
         <button type="button" class="more-item" data-view="admin" id="more-admin" data-admin-only hidden><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>管理后台</span></button>
       </div>

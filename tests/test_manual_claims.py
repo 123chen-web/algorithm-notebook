@@ -415,6 +415,7 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         # a real version-10 database has none of the tables added by later migrations
         conn.execute("DROP TABLE IF EXISTS goals")
         conn.execute("DROP TABLE IF EXISTS review_ops")
+        conn.execute("DROP TABLE IF EXISTS mistake_scratch")
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:

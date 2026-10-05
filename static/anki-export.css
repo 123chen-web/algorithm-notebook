@@ -1,0 +1,80 @@
+/* 导出到 Anki：账号菜单里的一小块表单。只用主题令牌，不写死颜色。 */
+.anki-export {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: calc(100% - 2 * var(--space-4));
+  margin: var(--space-1) var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.anki-export-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--lh-ui);
+}
+
+.anki-export-field select,
+.anki-export-zone {
+  min-height: 44px;
+  border-color: var(--ink-2);
+  background: var(--field-surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.anki-export-zone[hidden] { display: none; }
+
+#anki-download {
+  min-height: 44px;
+  border: 1px solid var(--accent-hover);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent-hover);
+  font-size: var(--text-sm);
+}
+
+#anki-download:hover:not(:disabled) { background: var(--paper-2); }
+#anki-download:disabled { color: var(--ink-2); border-color: var(--ink-2); cursor: default; }
+#anki-download:focus-visible { outline: 3px solid var(--accent-hover); outline-offset: 2px; }
+
+.anki-export-status {
+  min-height: var(--lh-ui);
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-prose);
+  overflow-wrap: anywhere;
+}
+.anki-export-status:empty { display: none; }
+.anki-export-status.is-error { color: var(--danger); }
+
+.anki-export-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: var(--lh-prose);
+}
+
+@media (pointer: coarse) {
+  .anki-export-field select,
+  .anki-export-zone,
+  #anki-download { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anki-export * { transition: none; }
+}

@@ -29,8 +29,9 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters",
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
+            "mistake_scratch",
         } <= tables
-        assert db.schema_version(conn) == 13
+        assert db.schema_version(conn) == 14
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -951,3 +952,112 @@ def test_review_feel_migration_rolls_back_all_columns_on_failure(database_path, 
         for table, new_columns in REVIEW_FEEL_COLUMNS.items():
             columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
             assert not set(new_columns) & columns
+
+
+def test_scratch_migration_to_v14_creates_table_and_preserves_old_data(
+    database_path, monkeypatch,
+):
+    # 先在版本 13 的旧库上造好用户 / 题目 / 易错点，再升到最新，验证 14 号迁移。
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 13])
+        patch.setattr(db, "SCHEMA_VERSION", 13)
+        db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (7, 'legacy-scratch', 'unchanged-hash', 'Asia/Taipei', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO problems(id, user_id, title, language, code, thinking, created_at) "
+            "VALUES (11, 7, '历史题目', 'Python', 'pass', '历史思路', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO mistakes(id, problem_id, description, repetitions, "
+            "interval_days, ease_factor, due_date, version) "
+            "VALUES (13, 11, '历史易错点', 1, 2, 2.5, '2026-10-06', 3)",
+        )
+        assert db.schema_version(conn) == 13
+
+    db.init_db()
+    db.init_db()
+    with db.connect(write=True) as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 14
+        columns = {row["name"]: row for row in conn.execute(
+            "PRAGMA table_info(mistake_scratch)"
+        )}
+        assert set(columns) == {
+            "mistake_id", "user_id", "version", "code", "fixed",
+            "table_json", "updated_at",
+        }
+        assert columns["mistake_id"]["pk"] == 1
+        assert columns["mistake_id"]["type"] == "INTEGER"
+        assert columns["mistake_id"]["notnull"] == 0
+        assert columns["user_id"]["type"] == "INTEGER"
+        assert columns["user_id"]["notnull"] == 1
+        assert columns["version"]["type"] == "INTEGER"
+        assert columns["version"]["notnull"] == 1
+        for name in ("code", "fixed"):
+            assert columns[name]["type"] == "TEXT"
+            assert columns[name]["notnull"] == 1
+            assert columns[name]["dflt_value"] == "''"
+        assert columns["table_json"]["type"] == "TEXT"
+        assert columns["table_json"]["notnull"] == 0
+        assert columns["updated_at"]["type"] == "TEXT"
+        assert columns["updated_at"]["notnull"] == 1
+        assert {
+            (row["from"], row["table"], row["to"], row["on_delete"])
+            for row in conn.execute("PRAGMA foreign_key_list(mistake_scratch)")
+        } == {
+            ("mistake_id", "mistakes", "id", "CASCADE"),
+            ("user_id", "users", "id", "CASCADE"),
+        }
+        assert "idx_mistake_scratch_user" in {
+            row["name"] for row in conn.execute("PRAGMA index_list(mistake_scratch)")
+        }
+
+        # 迁移后可以正常写入草稿。
+        conn.execute(
+            "INSERT INTO mistake_scratch"
+            "(mistake_id, user_id, version, code, fixed, table_json, updated_at) "
+            "VALUES (13, 7, 1, 'a', 'b', NULL, ?)",
+            (CREATED_AT,),
+        )
+        # 删错题级联删草稿；旧数据原样保留。
+        assert tuple(conn.execute(
+            "SELECT description, version FROM mistakes WHERE id = 13"
+        ).fetchone()) == ("历史易错点", 3)
+        conn.execute("DELETE FROM mistakes WHERE id = 13")
+        assert conn.execute(
+            "SELECT COUNT(*) FROM mistake_scratch"
+        ).fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_scratch_migration_rolls_back_on_failure(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= 13])
+        patch.setattr(db, "SCHEMA_VERSION", 13)
+        db.init_db()
+    scratch_apply = next(apply for version, _name, apply in db.MIGRATIONS if version == 14)
+
+    def broken_scratch_migration(conn):
+        scratch_apply(conn)
+        raise ValueError("草稿迁移最后一步失败")
+
+    monkeypatch.setattr(
+        db, "MIGRATIONS",
+        [
+            (version, name, broken_scratch_migration if version == 14 else apply)
+            for version, name, apply in db.MIGRATIONS
+        ],
+    )
+    with pytest.raises(ValueError, match="草稿迁移最后一步失败"):
+        db.init_db()
+    with db.connect() as conn:
+        assert db.schema_version(conn) == 13
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('mistake_scratch', 'idx_mistake_scratch_user')"
+        ).fetchall() == []

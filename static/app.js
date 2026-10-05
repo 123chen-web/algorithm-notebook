@@ -457,6 +457,7 @@ function signedOut() {
   window.Onboarding?.reset();
   if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
+  window.AnkiExport?.reset();
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
   stopOrderPolling();
@@ -521,6 +522,8 @@ function signedOut() {
   window.Rank?.reset();
   window.GoalCard?.reset();
   window.DuckPanel?.reset();
+  window.Scratch?.reset();
+  window.NavFocus?.reset(); // 专注模式开关属于已注销的用户，收起状态与横幅一并还原
   window.ManualClaims?.reset();
   window.ManualClaimsAdmin?.reset();
   $("#admin-reports").replaceChildren();
@@ -718,6 +721,7 @@ function updateUserInfo() {
   renderHomeQuota();
   configureRank();
   window.Rank?.syncSetting(user);
+  window.NavFocus?.configure({ getUser: () => user, getView: () => view }); // 专注模式按用户 id 读取开关
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -731,6 +735,7 @@ async function loadZones() {
   const data = await api("/api/zones");
   zones = data.zones;
   codeZones = new Set(data.code_zones);
+  window.AnkiExport?.setZones(zones);
 
   const problemZone = $("#problem-zone");
   problemZone.replaceChildren();
@@ -948,6 +953,8 @@ async function loadHome({ refreshUser = true } = {}) {
   resetHomeSummary();
   const [trendEpoch, trendUserId] = [sessionEpoch, user?.id];
   window.Overview?.loadTrend({ api, isCurrent: () => trendEpoch === sessionEpoch && user?.id === trendUserId && view === "home" });
+  // Rank.mountCard：趋势区下面的“昨日之星”小卡片，复用 /api/rank/yesterday，不新增接口。
+  window.Rank?.mountCard($("#ov-yesterday-card"));
   // 总览统计始终覆盖全部分区；返回时重新读额度，包含 AI 失败后实际扣除的次数。
   // 两份数据独立降级，读取失败不显示旧值或假定的零值。
   const [profile, overview] = await Promise.allSettled([
@@ -994,7 +1001,7 @@ async function loadLeaderboard() {
   const entries = $("#leaderboard-entries");
   const mine = $("#leaderboard-me");
   page.setAttribute("aria-busy", "true");
-  status.textContent = "正在加载连续打卡排行榜…";
+  status.textContent = "正在加载连续打卡天数排行榜…";
   entries.replaceChildren();
   mine.replaceChildren();
   $("#leaderboard-table-wrap").hidden = true;
@@ -1003,7 +1010,7 @@ async function loadLeaderboard() {
     const data = await api("/api/leaderboard");
     if (user !== currentUser || !user || view !== "leaderboard") return;
     const { me } = data;
-    $("#leaderboard-list-title").textContent = `排行榜 · 前 ${data.leaderboard_size} 名`;
+    $("#leaderboard-list-title").textContent = `连续打卡天数排行榜 · 前 ${data.leaderboard_size} 名`;
     const rankText = me.is_trial
       ? "体验账号不参与排名，你仍可查看自己的连续打卡天数。"
       : me.rank === null
@@ -1028,7 +1035,7 @@ async function loadLeaderboard() {
     $("#leaderboard-table-wrap").hidden = !data.entries.length;
   } catch (error) {
     if (user === currentUser && user && view === "leaderboard") {
-      status.textContent = "排行榜加载失败，请点击上方“刷新”重试。";
+      status.textContent = "连续打卡天数排行榜加载失败，请点击上方“刷新”重试。";
     }
     throw error;
   } finally {
@@ -2251,6 +2258,7 @@ function rvfPageGuard() {
 }
 
 function rvfClearDetail() {
+  window.Scratch?.unmount();
   rvfDetailState?.menu?.destroy?.();
   rvfDetailGeneration += 1;
   rvfDetailState = null;
@@ -2857,6 +2865,11 @@ function renderDetail(item) {
   root.append(duckHost);
   window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.DuckPanel?.mount(duckHost, item);
+
+  const scratchHost = element("div", "", "scratch-host");
+  root.append(scratchHost);
+  window.Scratch?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.Scratch?.mount(scratchHost, item);
 
   const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
   deleteMistakeBtn.type = "button";
