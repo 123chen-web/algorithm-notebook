@@ -133,6 +133,7 @@ ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 # 拍照识别：手机拍的一整页手写解题过程可能有好几 MB，上限比头像更宽松；
 # 识别前会重新编码压缩，不会把原始大图直接传给 AI。
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
+API_MAX_BODY_BYTES = 10 * 1024 * 1024
 PHOTO_MAX_DIMENSION = 1600
 
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
@@ -312,8 +313,8 @@ class ScratchPut(InputModel):
     # 草稿演算区：code/fixed 为代码文本，table 为 {cols, rows} 或 null；
     # table 的结构校验在接口里按 static/trace-table.js 的 validate 规则做。
     version: int = Field(strict=True, ge=0)
-    code: Annotated[str, StringConstraints(strict=True)]
-    fixed: Annotated[str, StringConstraints(strict=True)]
+    code: Annotated[str, StringConstraints(strict=True, max_length=40000)]
+    fixed: Annotated[str, StringConstraints(strict=True, max_length=40000)]
     table: dict | None
 
 
@@ -1032,6 +1033,15 @@ async def request_protection(request, call_next):
             status_code=403,
             content={"detail": "请求缺少必要的安全校验"},
         )
+
+    if request.url.path.startswith("/api/"):
+        declared = request.headers.get("content-length", "")
+        # 全局上限留足照片识别（8 MiB + multipart 开销）的余量；头像等各自的上限仍在接口内。
+        if declared.isdigit() and int(declared) > API_MAX_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "请求内容太大"},
+            )
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
