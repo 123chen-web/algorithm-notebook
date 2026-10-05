@@ -1606,42 +1606,6 @@ def admin_reject_manual_claim(
     return {"claim": claim}
 
 
-@app.get("/api/zones")
-def list_zones():
-    return {"zones": list(PROBLEM_ZONES), "code_zones": list(CODE_ZONES)}
-
-
-@app.post("/api/problems", status_code=201)
-def create_problem(data: NewProblem, user=Depends(current_user)):
-    day = today_for(user).isoformat()
-    with connect(write=True) as conn:
-        recheck_account(conn, user["id"])
-        cursor = conn.execute(
-            """
-            INSERT INTO problems(
-                user_id, title, zone, language, code, thinking, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user["id"], data.title, data.zone, data.language,
-                data.code, data.thinking, utc_now(),
-            ),
-        )
-        problem_id = cursor.lastrowid
-        mistake_ids = []
-        for description in data.mistakes:
-            cursor = conn.execute(
-                """
-                INSERT INTO mistakes(problem_id, description, due_date)
-                VALUES (?, ?, ?)
-                """,
-                (problem_id, description, day),
-            )
-            mistake_ids.append(cursor.lastrowid)
-
-    return {"id": problem_id, "mistake_ids": mistake_ids}
-
-
 def weakness_analysis_state(conn, user_id):
     count = conn.execute(
         "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
@@ -1836,79 +1800,6 @@ def community_weakness_by_zone(conn):
 
 def window_total(counter, first, last):
     return sum(count for day, count in counter.items() if first <= day <= last)
-
-
-@app.post("/api/problems/photo")
-async def recognize_problem_photo(user=Depends(current_user), file: UploadFile = File(...)):
-    # 只识别、不落库：返回结构化字段供前端预填新增记录表单，用户确认后
-    # 仍然走 create_problem 那条已有校验路径，这里不重复实现建档逻辑。
-    content = await file.read(PHOTO_MAX_BYTES + 1)
-    if len(content) > PHOTO_MAX_BYTES:
-        raise HTTPException(413, f"图片太大，最多 {PHOTO_MAX_BYTES // (1024 * 1024)} MiB")
-    if not content:
-        raise HTTPException(400, "文件是空的")
-
-    image = decode_uploaded_image(content)
-    jpeg_bytes = await run_in_threadpool(resize_photo_for_recognition, image)
-
-    # 配额检查和扣减跟生成练习题共用同一套逻辑：同一次 BEGIN IMMEDIATE 事务内
-    # 原子扣减，调用失败也占用次数；AI 调用本身放到事务外面执行，不在网络
-    # 请求期间持有数据库写锁。
-    with ExitStack() as stack:
-        with connect(write=True) as conn:
-            if not os.getenv("OPENAI_API_KEY", "").strip():
-                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
-            day = today_for(user).isoformat()
-            quota = ai_quota(conn, user["id"], day)
-            limit = quota["ai_daily_limit"]
-            if quota["ai_daily_used"] >= limit:
-                raise HTTPException(429, "今天的 AI 生成次数已用完")
-            stack.enter_context(ai_slot())
-            cursor = conn.execute(
-                """
-                INSERT INTO ai_usage(user_id, day, attempts)
-                SELECT ?, ?, 1 WHERE ? > 0
-                ON CONFLICT(user_id, day) DO UPDATE
-                SET attempts = ai_usage.attempts + 1
-                WHERE ai_usage.attempts < ?
-                """,
-                (user["id"], day, limit, limit),
-            )
-            if cursor.rowcount != 1:
-                raise HTTPException(429, "今天的 AI 生成次数已用完")
-
-        with track_call(user["id"], "photo"):
-            return await run_in_threadpool(ai.recognize_photo, jpeg_bytes)
-
-
-@app.put("/api/problems/{problem_id}")
-def edit_problem(problem_id: int, data: ProblemEdit, user=Depends(current_user)):
-    with connect(write=True) as conn:
-        owned_problem(conn, problem_id, user["id"])
-        conn.execute(
-            """
-            UPDATE problems
-            SET title = ?, zone = ?, language = ?, code = ?, thinking = ?
-            WHERE id = ?
-            """,
-            (
-                data.title, data.zone, data.language,
-                data.code, data.thinking, problem_id,
-            ),
-        )
-        updated = conn.execute(
-            "SELECT * FROM problems WHERE id = ?", (problem_id,)
-        ).fetchone()
-    return dict(updated)
-
-
-@app.delete("/api/problems/{problem_id}")
-def delete_problem(problem_id: int, user=Depends(current_user)):
-    # 级联删除该题下的全部易错点、复习记录和变体题。
-    with connect(write=True) as conn:
-        owned_problem(conn, problem_id, user["id"])
-        conn.execute("DELETE FROM problems WHERE id = ?", (problem_id,))
-    return {"ok": True}
 
 
 @app.get("/api/mistakes")
@@ -4292,13 +4183,15 @@ import routers.auth
 import routers.account
 import routers.payments
 import routers.stats
+import routers.problems
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
 app.include_router(routers.account.router)
 app.include_router(routers.payments.router)
 app.include_router(routers.stats.router)
+app.include_router(routers.problems.router)
 
 # 以下名字被测试或其它 routers 以 main.<name> 引用，在此重新导出：
-from routers.stats import create_weakness_analysis  # noqa: F401
+from routers.problems import recognize_problem_photo  # noqa: F401
 # ===== [generated] end =====
