@@ -313,8 +313,8 @@ class ScratchPut(InputModel):
     # 草稿演算区：code/fixed 为代码文本，table 为 {cols, rows} 或 null；
     # table 的结构校验在接口里按 static/trace-table.js 的 validate 规则做。
     version: int = Field(strict=True, ge=0)
-    code: Annotated[str, StringConstraints(strict=True, max_length=40000)]
-    fixed: Annotated[str, StringConstraints(strict=True, max_length=40000)]
+    code: Annotated[str, StringConstraints(strict=True, max_length=100000)]
+    fixed: Annotated[str, StringConstraints(strict=True, max_length=100000)]
     table: dict | None
 
 

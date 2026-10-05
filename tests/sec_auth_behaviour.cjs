@@ -79,10 +79,10 @@ for (const status of [200, 400]) {
     assert.deepEqual(env.window.probe.panels, []); assert.deepEqual(env.window.probe.messages, []);
   });
 }
-test("email: success updates requesting account and clears credentials", async () => {
+test("email: success leaves email unchanged until confirmed and clears credentials", async () => {
   const env = environment(); env.submit("email-prompt");
-  env.respond(env.calls[0], 200, {email: "new@example.com"}); await settle();
-  assert.equal(env.state("user.email"), "new@example.com"); assert.equal(env.get("email-prompt").password.value, "");
+  env.respond(env.calls[0], 200, {ok: true, pending: true, email: "new@example.com"}); await settle();
+  assert.equal(env.state("user.email"), null); assert.equal(env.get("email-prompt").password.value, "");
   assert.equal(env.get("email-prompt").hidden, true);
 });
 for (const change of ['sessionEpoch += 1;', 'user = {id: 8, email: "other@example.com"};', 'user = null; sessionEpoch += 1;']) {

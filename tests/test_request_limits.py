@@ -33,8 +33,9 @@ def test_body_under_limit_is_not_rejected_by_middleware(client):
 
 
 def test_scratch_code_and_fixed_are_capped():
-    main.ScratchPut(version=0, code="x" * 40000, fixed="y" * 40000, table=None)
+    # 模型层只挡极端大小（超过 100000 字符），40000 字符的精确上限由接口按合计返回 413。
+    main.ScratchPut(version=0, code="x" * 100000, fixed="y" * 100000, table=None)
     for field in ("code", "fixed"):
-        values = {"code": "", "fixed": "", field: "z" * 40001}
+        values = {"code": "", "fixed": "", field: "z" * 100001}
         with pytest.raises(ValidationError):
             main.ScratchPut(version=0, table=None, **values)

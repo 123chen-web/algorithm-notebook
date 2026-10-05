@@ -14,6 +14,15 @@ def isolate_alipay_configuration(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_mail_configuration(monkeypatch):
+    # A developer's real .env must never make tests send real email
+    # (bounces from fake addresses would land in the owner's inbox).
+    for name in tuple(os.environ):
+        if name.startswith("SMTP_"):
+            monkeypatch.delenv(name)
+
+
+@pytest.fixture(autouse=True)
 def block_alipay_network(monkeypatch):
     """A missing SDK fails the relevant tests; a present SDK must never go online."""
     try:
