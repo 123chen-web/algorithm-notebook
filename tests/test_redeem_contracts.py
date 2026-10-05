@@ -6,12 +6,19 @@ import pytest
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "main.py"
+# main.py 拆分后，一部分 handler 搬到了 routers/；契约本身不变，
+# 查找时把两处都算上。
+SEARCH_ROOTS = [SOURCE] + sorted((SOURCE.parent / "routers").glob("*.py"))
 
 
 def function(name):
-    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
-    return next(node for node in tree.body
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+    for path in SEARCH_ROOTS:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+                    and node.name == name:
+                return node
+    raise AssertionError("function not found: " + name)
 
 
 def test_claim_sql_contains_all_atomic_guards():
@@ -31,7 +38,10 @@ def test_claim_failure_uses_single_exact_error():
     assert error == "兑换码不正确、已使用或已过期"
     guard = next(node for node in ast.walk(function("redeem_code"))
                  if isinstance(node, ast.If) and ast.unparse(node.test) == "claimed.rowcount != 1")
-    assert ast.unparse(guard.body[0]) == "raise HTTPException(400, REDEEM_ERROR)"
+    raised = ast.unparse(guard.body[0])
+    # routers/ 拆分后拼写为 main.REDEEM_ERROR；错误文案与单次抛出的契约不变
+    assert raised in ("raise HTTPException(400, REDEEM_ERROR)",
+                      "raise HTTPException(400, main.REDEEM_ERROR)"), raised
 
 
 @pytest.mark.parametrize("name", [
@@ -41,10 +51,20 @@ def test_claim_failure_uses_single_exact_error():
 ])
 def test_admin_routes_authorize_before_access(name):
     node = function(name)
-    assert ast.unparse(node.body[0]) == "require_admin(user)"
+    first = ast.unparse(node.body[0])
+    # routers/ 拆分后拼写为 main.require_admin(user)；"先鉴权再访问"的契约不变
+    assert first in ("require_admin(user)", "main.require_admin(user)"), first
     if name != "list_redeem_codes":
-        calls = [item for item in ast.walk(node) if isinstance(item, ast.Call)
-                 and isinstance(item.func, ast.Name) and item.func.id == "recheck_manual_account"]
+        def is_recheck_call(item):
+            if not isinstance(item, ast.Call):
+                return False
+            func = item.func
+            if isinstance(func, ast.Name):
+                return func.id == "recheck_manual_account"
+            # routers/ 拆分后拼写为 main.recheck_manual_account
+            return isinstance(func, ast.Attribute) \
+                and func.attr == "recheck_manual_account"
+        calls = [item for item in ast.walk(node) if is_recheck_call(item)]
         assert any(any(keyword.arg == "admin" and ast.unparse(keyword.value) == "True"
                        for keyword in call.keywords) for call in calls)
 
