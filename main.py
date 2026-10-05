@@ -971,6 +971,10 @@ REPORT_WINDOW_SECONDS = 60 * 60
 ANKI_EXPORT_LIMIT = 10
 ANKI_EXPORT_WINDOW_SECONDS = 60 * 60
 ANKI_MAX_RECORDS = 5000
+# 整本 JSON 导出：每用户每小时次数与题目记录数上限。
+EXPORT_LIMIT = 10
+EXPORT_WINDOW_SECONDS = 60 * 60
+EXPORT_MAX_RECORDS = 5000
 ANKI_SCOPES = ("all", "zone", "weak", "mastered")
 
 _rate_lock = threading.Lock()
@@ -1401,10 +1405,22 @@ def me(user=Depends(current_user)):
 
 @app.get("/api/export")
 def export_data(user=Depends(current_user)):
+    # 整本导出成本高，按用户每小时限流（与 Anki 导出同一套额度参数）。
+    if rate_limited(
+        f"export:{user['id']}", EXPORT_LIMIT, EXPORT_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "导出过于频繁，请一小时后再试")
     # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
     with connect() as conn:
         # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
         conn.execute("BEGIN")
+        total = conn.execute(
+            "SELECT COUNT(*) FROM problems WHERE user_id = ?", (user["id"],)
+        ).fetchone()[0]
+        if total > EXPORT_MAX_RECORDS:
+            raise HTTPException(
+                413, f"记录超过 {EXPORT_MAX_RECORDS} 条，无法一次导出整本，请联系站长"
+            )
         problems = {}
         for row in conn.execute(
             """
