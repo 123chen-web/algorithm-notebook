@@ -749,6 +749,31 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 
 时间戳使用 UTC；复习日期使用用户注册时选择的时区。
 
+### 数据库迁移版本
+
+数据库用 `PRAGMA user_version` 记录版本，启动时自动按顺序执行未完成的迁移
+（机制见 [部署与升级](docs/operations/deploy.md)）。各版本的含义：
+
+| 版本 | 内容 |
+| --- | --- |
+| 1 | 历史数据库基线（兼容 `user_version=0` 的旧库） |
+| 2 | AI 调用记账（`ai_calls`） |
+| 3 | 复习日志补充列（`reviews` 的用时、计划天数等） |
+| 4 | 账号安全与隐私（`users` 的 `deleted_at`、`is_admin`、条款同意字段） |
+| 5 | 论坛：采纳、有用、AI 要点（`accepted_comment_id`、`comment_votes`、`post_summaries`） |
+| 6 | 手动收款与兑换码（`redeem_codes`、`app_settings`） |
+| 7 | 未发布（跳过，保留编号） |
+| 8 | 论坛：帖子分区（`posts.zone`） |
+| 9 | 榜单：公开参与设置（`users.public_rank_opt_out`）、今日一条（`daily_notices`） |
+| 10 | 复习手感：暂停（`suspended_at`）、撤销日志、每日上限 |
+| 11 | 手动收款登记（`manual_payment_claims`） |
+| 12 | 目标卡（`goals`） |
+| 13 | 离线评分补交的幂等记录（`review_ops`） |
+| 14 | 错题草稿演算区（`mistake_scratch`） |
+| 15 | 微信提醒渠道配置（`user_push`） |
+
+数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
+
 ## AI 行为
 
 AI 走“OpenAI 兼容”接口，客户端用的是 openai 官方 Python SDK，但**请求发往哪里由 `OPENAI_BASE_URL` 决定**。我们线上使用 **DeepSeek**（`OPENAI_BASE_URL=https://api.deepseek.com`，国内可直接访问，不需要翻墙，不会把数据发给 OpenAI）；变量名里的 OPENAI 只是沿用接口的叫法。也可以换成其他兼容服务商，同时把 `OPENAI_API_KEY`、`OPENAI_MODEL` 换成对应的 Key 和模型名，代码不用改。`OPENAI_BASE_URL` 留空时才会请求 OpenAI 官方。具体模型名和价格以服务商官方文档为准。

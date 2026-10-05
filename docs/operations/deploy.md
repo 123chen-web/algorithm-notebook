@@ -23,7 +23,7 @@ curl -fsS http://127.0.0.1:8000/healthz
 
 `chown` 示例适用于本项目数据目录；已有数据应先备份，并确认共享目录的其他程序仍有需要的访问权限。Windows/macOS Docker Desktop 的绑定挂载权限由宿主系统管理，不需要照搬 Linux 的 `chown`。
 
-浏览器访问 `http://127.0.0.1:8000`。Compose 默认只把端口发布在本机（`127.0.0.1:8000:8000`）；对外服务请放在 HTTPS 反向代理之后，只在确实要让局域网其他机器直接访问时才改成 `8000:8000`。`/healthz` 无需登录，检查 SQLite 可读及可取得写事务，成功返回 `{"status":"ok","schema_version":2}`，失败返回 HTTP 503 和 `{"status":"error"}`。响应使用 `Cache-Control: no-store`。Docker 与 Compose 的健康检查用 Python 标准库访问该地址，镜像无需安装 curl。
+浏览器访问 `http://127.0.0.1:8000`。Compose 默认只把端口发布在本机（`127.0.0.1:8000:8000`）；对外服务请放在 HTTPS 反向代理之后，只在确实要让局域网其他机器直接访问时才改成 `8000:8000`。`/healthz` 无需登录，检查 SQLite 可读及可取得写事务，成功返回 `{"status":"ok","schema_version":15}`（数字为当前数据库版本，以 `db.py` 的 `SCHEMA_VERSION` 为准），失败返回 HTTP 503 和 `{"status":"error"}`。响应使用 `Cache-Control: no-store`。Docker 与 Compose 的健康检查用 Python 标准库访问该地址，镜像无需安装 curl。
 
 也可直接使用镜像并在运行时传入环境文件：
 
@@ -39,7 +39,9 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 3. 执行 `docker compose up -d --build`。启动时 `init_db()` 自动按 `PRAGMA user_version` 顺序执行未完成的迁移。
 4. 执行 `curl -fsS http://127.0.0.1:8000/healthz`，确认 `status` 为 `ok` 且 `schema_version` 为新程序支持的版本；必要时查看 `docker compose logs app`。
 
-数据库目前的版本 1 是兼容所有历史 `user_version=0` 数据库的幂等基线，版本 2 增加 `ai_calls` 记账表。包括基线在内，每个迁移均在独立事务内执行，失败时该迁移的变更和版本号一起回滚；已提交的早期迁移保留。正常完整的数据库不重复执行已完成的迁移；为保留旧版本的幂等初始化行为，版本号已为 1 或更高但缺少冻结基线的表、迁移列或索引时，会在独立事务内补齐基线，并保留原版本号。
+数据库目前的最新版本以 `db.py` 的 `SCHEMA_VERSION` 为准（当前为 15，各版本含义见
+[README 的数据结构](../../README.md#数据结构)）。版本 1 是兼容所有历史 `user_version=0`
+数据库的幂等基线。包括基线在内，每个迁移均在独立事务内执行，失败时该迁移的变更和版本号一起回滚；已提交的早期迁移保留。正常完整的数据库不重复执行已完成的迁移；为保留旧版本的幂等初始化行为，版本号已为 1 或更高但缺少冻结基线的表、迁移列或索引时，会在独立事务内补齐基线，并保留原版本号。
 
 如果数据库版本比程序支持的版本新，程序会拒绝启动。升级失败时先修复原因，再启动以继续迁移；需要回退时使用对应版本的备份，不能直接用旧程序打开已经迁移的新数据库。
 
@@ -49,8 +51,13 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 
 | 配置 | 用途 |
 | --- | --- |
-| `INVITE_CODE`、`ADMIN_USERNAME` | 注册邀请码、讨论区管理员 |
+| `INVITE_CODE` | 注册邀请码 |
+| `ADMIN_USERNAME` | 保留名；**不授予管理员权限**，管理员身份用 `admin_tool.py grant/revoke` 管理 |
 | `DATABASE_PATH` | SQLite 路径，默认 `data/notebook.db`；容器内必须放在 `/app/data` 持久化目录 |
+| `AVATAR_DIR` | 头像目录，默认 `data/avatars`；`backup.py` 归档包含它 |
+| `PAY_QR_DIR` | 手动收款二维码目录，默认 `data/pay-qr`；**不在** `backup.py` 归档内，需单独备份 |
+| `BACKUP_DIR`、`BACKUP_KEEP` | `backup.py` 的输出目录与保留份数，默认 `data/backups` / 14 |
+| `SAMPLE_WORLD_DIR` | `sample_world.py` 的数据目录，默认项目内 `data` |
 | `COOKIE_SECURE`、`PUBLIC_BASE_URL` | HTTPS Cookie、邮件链接所用地址 |
 | `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL` | AI 服务密钥、模型、兼容服务地址；密钥为空时 AI 不可用 |
 | `AI_DAILY_LIMIT`、`TRIAL_AI_DAILY_LIMIT` | 正式账号及体验账号每日尝试次数；套餐额度按现有优先级覆盖 |
