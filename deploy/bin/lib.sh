@@ -20,6 +20,7 @@ need_cmd() {
 
 # 统一的 compose 调用
 compose() {
+  link_env
   docker compose -f "$COMPOSE_FILE" "$@"
 }
 
@@ -36,8 +37,16 @@ wait_healthy() {
   return 1
 }
 
+# docker compose 只在 compose 文件所在目录（deploy/）找 .env 来替换 ${SITE_DOMAIN}，
+# 所以把仓库根目录的 .env 链接过去（.gitignore 已排除 .env，链接不会进 Git）。
+link_env() {
+  [ -f "$REPO_DIR/.env" ] && ln -sf ../.env "$REPO_DIR/deploy/.env"
+  return 0
+}
+
 # 预检：.env 存在且 SITE_DOMAIN 已填
 preflight() {
   [ -f "$REPO_DIR/.env" ] || die "找不到 $REPO_DIR/.env，请先按《零基础上线手册》第 6 步创建并填写。"
+  link_env
   grep -Eq '^SITE_DOMAIN=[^[:space:]]+' "$REPO_DIR/.env" || die ".env 里的 SITE_DOMAIN 还是空的，请先填你的域名。"
 }

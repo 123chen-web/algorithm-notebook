@@ -33,7 +33,7 @@ msg "== 3/6 停止应用服务 =="
 compose stop app
 
 TS="$(date +%Y%m%d-%H%M%S)"
-RESTORE_TMP="/tmp/restore-$TS"
+RESTORE_TMP="/app/data/restore-$TS"  # 放在挂载的数据卷里：每次 compose run 都是新容器，/tmp 不共享
 msg "== 4/6 把归档恢复到独立目录（先演练，不直接覆盖） =="
 if ! compose run --rm app python backup.py restore "$CONTAINER_ARCHIVE" --into "$RESTORE_TMP"; then
   msg "恢复失败，正在重新启动原来的服务 ..." >&2
@@ -49,6 +49,7 @@ compose run --rm app sh -c "
   chmod 600 /app/data/notebook.db
   rm -rf /app/data/avatars
   cp -r '$RESTORE_TMP/avatars' /app/data/avatars
+  rm -rf '$RESTORE_TMP'
   echo 替换完成
 " || {
   msg "文件替换失败，正在重启服务，请检查数据目录 ..." >&2

@@ -1002,6 +1002,14 @@ def reset_rate_limits():
 
 
 def client_ip(request: Request):
+    # 部署在 Caddy 之类的反向代理后面时，socket 地址永远是代理的内网 IP，
+    # 限流会变成全站共用一个桶；设置 TRUST_PROXY=1（且应用端口不对公网开放）后，
+    # 取代理追加在 X-Forwarded-For 最右侧的那一项（客户端自己伪造的项都在它左边）。
+    if os.getenv("TRUST_PROXY") == "1":
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        last = forwarded.split(",")[-1].strip()
+        if last:
+            return last
     return request.client.host if request.client else "unknown"
 
 

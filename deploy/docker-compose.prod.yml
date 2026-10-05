@@ -29,6 +29,8 @@ services:
     environment:
       # 生产必需：强制安全 Cookie。即使 .env 里忘了改，这里也保证为 1。
       COOKIE_SECURE: "1"
+      # 应用只在内部网络，所有请求都经 Caddy：限流按 Caddy 传来的真实客户端 IP 计算。
+      TRUST_PROXY: "1"
       DATABASE_PATH: /app/data/notebook.db
       AVATAR_DIR: /app/data/avatars
       PAY_QR_DIR: /app/data/pay-qr

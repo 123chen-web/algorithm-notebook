@@ -146,8 +146,11 @@ sudo bash deploy/bin/install.sh
 
 ```bash
 cp deploy/.env.prod.example .env
+ln -sf ../.env deploy/.env
 nano .env
 ```
+
+（第二行是让 Docker 也能读到域名：它只在 `deploy/` 目录里找 `.env`，所以做一个链接，不会进 Git。）
 
 `nano` 打开后，按下面的说明逐项填（方向键移动，改完按 `Ctrl+O` 回车保存，
 `Ctrl+X` 退出）：
@@ -197,7 +200,7 @@ docker compose -f deploy/docker-compose.prod.yml ps
 curl -fsS http://127.0.0.1:8000/healthz
 ```
 
-> `curl` 连的是服务器本机， bypass 反向代理，直接看应用本身有没有起来。
+> `curl` 连的是服务器本机，绕过反向代理，直接看应用本身有没有起来。
 
 **看到什么算成功：**
 
