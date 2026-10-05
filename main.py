@@ -40,6 +40,7 @@ import ai
 import clusters
 import hot_problems
 import mailer
+import manual_claims
 import payments
 from payments import activate_plan
 import rank_board
@@ -332,6 +333,36 @@ class ManualGrant(InputModel):
     username: str = Field(strict=True, min_length=1, max_length=128)
     plan_id: int = Field(strict=True, gt=0)
     days: int | None = Field(default=None, strict=True, ge=1, le=3650)
+
+
+def _plain_text(value):
+    # 不含换行、制表符等控制/格式字符，登记内容会原样展示给站长。
+    if any(unicodedata.category(char).startswith("C") for char in value):
+        raise ValueError("内容不能包含控制字符")
+    return value
+
+
+class NewManualClaim(InputModel):
+    plan_id: int = Field(strict=True, gt=0)
+    payer_note: Annotated[str, StringConstraints(
+        strict=True, strip_whitespace=True, min_length=1, max_length=60)]
+    contact: Annotated[str, StringConstraints(
+        strict=True, strip_whitespace=True, max_length=60)] = ""
+
+    @field_validator("payer_note", "contact")
+    @classmethod
+    def plain_text(cls, value):
+        return _plain_text(value)
+
+
+class RejectManualClaim(InputModel):
+    reason: Annotated[str, StringConstraints(
+        strict=True, strip_whitespace=True, min_length=1, max_length=80)]
+
+    @field_validator("reason")
+    @classmethod
+    def plain_text(cls, value):
+        return _plain_text(value)
 
 
 class ManualPaymentSettings(InputModel):
@@ -1398,7 +1429,8 @@ def delete_account_data(conn, user_id, deleted_at):
         raise HTTPException(409, f"你创建的小组{names}里还有其他成员，请先让成员退出或解散小组")
 
     for table in ("sessions", "password_resets", "problems", "mistake_tags",
-                  "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes"):
+                  "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes",
+                  "manual_payment_claims"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -1808,6 +1840,80 @@ def update_manual_payment_settings(data: ManualPaymentSettings, user=Depends(cur
              ("manual_payment_contact", data.contact)],
         )
     return {"enabled": data.enabled, "contact": data.contact}
+
+
+def claim_http_error(error):
+    return HTTPException(error.status_code, error.detail)
+
+
+@app.post("/api/manual-claims", status_code=201)
+def create_manual_claim(data: NewManualClaim, user=Depends(current_user)):
+    if user["is_trial"]:
+        raise HTTPException(403, "体验账号不能登记付款，请先注册正式账号")
+    with connect(write=True) as conn:
+        fresh = recheck_manual_account(conn, user["id"])
+        if fresh["is_trial"]:
+            raise HTTPException(403, "体验账号不能登记付款，请先注册正式账号")
+        try:
+            claim = manual_claims.create_claim(
+                conn, user["id"], data.plan_id, data.payer_note, data.contact, utc_now()
+            )
+        except manual_claims.ClaimError as error:
+            raise claim_http_error(error) from None
+        # 待处理上限通过后才计入每日次数，被拒的提交不占额度。
+        if rate_limited(f"manual-claim:{user['id']}", manual_claims.DAILY_SUBMISSIONS, 86400):
+            raise HTTPException(429, "今天提交的次数太多了，请明天再试或联系站长")
+    return {"claim": claim}
+
+
+@app.get("/api/manual-claims")
+def list_manual_claims(user=Depends(current_user)):
+    with connect() as conn:
+        return {"claims": manual_claims.list_user_claims(conn, user["id"]),
+                "plans": manual_claims.purchasable_plans(conn)}
+
+
+@app.get("/api/admin/manual-claims")
+def admin_list_manual_claims(
+    status: Literal["pending", "confirmed", "rejected", "all"] = "pending",
+    page: Annotated[int, Query(ge=1, le=100000)] = 1,
+    user=Depends(current_user),
+):
+    require_admin(user)
+    with connect() as conn:
+        return manual_claims.list_admin_claims(conn, status, page)
+
+
+@app.post("/api/admin/manual-claims/{claim_id}/confirm")
+def admin_confirm_manual_claim(
+    claim_id: int, background_tasks: BackgroundTasks, user=Depends(current_user)
+):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        try:
+            claim, mail_info = manual_claims.confirm_claim(
+                conn, claim_id, user["id"], utc_now()
+            )
+        except manual_claims.ClaimError as error:
+            raise claim_http_error(error) from None
+    # 事务提交后才发邮件；SMTP 慢或失败都不影响确认。
+    background_tasks.add_task(manual_claims.send_confirmation_email, mail_info)
+    return {"claim": claim, "plan_expires_at": mail_info["plan_expires_at"]}
+
+
+@app.post("/api/admin/manual-claims/{claim_id}/reject")
+def admin_reject_manual_claim(
+    claim_id: int, data: RejectManualClaim, user=Depends(current_user)
+):
+    require_admin(user)
+    with connect(write=True) as conn:
+        recheck_manual_account(conn, user["id"], admin=True)
+        try:
+            claim = manual_claims.reject_claim(conn, claim_id, user["id"], data.reason, utc_now())
+        except manual_claims.ClaimError as error:
+            raise claim_http_error(error) from None
+    return {"claim": claim}
 
 
 @app.post("/api/orders", status_code=201)
