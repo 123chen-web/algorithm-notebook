@@ -391,3 +391,15 @@ def test_non_admin_cannot_resolve_or_clear_avatar(client):
     register(client, "bob")
     assert client.delete(f"/api/admin/users/{alice_id}/avatar").status_code == 403
     assert client.post("/api/admin/avatar-reports/1/resolve").status_code == 403
+
+
+def test_admin_clear_avatar_for_unknown_user_leaves_files_alone(client, monkeypatch):
+    import main
+
+    register(client, "bob")
+    become_admin(monkeypatch, "bob")
+    stray = main.avatar_path(987654)
+    stray.parent.mkdir(parents=True, exist_ok=True)
+    stray.write_bytes(b"stray")
+    assert client.delete("/api/admin/users/987654/avatar").status_code == 404
+    assert stray.read_bytes() == b"stray"

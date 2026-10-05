@@ -3314,10 +3314,9 @@ $("#email-prompt").addEventListener("submit", (event) => {
       throw error;
     }
     if (secEpoch !== sessionEpoch || secOwnerId !== user?.id) return;
-    user.email = updated.email;
     $("#email-prompt").hidden = true;
     form.reset();
-    message("邮箱绑定成功。");
+    message("确认邮件已发到新邮箱，点击链接后生效。");
   });
 });
 
@@ -5233,6 +5232,19 @@ addMistakeInput();
 initReviewSpotlight();
 
 window.Capture?.intake();
+const emailToken = new URLSearchParams(location.search).get("email_token");
+if (emailToken) {
+  // 从确认更换邮箱的邮件点进来的：先清掉地址栏里的令牌，再提交确认。
+  const url = new URL(location.href);
+  url.searchParams.delete("email_token");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  api("/api/me/email/confirm", { method: "POST", body: JSON.stringify({ token: emailToken }) })
+    .then((result) => {
+      if (user) user.email = result.email;
+      message("新邮箱已生效。");
+    })
+    .catch((error) => message(error.message, true));
+}
 if (resetToken) {
   // 从密码重置邮件点进来的，不管当前是否登录，先处理重置。
   showAuthPanels(["reset-form"]);

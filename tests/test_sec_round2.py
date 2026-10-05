@@ -46,6 +46,18 @@ def sensitive_request(client, surface, password=PASSWORD, email="changed@example
     })
 
 
+def confirm_email_change(client, monkeypatch, email="changed@example.com"):
+    """走完两步改邮箱：申请（拦截邮件取出令牌）后提交确认。"""
+    import mailer
+
+    sent = []
+    monkeypatch.setattr(mailer, "send_email", lambda to, subject, body: sent.append((to, body)))
+    assert sensitive_request(client, "email", email=email).status_code == 200
+    body = next(body for to, body in sent if to == email)
+    token = body.split("email_token=")[1].split()[0]
+    return client.post("/api/me/email/confirm", json={"token": token})
+
+
 def test_a_shared_guard_counts_failures_before_hash_without_database(monkeypatch):
     """数据库 I/O 被替换；直接验证实际限流与哈希调用顺序，不创建临时目录。"""
     main.reset_rate_limits()
@@ -186,7 +198,7 @@ def test_b_email_failure_preserves_reset_tokens_and_account(client, failure):
     assert account_state(user["id"]) == before
 
 
-def test_b_email_success_invalidates_all_old_tokens_only_for_that_user(client):
+def test_b_email_success_invalidates_all_old_tokens_only_for_that_user(client, monkeypatch):
     user = register(client)
     reset_token(user["id"], "old-email-token")
     reset_token(user["id"], "second-old-email-token")
@@ -194,7 +206,7 @@ def test_b_email_success_invalidates_all_old_tokens_only_for_that_user(client):
         other_id = insert_user(conn, "other")
     reset_token(other_id, "unrelated-reset-token")
     other_before = account_state(other_id)
-    assert sensitive_request(client, "email").status_code == 200
+    assert confirm_email_change(client, monkeypatch).status_code == 200
     after = account_state(user["id"])
     assert after[0]["email"] == "changed@example.com"
     assert after[2] == []
@@ -412,7 +424,7 @@ def test_i_exact_login_wins_over_normalized_collision(client, name):
     assert client.get("/api/me").json()["id"] == expected
 
 
-def test_b_email_write_failure_rolls_back_email_and_reset_tokens(client):
+def test_b_email_write_failure_rolls_back_email_and_reset_tokens(client, monkeypatch):
     user = register(client)
     reset_token(user["id"])
     before = account_state(user["id"])
@@ -421,7 +433,8 @@ def test_b_email_write_failure_rolls_back_email_and_reset_tokens(client):
             "CREATE TRIGGER sec_fail_reset_delete BEFORE DELETE ON password_resets "
             "BEGIN SELECT RAISE(ABORT, 'SEC simulated reset deletion failure'); END"
         )
-    assert sensitive_request(client, "email").status_code == 409
+    before = account_state(user["id"])
+    assert confirm_email_change(client, monkeypatch).status_code == 409
     assert account_state(user["id"]) == before
 
 

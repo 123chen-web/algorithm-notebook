@@ -155,15 +155,28 @@ def refund_order(user_id, order_id):
         if cursor.rowcount != 1:
             # 另一请求已完成退款时，不能再次清空此后新购买的套餐。
             raise HTTPException(409, "订单状态已变更，请重新查询")
-        # V1 整体收回套餐，即使当前套餐来自另一笔订单；不补回当天 AI 用量。
+        # 只回滚本订单对应的天数，不动其他订单叠加的时长；不补回当天 AI 用量。
         user = conn.execute(
-            "SELECT deleted_at FROM users WHERE id = ?", (user_id,)
+            "SELECT deleted_at, plan_expires_at FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         if user is not None and user["deleted_at"] is None:
-            conn.execute(
-                "UPDATE users SET plan_id = NULL, plan_expires_at = NULL WHERE id = ?",
-                (user_id,),
-            )
+            plan = conn.execute(
+                "SELECT period_days FROM plans WHERE id = ?", (order["plan_id"],)
+            ).fetchone()
+            if user["plan_expires_at"] and plan is not None:
+                now = datetime.fromisoformat(utc_now())
+                expiry = datetime.fromisoformat(user["plan_expires_at"])
+                new_expiry = max(expiry - timedelta(days=plan["period_days"]), now)
+                if new_expiry > now:
+                    conn.execute(
+                        "UPDATE users SET plan_expires_at = ? WHERE id = ?",
+                        (new_expiry.isoformat(timespec="seconds"), user_id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE users SET plan_id = NULL, plan_expires_at = NULL WHERE id = ?",
+                        (user_id,),
+                    )
         else:
             sec_payment_logger.warning("已注销账号跳过退款权益更新 user_id=%s order_id=%s", user_id, order_id)
         return dict(conn.execute(

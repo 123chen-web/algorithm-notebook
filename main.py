@@ -133,6 +133,7 @@ ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 # 拍照识别：手机拍的一整页手写解题过程可能有好几 MB，上限比头像更宽松；
 # 识别前会重新编码压缩，不会把原始大图直接传给 AI。
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
+API_MAX_BODY_BYTES = 10 * 1024 * 1024
 PHOTO_MAX_DIMENSION = 1600
 
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
@@ -194,6 +195,10 @@ def normalize_email(value):
     if not EMAIL_PATTERN.fullmatch(value):
         raise ValueError("请填写有效的邮箱地址")
     return value
+
+
+class EmailChangeConfirm(InputModel):
+    token: str = Field(min_length=1, max_length=200)
 
 
 class ForgotPassword(InputModel):
@@ -308,8 +313,8 @@ class ScratchPut(InputModel):
     # 草稿演算区：code/fixed 为代码文本，table 为 {cols, rows} 或 null；
     # table 的结构校验在接口里按 static/trace-table.js 的 validate 规则做。
     version: int = Field(strict=True, ge=0)
-    code: Annotated[str, StringConstraints(strict=True)]
-    fixed: Annotated[str, StringConstraints(strict=True)]
+    code: Annotated[str, StringConstraints(strict=True, max_length=40000)]
+    fixed: Annotated[str, StringConstraints(strict=True, max_length=40000)]
     table: dict | None
 
 
@@ -730,7 +735,19 @@ def check_username_available(username, *, allow_admin_name=False):
         raise HTTPException(400, "这个用户名已被保留")
 
 
-def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
+def cookie_secure(request):
+    """COOKIE_SECURE 显式设置时按显式值；未设置时按请求是否为 https 自动决定。"""
+    explicit = os.getenv("COOKIE_SECURE")
+    if explicit is not None and explicit.strip() != "":
+        return explicit.strip() == "1"
+    if os.getenv("TRUST_PROXY") == "1":
+        proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+        if proto:
+            return proto == "https"
+    return request.url.scheme == "https"
+
+
+def set_session(conn, user_id, response, request, *, sec_cleanup_expired=True):
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     if sec_cleanup_expired:
@@ -744,7 +761,7 @@ def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
         value=token,
         max_age=SESSION_SECONDS,
         httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "0") == "1",
+        secure=cookie_secure(request),
         samesite="lax",
         path="/",
     )
@@ -943,9 +960,12 @@ LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 FORGOT_PASSWORD_LIMIT = 5
 FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
+FORGOT_PASSWORD_EMAIL_LIMIT = 3
+FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS = 60 * 60
 RESET_PASSWORD_LIMIT = 10
 RESET_PASSWORD_WINDOW_SECONDS = 15 * 60
 RESET_TOKEN_SECONDS = 30 * 60
+EMAIL_CHANGE_SECONDS = 30 * 60
 # 举报是登录后的操作，按 user_id 限流比按 IP 更准（不会误伤同一 IP 下的其他人）。
 REPORT_LIMIT = 10
 REPORT_WINDOW_SECONDS = 60 * 60
@@ -953,6 +973,10 @@ REPORT_WINDOW_SECONDS = 60 * 60
 ANKI_EXPORT_LIMIT = 10
 ANKI_EXPORT_WINDOW_SECONDS = 60 * 60
 ANKI_MAX_RECORDS = 5000
+# 整本 JSON 导出：每用户每小时次数与题目记录数上限。
+EXPORT_LIMIT = 10
+EXPORT_WINDOW_SECONDS = 60 * 60
+EXPORT_MAX_RECORDS = 5000
 ANKI_SCOPES = ("all", "zone", "weak", "mastered")
 
 _rate_lock = threading.Lock()
@@ -1015,6 +1039,15 @@ async def request_protection(request, call_next):
             status_code=403,
             content={"detail": "请求缺少必要的安全校验"},
         )
+
+    if request.url.path.startswith("/api/"):
+        declared = request.headers.get("content-length", "")
+        # 全局上限留足照片识别（8 MiB + multipart 开销）的余量；头像等各自的上限仍在接口内。
+        if declared.isdigit() and int(declared) > API_MAX_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "请求内容太大"},
+            )
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -1130,7 +1163,7 @@ def register(data: Registration, request: Request, response: Response):
                   0, now, TERMS_VERSION),
             )
             user_id = cursor.lastrowid
-            set_session(conn, user_id, response)
+            set_session(conn, user_id, response, request)
     except sqlite3.IntegrityError as exc:
         if "users.email" in str(exc):
             raise HTTPException(409, "这个邮箱已经被使用") from None
@@ -1163,7 +1196,7 @@ def create_trial_account(data: TrialSignup, request: Request, response: Response
                     (username, hashed, data.timezone, utc_now()),
                 )
                 user_id = cursor.lastrowid
-                set_session(conn, user_id, response)
+                set_session(conn, user_id, response, request)
             break
         except sqlite3.IntegrityError:
             continue
@@ -1212,7 +1245,7 @@ def login(data: Credentials, request: Request, response: Response):
             raise HTTPException(401, "用户名或密码不正确")
         if fresh["is_banned"]:
             raise HTTPException(403, "账号已被封禁，无法登录")
-        set_session(conn, user["id"], response)
+        set_session(conn, user["id"], response, request)
     return {"ok": True}
 
 
@@ -1251,6 +1284,12 @@ def forgot_password(
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
     email = data.email.strip().lower()
+    # 同一邮箱每小时最多 3 次；不论邮箱是否存在都计数，超限时返回与正常相同的
+    # 响应，只是不再发信也不动旧 token（不泄露邮箱是否存在，也防止被刷信/刷掉旧链接）。
+    if rate_limited(
+        f"forgot-email:{email}", FORGOT_PASSWORD_EMAIL_LIMIT, FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS
+    ):
+        return {"ok": True}
     with connect() as conn:
         user = conn.execute(
             "SELECT id, username FROM users WHERE email = ? AND deleted_at IS NULL", (email,)
@@ -1374,10 +1413,22 @@ def me(user=Depends(current_user)):
 
 @app.get("/api/export")
 def export_data(user=Depends(current_user)):
+    # 整本导出成本高，按用户每小时限流（与 Anki 导出同一套额度参数）。
+    if rate_limited(
+        f"export:{user['id']}", EXPORT_LIMIT, EXPORT_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "导出过于频繁，请一小时后再试")
     # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
     with connect() as conn:
         # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
         conn.execute("BEGIN")
+        total = conn.execute(
+            "SELECT COUNT(*) FROM problems WHERE user_id = ?", (user["id"],)
+        ).fetchone()[0]
+        if total > EXPORT_MAX_RECORDS:
+            raise HTTPException(
+                413, f"记录超过 {EXPORT_MAX_RECORDS} 条，无法一次导出整本，请联系站长"
+            )
         problems = {}
         for row in conn.execute(
             """
@@ -1585,22 +1636,106 @@ def export_anki(
     )
 
 
+def send_email_change_emails(new_address, old_address, username, token):
+    """后台任务：给新邮箱发确认链接，给旧邮箱发提醒；失败只记脱敏日志。"""
+    link = f"{public_base_url()}/?email_token={token}"
+    confirm_body = (
+        f"你好 {username}，\n\n"
+        f"有人（希望是你）在{PRODUCT_NAME}申请把账号邮箱换成这个地址。\n"
+        f"30 分钟内点击下面的链接确认，确认后才会生效：\n{link}\n\n"
+        "如果这不是你本人操作，忽略这封邮件即可，账号邮箱不会被改动。"
+    )
+    try:
+        mailer.send_email(new_address, f"{PRODUCT_NAME}：确认更换邮箱", confirm_body)
+    except Exception:
+        logger.exception("发送确认更换邮箱邮件失败（收件人 %s）", mask_email(new_address))
+    if old_address:
+        notice_body = (
+            f"你好 {username}，\n\n"
+            f"有人请求把你在{PRODUCT_NAME}的账号邮箱更换为 {mask_email(new_address)}。\n"
+            "新邮箱确认之前，账号邮箱不会改变。如果这不是你本人操作，"
+            "请尽快修改密码。"
+        )
+        try:
+            mailer.send_email(old_address, f"{PRODUCT_NAME}：有人请求更换账号邮箱", notice_body)
+        except Exception:
+            logger.exception("发送更换邮箱提醒失败（收件人 %s）", mask_email(old_address))
+
+
 @app.put("/api/me/email")
-def update_email(data: EmailUpdate, request: Request, user=Depends(current_user)):
-    # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
-    # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
+def update_email(
+    data: EmailUpdate, request: Request, background_tasks: BackgroundTasks,
+    user=Depends(current_user),
+):
+    # 两步：先验当前密码并登记待确认记录，邮箱要等新邮箱里的链接确认后才改。
     stored = verify_current_password(user["id"], data.password, request)
+    token = secrets.token_urlsafe(32)
+    with connect(write=True) as conn:
+        sec_recheck_session(conn, user["id"], request)
+        fresh = recheck_account(conn, user["id"], stored)
+        taken = conn.execute(
+            "SELECT 1 FROM users WHERE email = ? AND id != ?", (data.email, user["id"])
+        ).fetchone()
+        if taken is not None:
+            raise HTTPException(409, "这个邮箱已经被使用")
+        now = int(time.time())
+        conn.execute(
+            """
+            INSERT INTO email_changes(user_id, new_email, token_hash, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                new_email = excluded.new_email, token_hash = excluded.token_hash,
+                expires_at = excluded.expires_at, created_at = excluded.created_at
+            """,
+            (user["id"], data.email, token_hash(token), now + EMAIL_CHANGE_SECONDS, now),
+        )
+        old_address = fresh["email"]
+    # 记录已提交；发信放到后台任务，SMTP 耗时或失败不影响响应。
+    background_tasks.add_task(
+        send_email_change_emails, data.email, old_address, user["username"], token
+    )
+    return {"ok": True, "pending": True, "email": data.email}
+
+
+@app.post("/api/me/email/confirm")
+def confirm_email_change(data: EmailChangeConfirm, request: Request):
+    if rate_limited(
+        f"email-confirm:{client_ip(request)}",
+        RESET_PASSWORD_LIMIT,
+        RESET_PASSWORD_WINDOW_SECONDS,
+    ):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+    invalid = HTTPException(400, "确认链接无效或已过期")
     try:
         with connect(write=True) as conn:
-            sec_recheck_session(conn, user["id"], request)
-            recheck_account(conn, user["id"], stored)
+            row = conn.execute(
+                "SELECT user_id, new_email, expires_at FROM email_changes WHERE token_hash = ?",
+                (token_hash(data.token),),
+            ).fetchone()
+            if row is None:
+                raise invalid
+            # 一次性：不论后面成败，使用过的记录都删除。
+            conn.execute("DELETE FROM email_changes WHERE user_id = ?", (row["user_id"],))
+            if row["expires_at"] < int(time.time()):
+                raise invalid
+            owner = conn.execute(
+                "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", (row["user_id"],)
+            ).fetchone()
+            if owner is None:
+                raise invalid
+            taken = conn.execute(
+                "SELECT 1 FROM users WHERE email = ? AND id != ?",
+                (row["new_email"], row["user_id"]),
+            ).fetchone()
+            if taken is not None:
+                raise HTTPException(409, "这个邮箱已经被使用")
             conn.execute(
-                "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
+                "UPDATE users SET email = ? WHERE id = ?", (row["new_email"], row["user_id"])
             )
-            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (row["user_id"],))
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个邮箱已经被使用") from None
-    return {"ok": True, "email": data.email}
+    return {"ok": True, "email": row["new_email"]}
 
 
 @app.put("/api/me/username")
@@ -1826,7 +1961,7 @@ def change_password(data: PasswordChange, request: Request, response: Response, 
         )
         revoked = revoke_other_sessions(conn, user["id"], request)
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
-        set_session(conn, user["id"], response, sec_cleanup_expired=False)
+        set_session(conn, user["id"], response, request, sec_cleanup_expired=False)
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
     return {"ok": True, "revoked_sessions": revoked}
 
@@ -2306,6 +2441,8 @@ def create_manual_claim(data: NewManualClaim, user=Depends(current_user)):
             )
         except manual_claims.ClaimError as error:
             raise claim_http_error(error) from None
+        # 注意：这里是"先落库后限流"——限流触发时抛出 HTTPException，依赖 with 块
+        # 的异常回滚撤销上面刚写入的申请。不要调整这个顺序（也不要在此处吞掉异常）。
         # 待处理上限通过后才计入每日次数，被拒的提交不占额度。
         if rate_limited(f"manual-claim:{user['id']}", manual_claims.DAILY_SUBMISSIONS, 86400):
             raise HTTPException(429, "今天提交的次数太多了，请明天再试或联系站长")
@@ -4278,6 +4415,7 @@ def delete_group(group_id: int, user=Depends(current_user)):
 
 
 POST_LIST_DEFAULT_LIMIT = 20
+POST_LIST_MAX_OFFSET = 10000
 POST_LIST_MAX_LIMIT = 50
 POST_EXCERPT_LENGTH = 140
 POST_HOT_SCORE = 5
@@ -4504,7 +4642,7 @@ def list_posts(
     filter: Literal["all", "unanswered", "solved", "mine", "participated"] = "all",
     zone: str | None = None,
     limit: Annotated[int, Query(ge=1, le=POST_LIST_MAX_LIMIT)] = POST_LIST_DEFAULT_LIMIT,
-    offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0,
+    offset: Annotated[int, Query(ge=0, le=POST_LIST_MAX_OFFSET)] = 0,
     user=Depends(current_user),
 ):
     if zone is not None and zone != "none" and zone not in PROBLEM_ZONES:
@@ -5362,7 +5500,6 @@ def admin_delete_comment(comment_id: int, user=Depends(current_user)):
 @app.delete("/api/admin/users/{user_id}/avatar")
 def admin_clear_avatar(user_id: int, user=Depends(current_user)):
     require_admin(user)
-    avatar_path(user_id).unlink(missing_ok=True)
     with connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ? AND deleted_at IS NULL",
@@ -5377,6 +5514,8 @@ def admin_clear_avatar(user_id: int, user=Depends(current_user)):
             """,
             (utc_now(), user_id),
         )
+    # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
+    avatar_path(user_id).unlink(missing_ok=True)
     return {"ok": True, "has_avatar": False}
 
 

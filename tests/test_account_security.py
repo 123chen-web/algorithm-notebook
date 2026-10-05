@@ -710,16 +710,18 @@ def test_visible_user_lists_filter_deleted_rows_with_leftover_membership_and_rev
     assert client.get("/api/admin/dashboard").json()["users"]["total"] == 1
 
 
-def test_email_change_requires_current_password_and_preserves_session(client):
+def test_email_change_requires_current_password_and_preserves_session(client, monkeypatch):
     register(client)
     assert client.put("/api/me/email", json={"email": "new@example.com"}).status_code == 422
     bad = client.put("/api/me/email", json={"email": "new@example.com", "password": "wrong-password"})
     assert bad.status_code == 400
     assert bad.json()["detail"] == "当前密码不正确"
     assert client.get("/api/me").json()["email"] == "alice@example.com"
+    monkeypatch.setattr(mailer, "send_email", lambda *args: None)
     good = client.put("/api/me/email", json={"email": "new@example.com", "password": PASSWORD})
     assert good.status_code == 200
     assert good.json()["email"] == "new@example.com"
+    assert client.get("/api/me").json()["email"] == "alice@example.com"
 
 
 @pytest.mark.parametrize("accepted", [None, False])
