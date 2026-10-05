@@ -1,0 +1,396 @@
+"""account routes (split out of main.py; behavior unchanged).
+
+Names living in main's namespace are referenced as ``main.<name>``
+(attribute access at call time) so monkeypatch.setattr(main, ...)
+in tests keeps affecting the moved code.
+"""
+import main
+
+from anki_export import build_anki_text
+from fastapi import Depends
+from fastapi import File
+from fastapi import HTTPException
+from fastapi import Request
+from fastapi import Response
+from fastapi import UploadFile
+from fastapi.responses import FileResponse
+from legal import PRODUCT_NAME
+from urllib.parse import quote
+import json
+import os
+import push_channels
+import rank_cache
+import secrets
+import sqlite3
+from fastapi import APIRouter
+
+
+router = APIRouter()
+
+
+@router.get("/api/me")
+def me(user=Depends(main.current_user)):
+    with main.connect() as conn:
+        quota = main.ai_quota(conn, user["id"], main.today_for(user).isoformat())
+    return {
+        **user,
+        **quota,
+        "has_avatar": main.sec_has_avatar(user["id"]),
+        "today": main.today_for(user).isoformat(),
+        "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+    }
+
+
+@router.get("/api/export")
+def export_data(user=Depends(main.current_user)):
+    # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
+    with main.connect() as conn:
+        # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
+        conn.execute("BEGIN")
+        problems = {}
+        for row in conn.execute(
+            """
+            SELECT id, title, zone, language, code, thinking, created_at
+            FROM problems WHERE user_id = ? ORDER BY id
+            """,
+            (user["id"],),
+        ):
+            problems[row["id"]] = {**dict(row), "mistakes": []}
+
+        mistakes = {}
+        for row in conn.execute(
+            """
+            SELECT m.id, m.problem_id, m.description, m.repetitions,
+                   m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY m.id
+            """,
+            (user["id"],),
+        ):
+            mistake = {**dict(row), "reviews": [], "variants": [], "tags": []}
+            problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
+            mistakes[mistake["id"]] = mistake
+
+        # 错因标签：只导出标签文字，按用户排好的顺序。
+        for row in conn.execute(
+            """
+            SELECT t.mistake_id, t.tag
+            FROM mistake_tags t
+            JOIN mistakes m ON m.id = t.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY t.rowid
+            """,
+            (user["id"],),
+        ):
+            mistakes[row["mistake_id"]]["tags"].append(row["tag"])
+
+        for row in conn.execute(
+            """
+            SELECT r.mistake_id, r.quality, r.reviewed_at, r.next_due_date
+            FROM reviews r
+            JOIN mistakes m ON m.id = r.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY r.reviewed_at ASC, r.id ASC
+            """,
+            (user["id"],),
+        ):
+            review = dict(row)
+            mistakes[review.pop("mistake_id")]["reviews"].append(review)
+
+        # 导出完整原始内容，包含未作答的标准答案和旧版 notes。
+        for row in conn.execute(
+            """
+            SELECT v.mistake_id, v.description, v.model, v.created_at, v.result,
+                   v.answer_code, v.answer, v.expected_answer, v.notes,
+                   v.result_updated_at
+            FROM variants v
+            JOIN mistakes m ON m.id = v.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? ORDER BY v.created_at ASC, v.id ASC
+            """,
+            (user["id"],),
+        ):
+            variant = dict(row)
+            mistakes[variant.pop("mistake_id")]["variants"].append(variant)
+
+    payload = {
+        "exported_at": main.utc_now(),
+        "username": user["username"],
+        "problems": list(problems.values()),
+    }
+    filename = f"{PRODUCT_NAME}导出_{user['username']}_{main.today_for(user).isoformat()}.json"
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
+        },
+    )
+
+
+@router.get("/api/export/anki")
+def export_anki(
+    scope: str = "all",
+    zone: str | None = None,
+    user=Depends(main.current_user),
+):
+    # 参数校验先于账号限制和限流：格式不对的请求不消耗额度。
+    if scope not in main.ANKI_SCOPES:
+        raise HTTPException(400, "scope 只能是 all、zone、weak、mastered")
+    if scope == "zone" and not zone:
+        raise HTTPException(400, "按分区导出必须指定 zone")
+    if scope == "zone" and zone not in main.PROBLEM_ZONES:
+        raise HTTPException(400, "分区不存在")
+    # 体验账号到期会整体清理，导出成本地文件没有意义，直接拒绝。
+    main.require_not_trial(user, "导出到 Anki")
+    if main.rate_limited(
+        f"anki-export:{user['id']}", main.ANKI_EXPORT_LIMIT, main.ANKI_EXPORT_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "导出过于频繁，请一小时后再试")
+
+    today = main.today_for(user)
+    with main.connect() as conn:
+        # 只读快照：计数、掌握度和内容组装在同一视图里完成。
+        conn.execute("BEGIN")
+        records = main.anki_export_records(
+            conn, user["id"], user["timezone"], today, scope, zone
+        )
+        if len(records) > main.ANKI_MAX_RECORDS:
+            raise HTTPException(413, "记录超过 5000 条，请按分区导出")
+        body = build_anki_text(records)
+
+    filename = "oy-anki-{}.txt".format(
+        main.datetime.fromisoformat(main.utc_now()).strftime("%Y%m%d")
+    )
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.put("/api/me/email")
+def update_email(data: main.EmailUpdate, request: Request, user=Depends(main.current_user)):
+    # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
+    # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
+    stored = main.verify_current_password(user["id"], data.password, request)
+    try:
+        with main.connect(write=True) as conn:
+            main.sec_recheck_session(conn, user["id"], request)
+            main.recheck_account(conn, user["id"], stored)
+            conn.execute(
+                "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
+            )
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "这个邮箱已经被使用") from None
+    return {"ok": True, "email": data.email}
+
+
+@router.put("/api/me/username")
+def update_username(data: main.UsernameUpdate, user=Depends(main.current_user)):
+    main.require_not_trial(user, "修改用户名")
+    username = main.normalized_username(data.username)
+    try:
+        with main.connect(write=True) as conn:
+            fresh = main.recheck_account(conn, user["id"])
+            main.check_username_available(username, allow_admin_name=bool(fresh["is_admin"]))
+            conn.execute(
+                "UPDATE users SET username = ? WHERE id = ?",
+                (username, user["id"]),
+            )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "这个用户名已经被使用") from None
+    return {"ok": True, "username": username}
+
+
+@router.get("/api/me/review-settings")
+def rvb_get_settings(user=Depends(main.current_user)):
+    with main.connect() as conn:
+        fresh = main.rvb_account(conn, user["id"])
+        return {"daily_review_cap": fresh["daily_review_cap"]}
+
+
+@router.put("/api/me/review-settings")
+def rvb_update_settings(data: main.RvbSettingsInput, user=Depends(main.current_user)):
+    with main.connect(write=True) as conn:
+        main.rvb_account(conn, user["id"])
+        conn.execute(
+            "UPDATE users SET daily_review_cap = ? WHERE id = ?",
+            (data.daily_review_cap, user["id"]),
+        )
+    return {"daily_review_cap": data.daily_review_cap}
+
+
+@router.get("/api/me/push")
+def get_push_settings(user=Depends(main.current_user)):
+    main.require_not_trial(user, "微信提醒")
+    with main.connect() as conn:
+        main.rvb_account(conn, user["id"])
+        return main.push_settings_payload(conn, user["id"])
+
+
+@router.put("/api/me/push")
+def update_push_settings(data: main.PushSettingsInput, user=Depends(main.current_user)):
+    main.require_not_trial(user, "微信提醒")
+    # 空白输入等同于「保持原密钥不变」。
+    incoming_secret = data.secret.strip() or None if isinstance(data.secret, str) else None
+    with main.connect(write=True) as conn:
+        main.rvb_account(conn, user["id"])
+        row = conn.execute(
+            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+        if incoming_secret is None:
+            if row is None:
+                raise HTTPException(422, "请先填写 SendKey/token 后再保存。")
+            if row["channel"] != data.channel:
+                raise HTTPException(422, "切换推送渠道需要重新填写 SendKey/token。")
+            incoming_secret = row["secret"]
+        elif not push_channels.valid_key(data.channel, incoming_secret):
+            raise HTTPException(422, "SendKey/token 格式不正确，请核对后重新填写。")
+        # 只要这次显式提交了密钥，就把连续失败计数清零，给新配置一个干净起点。
+        reset_failures = isinstance(data.secret, str) and bool(data.secret.strip())
+        conn.execute(
+            "INSERT INTO user_push"
+            "(user_id, channel, secret, enabled, fail_count, last_ok_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 0, NULL, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "channel = excluded.channel, secret = excluded.secret, "
+            "enabled = excluded.enabled, "
+            "fail_count = CASE WHEN ? THEN 0 ELSE user_push.fail_count END, "
+            "updated_at = excluded.updated_at",
+            (user["id"], data.channel, incoming_secret, int(data.enabled),
+             main.utc_now(), int(reset_failures)),
+        )
+        return main.push_settings_payload(conn, user["id"])
+
+
+@router.post("/api/me/push/test")
+def send_push_test(user=Depends(main.current_user)):
+    main.require_not_trial(user, "微信提醒")
+    with main.connect() as conn:
+        main.rvb_account(conn, user["id"])
+        row = conn.execute(
+            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+    if row is None or not row["secret"]:
+        raise HTTPException(400, "尚未配置 SendKey/token，请先填写并保存。")
+    # 封禁 / 体验检查之后再占用限流名额；每用户每小时最多 5 条测试消息。
+    if main.rate_limited(
+        f"push-test-user:{user['id']}", main.PUSH_TEST_LIMIT, main.PUSH_TEST_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "测试消息发送太频繁，请每小时最多发送 5 条。")
+    result = push_channels.send(
+        row["channel"], row["secret"], main.PUSH_TEST_TITLE, main.PUSH_TEST_BODY
+    )
+    return {"ok": result["ok"], "message": main.PUSH_RESULT_MESSAGES[result["kind"]]}
+
+
+@router.post("/api/me/password")
+def change_password(data: main.PasswordChange, request: Request, response: Response, user=Depends(main.current_user)):
+    main.require_not_trial(user, "修改密码")
+    stored = main.verify_current_password(user["id"], data.current_password, request)
+    main.check_new_password(data.new_password, username=user["username"], email=user["email"] or "")
+    if data.new_password == data.current_password:
+        raise HTTPException(400, "新密码不能和当前密码相同")
+    hashed = main.password_hash(data.new_password)
+    with main.connect(write=True) as conn:
+        main.sec_recheck_session(conn, user["id"], request)
+        fresh = main.recheck_account(conn, user["id"], stored)
+        main.check_new_password(data.new_password, username=fresh["username"], email=fresh["email"] or "")
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user["id"])
+        )
+        revoked = main.revoke_other_sessions(conn, user["id"], request)
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        main.set_session(conn, user["id"], response, sec_cleanup_expired=False)
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+    return {"ok": True, "revoked_sessions": revoked}
+
+
+@router.post("/api/me/sessions/revoke-others")
+def revoke_sessions(request: Request, user=Depends(main.current_user)):
+    with main.connect(write=True) as conn:
+        main.sec_recheck_session(conn, user["id"], request)
+        main.recheck_account(conn, user["id"])
+        revoked = main.revoke_other_sessions(conn, user["id"], request)
+    return {"ok": True, "revoked": revoked}
+
+
+@router.post("/api/me/delete-account")
+def delete_account(
+    data: main.AccountDeletion, request: Request, response: Response, user=Depends(main.current_user)
+):
+    main.require_deletable_account(user)
+    stored = main.verify_current_password(user["id"], data.password, request)
+    with main.connect(write=True) as conn:
+        main.sec_recheck_session(conn, user["id"], request)
+        fresh = main.recheck_account(conn, user["id"], stored)
+        main.require_deletable_account(fresh)
+        main.delete_account_data(conn, user["id"], main.utc_now())
+    rank_cache.invalidate()
+    try:
+        main.avatar_path(user["id"]).unlink(missing_ok=True)
+    except OSError:
+        main.logger.warning("注销账号头像删除失败 user_id=%s", user["id"], exc_info=True)
+    return {"ok": True}
+
+
+@router.post("/api/me/avatar")
+async def upload_avatar(user=Depends(main.current_user), file: UploadFile = File(...)):
+    main.require_not_trial(user, "上传头像")
+    content = await file.read(main.AVATAR_MAX_BYTES + 1)
+    if len(content) > main.AVATAR_MAX_BYTES:
+        raise HTTPException(413, "图片太大，最多 2MB")
+    if not content:
+        raise HTTPException(400, "文件是空的")
+
+    image = main.decode_uploaded_image(content)
+    jpeg_bytes = await main.run_in_threadpool(main.resize_avatar_to_square_jpeg, image)
+
+    with main.connect(write=True) as conn:
+        # 解码期间账号可能已注销，写锁内复查后才落盘。
+        main.recheck_account(conn, user["id"])
+        directory = main.avatar_dir()
+        final_path = main.avatar_path(user["id"])
+        temp_path = directory / f".{user['id']}-{secrets.token_hex(8)}.tmp"
+        try:
+            temp_path.write_bytes(jpeg_bytes)
+            os.replace(temp_path, final_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+        conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            (user["id"],),
+        )
+        avatar_version = conn.execute(
+            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["avatar_version"]
+    return {"ok": True, "avatar_version": avatar_version, "has_avatar": True}
+
+
+@router.delete("/api/me/avatar")
+def delete_own_avatar(user=Depends(main.current_user)):
+    with main.connect(write=True) as conn:
+        main.recheck_account(conn, user["id"])
+        main.avatar_path(user["id"]).unlink(missing_ok=True)
+        conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
+            (user["id"],),
+        )
+        avatar_version = conn.execute(
+            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["avatar_version"]
+    return {"ok": True, "avatar_version": avatar_version, "has_avatar": False}
+
+
+@router.get("/api/users/{user_id}/avatar")
+def get_avatar(user_id: int, user=Depends(main.current_user)):
+    if not main.sec_has_avatar(user_id):
+        raise HTTPException(404, "这个用户还没有头像")
+    path = main.avatar_path(user_id)
+    # URL 本身不带版本号；前端用 ?v=avatar_version 做缓存失效，
+    # 这里可以放心用较长的缓存时间。
+    return FileResponse(
+        path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"}
+    )

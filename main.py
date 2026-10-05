@@ -1057,106 +1057,6 @@ def send_password_reset_email(to_address, username, token):
         logger.exception("发送密码重置邮件失败（收件人 %s）", mask_email(to_address))
 
 
-@app.get("/api/me")
-def me(user=Depends(current_user)):
-    with connect() as conn:
-        quota = ai_quota(conn, user["id"], today_for(user).isoformat())
-    return {
-        **user,
-        **quota,
-        "has_avatar": sec_has_avatar(user["id"]),
-        "today": today_for(user).isoformat(),
-        "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-    }
-
-
-@app.get("/api/export")
-def export_data(user=Depends(current_user)):
-    # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
-    with connect() as conn:
-        # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
-        conn.execute("BEGIN")
-        problems = {}
-        for row in conn.execute(
-            """
-            SELECT id, title, zone, language, code, thinking, created_at
-            FROM problems WHERE user_id = ? ORDER BY id
-            """,
-            (user["id"],),
-        ):
-            problems[row["id"]] = {**dict(row), "mistakes": []}
-
-        mistakes = {}
-        for row in conn.execute(
-            """
-            SELECT m.id, m.problem_id, m.description, m.repetitions,
-                   m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at
-            FROM mistakes m JOIN problems p ON p.id = m.problem_id
-            WHERE p.user_id = ? ORDER BY m.id
-            """,
-            (user["id"],),
-        ):
-            mistake = {**dict(row), "reviews": [], "variants": [], "tags": []}
-            problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
-            mistakes[mistake["id"]] = mistake
-
-        # 错因标签：只导出标签文字，按用户排好的顺序。
-        for row in conn.execute(
-            """
-            SELECT t.mistake_id, t.tag
-            FROM mistake_tags t
-            JOIN mistakes m ON m.id = t.mistake_id
-            JOIN problems p ON p.id = m.problem_id
-            WHERE p.user_id = ? ORDER BY t.rowid
-            """,
-            (user["id"],),
-        ):
-            mistakes[row["mistake_id"]]["tags"].append(row["tag"])
-
-        for row in conn.execute(
-            """
-            SELECT r.mistake_id, r.quality, r.reviewed_at, r.next_due_date
-            FROM reviews r
-            JOIN mistakes m ON m.id = r.mistake_id
-            JOIN problems p ON p.id = m.problem_id
-            WHERE p.user_id = ? ORDER BY r.reviewed_at ASC, r.id ASC
-            """,
-            (user["id"],),
-        ):
-            review = dict(row)
-            mistakes[review.pop("mistake_id")]["reviews"].append(review)
-
-        # 导出完整原始内容，包含未作答的标准答案和旧版 notes。
-        for row in conn.execute(
-            """
-            SELECT v.mistake_id, v.description, v.model, v.created_at, v.result,
-                   v.answer_code, v.answer, v.expected_answer, v.notes,
-                   v.result_updated_at
-            FROM variants v
-            JOIN mistakes m ON m.id = v.mistake_id
-            JOIN problems p ON p.id = m.problem_id
-            WHERE p.user_id = ? ORDER BY v.created_at ASC, v.id ASC
-            """,
-            (user["id"],),
-        ):
-            variant = dict(row)
-            mistakes[variant.pop("mistake_id")]["variants"].append(variant)
-
-    payload = {
-        "exported_at": utc_now(),
-        "username": user["username"],
-        "problems": list(problems.values()),
-    }
-    filename = f"{PRODUCT_NAME}导出_{user['username']}_{today_for(user).isoformat()}.json"
-    return Response(
-        content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-        media_type="application/json",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
-        },
-    )
-
-
 # 与 static/capture.js 的 renderThinking 同一套识别规则：只认真正以
 # “题目链接：”开头的行，取行内第一个 http(s) 链接，去掉句尾标点。
 _ANKI_LINK_PREFIX = "题目链接："
@@ -1242,82 +1142,6 @@ def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
     return records
 
 
-@app.get("/api/export/anki")
-def export_anki(
-    scope: str = "all",
-    zone: str | None = None,
-    user=Depends(current_user),
-):
-    # 参数校验先于账号限制和限流：格式不对的请求不消耗额度。
-    if scope not in ANKI_SCOPES:
-        raise HTTPException(400, "scope 只能是 all、zone、weak、mastered")
-    if scope == "zone" and not zone:
-        raise HTTPException(400, "按分区导出必须指定 zone")
-    if scope == "zone" and zone not in PROBLEM_ZONES:
-        raise HTTPException(400, "分区不存在")
-    # 体验账号到期会整体清理，导出成本地文件没有意义，直接拒绝。
-    require_not_trial(user, "导出到 Anki")
-    if rate_limited(
-        f"anki-export:{user['id']}", ANKI_EXPORT_LIMIT, ANKI_EXPORT_WINDOW_SECONDS
-    ):
-        raise HTTPException(429, "导出过于频繁，请一小时后再试")
-
-    today = today_for(user)
-    with connect() as conn:
-        # 只读快照：计数、掌握度和内容组装在同一视图里完成。
-        conn.execute("BEGIN")
-        records = anki_export_records(
-            conn, user["id"], user["timezone"], today, scope, zone
-        )
-        if len(records) > ANKI_MAX_RECORDS:
-            raise HTTPException(413, "记录超过 5000 条，请按分区导出")
-        body = build_anki_text(records)
-
-    filename = "oy-anki-{}.txt".format(
-        datetime.fromisoformat(utc_now()).strftime("%Y%m%d")
-    )
-    return Response(
-        content=body.encode("utf-8"),
-        media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@app.put("/api/me/email")
-def update_email(data: EmailUpdate, request: Request, user=Depends(current_user)):
-    # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
-    # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
-    stored = verify_current_password(user["id"], data.password, request)
-    try:
-        with connect(write=True) as conn:
-            sec_recheck_session(conn, user["id"], request)
-            recheck_account(conn, user["id"], stored)
-            conn.execute(
-                "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
-            )
-            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
-    except sqlite3.IntegrityError:
-        raise HTTPException(409, "这个邮箱已经被使用") from None
-    return {"ok": True, "email": data.email}
-
-
-@app.put("/api/me/username")
-def update_username(data: UsernameUpdate, user=Depends(current_user)):
-    require_not_trial(user, "修改用户名")
-    username = normalized_username(data.username)
-    try:
-        with connect(write=True) as conn:
-            fresh = recheck_account(conn, user["id"])
-            check_username_available(username, allow_admin_name=bool(fresh["is_admin"]))
-            conn.execute(
-                "UPDATE users SET username = ? WHERE id = ?",
-                (username, user["id"]),
-            )
-    except sqlite3.IntegrityError:
-        raise HTTPException(409, "这个用户名已经被使用") from None
-    return {"ok": True, "username": username}
-
-
 def verify_current_password(user_id, password, request):
     # 共享现有限流桶。用户槽位在哈希前预占，阻止并发请求绕过失败上限；
     # 密码验证成功后清零，所以该桶只保留连续未成功的密码尝试。
@@ -1366,24 +1190,6 @@ def rvb_account(conn, user_id):
     return user
 
 
-@app.get("/api/me/review-settings")
-def rvb_get_settings(user=Depends(current_user)):
-    with connect() as conn:
-        fresh = rvb_account(conn, user["id"])
-        return {"daily_review_cap": fresh["daily_review_cap"]}
-
-
-@app.put("/api/me/review-settings")
-def rvb_update_settings(data: RvbSettingsInput, user=Depends(current_user)):
-    with connect(write=True) as conn:
-        rvb_account(conn, user["id"])
-        conn.execute(
-            "UPDATE users SET daily_review_cap = ? WHERE id = ?",
-            (data.daily_review_cap, user["id"]),
-        )
-    return {"daily_review_cap": data.daily_review_cap}
-
-
 # ==================== 微信提醒（Server酱 / PushPlus） ====================
 
 PUSH_TEST_LIMIT = 5
@@ -1423,70 +1229,6 @@ def push_settings_payload(conn, user_id):
     }
 
 
-@app.get("/api/me/push")
-def get_push_settings(user=Depends(current_user)):
-    require_not_trial(user, "微信提醒")
-    with connect() as conn:
-        rvb_account(conn, user["id"])
-        return push_settings_payload(conn, user["id"])
-
-
-@app.put("/api/me/push")
-def update_push_settings(data: PushSettingsInput, user=Depends(current_user)):
-    require_not_trial(user, "微信提醒")
-    # 空白输入等同于「保持原密钥不变」。
-    incoming_secret = data.secret.strip() or None if isinstance(data.secret, str) else None
-    with connect(write=True) as conn:
-        rvb_account(conn, user["id"])
-        row = conn.execute(
-            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
-        ).fetchone()
-        if incoming_secret is None:
-            if row is None:
-                raise HTTPException(422, "请先填写 SendKey/token 后再保存。")
-            if row["channel"] != data.channel:
-                raise HTTPException(422, "切换推送渠道需要重新填写 SendKey/token。")
-            incoming_secret = row["secret"]
-        elif not push_channels.valid_key(data.channel, incoming_secret):
-            raise HTTPException(422, "SendKey/token 格式不正确，请核对后重新填写。")
-        # 只要这次显式提交了密钥，就把连续失败计数清零，给新配置一个干净起点。
-        reset_failures = isinstance(data.secret, str) and bool(data.secret.strip())
-        conn.execute(
-            "INSERT INTO user_push"
-            "(user_id, channel, secret, enabled, fail_count, last_ok_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 0, NULL, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET "
-            "channel = excluded.channel, secret = excluded.secret, "
-            "enabled = excluded.enabled, "
-            "fail_count = CASE WHEN ? THEN 0 ELSE user_push.fail_count END, "
-            "updated_at = excluded.updated_at",
-            (user["id"], data.channel, incoming_secret, int(data.enabled),
-             utc_now(), int(reset_failures)),
-        )
-        return push_settings_payload(conn, user["id"])
-
-
-@app.post("/api/me/push/test")
-def send_push_test(user=Depends(current_user)):
-    require_not_trial(user, "微信提醒")
-    with connect() as conn:
-        rvb_account(conn, user["id"])
-        row = conn.execute(
-            "SELECT channel, secret FROM user_push WHERE user_id = ?", (user["id"],)
-        ).fetchone()
-    if row is None or not row["secret"]:
-        raise HTTPException(400, "尚未配置 SendKey/token，请先填写并保存。")
-    # 封禁 / 体验检查之后再占用限流名额；每用户每小时最多 5 条测试消息。
-    if rate_limited(
-        f"push-test-user:{user['id']}", PUSH_TEST_LIMIT, PUSH_TEST_WINDOW_SECONDS
-    ):
-        raise HTTPException(429, "测试消息发送太频繁，请每小时最多发送 5 条。")
-    result = push_channels.send(
-        row["channel"], row["secret"], PUSH_TEST_TITLE, PUSH_TEST_BODY
-    )
-    return {"ok": result["ok"], "message": PUSH_RESULT_MESSAGES[result["kind"]]}
-
-
 def sec_recheck_session(conn, user_id, request):
     token = request.cookies.get("session", "")
     row = conn.execute(
@@ -1505,37 +1247,6 @@ def revoke_other_sessions(conn, user_id, request):
         "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
         (user_id, current_token),
     ).rowcount
-
-
-@app.post("/api/me/password")
-def change_password(data: PasswordChange, request: Request, response: Response, user=Depends(current_user)):
-    require_not_trial(user, "修改密码")
-    stored = verify_current_password(user["id"], data.current_password, request)
-    check_new_password(data.new_password, username=user["username"], email=user["email"] or "")
-    if data.new_password == data.current_password:
-        raise HTTPException(400, "新密码不能和当前密码相同")
-    hashed = password_hash(data.new_password)
-    with connect(write=True) as conn:
-        sec_recheck_session(conn, user["id"], request)
-        fresh = recheck_account(conn, user["id"], stored)
-        check_new_password(data.new_password, username=fresh["username"], email=fresh["email"] or "")
-        conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user["id"])
-        )
-        revoked = revoke_other_sessions(conn, user["id"], request)
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
-        set_session(conn, user["id"], response, sec_cleanup_expired=False)
-        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
-    return {"ok": True, "revoked_sessions": revoked}
-
-
-@app.post("/api/me/sessions/revoke-others")
-def revoke_sessions(request: Request, user=Depends(current_user)):
-    with connect(write=True) as conn:
-        sec_recheck_session(conn, user["id"], request)
-        recheck_account(conn, user["id"])
-        revoked = revoke_other_sessions(conn, user["id"], request)
-    return {"ok": True, "revoked": revoked}
 
 
 def require_deletable_account(user):
@@ -1600,85 +1311,6 @@ def delete_account_data(conn, user_id, deleted_at):
         WHERE id = ?
         """,
         (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
-    )
-
-
-@app.post("/api/me/delete-account")
-def delete_account(
-    data: AccountDeletion, request: Request, response: Response, user=Depends(current_user)
-):
-    require_deletable_account(user)
-    stored = verify_current_password(user["id"], data.password, request)
-    with connect(write=True) as conn:
-        sec_recheck_session(conn, user["id"], request)
-        fresh = recheck_account(conn, user["id"], stored)
-        require_deletable_account(fresh)
-        delete_account_data(conn, user["id"], utc_now())
-    rank_cache.invalidate()
-    try:
-        avatar_path(user["id"]).unlink(missing_ok=True)
-    except OSError:
-        logger.warning("注销账号头像删除失败 user_id=%s", user["id"], exc_info=True)
-    return {"ok": True}
-
-
-@app.post("/api/me/avatar")
-async def upload_avatar(user=Depends(current_user), file: UploadFile = File(...)):
-    require_not_trial(user, "上传头像")
-    content = await file.read(AVATAR_MAX_BYTES + 1)
-    if len(content) > AVATAR_MAX_BYTES:
-        raise HTTPException(413, "图片太大，最多 2MB")
-    if not content:
-        raise HTTPException(400, "文件是空的")
-
-    image = decode_uploaded_image(content)
-    jpeg_bytes = await run_in_threadpool(resize_avatar_to_square_jpeg, image)
-
-    with connect(write=True) as conn:
-        # 解码期间账号可能已注销，写锁内复查后才落盘。
-        recheck_account(conn, user["id"])
-        directory = avatar_dir()
-        final_path = avatar_path(user["id"])
-        temp_path = directory / f".{user['id']}-{secrets.token_hex(8)}.tmp"
-        try:
-            temp_path.write_bytes(jpeg_bytes)
-            os.replace(temp_path, final_path)
-        finally:
-            temp_path.unlink(missing_ok=True)
-        conn.execute(
-            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
-            (user["id"],),
-        )
-        avatar_version = conn.execute(
-            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
-        ).fetchone()["avatar_version"]
-    return {"ok": True, "avatar_version": avatar_version, "has_avatar": True}
-
-
-@app.delete("/api/me/avatar")
-def delete_own_avatar(user=Depends(current_user)):
-    with connect(write=True) as conn:
-        recheck_account(conn, user["id"])
-        avatar_path(user["id"]).unlink(missing_ok=True)
-        conn.execute(
-            "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ?",
-            (user["id"],),
-        )
-        avatar_version = conn.execute(
-            "SELECT avatar_version FROM users WHERE id = ?", (user["id"],)
-        ).fetchone()["avatar_version"]
-    return {"ok": True, "avatar_version": avatar_version, "has_avatar": False}
-
-
-@app.get("/api/users/{user_id}/avatar")
-def get_avatar(user_id: int, user=Depends(current_user)):
-    if not sec_has_avatar(user_id):
-        raise HTTPException(404, "这个用户还没有头像")
-    path = avatar_path(user_id)
-    # URL 本身不带版本号；前端用 ?v=avatar_version 做缓存失效，
-    # 这里可以放心用较长的缓存时间。
-    return FileResponse(
-        path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"}
     )
 
 
@@ -5112,7 +4744,12 @@ def admin_unban_user(user_id: int, user=Depends(current_user)):
 # 以保证测试中的 monkeypatch.setattr(main, ...) 继续生效。
 import routers.pages
 import routers.auth
+import routers.account
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
+app.include_router(routers.account.router)
+
+# 以下名字被测试或其它 routers 以 main.<name> 引用，在此重新导出：
+from routers.account import revoke_sessions  # noqa: F401
 # ===== [generated] end =====
