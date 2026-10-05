@@ -36,6 +36,7 @@
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
   <link rel="stylesheet" href="/static/rank.css?v=1">
   <link rel="stylesheet" href="/static/plan.css?v=1">
+  <link rel="stylesheet" href="/static/manual-claims.css?v=1">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=13"></script>
@@ -63,7 +64,8 @@
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
   <script defer src="/static/plan.js?v=1"></script>
-  <script defer src="/static/app.js?v=72"></script>
+  <script defer src="/static/manual-claims.js?v=1"></script>
+  <script defer src="/static/app.js?v=73"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=4"></script>
 </head>
@@ -1414,6 +1416,10 @@
           <p id="rank-admin-status" class="muted" role="status" aria-live="polite"></p>
           <ul id="rank-admin-list" class="rank-admin-list" aria-labelledby="rank-admin-history-title"></ul>
         </details>
+        <section id="admin-claims" class="pl-section" aria-labelledby="admin-claims-title">
+          <h3 id="admin-claims-title">付款登记</h3>
+          <div id="manual-claims-admin"></div>
+        </section>
         <h3 id="admin-reports-heading" class="admin-reports-heading" tabindex="-1">举报处理</h3>
         <p class="muted">处理讨论区的举报：删除违规内容或忽略举报，也可以直接封禁内容作者。</p>
         <p id="admin-status" class="muted" role="status" aria-live="polite"></p>
@@ -1482,6 +1488,10 @@
           </dialog>
         </section>
 
+        <section id="plan-claims" class="pl-section" aria-labelledby="plan-claims-title">
+          <h3 id="plan-claims-title">付款登记</h3>
+          <div id="manual-claims"></div>
+        </section>
         <section id="plan-orders" class="pl-section" aria-labelledby="plan-orders-title">
           <h3 id="plan-orders-title">我的订单</h3>
           <p class="muted pl-rules">已支付订单可自助全额退款。退回任意一笔订单都会清空当前整体套餐，包括其他订单叠加的时长；今日已用 AI 次数不恢复。</p>

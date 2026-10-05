@@ -1,0 +1,51 @@
+/* 付款登记：用户端（.mc- 前缀，套餐页）与管理员端（.mca- 前缀，管理后台）。
+   只用主题令牌；状态用文字加符号表达，颜色只是辅助；窄屏不横向滚动，触控目标 ≥ 40px。 */
+.mc-panel, .mc-list-section, .mca { margin: var(--space-4) 0; min-width: 0; }
+.mc-panel p, .mc-list-section p, .mca p { overflow-wrap: anywhere; }
+.mc-list-title { margin: 0 0 var(--space-2); font-size: var(--text-md); }
+
+/* 用户端登记表单 */
+.mc-form { display: grid; gap: var(--space-3); }
+.mc-form label { display: grid; gap: var(--space-1); min-width: 0; color: var(--ink); }
+.mc-hint { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+.mc-form :is(input, select, button), .mca :is(input, select, button) { min-height: 40px; }
+.mc-submit { justify-self: start; }
+.mc-status { min-height: 1.5em; margin: 0; color: var(--ink); }
+.mc-status.error, .mca-status.error { color: var(--danger); font-weight: 600; }
+
+/* 登记列表（两端共用一个节奏） */
+.mc-list, .mca-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-3); }
+.mc-claim, .mca-claim { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.mc-claim-head, .mca-claim-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.mc-claim-plan, .mca-claim-user { font-weight: 650; overflow-wrap: anywhere; }
+.mc-state, .mca-state { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 24px; padding: 1px var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-pill); font-size: var(--text-sm); font-weight: 600; white-space: nowrap; }
+.mc-state.is-pending, .mca-state.is-pending { color: var(--ink); background: var(--soft); }
+.mc-state.is-confirmed, .mca-state.is-confirmed { color: var(--success-ink); background: var(--success-soft); border-color: var(--success-line); }
+.mc-state.is-rejected, .mca-state.is-rejected { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+.mc-facts, .mca-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3); margin: var(--space-2) 0 0; }
+.mc-facts dt, .mca-facts dt { color: var(--muted); }
+.mc-facts dd, .mca-facts dd { margin: 0; overflow-wrap: anywhere; }
+.mc-list-status, .mca-status { min-height: 1.5em; margin: var(--space-2) 0 0; color: var(--ink); }
+
+/* 管理员端：筛选、操作、二次确认、驳回、分页 */
+.mca-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.mca-filters button[aria-pressed="true"] { background: var(--paper-2); border-color: var(--ink); color: var(--ink); }
+.mca-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.mca-confirm, .mca-reject-form { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+.mca-confirm[hidden], .mca-reject-form[hidden] { display: none; }
+.mca-confirm-text { margin: 0; font-weight: 600; }
+.mca-confirm-buttons, .mca-reject-buttons { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mca-reject-form label { display: grid; gap: var(--space-1); color: var(--ink); }
+.mca-reject-error { min-height: 1.5em; margin: 0; color: var(--danger); font-weight: 600; }
+.mca-pages { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.mca-page-info { color: var(--ink-2); font-size: var(--text-sm); }
+
+@media (max-width: 600px) {
+  .mc-submit { width: 100%; }
+  .mca-actions button, .mca-confirm-buttons button, .mca-reject-buttons button { flex: 1 1 100%; }
+  .mca-pages button { flex: 1 1 auto; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mc-claim, .mca-claim { transition: border-color var(--motion-fast) var(--motion-ease); }
+}

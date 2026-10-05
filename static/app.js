@@ -519,6 +519,8 @@ function signedOut() {
   window.AdminMetrics?.reset();
   window.RankAdmin?.reset();
   window.Rank?.reset();
+  window.ManualClaims?.reset();
+  window.ManualClaimsAdmin?.reset();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
   $("#problem-form").reset();
@@ -2227,6 +2229,7 @@ async function loadPlanPage() {
   renderPlanStatus();
   renderPlanOrder();
   await window.Redeem?.loadPlan(plans);
+  window.ManualClaims?.mount($("#manual-claims"));
   if (user !== currentUser || !user || view !== "plan") return;
   if (!await loadPlanOrders()) return;
   if (planPurchase) {
@@ -4710,6 +4713,7 @@ async function loadAdminPage() {
   configureRedeem();
   configureAdminMetrics();
   configureRank();
+  window.ManualClaimsAdmin?.mount($("#manual-claims-admin"));
   // 各区块独立加载，看板失败不会阻断原有的举报处理。
   const [dashboard, reports] = await Promise.allSettled([loadAdminDashboard(), loadAdminReports(), window.Redeem?.loadAdmin(), window.AdminMetrics?.load(), window.RankAdmin?.load()]);
   if (reports.status === "rejected") throw reports.reason;
@@ -4719,6 +4723,8 @@ async function loadAdminPage() {
 function configureRedeem() {
   window.Redeem?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch,
     getView: () => view, refreshPlanSubscription });
+  window.ManualClaims?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.ManualClaimsAdmin?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
 }
 
 function configureAdminMetrics() {
