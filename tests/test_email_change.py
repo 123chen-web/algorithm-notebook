@@ -139,3 +139,22 @@ def test_old_address_missing_skips_notice(client, sent):
         conn.execute("UPDATE users SET email = NULL")
     assert request_change(client).status_code == 200
     assert [to for to, _, _ in sent] == ["new@example.com"]
+
+
+def test_forgot_password_per_email_limit_keeps_response_and_old_token(client, sent, monkeypatch):
+    # IP 级限流放宽，单独验证按邮箱的限流。
+    monkeypatch.setattr(main, "FORGOT_PASSWORD_LIMIT", 100)
+    register(client)
+    client.post("/api/auth/logout")
+    results = []
+    for _ in range(3):
+        results.append(client.post("/api/auth/forgot-password", json={"email": "alice@example.com"}))
+    assert [to for to, _, _ in sent] == ["alice@example.com"] * 3
+    with connect() as conn:
+        before = conn.execute("SELECT token_hash FROM password_resets").fetchall()
+    over = client.post("/api/auth/forgot-password", json={"email": "ALICE@example.com"})
+    unknown = client.post("/api/auth/forgot-password", json={"email": "nobody@example.com"})
+    assert over.status_code == 200 and over.json() == results[0].json() == unknown.json()
+    assert len(sent) == 3
+    with connect() as conn:
+        assert conn.execute("SELECT token_hash FROM password_resets").fetchall() == before

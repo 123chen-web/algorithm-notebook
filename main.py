@@ -960,6 +960,8 @@ LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 FORGOT_PASSWORD_LIMIT = 5
 FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
+FORGOT_PASSWORD_EMAIL_LIMIT = 3
+FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS = 60 * 60
 RESET_PASSWORD_LIMIT = 10
 RESET_PASSWORD_WINDOW_SECONDS = 15 * 60
 RESET_TOKEN_SECONDS = 30 * 60
@@ -1282,6 +1284,12 @@ def forgot_password(
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
     email = data.email.strip().lower()
+    # 同一邮箱每小时最多 3 次；不论邮箱是否存在都计数，超限时返回与正常相同的
+    # 响应，只是不再发信也不动旧 token（不泄露邮箱是否存在，也防止被刷信/刷掉旧链接）。
+    if rate_limited(
+        f"forgot-email:{email}", FORGOT_PASSWORD_EMAIL_LIMIT, FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS
+    ):
+        return {"ok": True}
     with connect() as conn:
         user = conn.execute(
             "SELECT id, username FROM users WHERE email = ? AND deleted_at IS NULL", (email,)
