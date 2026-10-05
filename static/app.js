@@ -440,8 +440,13 @@ $("#auth-switch").addEventListener("keydown", (event) => {
   tabs[index].focus();
 });
 
+function secClearEmailForm() {
+  $("#email-prompt").reset();
+}
+
 function signedOut() {
   sessionEpoch += 1;
+  secClearEmailForm();
   rvfPageGeneration += 1;
   rvfClearDetail();
   rvfListGeneration += 1;
@@ -550,6 +555,7 @@ async function api(path, options = {}) {
 
     const error = new Error(String(detail));
     error.status = response.status;
+    error.code = data.code;
     throw error;
   }
 
@@ -823,6 +829,7 @@ function fillProblemFormFromPhoto(fields) {
 }
 
 async function enterApp() {
+  secClearEmailForm();
   resetWeaknessAnalysis();
   resetAchievements();
   resetWeeklyRecap();
@@ -3042,6 +3049,7 @@ function addMistakeInput() {
 
 $("#login-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  if (window.Account?.isPending()) return;
   const form = event.currentTarget;
   run(async () => {
     $("#login-username-hint").hidden = true;
@@ -3062,6 +3070,7 @@ $("#login-form").addEventListener("submit", (event) => {
 
 $("#register-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  if (window.Account?.isPending()) return;
   const form = event.currentTarget;
   run(async () => {
     if (!form.querySelector('[name="accept_terms"]').checked) {
@@ -3078,6 +3087,7 @@ $("#register-form").addEventListener("submit", (event) => {
 });
 
 function startTrial() {
+  if (window.Account?.isPending()) return;
   return run(async () => {
     await api("/api/auth/trial", {
       method: "POST",
@@ -3164,6 +3174,8 @@ $("#forgot-form").addEventListener("submit", (event) => {
 $("#reset-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const secEpoch = sessionEpoch;
+  const secToken = resetToken;
   run(async () => {
     try {
       await api("/api/auth/reset-password", {
@@ -3174,7 +3186,8 @@ $("#reset-form").addEventListener("submit", (event) => {
         }),
       });
     } catch (error) {
-      if (error.status === 400) {
+      if (secEpoch !== sessionEpoch || secToken !== resetToken) return;
+      if (error.status === 400 && error.code === "invalid_token") {
         resetToken = null;
         history.replaceState(null, "", `${location.pathname}#/auth`);
         showAuthPanels(["forgot-form"]);
@@ -3183,6 +3196,7 @@ $("#reset-form").addEventListener("submit", (event) => {
       }
       throw error;
     }
+    if (secEpoch !== sessionEpoch || secToken !== resetToken) return;
     form.reset();
     resetToken = null;
     history.replaceState(null, "", `${location.pathname}#/auth`);
@@ -3194,11 +3208,21 @@ $("#reset-form").addEventListener("submit", (event) => {
 $("#email-prompt").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const secEpoch = sessionEpoch;
+  const secOwnerId = user?.id;
+  if (!secOwnerId) return;
   run(async () => {
-    const updated = await api("/api/me/email", {
-      method: "PUT",
-      body: JSON.stringify({ email: form.email.value, password: form.password.value }),
-    });
+    let updated;
+    try {
+      updated = await api("/api/me/email", {
+        method: "PUT",
+        body: JSON.stringify({ email: form.email.value, password: form.password.value }),
+      });
+    } catch (error) {
+      if (secEpoch !== sessionEpoch || secOwnerId !== user?.id) return;
+      throw error;
+    }
+    if (secEpoch !== sessionEpoch || secOwnerId !== user?.id) return;
     user.email = updated.email;
     $("#email-prompt").hidden = true;
     form.reset();
@@ -3206,12 +3230,18 @@ $("#email-prompt").addEventListener("submit", (event) => {
   });
 });
 
-$("#logout").addEventListener("click", () => run(async () => {
-  await api("/api/auth/logout", { method: "POST" });
-  history.replaceState(null, "", `${location.pathname}#/welcome`);
-  signedOut();
-  message("已退出登录。");
-}));
+$("#logout").addEventListener("click", () => {
+  if (window.Account?.isPending()) return;
+  return run(async () => {
+    const secEpoch = sessionEpoch;
+    const secOwnerId = user?.id;
+    await api("/api/auth/logout", { method: "POST" });
+    if (secEpoch !== sessionEpoch || secOwnerId !== user?.id) return;
+    history.replaceState(null, "", `${location.pathname}#/welcome`);
+    signedOut();
+    message("已退出登录。");
+  });
+});
 
 // 侧栏、底栏、"更多"抽屉和页面里的入口都带 data-view；用事件委托，总览里动态渲染的入口也生效。
 document.addEventListener("click", (event) => {

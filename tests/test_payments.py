@@ -122,6 +122,50 @@ def test_trial_accounts_cannot_place_orders(database):
     assert subscription()["plan_id"] is None
 
 
+def test_deleted_account_cannot_place_orders(database):
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET deleted_at = ? WHERE id = 1", (NOW,))
+    with pytest.raises(HTTPException) as error:
+        payments.create_order(1, 1, "alipay")
+    assert error.value.status_code == 401
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+    assert subscription()["plan_id"] is None
+
+
+def test_deleted_account_callback_records_money_without_changing_entitlements(database, caplog):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET deleted_at = ?, plan_id = 2, plan_expires_at = ? WHERE id = 1",
+                     (NOW, "2027-01-01T00:00:00+00:00"))
+    before = subscription()
+    received = deliver(order)
+    assert received["status"] == "paid" and received["paid_at"] == NOW
+    assert received["provider_trade_no"] == f"trade-{order['id']}"
+    assert payments.get_order(1, order["id"]) == received
+    assert subscription() == before
+    assert "注销" in caplog.text and str(order["id"]) in caplog.text
+    assert deliver(order) == received
+    assert subscription() == before
+
+
+def test_refund_after_inflight_account_deletion_keeps_entitlements(database, monkeypatch, caplog):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    deliver(order)
+    before = subscription()
+
+    def refund_and_delete(adapter, value):
+        with connect(write=True) as conn:
+            conn.execute("UPDATE users SET deleted_at = ? WHERE id = 1", (NOW,))
+
+    monkeypatch.setattr(MockChannel, "refund", refund_and_delete)
+    refunded = payments.refund_order(1, order["id"])
+    assert refunded["status"] == "refunded" and refunded["refunded_at"] == NOW
+    assert payments.get_order(1, order["id"]) == refunded
+    assert subscription() == before
+    assert "注销" in caplog.text and order["id"] in caplog.text
+
+
 @pytest.mark.parametrize("status", ["failed", "closed"])
 def test_failure_and_closure_are_idempotent_without_granting_subscription(
     database, status

@@ -110,3 +110,34 @@ def test_dry_run_does_not_create_missing_database(tmp_path, monkeypatch):
         ["--dry-run", "--username", "alice", str(path)]
     ) == 2
     assert not missing.exists()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_deleted_account_is_rejected_before_import(tmp_path, database, dry_run):
+    path = tmp_path / "day1.md"
+    path.write_text(note(), encoding="utf-8")
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET deleted_at = '2026-10-04' WHERE username = 'alice'")
+    args = ["--username", "alice", str(path)]
+    assert import_notes.main((["--dry-run"] if dry_run else []) + args) == 2
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM problems").fetchone()[0] == 0
+
+
+def test_each_file_rechecks_account_inside_write_transaction(tmp_path, database, monkeypatch):
+    paths = [tmp_path / "day1.md", tmp_path / "day2.md"]
+    for index, path in enumerate(paths):
+        path.write_text(note(f"problem-{index}"), encoding="utf-8")
+    parse_file = import_notes.parse_file
+
+    def delete_before_second_write(path):
+        result = parse_file(path)
+        if path == paths[1]:
+            with connect(write=True) as conn:
+                conn.execute("UPDATE users SET deleted_at = '2026-10-04' WHERE username = 'alice'")
+        return result
+
+    monkeypatch.setattr(import_notes, "parse_file", delete_before_second_write)
+    assert import_notes.main(["--username", "alice", *map(str, paths)]) == 1
+    with connect() as conn:
+        assert [row[0] for row in conn.execute("SELECT title FROM problems")] == ["problem-0"]

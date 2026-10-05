@@ -212,11 +212,13 @@ def main(argv=None):
             raise ValueError(f"数据库不存在，请先启动应用并注册账号：{db_path}")
         with closing(sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True)) as ro:
             user = ro.execute(
-                "SELECT id,timezone FROM users WHERE username = ?",
+                "SELECT id,timezone,deleted_at FROM users WHERE username = ?",
                 (args.username.strip().lower(),),
             ).fetchone()
             if user is None:
                 raise ValueError("目标账号不存在，请先在应用中注册")
+            if user[2] is not None:
+                raise ValueError("账号已注销，不能导入学习记录")
             simulated_titles = existing_titles(ro, user[0])
         now = datetime.now(timezone.utc)
         day = today_in_timezone(user[1], now).isoformat()
@@ -232,6 +234,12 @@ def main(argv=None):
             messages, added, repeated = [], 0, 0
             context = nullcontext(None) if args.dry_run else connect(write=True)
             with context as conn:
+                if not args.dry_run:
+                    current = conn.execute(
+                        "SELECT deleted_at FROM users WHERE id = ?", (user[0],)
+                    ).fetchone()
+                    if current is None or current["deleted_at"] is not None:
+                        raise ValueError("账号已注销，不能导入学习记录")
                 titles = (simulated_titles.copy() if args.dry_run
                           else existing_titles(conn, user[0]))
                 for record in records:

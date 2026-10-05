@@ -1159,7 +1159,7 @@ def test_update_username(client):
     assert chinese.json()["username"] == "小明"
 
     empty = client.put("/api/me/username", json={"username": "   "})
-    assert empty.status_code == 422
+    assert empty.status_code == 400
 
     too_long = client.put("/api/me/username", json={"username": "x" * 33})
     assert too_long.status_code == 422
@@ -1220,14 +1220,16 @@ def test_trial_account_cannot_change_username(client):
 
 
 def test_renaming_away_from_admin_username_keeps_admin_and_reserves_name(client, monkeypatch):
-    # 管理员身份存库，改名不丢权，原引导名也不能被其他账号占用。
+    # 管理员身份存库（由命令行/SQL 明确授予），改名不丢权；配置的管理员名也不能被其他账号占用。
     monkeypatch.setenv("ADMIN_USERNAME", "alice")
-    register(client, "alice")
+    boss = register(client, "boss")
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (boss["id"],))
     assert client.get("/api/me").json()["is_admin"] is True
 
-    updated = client.put("/api/me/username", json={"username": "alice_renamed"})
+    updated = client.put("/api/me/username", json={"username": "boss_renamed"})
     assert updated.status_code == 200
-    assert updated.json()["username"] == "alice_renamed"
+    assert updated.json()["username"] == "boss_renamed"
     assert client.get("/api/me").json()["is_admin"] is True
     client.post("/api/auth/logout")
     reserved = client.post("/api/auth/register", json={
@@ -1241,6 +1243,7 @@ def test_renaming_away_from_admin_username_keeps_admin_and_reserves_name(client,
     renamed = client.put("/api/me/username", json={"username": "alice"})
     assert renamed.status_code == 400
     assert "已被保留" in renamed.json()["detail"]
+    assert client.get("/api/me").json()["is_admin"] is False
 
 
 def test_forgot_password_is_rate_limited(client):

@@ -50,7 +50,7 @@ from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
 from admin_metrics import PERIOD_CHOICES, compute_metrics as compute_admin_metrics
 from ai_limits import ai_slot, release_attempt, track_call
-from db import ROOT, connect, init_db, normalize_username, schema_version
+from db import ROOT, connect, init_db, normalize_username, schema_version, sec_username_key
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
 from learning_stats import current_streak, learning_metrics
@@ -128,12 +128,10 @@ class InputModel(BaseModel):
 
 class Credentials(InputModel):
     # 不再限制字符集（原来只认 ASCII 字母/数字/下划线，中文用户名会被拒绝），
-    # 只保留最基本的边界：非空、去掉首尾空白、长度封顶，避免空白串或
-    # 超长字符串搞坏列表展示；讨论区渲染用户名走 textContent，不走
+    # 只保留最基本的边界：非空、长度封顶。保留原始输入供存量账号精确
+    # 匹配，注册另行规范化；讨论区渲染用户名走 textContent，不走
     # innerHTML，这里放开字符集不会引入 XSS。
-    username: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
-    ]
+    username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=6, max_length=128)
 
 
@@ -146,6 +144,7 @@ def normalize_timezone(value):
 
 
 class Registration(Credentials):
+    username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=128)
     accept_terms: bool = False
     invite_code: str = Field(min_length=1, max_length=256)
@@ -189,8 +188,9 @@ class ForgotPassword(InputModel):
 
 
 class ResetPassword(InputModel):
-    token: str = Field(min_length=1, max_length=512)
-    password: str = Field(min_length=1, max_length=128)
+    # 空链接/空密码也由业务校验返回可供前端区分的 400 code。
+    token: str = Field(max_length=512)
+    password: str = Field(max_length=128)
 
 
 class EmailUpdate(InputModel):
@@ -204,9 +204,7 @@ class EmailUpdate(InputModel):
 
 
 class UsernameUpdate(InputModel):
-    username: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)
-    ]
+    username: str = Field(min_length=1, max_length=32)
 
 
 class PasswordChange(InputModel):
@@ -453,6 +451,14 @@ def avatar_path(user_id):
     return avatar_dir() / f"{user_id}.jpg"
 
 
+def sec_has_avatar(user_id):
+    with connect() as conn:
+        author = conn.execute(
+            "SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
+        ).fetchone()
+    return author is not None and avatar_path(user_id).is_file()
+
+
 def decode_uploaded_image(content: bytes) -> Image.Image:
     # verify() 只检查文件没有损坏，之后这个 Image 对象不能再用来处理，
     # 必须从同一份字节重新 open 一次；再调用 load() 强制完整解码，
@@ -603,7 +609,7 @@ def configured_admin_username():
     value = os.getenv("ADMIN_USERNAME", "")
     if not value.strip():
         return ""
-    return normalize_username(value)
+    return sec_username_key(value)
 
 
 def normalized_username(value):
@@ -623,39 +629,11 @@ def check_username_available(username, *, allow_admin_name=False):
         raise HTTPException(400, "这个用户名已被保留")
 
 
-def bootstrap_admin():
-    username = configured_admin_username()
-    if not username:
-        return
-    with connect(write=True) as conn:
-        if conn.execute(
-            "SELECT 1 FROM users WHERE is_admin = 1 AND deleted_at IS NULL LIMIT 1"
-        ).fetchone():
-            return
-        existing = conn.execute(
-            "SELECT id FROM users WHERE username = ? AND deleted_at IS NULL AND is_trial = 0",
-            (username,),
-        ).fetchone()
-        if existing is not None:
-            conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (existing["id"],))
-            return
-        rows = conn.execute(
-            "SELECT id, username FROM users WHERE deleted_at IS NULL AND is_trial = 0 ORDER BY id"
-        ).fetchall()
-        for row in rows:
-            try:
-                candidate = normalize_username(row["username"])
-            except ValueError:
-                continue
-            if candidate == username:
-                conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (row["id"],))
-                break
-
-
-def set_session(conn, user_id, response):
+def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
     token = secrets.token_urlsafe(32)
     now = int(time.time())
-    conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+    if sec_cleanup_expired:
+        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
     conn.execute(
         "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
         (token_hash(token), user_id, now + SESSION_SECONDS),
@@ -774,6 +752,7 @@ REPORT_WINDOW_SECONDS = 60 * 60
 
 _rate_lock = threading.Lock()
 _rate_buckets = defaultdict(deque)
+_sec_password_locks = defaultdict(threading.Lock)
 
 
 def rate_limited(key, limit, window_seconds):
@@ -800,7 +779,6 @@ def client_ip(request: Request):
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    bootstrap_admin()
     yield
 
 
@@ -915,12 +893,7 @@ def register(data: Registration, request: Request, response: Response):
     hashed = password_hash(data.password)
     try:
         with connect(write=True) as conn:
-            admin_name = configured_admin_username()
-            has_admin = conn.execute(
-                "SELECT 1 FROM users WHERE is_admin = 1 AND deleted_at IS NULL LIMIT 1"
-            ).fetchone() is not None
-            is_admin = bool(admin_name and username == admin_name and not has_admin)
-            check_username_available(username, allow_admin_name=is_admin)
+            check_username_available(username)
             now = utc_now()
             cursor = conn.execute(
                 """
@@ -929,7 +902,7 @@ def register(data: Registration, request: Request, response: Response):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (username, hashed, data.email, data.timezone, now,
-                 int(is_admin), now, TERMS_VERSION),
+                  0, now, TERMS_VERSION),
             )
             user_id = cursor.lastrowid
             set_session(conn, user_id, response)
@@ -980,21 +953,18 @@ def login(data: Credentials, request: Request, response: Response):
     if rate_limited(f"login:{client_ip(request)}", LOGIN_LIMIT, LOGIN_WINDOW_SECONDS):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
-    try:
-        username = normalize_username(data.username)
-    except ValueError:
-        # 旧名字可能在 NFKC 展开后超过新长度上限，仍允许按旧名字登录。
-        username = data.username.lower()
     with connect() as conn:
         user = conn.execute(
             "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL",
-            (username,),
+            (data.username,),
         ).fetchone()
         if user is None:
-            user = conn.execute(
-                "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL",
-                (data.username.lower(),),
-            ).fetchone()
+            key = sec_username_key(data.username)
+            candidates = [row for row in conn.execute(
+                "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY id"
+            ) if sec_username_key(row["username"]) == key]
+            # 存量冲突只能用精确名称登录，不能猜测应匹配哪一个账号。
+            user = candidates[0] if len(candidates) == 1 else None
 
     # 不存在的账号也执行一次密码计算。
     valid = password_matches(
@@ -1112,10 +1082,15 @@ def reset_password(data: ResetPassword, request: Request):
                WHERE r.token_hash = ? AND u.deleted_at IS NULL""",
             (hashed_token,),
         ).fetchone()
-    if row is None or row["expires_at"] < int(time.time()):
-        raise HTTPException(400, "重置链接无效或已过期，请重新申请")
+    if row is None or row["expires_at"] <= int(time.time()):
+        return JSONResponse(status_code=400, content={
+            "detail": "重置链接无效或已过期，请重新申请", "code": "invalid_token",
+        })
 
-    check_new_password(data.password, username=row["username"], email=row["email"] or "")
+    try:
+        check_new_password(data.password, username=row["username"], email=row["email"] or "")
+    except HTTPException as error:
+        return JSONResponse(status_code=400, content={"detail": error.detail, "code": "weak_password"})
     hashed_password = password_hash(data.password)
     with connect(write=True) as conn:
         # 哈希计算期间 token 可能被使用、替换或过期，必须在写事务中复查。
@@ -1125,9 +1100,14 @@ def reset_password(data: ResetPassword, request: Request):
                WHERE r.token_hash = ? AND u.deleted_at IS NULL""",
             (hashed_token,),
         ).fetchone()
-        if row is None or row["expires_at"] < int(time.time()):
-            raise HTTPException(400, "重置链接无效或已过期，请重新申请")
-        check_new_password(data.password, username=row["username"], email=row["email"] or "")
+        if row is None or row["expires_at"] <= int(time.time()):
+            return JSONResponse(status_code=400, content={
+                "detail": "重置链接无效或已过期，请重新申请", "code": "invalid_token",
+            })
+        try:
+            check_new_password(data.password, username=row["username"], email=row["email"] or "")
+        except HTTPException as error:
+            return JSONResponse(status_code=400, content={"detail": error.detail, "code": "weak_password"})
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (hashed_password, row["user_id"]),
@@ -1161,7 +1141,7 @@ def me(user=Depends(current_user)):
     return {
         **user,
         **quota,
-        "has_avatar": avatar_path(user["id"]).is_file(),
+        "has_avatar": sec_has_avatar(user["id"]),
         "today": today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
     }
@@ -1255,16 +1235,18 @@ def export_data(user=Depends(current_user)):
 
 
 @app.put("/api/me/email")
-def update_email(data: EmailUpdate, user=Depends(current_user)):
+def update_email(data: EmailUpdate, request: Request, user=Depends(current_user)):
     # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
     # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
-    stored = verify_current_password(user["id"], data.password)
+    stored = verify_current_password(user["id"], data.password, request)
     try:
         with connect(write=True) as conn:
+            sec_recheck_session(conn, user["id"], request)
             recheck_account(conn, user["id"], stored)
             conn.execute(
                 "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
             )
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个邮箱已经被使用") from None
     return {"ok": True, "email": data.email}
@@ -1287,7 +1269,22 @@ def update_username(data: UsernameUpdate, user=Depends(current_user)):
     return {"ok": True, "username": username}
 
 
-def verify_current_password(user_id, password):
+def verify_current_password(user_id, password, request):
+    # 共享现有限流桶。用户槽位在哈希前预占，阻止并发请求绕过失败上限；
+    # 密码验证成功后清零，所以该桶只保留连续未成功的密码尝试。
+    if rate_limited(f"sec-password-ip:{client_ip(request)}", 20, 15 * 60):
+        raise HTTPException(429, "尝试次数过多，请 15 分钟后再试")
+    # 同一用户的验证串行，成功清零不会抹掉另一个在途验证的失败。
+    with _rate_lock:
+        lock = _sec_password_locks[user_id]
+    with lock:
+        return sec_verify_password_attempt(user_id, password)
+
+
+def sec_verify_password_attempt(user_id, password):
+    key = f"sec-password-user:{user_id}"
+    if rate_limited(key, 5, 15 * 60):
+        raise HTTPException(429, "尝试次数过多，请 15 分钟后再试")
     with connect() as conn:
         row = conn.execute(
             "SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
@@ -1296,6 +1293,8 @@ def verify_current_password(user_id, password):
         raise HTTPException(401, "登录已过期，请重新登录")
     if not password_matches(password, row["password_hash"]):
         raise HTTPException(400, "当前密码不正确")
+    with _rate_lock:
+        _rate_buckets.pop(key, None)
     return row["password_hash"]
 
 
@@ -1336,6 +1335,18 @@ def rvb_update_settings(data: RvbSettingsInput, user=Depends(current_user)):
     return {"daily_review_cap": data.daily_review_cap}
 
 
+def sec_recheck_session(conn, user_id, request):
+    token = request.cookies.get("session", "")
+    row = conn.execute(
+        "SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id "
+        "WHERE s.token_hash = ? AND s.user_id = ? AND s.expires_at > ? "
+        "AND u.deleted_at IS NULL AND u.is_banned = 0",
+        (token_hash(token), user_id, int(time.time())),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+
+
 def revoke_other_sessions(conn, user_id, request):
     current_token = token_hash(request.cookies.get("session", ""))
     return conn.execute(
@@ -1345,22 +1356,23 @@ def revoke_other_sessions(conn, user_id, request):
 
 
 @app.post("/api/me/password")
-def change_password(data: PasswordChange, request: Request, user=Depends(current_user)):
+def change_password(data: PasswordChange, request: Request, response: Response, user=Depends(current_user)):
     require_not_trial(user, "修改密码")
-    if rate_limited(f"pwchange:{user['id']}", 5, 15 * 60):
-        raise HTTPException(429, "尝试次数过多，请稍后再试")
-    stored = verify_current_password(user["id"], data.current_password)
+    stored = verify_current_password(user["id"], data.current_password, request)
     check_new_password(data.new_password, username=user["username"], email=user["email"] or "")
     if data.new_password == data.current_password:
         raise HTTPException(400, "新密码不能和当前密码相同")
     hashed = password_hash(data.new_password)
     with connect(write=True) as conn:
+        sec_recheck_session(conn, user["id"], request)
         fresh = recheck_account(conn, user["id"], stored)
         check_new_password(data.new_password, username=fresh["username"], email=fresh["email"] or "")
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user["id"])
         )
         revoked = revoke_other_sessions(conn, user["id"], request)
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        set_session(conn, user["id"], response, sec_cleanup_expired=False)
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
     return {"ok": True, "revoked_sessions": revoked}
 
@@ -1368,6 +1380,7 @@ def change_password(data: PasswordChange, request: Request, user=Depends(current
 @app.post("/api/me/sessions/revoke-others")
 def revoke_sessions(request: Request, user=Depends(current_user)):
     with connect(write=True) as conn:
+        sec_recheck_session(conn, user["id"], request)
         recheck_account(conn, user["id"])
         revoked = revoke_other_sessions(conn, user["id"], request)
     return {"ok": True, "revoked": revoked}
@@ -1418,13 +1431,21 @@ def delete_account_data(conn, user_id, deleted_at):
     conn.execute("UPDATE ai_calls SET user_id = NULL WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM study_group_members WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM study_groups WHERE created_by = ?", (user_id,))
+    sec_anonymous_name = f"已注销用户 #{user_id}"
+    sec_suffix = 2
+    while conn.execute(
+        "SELECT 1 FROM users WHERE username = ? AND id != ?",
+        (sec_anonymous_name, user_id),
+    ).fetchone() is not None:
+        sec_anonymous_name = f"已注销用户 #{user_id}-{sec_suffix}"
+        sec_suffix += 1
     conn.execute(
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
             avatar_version = 0, last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,
-        (f"已注销用户 #{user_id}", DUMMY_PASSWORD, deleted_at, user_id),
+        (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
     )
 
 
@@ -1433,16 +1454,17 @@ def delete_account(
     data: AccountDeletion, request: Request, response: Response, user=Depends(current_user)
 ):
     require_deletable_account(user)
-    if rate_limited(f"accdel:{user['id']}", 5, 15 * 60):
-        raise HTTPException(429, "尝试次数过多，请稍后再试")
-    stored = verify_current_password(user["id"], data.password)
+    stored = verify_current_password(user["id"], data.password, request)
     with connect(write=True) as conn:
+        sec_recheck_session(conn, user["id"], request)
         fresh = recheck_account(conn, user["id"], stored)
         require_deletable_account(fresh)
         delete_account_data(conn, user["id"], utc_now())
     rank_cache.invalidate()
-    avatar_path(user["id"]).unlink(missing_ok=True)
-    response.delete_cookie("session", path="/")
+    try:
+        avatar_path(user["id"]).unlink(missing_ok=True)
+    except OSError:
+        logger.warning("注销账号头像删除失败 user_id=%s", user["id"], exc_info=True)
     return {"ok": True}
 
 
@@ -1496,9 +1518,9 @@ def delete_own_avatar(user=Depends(current_user)):
 
 @app.get("/api/users/{user_id}/avatar")
 def get_avatar(user_id: int, user=Depends(current_user)):
-    path = avatar_path(user_id)
-    if not path.is_file():
+    if not sec_has_avatar(user_id):
         raise HTTPException(404, "这个用户还没有头像")
+    path = avatar_path(user_id)
     # URL 本身不带版本号；前端用 ?v=avatar_version 做缓存失效，
     # 这里可以放心用较长的缓存时间。
     return FileResponse(

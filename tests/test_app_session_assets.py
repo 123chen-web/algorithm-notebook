@@ -46,7 +46,7 @@ const context = {
 };
 for (const name of ["stopOrderPolling", "resetWeaknessAnalysis", "resetAchievements",
   "resetWeeklyRecap", "resetGroups", "resetHomeSummary", "closeAccountMenu", "showAuthPanels",
-  "clearForumReply", "resetAdminDashboard", "addMistakeInput", "resetPhotoForm"]) context[name] = () => {};
+  "clearForumReply", "secClearEmailForm", "resetAdminDashboard", "addMistakeInput", "resetPhotoForm"]) context[name] = () => {};
 context.setForumPreview = (preview) => { context.forumPreview = preview; };
 context.loadZones = async () => {};
 context.showView = async () => {};

@@ -226,42 +226,33 @@ def test_existing_reserved_username_can_still_log_in(client):
     assert client.get("/api/me").json()["id"] == user_id
 
 
-def test_registration_bootstraps_only_first_configured_admin(client, monkeypatch):
+def test_public_registration_rejects_configured_admin_name_and_creates_only_regular_users(client, monkeypatch):
     monkeypatch.setenv("ADMIN_USERNAME", " ＡＬＩＣＥ ")
-    user = register(client)
-    assert client.get("/api/me").json()["is_admin"] is True
-    with connect() as conn:
-        assert conn.execute("SELECT is_admin FROM users WHERE id = ?", (user["id"],)).fetchone()[0] == 1
-    client.post("/api/auth/logout")
-    monkeypatch.setenv("ADMIN_USERNAME", "bob")
-    denied = client.post("/api/auth/register", json=registration_payload(
-        "bob", email="bob@example.com",
-    ))
+    denied = client.post("/api/auth/register", json=registration_payload("alice", email="alice@example.com"))
     assert denied.status_code == 400
-    assert "已被保留" in denied.json()["detail"]
-    with connect(write=True) as conn:
-        other_id = insert_user(conn, "bob")
-    with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as other:
-        assert login(other, "bob").status_code == 200
-        assert other.get("/api/me").json()["is_admin"] is False
+    assert denied.json()["detail"] == "这个用户名已被保留"
     with connect() as conn:
-        assert conn.execute("SELECT is_admin FROM users WHERE id = ?", (other_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+    user = register(client, "bob")
+    assert client.get("/api/me").json()["is_admin"] is False
+    with connect() as conn:
+        assert conn.execute("SELECT is_admin FROM users WHERE id = ?", (user["id"],)).fetchone()[0] == 0
 
 
-def test_startup_bootstraps_existing_legacy_admin(client, monkeypatch):
+def test_startup_does_not_grant_existing_configured_name(client, monkeypatch):
     with connect(write=True) as conn:
         user_id = insert_user(conn, "oldoperator")
     monkeypatch.setenv("ADMIN_USERNAME", " ＯＬＤＯＰＥＲＡＴＯＲ ")
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as restarted:
         assert login(restarted, "oldoperator").status_code == 200
-        assert restarted.get("/api/me").json()["is_admin"] is True
+        assert restarted.get("/api/me").json()["is_admin"] is False
     with connect() as conn:
         row = conn.execute("SELECT is_admin, terms_accepted_at FROM users WHERE id = ?", (user_id,)).fetchone()
-    assert row["is_admin"] == 1
+    assert row["is_admin"] == 0
     assert row["terms_accepted_at"] is None
 
 
-def test_startup_prefers_exact_normalized_admin_over_fullwidth_legacy_collision(client, monkeypatch):
+def test_startup_grants_neither_normalized_nor_fullwidth_configured_name(client, monkeypatch):
     with connect(write=True) as conn:
         fullwidth_id = insert_user(conn, "ａｌｉｃｅ")
         exact_id = insert_user(conn, "alice")
@@ -270,21 +261,22 @@ def test_startup_prefers_exact_normalized_admin_over_fullwidth_legacy_collision(
         pass
     with connect() as conn:
         roles = {row["id"]: row["is_admin"] for row in conn.execute("SELECT id,is_admin FROM users")}
-    assert roles == {fullwidth_id: 0, exact_id: 1}
+    assert roles == {fullwidth_id: 0, exact_id: 0}
 
 
-def test_deleted_admin_does_not_block_new_bootstrap(client, monkeypatch):
+def test_deleted_admin_does_not_trigger_public_registration_promotion(client, monkeypatch):
     with connect(write=True) as conn:
         old_id = insert_user(conn, "deletedoperator", deleted_at=NOW)
         conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (old_id,))
-    monkeypatch.setenv("ADMIN_USERNAME", "alice")
+    monkeypatch.setenv("ADMIN_USERNAME", "operator")
     register(client)
-    assert client.get("/api/me").json()["is_admin"] is True
+    assert client.get("/api/me").json()["is_admin"] is False
 
 
 def test_admin_can_rename_to_configured_admin_name(client, monkeypatch):
-    monkeypatch.setenv("ADMIN_USERNAME", "operator")
-    register(client, "operator")
+    user = register(client, "operator")
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin=1 WHERE id=?", (user["id"],))
     monkeypatch.setenv("ADMIN_USERNAME", "nextoperator")
     renamed = client.put("/api/me/username", json={"username": "ＮＥＸＴＯＰＥＲＡＴＯＲ"})
     assert renamed.status_code == 200
@@ -292,7 +284,7 @@ def test_admin_can_rename_to_configured_admin_name(client, monkeypatch):
     assert client.get("/api/me").json()["is_admin"] is True
 
 
-def test_change_password_revokes_other_sessions_but_preserves_current(client, monkeypatch):
+def test_change_password_revokes_other_sessions_and_rotates_current(client, monkeypatch):
     user = register(client)
     current_token = client.cookies.get("session")
     reset_token(user["id"])
@@ -315,12 +307,14 @@ def test_change_password_revokes_other_sessions_but_preserves_current(client, mo
     assert changed.status_code == 200
     assert changed.json() == {"ok": True, "revoked_sessions": 2}
     assert client.get("/api/me").status_code == 200
-    assert client.cookies.get("session") == current_token
+    new_token = client.cookies.get("session")
+    assert new_token and new_token != current_token
     with connect() as conn:
         sessions = {row[0] for row in conn.execute("SELECT token_hash FROM sessions")}
-        assert sessions == {main.token_hash(current_token), main.token_hash("unrelated-device")}
+        assert sessions == {main.token_hash(new_token), main.token_hash("unrelated-device")}
         assert conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0] == 0
     assert client.get("/api/me", headers={"Cookie": "session=other-device"}).status_code == 401
+    assert client.get("/api/me", headers={"Cookie": f"session={current_token}"}).status_code == 401
     client.post("/api/auth/logout")
     assert login(client).status_code == 401
     assert login(client, password=NEW_PASSWORD).status_code == 200
@@ -331,13 +325,21 @@ def test_change_password_revokes_other_sessions_but_preserves_current(client, mo
     (PASSWORD, PASSWORD, "新密码不能和当前密码相同"),
 ])
 def test_change_password_errors_are_400_and_keep_session(client, current, new, detail):
-    register(client)
+    user = register(client)
+    token = client.cookies.get("session")
+    reset_token(user["id"])
+    with connect(write=True) as conn:
+        add_session(conn, user["id"], "unchanged-other-device")
+    before = database_snapshot()
     response = client.post("/api/me/password", json={
         "current_password": current, "new_password": new,
     })
     assert response.status_code == 400
     assert response.json()["detail"] == detail
     assert client.get("/api/me").status_code == 200
+    assert client.cookies.get("session") == token
+    assert "set-cookie" not in response.headers
+    assert database_snapshot() == before
 
 
 @pytest.mark.parametrize("path,payload", [
@@ -350,7 +352,7 @@ def test_sensitive_account_actions_rate_limit_by_user(client, path, payload):
         assert client.post(path, json=payload).status_code == 400
     blocked = client.post(path, json=payload)
     assert blocked.status_code == 429
-    assert blocked.json()["detail"] == "尝试次数过多，请稍后再试"
+    assert blocked.json()["detail"] == "尝试次数过多，请 15 分钟后再试"
     # 相同 IP 的另一个账号拥有独立额度。
     client.post("/api/auth/logout")
     register(client, "bob")
@@ -496,9 +498,8 @@ def test_delete_account_removes_learning_data_and_preserves_anonymous_records(
     response = client.post("/api/me/delete-account", json={"password": PASSWORD})
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    assert "session=" in response.headers["set-cookie"]
-    assert "Max-Age=0" in response.headers["set-cookie"]
-    assert not client.cookies.get("session")
+    assert "set-cookie" not in response.headers
+    assert client.cookies.get("session") == token
     assert not avatar.exists()
     with connect() as conn:
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
@@ -556,8 +557,9 @@ def test_delete_rejects_wrong_password_without_changing_any_data(client):
 
 
 def test_admin_account_cannot_self_delete(client, monkeypatch):
-    monkeypatch.setenv("ADMIN_USERNAME", "alice")
-    register(client)
+    user = register(client)
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin=1 WHERE id=?", (user["id"],))
     response = client.post("/api/me/delete-account", json={"password": PASSWORD})
     assert response.status_code == 403
     assert response.json()["detail"] == "管理员账号不能自助注销，请先用 admin_tool.py 撤销管理员身份"
@@ -779,6 +781,11 @@ def test_legal_pages_are_public_secure_and_escape_operator_fields(client, monkey
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "no-store" not in response.headers.get("cache-control", "")
     assert "etag" in response.headers or "max-age=" in response.headers.get("cache-control", "")
+    cache_control = response.headers.get("cache-control", "").lower()
+    assert "immutable" not in cache_control
+    for directive in cache_control.split(","):
+        if directive.strip().startswith(("max-age=", "s-maxage=")):
+            assert int(directive.strip().split("=", 1)[1]) <= 3600
     assert "set-cookie" not in response.headers
 
 

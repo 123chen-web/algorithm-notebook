@@ -224,6 +224,8 @@ def test_newcomer_and_admin_cover_the_empty_and_privileged_states(world):
     assert query(folder, "SELECT COUNT(*) FROM study_group_members m JOIN users u ON u.id = m.user_id "
                          "WHERE u.username = ?", NEWCOMER) == [(0,)]
     assert query(folder, "SELECT COUNT(*) FROM users WHERE username = ?", ADMIN) == [(1,)]
+    assert query(folder, "SELECT is_admin FROM users WHERE username = ?", ADMIN) == [(1,)]
+    assert query(folder, "SELECT username FROM users WHERE is_admin = 1") == [(ADMIN,)]
     assert query(folder, "SELECT COUNT(*) FROM users") == [(25,)]
 
 

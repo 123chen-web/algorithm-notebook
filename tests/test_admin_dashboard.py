@@ -17,9 +17,9 @@ FUTURE = "2026-09-28T00:30:01+00:00"
 @pytest.fixture
 def admin(client, monkeypatch):
     monkeypatch.setattr(main, "utc_now", lambda: NOW)
-    monkeypatch.setenv("ADMIN_USERNAME", "alice")
     user = register(client)
     with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user["id"],))
         conn.execute(
             "UPDATE users SET created_at = ? WHERE id = ?", (OLD, user["id"])
         )

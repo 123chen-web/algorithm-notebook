@@ -1,6 +1,6 @@
 "use strict";
 
-/* 账号操作独立管理提交状态；关闭、登出或换号后，旧请求不能改动界面。 */
+/* 认证变更未决时保持会话入口锁定；强制失效后的迟到响应不能改动界面。 */
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const dialog = $("#account-dialog");
@@ -11,6 +11,7 @@
   let pending = false;
   let mode = "";
   let ownerId = null;
+  let secOwnerEpoch = null;
   let returnFocus = null;
   let restoreOnClose = true;
   let form = null;
@@ -44,7 +45,8 @@
   }
 
   function current(ticket, userId) {
-    return Boolean(user) && user.id === userId && generation === ticket && dialog.open && Boolean(mode);
+    return Boolean(user) && user.id === userId && secOwnerEpoch === sessionEpoch
+      && generation === ticket && dialog.open && Boolean(mode);
   }
 
   function restoreFocus(target) {
@@ -66,7 +68,6 @@
   function finishClose(restore) {
     if (!mode) return;
     generation += 1;
-    pending = false;
     const target = returnFocus;
     returnFocus = null;
     for (const input of Object.values(fields)) {
@@ -76,6 +77,7 @@
     fields = {};
     mode = "";
     ownerId = null;
+    secOwnerEpoch = null;
     form = null;
     submitButton = null;
     errorBox = null;
@@ -84,18 +86,33 @@
     if (restore) restoreFocus(target);
   }
 
-  function close({ restore = true } = {}) {
+  function close({ restore = true, force = false } = {}) {
+    if (pending && !force) return;
     restoreOnClose = restore;
+    if (force) finishClose(restore);
     if (dialog.open) dialog.close();
     finishClose(restore);
   }
 
   function reset() {
-    close({ restore: false });
+    close({ restore: false, force: true });
     generation += 1;
   }
 
+  function secRenderSessionLock() {
+    const secLogout = $("#logout");
+    if (secLogout) {
+      secLogout.dataset.blocked = pending ? "1" : "0";
+      secLogout.disabled = pending;
+    }
+    for (const id of ["account-dialog-close", "account-dialog-cancel"]) {
+      const button = $(`#${id}`);
+      if (button) button.disabled = pending;
+    }
+  }
+
   function renderControls() {
+    secRenderSessionLock();
     if (!form) return;
     const incomplete = mode === "delete" && (!fields.confirm_delete.checked || !fields.password.value);
     submitButton.disabled = pending || incomplete;
@@ -143,6 +160,8 @@
     try {
       const result = await api(path, { method: "POST", body: JSON.stringify(body) });
       if (!current(ticket, userId)) return;
+      pending = false;
+      renderControls();
       if (action === "delete") {
         close({ restore: false });
         history.replaceState(null, "", `${location.pathname}#/welcome`);
@@ -157,10 +176,9 @@
     } catch (error) {
       if (current(ticket, userId)) fail(error.message || "操作失败，请检查网络后重试。");
     } finally {
-      if (current(ticket, userId)) {
-        pending = false;
-        renderControls();
-      }
+      pending = false;
+      if (current(ticket, userId)) renderControls();
+      else secRenderSessionLock();
     }
   }
 
@@ -191,12 +209,13 @@
   }
 
   function open(nextMode, trigger) {
-    if (!user || user.is_trial) return;
+    if (pending || !user || user.is_trial) return;
     close({ restore: false });
     closeAccountMenu();
     generation += 1;
     mode = nextMode;
     ownerId = user.id;
+    secOwnerEpoch = sessionEpoch;
     returnFocus = trigger;
     restoreOnClose = true;
     const title = nextMode === "password" ? "修改密码" : nextMode === "revoke" ? "退出其他设备" : "注销账号";
@@ -244,7 +263,11 @@
   $("#account-revoke-others")?.addEventListener("click", (event) => openRevokeOthers(event.currentTarget));
   $("#account-delete")?.addEventListener("click", (event) => openDelete(event.currentTarget));
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
-  dialog.addEventListener("close", () => { if (!dialog.open) finishClose(restoreOnClose); });
+  dialog.addEventListener("close", () => {
+    if (dialog.open) return;
+    if (pending && mode) dialog.showModal();
+    else finishClose(restoreOnClose);
+  });
   dialog.addEventListener("click", (event) => {
     if (event.target !== dialog) return;
     const bounds = dialog.getBoundingClientRect();
@@ -269,5 +292,5 @@
       first?.focus();
     }
   });
-  window.Account = { openPassword, openRevokeOthers, openDelete, close, reset };
+  window.Account = { openPassword, openRevokeOthers, openDelete, close, reset, isPending: () => pending };
 })();

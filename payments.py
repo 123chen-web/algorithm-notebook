@@ -1,4 +1,5 @@
 import secrets
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -9,6 +10,8 @@ from payment_channels import (
     PaymentChannelError,
     get_channel,
 )
+
+sec_payment_logger = logging.getLogger(__name__)
 
 
 def utc_now():
@@ -87,6 +90,8 @@ def create_order(user_id, plan_id, channel):
         ).fetchone()
         if user is None:
             raise HTTPException(404, "用户不存在")
+        if user["deleted_at"] is not None:
+            raise HTTPException(401, "账号已注销")
         if user["is_trial"]:
             raise HTTPException(403, "体验账号不支持购买套餐")
         plan = conn.execute(
@@ -151,10 +156,16 @@ def refund_order(user_id, order_id):
             # 另一请求已完成退款时，不能再次清空此后新购买的套餐。
             raise HTTPException(409, "订单状态已变更，请重新查询")
         # V1 整体收回套餐，即使当前套餐来自另一笔订单；不补回当天 AI 用量。
-        conn.execute(
-            "UPDATE users SET plan_id = NULL, plan_expires_at = NULL WHERE id = ?",
-            (user_id,),
-        )
+        user = conn.execute(
+            "SELECT deleted_at FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if user is not None and user["deleted_at"] is None:
+            conn.execute(
+                "UPDATE users SET plan_id = NULL, plan_expires_at = NULL WHERE id = ?",
+                (user_id,),
+            )
+        else:
+            sec_payment_logger.warning("已注销账号跳过退款权益更新 user_id=%s order_id=%s", user_id, order_id)
         return dict(conn.execute(
             "SELECT * FROM orders WHERE id = ?", (order_id,)
         ).fetchone())
@@ -222,10 +233,19 @@ def handle_callback(channel, raw_body, headers, *, user_id=None):
             raise HTTPException(409, "订单状态已变更，请重新查询")
 
         if callback.status == "paid":
-            plan = conn.execute(
-                "SELECT period_days FROM plans WHERE id = ?", (order["plan_id"],)
+            user = conn.execute(
+                "SELECT deleted_at FROM users WHERE id = ?", (order["user_id"],)
             ).fetchone()
-            activate_plan(conn, order["user_id"], order["plan_id"], plan["period_days"], now)
+            if user is not None and user["deleted_at"] is None:
+                plan = conn.execute(
+                    "SELECT period_days FROM plans WHERE id = ?", (order["plan_id"],)
+                ).fetchone()
+                activate_plan(conn, order["user_id"], order["plan_id"], plan["period_days"], now)
+            else:
+                sec_payment_logger.warning(
+                    "已注销账号跳过支付权益更新 user_id=%s order_id=%s",
+                    order["user_id"], order["id"],
+                )
 
         return dict(conn.execute(
             "SELECT * FROM orders WHERE id = ?", (order["id"],)

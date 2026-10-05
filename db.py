@@ -10,8 +10,20 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
 
+def sec_username_key(value):
+    """历史用户名的比较键；不改变存量账号，也不限制其登录。"""
+    return unicodedata.normalize("NFKC", value).strip().lower()
+
+
+def sec_has_invisible_username(value):
+    return any(unicodedata.category(char) in ("Cc", "Cf") for char in value)
+
+
 def normalize_username(value):
-    value = unicodedata.normalize("NFKC", value).strip().lower()
+    # strip 前检查，避免首尾控制字符被悄悄移除。
+    if sec_has_invisible_username(value):
+        raise ValueError("用户名不能包含不可见字符")
+    value = sec_username_key(value)
     if not value:
         raise ValueError("用户名不能为空")
     if len(value) > 32:

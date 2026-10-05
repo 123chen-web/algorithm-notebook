@@ -20,4 +20,4 @@ def test_account_behaviour_in_a_fake_browser():
     # 终端与捕获输出分别使用简洁报告和 TAP，两种都认。
     assert re.search(r"(?m)^(?:ℹ|#) fail 0$", result.stdout), result.stdout[-1500:]
     passed = re.search(r"(?m)^(?:ℹ|#) pass (\d+)$", result.stdout)
-    assert passed and int(passed.group(1)) >= 30, result.stdout[-1500:]
+    assert passed and int(passed.group(1)) >= 35, result.stdout[-1500:]

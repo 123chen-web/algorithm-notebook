@@ -279,6 +279,26 @@ def initialize_before_accounts_migration(monkeypatch):
     return migrations[-1][0]
 
 
+def test_sec_existing_migrated_admin_survives_later_startups(database_path, monkeypatch):
+    db.init_db()
+    with db.connect(write=True) as conn:
+        operator_id = conn.execute(
+            "INSERT INTO users(username,password_hash,timezone,created_at,is_admin) "
+            "VALUES ('legacyoperator','unchanged-hash','Asia/Shanghai',?,1)", (CREATED_AT,)
+        ).lastrowid
+        ordinary_id = conn.execute(
+            "INSERT INTO users(username,password_hash,timezone,created_at) "
+            "VALUES ('ordinary','unchanged-hash','Asia/Shanghai',?)", (CREATED_AT,)
+        ).lastrowid
+    monkeypatch.setenv("ADMIN_USERNAME", "legacyoperator")
+    db.init_db()
+    monkeypatch.setenv("ADMIN_USERNAME", "ordinary")
+    db.init_db()
+    with db.connect() as conn:
+        roles = {row["id"]: row["is_admin"] for row in conn.execute("SELECT id,is_admin FROM users")}
+        assert roles == {operator_id: 1, ordinary_id: 0}
+
+
 def test_accounts_migration_preserves_old_user_and_adds_nullable_defaults(database_path, monkeypatch):
     initialize_before_accounts_migration(monkeypatch)
     with db.connect(write=True) as conn:

@@ -43,7 +43,9 @@ function environment() {
   const content = document.createElement("div");
   content.id = "account-dialog-content";
   dialog.append(content);
-  document.body.append(wrapper, dialog);
+  const logout = document.createElement("button");
+  logout.id = "logout";
+  document.body.append(wrapper, dialog, logout);
   env.window.probe = { messages: [], signedOut: 0, menuCloses: 0, history: [] };
   context.location = { pathname: "/" };
   context.history = {
@@ -261,7 +263,7 @@ test("delete: group conflict detail is shown locally without signing out", async
   assert.deepEqual(env.probe.messages, []);
 });
 
-for (const invalidation of ["reset", "change user", "close", "close and reopen"]) {
+for (const invalidation of ["reset", "change user", "same user new session"]) {
   for (const status of [200, 409]) {
     test(`guards: ${invalidation} ignores a late delete ${status} response`, async () => {
       const env = environment();
@@ -271,10 +273,14 @@ for (const invalidation of ["reset", "change user", "close", "close and reopen"]
       submit(env);
       if (invalidation === "change user") {
         vm.runInContext("user = { id: 8, is_trial: false }; sessionEpoch += 1;", env.context);
+      } else if (invalidation === "same user new session") {
+        vm.runInContext("sessionEpoch += 1;", env.context);
       } else if (invalidation === "reset") {
         env.window.Account.reset();
         assert.equal(oldPassword.value, "");
+        assert.equal(env.window.Account.isPending(), true, "forced reset keeps the authentication lock");
         env.window.Account.openPassword();
+        assert.equal(env.dialog.open, false, "cannot start a new authentication operation yet");
       } else {
         env.window.Account.close();
         assert.equal(oldPassword.value, "");
@@ -289,7 +295,8 @@ for (const invalidation of ["reset", "change user", "close", "close and reopen"]
       assert.equal(env.probe.signedOut, 0);
       assert.deepEqual(env.probe.messages, []);
       assert.deepEqual(env.probe.history, []);
-      if (invalidation === "reset" || invalidation === "close and reopen") {
+      if (invalidation === "reset") {
+        env.window.Account.openPassword();
         assert.equal(get(env, "account-dialog-submit").disabled, false, "old finally does not disable the new form");
       }
     });
@@ -310,23 +317,29 @@ test("guards: reset clears all three password fields and ignores late success", 
   assert.deepEqual(env.probe.messages, []);
 });
 
-test("guards: close and reopen can submit a new operation before the old response", async () => {
+test("guards: pending authentication change locks close, reopening and logout until success", async () => {
   const env = environment();
   env.window.Account.openPassword();
   passwords(env);
   submit(env);
+  assert.equal(env.window.Account.isPending(), true);
+  assert.equal(get(env, "logout").disabled, true);
   env.window.Account.close();
+  get(env, "account-dialog-close").click();
+  get(env, "account-dialog-cancel").click();
+  env.dialog.dispatchEvent(new FakeEvent("cancel"));
+  env.dialog.dispatchEvent(new FakeEvent("keydown", { props: { key: "Escape" } }));
+  assert.equal(env.dialog.open, true);
   env.window.Account.openRevokeOthers();
   submit(env);
-  assert.equal(env.calls.length, 2);
-  env.respond(env.calls[0], 400, { detail: "旧的密码错误" });
+  assert.equal(env.calls.length, 1);
+  assert.ok(get(env, "account-current-password"));
+  env.respond(env.calls[0], 200, { ok: true, revoked_sessions: 0 });
   await settle();
-  assert.equal(env.dialog.open, true);
-  assert.equal(get(env, "account-dialog-error").textContent, "");
-  assert.equal(get(env, "account-dialog-submit").disabled, true, "new request keeps its own pending state");
-  env.respond(env.calls[1], 200, { ok: true, revoked: 2 });
-  await settle();
-  pageMessage(env, "已退出其他设备（共 2 处）。");
+  assert.equal(env.dialog.open, false);
+  assert.equal(env.window.Account.isPending(), false);
+  assert.equal(get(env, "logout").disabled, false);
+  pageMessage(env, "密码已更新。");
 });
 
 test("focus: entry closes the menu, focuses current password and restores trigger", () => {
@@ -399,18 +412,63 @@ test("focus: backdrop closes, while clicking dialog padding stays open", () => {
   assert.equal(env.dialog.open, false);
 });
 
-test("native close: clearing content also invalidates a pending response", async () => {
+test("native close: pending authentication keeps its lock and dialog until response", async () => {
   const env = environment();
   env.window.Account.openPassword();
   passwords(env);
   const password = get(env, "account-current-password");
   submit(env);
   env.dialog.close();
-  assert.equal(password.value, "");
-  assert.equal(env.content.textContent, "");
+  assert.equal(password.value, "old-pass88");
+  assert.equal(env.dialog.open, true);
+  assert.equal(env.window.Account.isPending(), true);
   env.respond(env.calls[0], 200, { ok: true, revoked_sessions: 0 });
   await settle();
-  assert.deepEqual(env.probe.messages, []);
+  assert.equal(env.window.Account.isPending(), false);
+  pageMessage(env, "密码已更新。");
+});
+
+for (const mode of ["revoke", "delete"]) {
+  test(`guards: pending ${mode} also locks all session entrances until failure`, async () => {
+    const env = environment();
+    if (mode === "revoke") env.window.Account.openRevokeOthers();
+    else {
+      env.window.Account.openDelete();
+      input(env, "account-delete-password", "secret88");
+      confirmDelete(env, true);
+    }
+    submit(env);
+    assert.equal(env.window.Account.isPending(), true);
+    assert.equal(get(env, "logout").disabled, true);
+    assert.equal(get(env, "account-dialog-close").disabled, true);
+    assert.equal(get(env, "account-dialog-cancel").disabled, true);
+    env.window.Account.close();
+    env.window.Account.openPassword();
+    assert.equal(env.dialog.open, true);
+    assert.equal(env.calls.length, 1);
+    env.respond(env.calls[0], 400, {detail: "请求失败"});
+    await settle();
+    assert.equal(env.window.Account.isPending(), false);
+    assert.equal(get(env, "logout").disabled, false);
+    assert.equal(get(env, "account-dialog-close").disabled, false);
+    assert.equal(get(env, "account-dialog-cancel").disabled, false);
+    assert.equal(get(env, "account-dialog-error").textContent, "请求失败");
+    env.window.Account.close();
+    assert.equal(env.dialog.open, false);
+  });
+}
+
+test("guards: failed authentication releases logout and allows closing", async () => {
+  const env = environment();
+  env.window.Account.openRevokeOthers();
+  submit(env);
+  assert.equal(get(env, "logout").disabled, true);
+  env.respond(env.calls[0], 429, { detail: "尝试次数过多" });
+  await settle();
+  assert.equal(env.window.Account.isPending(), false);
+  assert.equal(get(env, "logout").disabled, false);
+  env.window.Account.close();
+  assert.equal(env.dialog.open, false);
 });
 
 test("trial account: exported open methods do not open restricted actions", () => {

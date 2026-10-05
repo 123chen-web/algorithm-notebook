@@ -346,8 +346,9 @@ def test_edit_reply_in_deleted_post_does_not_read_hidden_reference(
     reply = create_comment(client, post["id"], "乙的回复", reply_to_id=target["id"])
     client.post("/api/auth/logout")
     if deleted_by == "admin":
-        monkeypatch.setenv("ADMIN_USERNAME", "moderator_user")
-        register(client, "moderator_user")
+        moderator = register(client, "moderator_user")
+        with connect(write=True) as conn:
+            conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (moderator["id"],))
         delete_url = f"/api/admin/posts/{post['id']}"
     else:
         assert client.post(

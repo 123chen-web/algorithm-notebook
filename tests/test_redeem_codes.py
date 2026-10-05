@@ -573,7 +573,8 @@ def test_manual_grant_preserves_legacy_fullwidth_username_lookup(client, submitt
 
 
 @pytest.mark.parametrize("username,message", [
-    (" \t\u3000", "用户名不能为空"),
+    (" \t\u3000", "用户名不能包含不可见字符"),
+    ("   ", "用户名不能为空"),
     ("a" * 33, "用户名不能超过 32 个字符"),
 ])
 def test_manual_grant_rejects_whitespace_only_and_overlong_normalized_name(client, username, message):

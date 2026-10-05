@@ -139,7 +139,7 @@ def read_password():
 def configure_environment(with_ai=False):
     os.environ.update(
         DATABASE_PATH=str(DB_PATH), AVATAR_DIR=str(AVATAR_DIR), INVITE_CODE=INVITE_CODE,
-        COOKIE_SECURE="0", ADMIN_USERNAME=ADMIN,
+        COOKIE_SECURE="0", ADMIN_USERNAME="",
     )
     for name in BLANKED_SETTINGS:
         os.environ[name] = ""
@@ -296,6 +296,9 @@ def build(password):
     # ---- the cast -------------------------------------------------------------------------------
     for name in (MAIN, NEWCOMER, ADMIN, *MATES, *BEGINNERS):
         world.register(name)
+    # 公开注册一律创建普通用户；仅在隔离的样本数据库中显式授予样本管理员。
+    with world.connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (world.user_ids[ADMIN],))
     world.main.reset_rate_limits()
 
     # ---- the main account: plenty of mistakes with varied review histories -----------------------

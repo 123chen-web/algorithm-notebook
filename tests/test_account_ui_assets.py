@@ -225,7 +225,9 @@ def test_account_assets_are_versioned_and_updated_hooks_are_loaded(document):
             assert assets[0]["attrs"].get("rel") == "stylesheet"
         version = int(assets[0]["attrs"][attribute].split("?v=")[1])
         if filename == "app.js":
-            assert version >= 55
+            assert version >= 72
+        elif filename == "account.js":
+            assert version >= 3
         elif filename == "shell.js":
             assert version >= 4
 

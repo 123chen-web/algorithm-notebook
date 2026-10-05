@@ -8,7 +8,6 @@ import main
 def test_csp_allows_local_photo_blobs_without_relaxing_other_sources(path, monkeypatch):
     # These routes are stateless; checking response headers needs no database.
     monkeypatch.setattr(main, "init_db", lambda: None)
-    monkeypatch.setattr(main, "bootstrap_admin", lambda: None)
     with TestClient(main.app) as client:
         response = client.get(path)
 
