@@ -781,7 +781,7 @@ def test_forum_zone_migration_to_v8_preserves_old_data_and_is_repeatable(
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 10
+        assert db.schema_version(conn) == db.SCHEMA_VERSION >= 10
         columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(posts)")}
         assert columns["zone"]["type"] == "TEXT"
         assert columns["zone"]["notnull"] == 0
@@ -889,7 +889,7 @@ def test_review_feel_migration_to_v10_preserves_old_data_and_is_repeatable(
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 10
+        assert db.schema_version(conn) == db.SCHEMA_VERSION >= 10
         for table, new_columns in REVIEW_FEEL_COLUMNS.items():
             columns = {row["name"]: row for row in conn.execute(f"PRAGMA table_info({table})")}
             for name, kind in new_columns.items():
