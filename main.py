@@ -296,9 +296,38 @@ class MistakeTags(InputModel):
     tags: list[str] = Field(max_length=50)
 
 
+CLIENT_OP_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+
+
 class ReviewInput(InputModel):
     quality: int = Field(strict=True, ge=0, le=5)
-    version: int = Field(strict=True, ge=0)
+    # 带 client_op_id 的离线补交可能拿不到版本号，此时省略 version 并跳过版本比较；
+    # 不带 client_op_id 的普通评分 version 仍然必填。
+    version: int | None = Field(default=None, strict=True, ge=0)
+    client_op_id: str | None = Field(default=None, pattern=CLIENT_OP_ID_PATTERN)
+    reviewed_at: datetime | None = None
+
+    @field_validator("reviewed_at", mode="before")
+    @classmethod
+    def aware_iso_time(cls, value):
+        # 只接受带时区的 ISO 字符串：数字时间戳和没有时区的时间都有歧义。
+        if value is None:
+            return None
+        if not isinstance(value, str) or len(value) > 64:
+            raise ValueError("reviewed_at 必须是带时区的 ISO 时间")
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError("reviewed_at 必须是带时区的 ISO 时间") from None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("reviewed_at 必须带时区")
+        return parsed
+
+    @model_validator(mode="after")
+    def version_required_without_op_id(self):
+        if self.version is None and self.client_op_id is None:
+            raise ValueError("缺少 version")
+        return self
 
 
 class RvbVersionInput(InputModel):
@@ -902,6 +931,26 @@ def home():
     )
 
 
+@app.get("/sw.js")
+def service_worker():
+    # Service Worker 脚本放在站点根路径才能控制整站（/static/sw.js 只能控制 /static/）。
+    # no-cache：浏览器每次先验证，新版本发布后不会被旧缓存卡住；CSP 不需要放宽。
+    return FileResponse(
+        ROOT / "static" / "sw.js",
+        media_type="text/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest():
+    return FileResponse(
+        ROOT / "static" / "manifest.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @app.get("/terms", response_class=HTMLResponse)
 def terms():
     return HTMLResponse(
@@ -1459,7 +1508,7 @@ def delete_account_data(conn, user_id, deleted_at):
 
     for table in ("sessions", "password_resets", "problems", "mistake_tags",
                   "weakness_insights", "mistake_clusters", "ai_usage", "comment_votes",
-                  "manual_payment_claims", "goals"):
+                  "manual_payment_claims", "goals", "review_ops"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -2780,6 +2829,46 @@ def delete_mistake(mistake_id: int, user=Depends(current_user)):
     return {"ok": True}
 
 
+REVIEW_OP_RETENTION = timedelta(days=30)
+REVIEW_FUTURE_SLACK = timedelta(seconds=60)
+REVIEW_BACKFILL_WINDOW = timedelta(days=7)
+
+
+def pwa_review_op_replay(conn, user_id, mistake_id, client_op_id, now):
+    """离线补交的幂等入口：清理 30 天前的记录，再查是否已处理过这个 client_op_id。
+
+    必须在写事务（BEGIN IMMEDIATE）里调用：查和后面的写同属一个事务，
+    并发的重复提交会在写锁上排队，后到的一定能看到先到的记录。
+    命中时返回第一次保存的响应（不再评分），未命中返回 None。
+    """
+    cutoff = (datetime.fromisoformat(now) - REVIEW_OP_RETENTION).isoformat(timespec="seconds")
+    conn.execute("DELETE FROM review_ops WHERE created_at < ?", (cutoff,))
+    saved = conn.execute(
+        "SELECT mistake_id, response FROM review_ops WHERE user_id = ? AND client_op_id = ?",
+        (user_id, client_op_id),
+    ).fetchone()
+    if saved is None:
+        return None
+    if saved["mistake_id"] != mistake_id:
+        raise HTTPException(422, "这个 client_op_id 已用于另一道题")
+    return json.loads(saved["response"])
+
+
+def pwa_reviewed_at(data, item, now):
+    """校验并规范化客户端给的评分时间；返回 UTC、秒精度的 datetime。"""
+    server_now = datetime.fromisoformat(now)
+    given = data.reviewed_at.astimezone(timezone.utc)
+    if given > server_now + REVIEW_FUTURE_SLACK:
+        raise HTTPException(422, "评分时间不能晚于当前时间")
+    if given < server_now - REVIEW_BACKFILL_WINDOW:
+        raise HTTPException(422, "评分时间不能早于 7 天前")
+    given = given.replace(microsecond=0)
+    last = item["last_reviewed_at"]
+    if last is not None and given < datetime.fromisoformat(last):
+        raise HTTPException(409, "这道题之后已经有更新的评分")
+    return given
+
+
 @app.post("/api/mistakes/{mistake_id}/review")
 def review_mistake(
     mistake_id: int,
@@ -2788,10 +2877,24 @@ def review_mistake(
 ):
     with connect(write=True) as conn:
         fresh = rvb_account(conn, user["id"])
+        now = utc_now()
+        if data.client_op_id is not None:
+            # 重复提交（含评分之后又被撤销的）一律返回第一次保存的响应，不重新评分。
+            replay = pwa_review_op_replay(conn, user["id"], mistake_id, data.client_op_id, now)
+            if replay is not None:
+                return replay
         item = owned_mistake(conn, mistake_id, user["id"])
-        day = today_for(fresh)
 
-        if item["version"] != data.version:
+        if data.reviewed_at is None:
+            reviewed_at = now
+            day = today_for(fresh)
+        else:
+            # 补交：评分时间、调度用的“今天”都以客户端当时的时间为准，按用户本地时区换算。
+            given = pwa_reviewed_at(data, item, now)
+            reviewed_at = given.isoformat()
+            day = today_in_timezone(fresh["timezone"], given)
+
+        if data.version is not None and item["version"] != data.version:
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
         if item["suspended_at"] is not None:
             raise HTTPException(409, "这条易错点已暂停，请先恢复")
@@ -2807,7 +2910,6 @@ def review_mistake(
             reviewed_on=day,
             overdue_days=overdue_days,
         )
-        reviewed_at = utc_now()
 
         conn.execute(
             """
@@ -2837,8 +2939,15 @@ def review_mistake(
                 item["due_date"], item["last_reviewed_at"], item["version"] + 1,
             ),
         )
+        response = {**state, "version": item["version"] + 1}
+        if data.client_op_id is not None:
+            conn.execute(
+                "INSERT INTO review_ops(user_id, client_op_id, mistake_id, response, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user["id"], data.client_op_id, mistake_id, json.dumps(response), now),
+            )
 
-    return {**state, "version": item["version"] + 1}
+    return response
 
 
 @app.get("/api/mistakes/{mistake_id}/preview")
