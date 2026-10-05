@@ -197,10 +197,11 @@ docker compose -f deploy/docker-compose.prod.yml up -d --build
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml ps
-curl -fsS http://127.0.0.1:8000/healthz
+docker compose -f deploy/docker-compose.prod.yml exec -T app python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/healthz').read().decode())"
 ```
 
-> `curl` 连的是服务器本机，绕过反向代理，直接看应用本身有没有起来。
+> 应用端口不对公网开放（只有 Caddy 能访问，这是故意的），所以从容器里问应用有没有起来；
+> 不要用服务器上的 `curl http://127.0.0.1:8000`，那样会显示"Connection refused"，不是故障。
 
 **看到什么算成功：**
 
@@ -328,7 +329,7 @@ docker run --rm \
 ```bash
 docker compose -f deploy/docker-compose.prod.yml up -d app
 sleep 30
-curl -fsS http://127.0.0.1:8000/healthz
+docker compose -f deploy/docker-compose.prod.yml exec -T app python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/healthz').read().decode())"
 ```
 
 确认 `status` 为 `ok` 后，做两件事：
