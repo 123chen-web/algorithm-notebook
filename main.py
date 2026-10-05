@@ -5497,7 +5497,6 @@ def admin_delete_comment(comment_id: int, user=Depends(current_user)):
 @app.delete("/api/admin/users/{user_id}/avatar")
 def admin_clear_avatar(user_id: int, user=Depends(current_user)):
     require_admin(user)
-    avatar_path(user_id).unlink(missing_ok=True)
     with connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ? AND deleted_at IS NULL",
@@ -5515,6 +5514,8 @@ def admin_clear_avatar(user_id: int, user=Depends(current_user)):
     return {"ok": True, "has_avatar": False}
 
 
+    # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
+    avatar_path(user_id).unlink(missing_ok=True)
 @app.post("/api/admin/users/{user_id}/ban")
 def admin_ban_user(user_id: int, user=Depends(current_user)):
     require_admin(user)
