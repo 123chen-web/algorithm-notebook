@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 import ai
-from ai_limits import ai_slot, track_call
+from ai_limits import ai_slot, refund_on_server_failure, track_call
 from db import connect
 
 
@@ -187,14 +187,15 @@ def create_clusters(user, today_reader, quota_reader):
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
             created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
-        with track_call(user_id, "clusters"):
-            result = ai.cluster_mistakes(reference)
-            # Also validate at the persistence boundary, including injected/mock providers.
-            try:
-                raw_result = json.dumps(result, ensure_ascii=False)
-            except (TypeError, ValueError, RecursionError):
-                raise HTTPException(502, ai.CLUSTERS_BAD_RESPONSE) from None
-            content = ai._parse_mistake_clusters(raw_result, reference)
+        with refund_on_server_failure(user_id, today, connect):
+            with track_call(user_id, "clusters"):
+                result = ai.cluster_mistakes(reference)
+                # Also validate at the persistence boundary, including injected/mock providers.
+                try:
+                    raw_result = json.dumps(result, ensure_ascii=False)
+                except (TypeError, ValueError, RecursionError):
+                    raise HTTPException(502, ai.CLUSTERS_BAD_RESPONSE) from None
+                content = ai._parse_mistake_clusters(raw_result, reference)
         input_order = {
             item["mistake_id"]: index for index, item in enumerate(reference["mistakes"])
         }

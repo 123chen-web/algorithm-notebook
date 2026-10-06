@@ -199,8 +199,8 @@ def test_undo_an_old_review_without_due_before_is_rejected(client):
     assert stored(mistake) == before and logs(mistake) == before_logs
 
 
-@pytest.mark.parametrize("elapsed,expected_status", [(1800, 200), (1801, 409)])
-def test_undo_thirty_minute_window_includes_the_exact_boundary(client, monkeypatch, elapsed, expected_status):
+@pytest.mark.parametrize("elapsed,expected_status", [(86400, 200), (86401, 409)])
+def test_undo_24_hour_window_includes_the_exact_boundary(client, monkeypatch, elapsed, expected_status):
     owner = register(client)["id"]
     mistake = seed(owner)
     assert_ok(rate(client, mistake))
@@ -209,10 +209,50 @@ def test_undo_thirty_minute_window_includes_the_exact_boundary(client, monkeypat
     response = undo(client, mistake)
     assert response.status_code == expected_status
     if expected_status == 409:
-        assert response.json() == {"detail": "超过 30 分钟，不能撤销"}
+        assert response.json() == {"detail": "超过 24 小时，不能撤销"}
         assert stored(mistake) == before and logs(mistake) == before_logs
     else:
         assert logs(mistake) == []
+
+
+def test_undo_23_hours_after_rating_restores_scheduler_fields(client, monkeypatch):
+    owner = register(client)["id"]
+    mistake = seed(owner, due="2026-09-09", interval=9, repetitions=3, ease=1.9, version=7)
+    before = stored(mistake)
+    assert_ok(rate(client, mistake, quality=0, version=7))
+    monkeypatch.setattr(main, "utc_now", lambda: (NOW + timedelta(hours=23)).isoformat())
+    restored = assert_ok(undo(client, mistake, version=8))
+    fields = ("repetitions", "interval_days", "ease_factor", "due_date", "last_reviewed_at")
+    assert {key: restored[key] for key in fields} == {key: before[key] for key in fields}
+    assert logs(mistake) == []
+
+
+def test_undo_25_hours_after_rating_is_rejected(client, monkeypatch):
+    owner = register(client)["id"]
+    mistake = seed(owner)
+    assert_ok(rate(client, mistake))
+    before, before_logs = stored(mistake), logs(mistake)
+    monkeypatch.setattr(main, "utc_now", lambda: (NOW + timedelta(hours=25)).isoformat())
+    rejected = undo(client, mistake)
+    assert rejected.status_code == 409
+    assert rejected.json() == {"detail": "超过 24 小时，不能撤销"}
+    assert stored(mistake) == before and logs(mistake) == before_logs
+
+
+def test_undo_only_reaches_the_latest_review_not_an_earlier_one(client):
+    owner = register(client)["id"]
+    mistake = seed(owner, due="2026-09-09")
+    assert_ok(rate(client, mistake))
+    with connect(write=True) as conn:
+        conn.execute("UPDATE mistakes SET due_date = '2026-09-09' WHERE id = ?", (mistake,))
+    assert_ok(rate(client, mistake, version=stored(mistake)["version"]))
+    assert len(logs(mistake)) == 2
+    assert_ok(undo(client, mistake, version=stored(mistake)["version"]))
+    older = logs(mistake)
+    assert len(older) == 1
+    rejected = undo(client, mistake, version=stored(mistake)["version"])
+    assert rejected.status_code == 409
+    assert logs(mistake) == older
 
 
 def test_undo_compares_the_review_snapshot_version_to_the_current_record(client):

@@ -191,7 +191,7 @@ def test_query_is_free_and_regeneration_replaces_the_single_saved_result(client,
 
 
 @pytest.mark.parametrize("has_previous_result", [False, True])
-def test_ai_failure_still_spends_quota_and_preserves_saved_result(
+def test_ai_failure_refunds_quota_and_preserves_saved_result(
     client, monkeypatch, has_previous_result,
 ):
     user_id = register(client)["id"]
@@ -207,7 +207,7 @@ def test_ai_failure_still_spends_quota_and_preserves_saved_result(
     monkeypatch.setattr(ai, "analyze_weaknesses", failed_analysis)
     failed = client.post(ENDPOINT)
     assert failed.status_code == 502
-    assert attempts(user_id) == 1 + int(has_previous_result)
+    assert attempts(user_id) == int(has_previous_result)  # 失败这一次已退还
     assert client.get(ENDPOINT).json()["insight"] == previous
 
 

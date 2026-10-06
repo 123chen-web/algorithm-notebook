@@ -27,6 +27,21 @@ def release_attempt(conn, user_id, day):
     )
 
 
+SERVER_FAILURE_STATUSES = (502, 503, 504)
+
+
+@contextmanager
+def refund_on_server_failure(user_id, day, connect_fn=connect):
+    """AI 服务端/供应商侧失败（502/503/504）时退还这一次额度；422、429 等不退。"""
+    try:
+        yield
+    except HTTPException as exc:
+        if exc.status_code in SERVER_FAILURE_STATUSES:
+            with connect_fn(write=True) as conn:
+                release_attempt(conn, user_id, day)
+        raise
+
+
 def max_concurrency():
     try:
         limit = int(os.getenv("AI_MAX_CONCURRENCY", "6"))

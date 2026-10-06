@@ -8,6 +8,7 @@ import main
 
 from activity import activity_summary
 from activity import day_counts
+from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
 from datetime import timedelta
 from datetime import timezone
@@ -51,7 +52,7 @@ def create_weakness_analysis(user=Depends(main.current_user)):
                 raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             reference = main.weakness_analysis_reference(conn, user["id"], state["mistake_count"])
             # 与生成练习题、拍照识别完全相同的套餐读取及原子扣额 SQL。
-            # 失败仍占用次数；在发起外部请求前提交，网络调用不持有写锁。
+            # AI 服务端失败时退还；在发起外部请求前提交，网络调用不持有写锁。
             day = main.today_for(user).isoformat()
             quota = main.ai_quota(conn, user["id"], day)
             limit = quota["ai_daily_limit"]
@@ -73,8 +74,9 @@ def create_weakness_analysis(user=Depends(main.current_user)):
             # 记录材料快照时间，微秒精度区分同秒请求，旧请求晚完成也不覆盖新快照。
             created_at = main.datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
-        with main.track_call(user["id"], "weakness"):
-            content = ai.analyze_weaknesses(reference)
+        with refund_on_server_failure(user["id"], day, main.connect):
+            with main.track_call(user["id"], "weakness"):
+                content = ai.analyze_weaknesses(reference)
         content["sample"] = reference["sample"]
         by_id = {item["mistake_id"]: item for item in reference["mistakes"]}
         for pattern in content["patterns"]:

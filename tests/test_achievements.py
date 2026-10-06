@@ -271,9 +271,10 @@ def test_failed_ai_attempt_does_not_count_as_generated_practice(client, monkeypa
     monkeypatch.setattr(ai, "generate", fail_generation)
     assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 502
     with connect() as conn:
+        # AI 服务端失败（502）已退还这次额度，所以尝试次数回到 0。
         assert conn.execute(
             "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 0
     assert_family(payload(client), "practice", 0)
 
     monkeypatch.setattr(ai, "generate", mock_generated_practice)
