@@ -1087,7 +1087,7 @@ def test_push_migration_to_v15_creates_table_and_preserves_old_data(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 17
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 18
         columns = {row["name"]: row for row in conn.execute(
             "PRAGMA table_info(user_push)"
         )}
