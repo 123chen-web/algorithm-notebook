@@ -29,9 +29,9 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters",
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
-            "mistake_scratch", "user_push", "email_changes",
+            "mistake_scratch", "user_push", "email_changes", "problem_recommendations",
         } <= tables
-        assert db.schema_version(conn) == 16
+        assert db.schema_version(conn) == 17
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -1087,7 +1087,7 @@ def test_push_migration_to_v15_creates_table_and_preserves_old_data(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 16
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 17
         columns = {row["name"]: row for row in conn.execute(
             "PRAGMA table_info(user_push)"
         )}

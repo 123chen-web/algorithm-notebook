@@ -719,8 +719,33 @@ def _apply_email_changes(conn):
     )
 
 
+def _apply_problem_recommendations(conn):
+    # 每日推荐题的落库记录：同一用户同一道题只推荐一次（主键天然去重）；
+    # recommended_at 存"用户本地日 YYYY-MM-DD" + "T" + UTC 时间，同一天内
+    # 重复请求直接返回当天的记录，保证当天稳定。
+    # 注意：注销账号时 users 行是匿名化 UPDATE 而非 DELETE，ON DELETE CASCADE
+    # 不会触发，所以实际删除由 main.delete_account_data 显式执行。
+    conn.execute(
+        """
+        CREATE TABLE problem_recommendations (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            contest_id INTEGER NOT NULL,
+            idx TEXT NOT NULL,
+            recommended_at TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'new'
+                CHECK(state IN ('new', 'done', 'dismissed')),
+            PRIMARY KEY(user_id, contest_id, idx)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_recommendations_user_day "
+        "ON problem_recommendations(user_id, recommended_at)"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
-# SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript。
+# SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
     (1, "历史数据库基线", _apply_baseline),
     (2, "AI 调用记账", _apply_ai_calls),
@@ -738,6 +763,7 @@ MIGRATIONS = [
     (14, "错题草稿演算区", _apply_mistake_scratch),
     (15, "微信提醒渠道配置", _apply_user_push),
     (16, "改邮箱待确认记录", _apply_email_changes),
+    (17, "每日推荐题落库", _apply_problem_recommendations),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

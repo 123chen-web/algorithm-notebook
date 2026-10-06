@@ -1317,7 +1317,8 @@ def delete_account_data(conn, user_id, deleted_at):
     for table in ("sessions", "password_resets", "user_push", "mistake_scratch", "problems",
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
-                  "manual_payment_claims", "goals", "review_ops"):
+                  "manual_payment_claims", "goals", "review_ops",
+                  "problem_recommendations"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -2374,6 +2375,7 @@ import routers.rank
 import routers.groups
 import routers.forum
 import routers.admin
+import routers.recommend
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
@@ -2387,6 +2389,7 @@ app.include_router(routers.rank.router)
 app.include_router(routers.groups.router)
 app.include_router(routers.forum.router)
 app.include_router(routers.admin.router)
+app.include_router(routers.recommend.router)
 
 # 以下名字被测试或其它 routers 以 main.<name> 引用，在此重新导出：
 from routers.account import revoke_sessions  # noqa: F401
