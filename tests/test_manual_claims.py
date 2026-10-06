@@ -419,6 +419,8 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS user_push")
         conn.execute("DROP TABLE IF EXISTS email_changes")
         conn.execute("DROP TABLE IF EXISTS problem_recommendations")
+        # migration 18 adds this column, so a real version-10 database does not have it
+        conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:
