@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import StringConstraints
 from scheduler import today_in_timezone
 from tags import SUGGESTED_TAGS
+from tags import REASON_SUGGEST_TAGS
 from tags import TAGS_PER_MISTAKE
 from tags import TAG_MAX_LENGTH
 from tags import TagError
@@ -32,10 +33,13 @@ router = APIRouter()
 def list_mistakes(
     due_only: bool = True, zone: str | None = None, created_on: date | None = None,
     tag: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None,
+    pending_reason: int | None = None,
     user=Depends(main.current_user),
 ):
     if zone is not None and zone not in main.PROBLEM_ZONES:
         raise HTTPException(400, "分区不存在")
+    if pending_reason is not None and pending_reason not in (0, 1):
+        raise HTTPException(400, "pending_reason 只能是 0 或 1")
     day = main.today_for(user).isoformat()
     sql = main.MISTAKE_SELECT + " WHERE p.user_id = ?"
     params = [user["id"]]
@@ -48,6 +52,9 @@ def list_mistakes(
     if tag:
         sql += " AND EXISTS (SELECT 1 FROM mistake_tags t WHERE t.mistake_id = m.id AND t.tag = ?)"
         params.append(tag)
+    if pending_reason is not None:
+        sql += " AND m.pending_reason = ?"
+        params.append(pending_reason)
 
     with main.connect() as conn:
         if created_on is not None:
@@ -67,7 +74,10 @@ def list_mistakes(
         tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
     return {
         "today": day,
-        "items": [{**dict(row), "tags": tags_by_id[row["id"]]} for row in rows],
+        "items": [
+            main.mistake_public({**dict(row), "tags": tags_by_id[row["id"]]})
+            for row in rows
+        ],
     }
 
 
@@ -80,6 +90,18 @@ def list_tags(user=Depends(main.current_user)):
         "suggestions": list(SUGGESTED_TAGS),
         "limits": {"per_mistake": TAGS_PER_MISTAKE, "length": TAG_MAX_LENGTH},
     }
+
+
+@router.get("/api/tags/suggest")
+def suggest_tags(user=Depends(main.current_user)):
+    # 补原因时的标签建议：用户自己的标签按使用次数降序（最多 12 个），
+    # 再补上内置常用错因（去掉用户已有的，避免重复）。
+    with main.connect() as conn:
+        counts = user_tag_counts(conn, user["id"])
+    mine = counts[:12]
+    mine_tags = {item["tag"] for item in mine}
+    builtin = [tag for tag in REASON_SUGGEST_TAGS if tag not in mine_tags]
+    return {"mine": mine, "builtin": builtin}
 
 
 @router.put("/api/mistakes/{mistake_id}/tags")
@@ -132,6 +154,37 @@ def edit_mistake(mistake_id: int, data: main.MistakeEdit, user=Depends(main.curr
             (data.description, mistake_id),
         )
     return {**item, "description": data.description, "version": item["version"] + 1}
+
+
+@router.post("/api/mistakes/{mistake_id}/reason")
+def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depends(main.current_user)):
+    # 给"待补原因"的易错点补原因：更新描述、整体替换标签、清待补标记。
+    # 调度字段（due_date、间隔、重复次数等）不动；已暂停的记录也允许补。
+    try:
+        tags = normalize_tags(data.tags)
+    except TagError as error:
+        raise HTTPException(422, str(error)) from None
+    if len(tags) > 3:
+        raise HTTPException(422, "最多选择 3 个标签")
+    with main.connect(write=True) as conn:
+        item = main.owned_mistake(conn, mistake_id, user["id"])
+        if item["version"] != data.version:
+            raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        try:
+            replace_tags(conn, user["id"], mistake_id, tags)
+        except TagError as error:
+            raise HTTPException(422, str(error)) from None
+        conn.execute(
+            "UPDATE mistakes SET description = ?, pending_reason = 0, version = version + 1 WHERE id = ?",
+            (data.description, mistake_id),
+        )
+    return {
+        **item,
+        "description": data.description,
+        "tags": tags,
+        "pending_reason": False,
+        "version": item["version"] + 1,
+    }
 
 
 @router.delete("/api/mistakes/{mistake_id}")

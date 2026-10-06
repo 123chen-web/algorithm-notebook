@@ -55,7 +55,10 @@ def rvb_get_queue(
             params.append(tag)
         rows = conn.execute(sql, params).fetchall()
         tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
-        items = [{**dict(row), "tags": tags_by_id[row["id"]]} for row in rows]
+        items = [
+            main.mistake_public({**dict(row), "tags": tags_by_id[row["id"]]})
+            for row in rows
+        ]
         review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
         done_today = review_days.get(today, 0)
     return main.rvb_review_queue(items, today, fresh["daily_review_cap"], done_today, ignore_cap)

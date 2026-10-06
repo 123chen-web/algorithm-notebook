@@ -237,6 +237,11 @@ def get_overview(user=Depends(main.current_user)):
         ).fetchall()
         review_days, _, mistake_days = day_counts(conn, user["id"], user["timezone"])
         weakness = main.weakness_analysis_state(conn, user["id"])
+        pending_reason_count = conn.execute(
+            "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+            "WHERE p.user_id = ? AND m.pending_reason = 1",
+            (user["id"],),
+        ).fetchone()[0]
         hot = conn.execute(
             """
             SELECT p.id, p.title, p.created_at, u.username,
@@ -259,6 +264,7 @@ def get_overview(user=Depends(main.current_user)):
         "due_count": counts["due"],
         "overdue_count": counts["overdue"],
         "total_mistakes": counts["total"],
+        "pending_reason_count": pending_reason_count,
         "streak_days": current_streak(set(review_days), today),
         "last7": [(today - timedelta(days=6 - offset)) in review_days for offset in range(7)],
         "zones": [dict(row) for row in zone_rows],
@@ -278,6 +284,7 @@ def get_overview(user=Depends(main.current_user)):
                 "due_date": row["due_date"],
                 "overdue_days": max(0, (today - main.datetime.fromisoformat(row["due_date"]).date()).days),
                 "repetitions": row["repetitions"],
+                "pending_reason": bool(row["pending_reason"]),
             }
             for row in preview_rows
         ],

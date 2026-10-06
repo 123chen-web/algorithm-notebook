@@ -43,15 +43,26 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
         )
         problem_id = cursor.lastrowid
         mistake_ids = []
-        for description in data.mistakes:
+        if data.quick and not data.mistakes:
+            # 速记：只留证据，自动建 1 条"待补原因"的易错点。
             cursor = conn.execute(
                 """
-                INSERT INTO mistakes(problem_id, description, due_date)
-                VALUES (?, ?, ?)
+                INSERT INTO mistakes(problem_id, description, due_date, pending_reason)
+                VALUES (?, ?, ?, 1)
                 """,
-                (problem_id, description, day),
+                (problem_id, main.QUICK_MISTAKE_PLACEHOLDER, day),
             )
             mistake_ids.append(cursor.lastrowid)
+        else:
+            for description in data.mistakes:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO mistakes(problem_id, description, due_date)
+                    VALUES (?, ?, ?)
+                    """,
+                    (problem_id, description, day),
+                )
+                mistake_ids.append(cursor.lastrowid)
 
     return {"id": problem_id, "mistake_ids": mistake_ids}
 

@@ -76,13 +76,15 @@ def export_data(user=Depends(main.current_user)):
         for row in conn.execute(
             """
             SELECT m.id, m.problem_id, m.description, m.repetitions,
-                   m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at
+                   m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at,
+                   m.pending_reason
             FROM mistakes m JOIN problems p ON p.id = m.problem_id
             WHERE p.user_id = ? ORDER BY m.id
             """,
             (user["id"],),
         ):
             mistake = {**dict(row), "reviews": [], "variants": [], "tags": []}
+            mistake["pending_reason"] = bool(mistake["pending_reason"])
             problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
             mistakes[mistake["id"]] = mistake
 
