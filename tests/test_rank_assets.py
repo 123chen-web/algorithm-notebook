@@ -56,7 +56,7 @@ def test_assets_are_versioned_and_loaded_before_app_js():
     assert names.index("rank.js") < names.index("app.js") and names.index("rank-admin.js") < names.index("app.js")
     versions = dict(scripts)
     assert versions["rank.js"] == "2" and versions["rank-admin.js"] == "1"
-    assert versions["app.js"] == "79", "app.js 改过，版本号随各任务递增（现为 79）"
+    assert versions["app.js"] == "80", "app.js 改过，版本号随各任务递增（现为 80）"
 
 
 def test_csp_safe_markup_and_scripts():

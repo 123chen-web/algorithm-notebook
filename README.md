@@ -1,10 +1,41 @@
-# 欧叶OY V1
+# 欧叶OY
 
-（原名“算法错题本”。）FastAPI + SQLite + 原生网页。
+> 把每一次出错，变成下一次的把握。
 
-支持邀请码注册、免邀请码体验账号、独立用户数据、题目记录、按易错点
-复习、AI 变体题、手动练习结果、密码找回、每日邮件复习提醒。不会执行
-用户代码。
+一个给自学算法、准备面试的人用的**错题本**：把做错的题连同当时的思路和错因
+记下来，系统按遗忘规律安排复习，AI 帮你讲清楚、找出总在哪里栽跟头。
+
+**线上地址：<https://ouyeoy.com>**（邀请码注册，也可以点“免注册体验”先逛一圈）。
+原名“算法错题本”。
+
+## 能做什么
+
+- **记录**：题目、当时的思路、错在哪；每道题可拆成多条易错点，分别复习。
+- **复习**：先自己回忆、再看错因、再打分；每档评分都会预览下次间隔，支持撤销、
+  推迟、暂停和每日上限；专注模式一次只看一张卡。
+- **AI 辅助**：橡皮鸭讲题（你讲、它追问）、变体题、薄弱点分析、拍照识别手写题、
+  AI 讨论要点；调用失败不扣次数。
+- **看清自己**：总览与趋势、掌握度、“我的三大典型失误”和考前一页纸、目标计划卡、
+  草稿演算区、榜单与昨日之星。
+- **一起学**：学习小组、讨论区（采纳、有用、AI 要点）。
+- **随身带**：手机“添加到主屏幕”像 App 一样用，断网也能评分，联网后自动补交。
+- **提醒与导出**：每日邮件或微信提醒；整本 JSON 导出、导出到 Anki。
+- **收款**：手动收款（个人收款码 + 站长确认）和兑换码；支付宝、微信支付的代码已接好。
+
+## 技术与部署
+
+FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
+线上使用 DeepSeek。不会执行用户代码。用 Docker + Caddy 部署，自动 HTTPS，
+每天自动备份，带宕机告警和公开状态页。
+
+- 部署与升级：[docs/operations/deploy.md](docs/operations/deploy.md)
+- 零基础上线手册（买服务器到上线）：[deploy/README-零基础上线手册.md](deploy/README-零基础上线手册.md)
+- 备份与恢复：[docs/operations/backup-and-restore.md](docs/operations/backup-and-restore.md)
+- 宕机告警与状态页：[docs/operations/watchdog.md](docs/operations/watchdog.md)
+- 手动收款：[docs/operations/manual-payment.md](docs/operations/manual-payment.md)
+- 账号与隐私：[docs/operations/accounts-and-privacy.md](docs/operations/accounts-and-privacy.md)
+
+下面的内容是开发与运行说明。
 
 ## 环境
 
