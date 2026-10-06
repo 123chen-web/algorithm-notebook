@@ -49,6 +49,12 @@ printf '%s\n' "$CURRENT" | sed '/^$/d' | crontab -
 touch /var/log/oy-watchdog.log && chmod 600 /var/log/oy-watchdog.log
 
 msg "== 4/4 重启 Caddy 让 /status/ 生效 =="
+# 先在一次性容器里校验新的 Caddyfile，写错了就停在这里，不碰正在运行的网站。
+SITE_DOMAIN="$(grep -E '^SITE_DOMAIN=' "$REPO_DIR/.env" | head -1 | cut -d= -f2-)"
+docker run --rm -e "SITE_DOMAIN=$SITE_DOMAIN" \
+  -v "$REPO_DIR/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+  caddy validate --config /etc/caddy/Caddyfile \
+  || die "Caddyfile 校验没通过，已中止，正在运行的网站没有被改动。"
 compose up -d --force-recreate caddy
 sleep 5
 python3 "$REPO_DIR/deploy/bin/watchdog.py" check
