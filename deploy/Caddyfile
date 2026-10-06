@@ -8,8 +8,20 @@
 # 且 80 端口能从公网访问，否则申请会失败。
 
 {$SITE_DOMAIN} {
-	# 所有请求反向代理到应用容器（内部网络，不走公网）
-	reverse_proxy app:8000
+	# 公开状态页：由 Caddy 直接提供静态文件，应用容器挂了它也能打开。
+	# 文件由宿主机上的 deploy/bin/watchdog.py 每分钟更新。
+	redir /status /status/ 308
+	handle_path /status/* {
+		root * /srv/status
+		header Cache-Control "no-store"
+		header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'"
+		file_server
+	}
+
+	# 其余所有请求反向代理到应用容器（内部网络，不走公网）
+	handle {
+		reverse_proxy app:8000
+	}
 
 	# 压缩，省流量
 	encode zstd gzip

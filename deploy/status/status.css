@@ -1,0 +1,16 @@
+:root { --bg: #f4efe4; --ink: #1f1b16; --muted: #6d655a; --ok: #1f6f4a; --bad: #b3261e; --line: #d9d0bf; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1b1814; --ink: #efe8da; --muted: #a79d8c; --ok: #5fc08f; --bad: #ff8a80; --line: #3a342b; }
+}
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+main { max-width: 32rem; margin: 0 auto; padding: 3rem 16px; }
+h1 { font-size: 1.4rem; margin: 0 0 1.5rem; }
+.summary { font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
+.summary.ok { color: var(--ok); }
+.summary.bad { color: var(--bad); }
+.checks { list-style: none; margin: 0 0 1rem; padding: 0; border-top: 1px solid var(--line); }
+.checks li { display: flex; justify-content: space-between; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+.checks .ok { color: var(--ok); }
+.checks .bad { color: var(--bad); }
+.time, .back { color: var(--muted); font-size: .9rem; }
+a { color: inherit; }

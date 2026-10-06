@@ -63,6 +63,7 @@ services:
       - "443:443/udp" # HTTP/3，可选
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${STATUS_DIR:-/srv/algorithm-notebook/status}:/srv/status:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
