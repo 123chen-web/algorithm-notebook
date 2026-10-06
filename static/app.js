@@ -524,6 +524,7 @@ function signedOut() {
   window.RankAdmin?.reset();
   window.Rank?.reset();
   window.GoalCard?.reset();
+  window.RecommendCard?.reset();
   window.DuckPanel?.reset();
   window.Scratch?.reset();
 window.PushSettings?.reset();
@@ -1000,6 +1001,8 @@ async function loadHome({ refreshUser = true } = {}) {
     }));
     window.GoalCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.GoalCard?.mount(document.querySelector("#goal-card"));
+    window.RecommendCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.RecommendCard?.mount(document.querySelector("#recommend-card"));
   } else {
     window.Overview.renderError();
   }

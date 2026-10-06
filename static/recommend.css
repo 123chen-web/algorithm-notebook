@@ -1,0 +1,53 @@
+/* 总览页「今日推荐题」卡。颜色全部走主题变量；视觉沿用目标卡。
+   文字 / 底色配对（--ink / --ink-2 / --muted / --azurite 压在 --surface 上）
+   见 tests/test_contrast_tokens.py 的 RECOMMEND_TEXT_PAIRS。 */
+
+.rc-card[hidden] { display: none; }
+
+.rc-card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--azurite);
+  border-radius: var(--radius-home);
+  background: var(--surface);
+  color: var(--ink);
+}
+.rc-head { display: grid; gap: var(--space-1); min-width: 0; }
+.rc-eyebrow { margin: 0; color: var(--azurite); font: 600 var(--text-meta)/var(--lh-ui) ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace; letter-spacing: .16em; }
+.rc-title { margin: 0; font: 500 var(--text-lg)/var(--lh-heading) var(--serif); }
+
+.rc-note { margin: 0; color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+.rc-error { margin: 0; color: var(--danger); font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+
+.rc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); min-width: 0; }
+.rc-item { display: grid; gap: var(--space-1); min-width: 0; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.rc-item:first-child { padding-top: 0; border-top: 0; }
+.rc-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+.rc-item-name { color: var(--ink); font-weight: 600; font-size: var(--text-base); overflow-wrap: anywhere; }
+.rc-item-rating { margin-left: auto; color: var(--ink-2); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.rc-item-tags { margin: 0; color: var(--ink-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.rc-item-reason { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: var(--lh-ui); overflow-wrap: anywhere; }
+
+.rc-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+.rc-item-link { color: var(--azurite); font-size: var(--text-sm); }
+.rc-item-state { color: var(--muted); font-size: var(--text-sm); }
+.rc-done { min-height: 36px; }
+.rc-dismiss {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.rc-dismiss:hover:not(:disabled) { background: var(--paper-2); }
+.rc-dismiss:disabled { cursor: default; opacity: .6; }
+
+.rc-footnote { margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-ui); overflow-wrap: anywhere; }

@@ -132,8 +132,17 @@ TYPICAL_TEXT_PAIRS = (
     ("--ink", "--paper-2"),
     ("--ink-2", "--paper-2"),
 )
+# 总览页"今日推荐题"卡（static/recommend.css）。
+RECOMMEND_TEXT_PAIRS = (
+    ("--ink", "--surface"),
+    ("--ink-2", "--surface"),
+    ("--ink-2", "--paper-2"),  # .rc-dismiss hover 底色
+    ("--muted", "--surface"),
+    ("--azurite", "--surface"),
+    ("--danger", "--surface"),
+)
 COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
-    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS + PWA_TEXT_PAIRS + PWA_GRAPHIC_PAIRS + TYPICAL_TEXT_PAIRS for token in pair
+    token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS + PWA_TEXT_PAIRS + PWA_GRAPHIC_PAIRS + TYPICAL_TEXT_PAIRS + RECOMMEND_TEXT_PAIRS for token in pair
 }
 
 
@@ -831,6 +840,42 @@ def test_typical_stylesheet_only_uses_checked_tokens():
     for blocks, declaration in css_declarations(source):
         if any(block.startswith("@media print") for block in blocks):
             continue
+        name, _, value = declaration.partition(":")
+        name = name.strip()
+        tokens = set(re.findall(r"var\((--[\w-]+)\)", value))
+        if name == "color":
+            used_foregrounds |= tokens
+        elif name in ("background", "background-color"):
+            used_backgrounds |= tokens
+    assert used_foregrounds, "没有解析到任何文字颜色，检查方式失效了"
+    assert used_foregrounds <= foregrounds, used_foregrounds - foregrounds
+    assert used_backgrounds <= backgrounds, used_backgrounds - backgrounds
+
+
+@pytest.mark.parametrize(
+    "context,tokens",
+    [
+        pytest.param(context, tokens, id="/".join(part for part in context if part) or "root")
+        for context, tokens in sorted(THEMES.items(), key=lambda item: str(item[0]))
+    ],
+)
+@pytest.mark.parametrize("foreground,background", RECOMMEND_TEXT_PAIRS)
+def test_recommend_text_pairs_meet_contrast(context, tokens, foreground, background):
+    ratio = contrast_ratio(tokens[foreground], tokens[background])
+    assert ratio >= 4.5, (
+        f"推荐题卡 主题/场景 {context}: {foreground}={tokens[foreground]} 对 "
+        f"{background}={tokens[background]} 为 {ratio:.6f}:1，要求至少 4.5:1"
+    )
+
+
+def test_recommend_stylesheet_only_uses_checked_tokens():
+    """recommend.css 里每个 color / background 令牌都必须落在检查过的配对里。"""
+    source = (STATIC / "recommend.css").read_text(encoding="utf-8")
+    checked = set(RECOMMEND_TEXT_PAIRS)
+    foregrounds = {fg for fg, _ in checked}
+    backgrounds = {bg for _, bg in checked}
+    used_foregrounds, used_backgrounds = set(), set()
+    for blocks, declaration in css_declarations(source):
         name, _, value = declaration.partition(":")
         name = name.strip()
         tokens = set(re.findall(r"var\((--[\w-]+)\)", value))
