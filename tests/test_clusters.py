@@ -208,7 +208,7 @@ def test_api_get_is_free_and_regeneration_replaces_single_snapshot(client, monke
 
 
 @pytest.mark.parametrize("previous", [False, True])
-def test_api_failed_generation_spends_quota_and_keeps_previous(client, monkeypatch, previous):
+def test_api_failed_generation_refunds_quota_and_keeps_previous(client, monkeypatch, previous):
     user_id = register(client)["id"]
     seed_mistakes(user_id)
     saved = None
@@ -221,7 +221,7 @@ def test_api_failed_generation_spends_quota_and_keeps_previous(client, monkeypat
 
     monkeypatch.setattr(ai, "cluster_mistakes", fail)
     assert client.post(ENDPOINT).status_code == 504
-    assert attempts(user_id) == 1 + int(previous)
+    assert attempts(user_id) == int(previous)  # 504 已退还
     assert client.get(ENDPOINT).json()["insight"] == saved
 
 
@@ -232,7 +232,7 @@ def test_api_revalidates_provider_output_before_persistence(client, monkeypatch,
     result = {"refusal": ai.REFUSAL_MARKER} if kind == "refusal" else {"summary": "坏结果", "clusters": [{}]}
     monkeypatch.setattr(ai, "cluster_mistakes", lambda reference: result)
     assert client.post(ENDPOINT).status_code == (422 if kind == "refusal" else 502)
-    assert attempts(user_id) == 1
+    assert attempts(user_id) == (1 if kind == "refusal" else 0)  # 502 格式不合格退还，422 不退
     assert client.get(ENDPOINT).json()["insight"] is None
 
 

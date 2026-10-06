@@ -473,15 +473,15 @@ def test_a_replay_after_undo_returns_the_saved_response_and_does_not_rescore(cli
 
 
 def test_undo_window_is_measured_from_reviewed_at(client):
-    # 现有规则不变：撤销看评分日志里的 reviewed_at。补交的旧评分已经超过 30 分钟，不能撤销；
-    # 补交时间在 30 分钟内的可以。
+    # 现有规则不变：撤销看评分日志里的 reviewed_at。补交的旧评分已经超过 24 小时，不能撤销；
+    # 补交时间在 24 小时内的可以。
     owner = register(client)["id"]
     old = seed(owner, due="2026-09-18")
     recent = seed(owner, due="2026-09-18")
-    old_result = ok(post(client, old, client_op_id="op-old00000", reviewed_at=stamp(NOW - timedelta(hours=2))))
-    recent_result = ok(post(client, recent, client_op_id="op-new00000", reviewed_at=stamp(NOW - timedelta(minutes=10))))
+    old_result = ok(post(client, old, client_op_id="op-old00000", reviewed_at=stamp(NOW - timedelta(hours=25))))
+    recent_result = ok(post(client, recent, client_op_id="op-new00000", reviewed_at=stamp(NOW - timedelta(hours=23))))
     blocked = undo(client, old, old_result["version"])
-    assert blocked.status_code == 409 and blocked.json() == {"detail": "超过 30 分钟，不能撤销"}
+    assert blocked.status_code == 409 and blocked.json() == {"detail": "超过 24 小时，不能撤销"}
     assert len(logs(old)) == 1
     assert undo(client, recent, recent_result["version"]).status_code == 200
 

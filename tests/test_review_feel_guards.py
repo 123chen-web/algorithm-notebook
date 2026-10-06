@@ -93,14 +93,14 @@ def test_undo_version_after_mismatch_rejects_before_any_write(undo_probe, versio
     assert_read_only_rejection(statements, ownership_checks)
 
 
-@pytest.mark.parametrize("elapsed_seconds", [1800.000001, 1801], ids=["microsecond-over", "second-over"])
-def test_undo_over_thirty_minutes_rejects_before_any_write(undo_probe, elapsed_seconds):
+@pytest.mark.parametrize("elapsed_seconds", [86400.000001, 86401], ids=["microsecond-over", "second-over"])
+def test_undo_over_24_hours_rejects_before_any_write(undo_probe, elapsed_seconds):
     review, statements, ownership_checks = undo_probe
     review["reviewed_at"] = (NOW - timedelta(seconds=elapsed_seconds)).isoformat()
     with pytest.raises(HTTPException) as rejection:
         attempt_undo()
     assert rejection.value.status_code == 409
-    assert rejection.value.detail == "超过 30 分钟，不能撤销"
+    assert rejection.value.detail == "超过 24 小时，不能撤销"
     assert_read_only_rejection(statements, ownership_checks)
 
 

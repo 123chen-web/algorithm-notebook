@@ -6,6 +6,7 @@ in tests keeps affecting the moved code.
 """
 import main
 
+from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
 from fastapi import Depends
 from fastapi import File
@@ -69,7 +70,7 @@ async def recognize_problem_photo(user=Depends(main.current_user), file: UploadF
     jpeg_bytes = await main.run_in_threadpool(main.resize_photo_for_recognition, image)
 
     # 配额检查和扣减跟生成练习题共用同一套逻辑：同一次 BEGIN IMMEDIATE 事务内
-    # 原子扣减，调用失败也占用次数；AI 调用本身放到事务外面执行，不在网络
+    # 原子扣减，AI 服务端失败（502/503/504）时退还；AI 调用本身放到事务外面执行，不在网络
     # 请求期间持有数据库写锁。
     with ExitStack() as stack:
         with main.connect(write=True) as conn:
@@ -94,8 +95,9 @@ async def recognize_problem_photo(user=Depends(main.current_user), file: UploadF
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        with main.track_call(user["id"], "photo"):
-            return await main.run_in_threadpool(ai.recognize_photo, jpeg_bytes)
+        with refund_on_server_failure(user["id"], day, main.connect):
+            with main.track_call(user["id"], "photo"):
+                return await main.run_in_threadpool(ai.recognize_photo, jpeg_bytes)
 
 
 @router.put("/api/problems/{problem_id}")

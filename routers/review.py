@@ -7,7 +7,7 @@ in tests keeps affecting the moved code.
 import main
 
 from activity import day_counts
-from ai_limits import release_attempt
+from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
 from datetime import date
 from datetime import timedelta
@@ -26,6 +26,9 @@ from fastapi import APIRouter
 
 
 router = APIRouter()
+
+# 撤销窗口放宽到 24 小时；再长就更可能影响连续打卡/榜单。
+UNDO_WINDOW_SECONDS = 24 * 3600
 
 
 @router.get("/api/review/queue")
@@ -176,8 +179,8 @@ def rvb_undo_review(mistake_id: int, data: main.RvbVersionInput, user=Depends(ma
             raise HTTPException(409, "没有可以撤销的评分")
         if review["due_before"] is None:
             raise HTTPException(409, "这次评分太早，不能撤销")
-        if main.datetime.fromisoformat(main.utc_now()) - main.datetime.fromisoformat(review["reviewed_at"]) > timedelta(minutes=30):
-            raise HTTPException(409, "超过 30 分钟，不能撤销")
+        if main.datetime.fromisoformat(main.utc_now()) - main.datetime.fromisoformat(review["reviewed_at"]) > timedelta(seconds=UNDO_WINDOW_SECONDS):
+            raise HTTPException(409, "超过 24 小时，不能撤销")
         if item["version"] != review["version_after"]:
             raise HTTPException(409, "这条记录之后又被修改过，不能撤销")
         restored = {
@@ -268,8 +271,9 @@ def create_variant(mistake_id: int, user=Depends(main.current_user)):
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        with main.track_call(user["id"], "variant"):
-            generated = ai.generate(item)
+        with refund_on_server_failure(user["id"], day, main.connect):
+            with main.track_call(user["id"], "variant"):
+                generated = ai.generate(item)
         is_code_zone = item["zone"] in main.CODE_ZONES
         rows = []
         for question in generated["questions"]:
@@ -357,14 +361,9 @@ def duck_panel_chat(mistake_id: int, data: main.DuckInput, user=Depends(main.cur
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        try:
+        with refund_on_server_failure(user["id"], day, main.connect):
             with main.track_call(user["id"], "duck"):
                 reply = main.duck_ai_reply(item, turns, data.finish)
-        except HTTPException as exc:
-            if exc.status_code in (502, 503, 504):
-                with main.connect(write=True) as conn:
-                    release_attempt(conn, user["id"], day)
-            raise
 
     return {
         "reply": reply,

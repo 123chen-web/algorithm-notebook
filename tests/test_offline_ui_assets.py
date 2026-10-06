@@ -40,7 +40,7 @@ def test_index_loads_offline_scripts_in_fixed_order_before_app_js():
     sync_js = INDEX.index('src="/static/offline-sync.js?v=1"')
     review_ui_js = INDEX.index('src="/static/offline-review.js?v=1"')
     plan_js = INDEX.index('src="/static/plan.js?v=1"')
-    app_js = INDEX.index('src="/static/app.js?v=79"')
+    app_js = INDEX.index('src="/static/app.js?v=80"')
     # offline-queue 必须在 offline-sync 前；UI 编排紧随其后；全部在 app.js 前。
     assert plan_js < queue_js < register_js < sync_js < review_ui_js < app_js
     assert INDEX.count('src="/static/offline-queue.js?v=1"') == 1
@@ -48,7 +48,7 @@ def test_index_loads_offline_scripts_in_fixed_order_before_app_js():
 
 
 def test_app_js_bumped_to_78():
-    assert 'src="/static/app.js?v=79"' in INDEX
+    assert 'src="/static/app.js?v=80"' in INDEX
     assert 'src="/static/app.js?v=77"' not in INDEX
 
 def test_app_js_has_the_three_pwa_wiring_points():
