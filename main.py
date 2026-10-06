@@ -258,6 +258,14 @@ class JoinGroup(InputModel):
     ]
 
 
+# 速记模式的占位文案：只留证据、原因以后补时，服务端填充的标记文本。
+QUICK_CODE_PLACEHOLDER = "（速记：代码待补）"
+QUICK_THINKING_PLACEHOLDER = "（速记：思路待补）"
+QUICK_MISTAKE_PLACEHOLDER = "（待补：为什么错）"
+# 对外展示"待补"状态时的统一文案（Anki 导出等），不泄露内部占位原文。
+PENDING_REASON_DISPLAY = "（待补）"
+
+
 class ProblemFields(InputModel):
     title: Title
     zone: str
@@ -291,7 +299,27 @@ class ProblemFields(InputModel):
 
 
 class NewProblem(ProblemFields):
-    mistakes: list[MistakeText] = Field(min_length=1, max_length=10)
+    mistakes: list[MistakeText] = Field(default_factory=list, max_length=10)
+    # 速记模式：只要求 title 和 zone；code/thinking/mistakes 可省略或为空，
+    # 服务端补占位。quick=false 时行为与原来完全一致。
+    quick: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_quick_placeholders(cls, data):
+        if isinstance(data, dict) and data.get("quick"):
+            data = dict(data)
+            if not (data.get("code") or "").strip():
+                data["code"] = QUICK_CODE_PLACEHOLDER
+            if not (data.get("thinking") or "").strip():
+                data["thinking"] = QUICK_THINKING_PLACEHOLDER
+        return data
+
+    @model_validator(mode="after")
+    def _require_mistakes_unless_quick(self):
+        if not self.quick and not self.mistakes:
+            raise ValueError("请至少添加 1 条易错点")
+        return self
 
 
 class ProblemEdit(ProblemFields):
@@ -307,6 +335,14 @@ class MistakeTags(InputModel):
     # 单个标签的字数和每条的个数上限在 tags.normalize_tags 里统一校验并给出中文提示；
     # 这里只挡掉明显离谱的请求体大小。
     tags: list[str] = Field(max_length=50)
+
+
+class MistakeReasonInput(InputModel):
+    # 补原因：description 走 MistakeText 同样的校验；标签个数上限 3 在接口里
+    # 单独校验（normalize_tags 的上限是 8，不适用这里）。
+    description: MistakeText
+    tags: list[str] = Field(max_length=50)
+    version: int = Field(strict=True, ge=0)
 
 
 class ScratchPut(InputModel):
@@ -829,6 +865,15 @@ def redact_pending_answer(variant):
     return variant
 
 
+def mistake_public(item):
+    """对外 JSON 的易错点通用字段：pending_reason 转为布尔值。
+
+    数据库里存的是 0/1 整数；对外一律给 true/false，保持字段加法兼容。
+    """
+    item["pending_reason"] = bool(item.get("pending_reason", 0))
+    return item
+
+
 def owned_mistake(conn, mistake_id, user_id):
     row = conn.execute(
         MISTAKE_SELECT + " WHERE m.id = ? AND p.user_id = ?",
@@ -836,7 +881,7 @@ def owned_mistake(conn, mistake_id, user_id):
     ).fetchone()
     if row is None:
         raise HTTPException(404, "记录不存在")
-    return dict(row)
+    return mistake_public(dict(row))
 
 
 def owned_problem(conn, problem_id, user_id):
@@ -1147,6 +1192,7 @@ def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
     sql = [
         """
         SELECT m.id, p.title, p.zone, p.thinking, p.code, m.description AS cause,
+               m.pending_reason,
                (
                    SELECT v.answer_code FROM variants v
                    WHERE v.mistake_id = m.id AND v.result = 'solved'
@@ -1174,7 +1220,8 @@ def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
             "title": row["title"],
             "zone": row["zone"],
             "url": anki_url_from_thinking(row["thinking"]),
-            "cause": row["cause"],
+            # 待补原因的卡片：背面原因处只显示"（待补）"，不泄露内部占位文案。
+            "cause": PENDING_REASON_DISPLAY if row["pending_reason"] else row["cause"],
             "notes": row["thinking"],
             "code": row["code"],
             "fixed_code": row["fixed_code"] or "",
