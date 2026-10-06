@@ -804,6 +804,7 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 | 15 | 微信提醒渠道配置（`user_push`） |
 | 16 | 改邮箱待确认记录（`email_changes`） |
 | 17 | 今日推荐题（`problem_recommendations`） |
+| 18 | 错因待补标记（`mistakes.pending_reason`） |
 
 数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
 
