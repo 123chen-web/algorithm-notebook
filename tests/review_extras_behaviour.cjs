@@ -172,12 +172,12 @@ test("extras: undo missing hides action; conflict preserves detail and offers re
   await tick();
   assert.equal(missing.document.querySelector(".review-toast-action"), null);
   missing.extras.reset();
-  const env = setup(async (_url, init = {}) => { throw fail(init.method === "POST" ? 409 : 405, init.method === "POST" ? "超过 30 分钟，不能撤销" : "method"); });
+  const env = setup(async (_url, init = {}) => { throw fail(init.method === "POST" ? 409 : 405, init.method === "POST" ? "超过 24 小时，不能撤销" : "method"); });
   env.extras.rememberReview({ item, result: { version: 4 }, quality: 4 });
   await tick();
   env.document.querySelector(".review-toast-action").click();
   await tick();
-  assert.match(env.document.querySelector(".review-toast").textContent, /超过 30 分钟，不能撤销/);
+  assert.match(env.document.querySelector(".review-toast").textContent, /超过 24 小时，不能撤销/);
   env.extras.reset();
 });
 

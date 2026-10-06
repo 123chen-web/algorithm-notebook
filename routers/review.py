@@ -27,6 +27,9 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
+# 撤销窗口放宽到 24 小时；再长就更可能影响连续打卡/榜单。
+UNDO_WINDOW_SECONDS = 24 * 3600
+
 
 @router.get("/api/review/queue")
 def rvb_get_queue(
@@ -176,8 +179,8 @@ def rvb_undo_review(mistake_id: int, data: main.RvbVersionInput, user=Depends(ma
             raise HTTPException(409, "没有可以撤销的评分")
         if review["due_before"] is None:
             raise HTTPException(409, "这次评分太早，不能撤销")
-        if main.datetime.fromisoformat(main.utc_now()) - main.datetime.fromisoformat(review["reviewed_at"]) > timedelta(minutes=30):
-            raise HTTPException(409, "超过 30 分钟，不能撤销")
+        if main.datetime.fromisoformat(main.utc_now()) - main.datetime.fromisoformat(review["reviewed_at"]) > timedelta(seconds=UNDO_WINDOW_SECONDS):
+            raise HTTPException(409, "超过 24 小时，不能撤销")
         if item["version"] != review["version_after"]:
             raise HTTPException(409, "这条记录之后又被修改过，不能撤销")
         restored = {
