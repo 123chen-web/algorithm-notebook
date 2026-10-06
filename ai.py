@@ -2,12 +2,14 @@ import base64
 import json
 import os
 import re
+import time
 
 from fastapi import HTTPException
 from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
+    InternalServerError,
     OpenAI,
     RateLimitError,
 )
@@ -15,6 +17,19 @@ from openai import (
 from ai_limits import note_usage
 
 REFUSAL_MARKER = "REFUSED_OFF_TOPIC"
+
+# 只对传输层的临时性错误（超时、连接失败、供应商 5xx）重试一次；
+# 鉴权、请求格式、额度不足和输出解析失败都不重试。整个请求仍只占一个并发名额、只扣一次额度。
+RETRY_DELAY_SECONDS = 2.0
+_TRANSIENT_ERRORS = (APITimeoutError, APIConnectionError, InternalServerError)
+
+
+def call_with_retry(func, sleep=time.sleep):
+    try:
+        return func()
+    except _TRANSIENT_ERRORS:
+        sleep(RETRY_DELAY_SECONDS)
+        return func()
 
 # 与 main.py 的 CODE_ZONES / NON_CODE_ZONES 保持一致，仅用于拼提示词里的说明文字；
 # 不引入对 main.py 的依赖，真正的分区校验由 main.py 的 Pydantic 模型负责。
@@ -206,7 +221,7 @@ def generate(mistake: dict) -> dict:
     )
 
     try:
-        # 禁止 SDK 自动重试，避免一次点击隐含多次生成请求。
+        # 禁止 SDK 自动重试，重试统一走 call_with_retry（最多一次）。
         # 使用 Chat Completions 接口而不是 OpenAI 较新的 Responses 接口，
         # 因为前者是绝大多数“OpenAI 兼容”服务商（包括 DeepSeek）都支持的
         # 最小公共接口；只对接官方 OpenAI 的话两者都可以。
@@ -219,7 +234,7 @@ def generate(mistake: dict) -> dict:
             max_retries=0,
         ) as client:
             note_usage(model, None)
-            response = client.chat.completions.create(
+            response = call_with_retry(lambda: client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": instructions},
@@ -237,7 +252,7 @@ def generate(mistake: dict) -> dict:
                 # 推理过程的模型，推理 token 也算在 max_tokens 里，需要
                 # 比纯输出预留大得多的余量。
                 max_tokens=30000,
-            )
+            ))
             note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 生成超时，请稍后重试") from None
@@ -371,7 +386,7 @@ def recognize_photo(jpeg_bytes: bytes) -> dict:
             max_retries=0,
         ) as client:
             note_usage(model, None)
-            response = client.chat.completions.create(
+            response = call_with_retry(lambda: client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": PHOTO_INSTRUCTIONS},
@@ -395,7 +410,7 @@ def recognize_photo(jpeg_bytes: bytes) -> dict:
                 ],
                 max_tokens=30000,
                 response_format={"type": "json_object"},
-            )
+            ))
             note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 图片识别超时，请稍后重试") from None
@@ -575,7 +590,7 @@ def analyze_weaknesses(reference: dict) -> dict:
             api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0,
         ) as client:
             note_usage(model, None)
-            response = client.chat.completions.create(
+            response = call_with_retry(lambda: client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": WEAKNESS_INSTRUCTIONS},
@@ -587,7 +602,7 @@ def analyze_weaknesses(reference: dict) -> dict:
                 ],
                 max_tokens=30000,
                 response_format={"type": "json_object"},
-            )
+            ))
             note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 薄弱点分析超时，请稍后重试") from None
@@ -736,7 +751,7 @@ def cluster_mistakes(reference: dict) -> dict:
             api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0,
         ) as client:
             note_usage(model, None)
-            response = client.chat.completions.create(
+            response = call_with_retry(lambda: client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": CLUSTERS_INSTRUCTIONS},
@@ -748,7 +763,7 @@ def cluster_mistakes(reference: dict) -> dict:
                 ],
                 max_tokens=30000,
                 response_format={"type": "json_object"},
-            )
+            ))
             note_usage(model, response)
     except APITimeoutError:
         raise HTTPException(504, "AI 专题归并超时，请稍后重试") from None

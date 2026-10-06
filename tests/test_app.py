@@ -203,13 +203,15 @@ def test_ai_persists_results_and_limits_attempts(client, monkeypatch):
     )
     assert saved.status_code == 200
 
-    # 失败的一次也计入今日两次额度。
+    # 服务端失败的那次已退还额度，所以今天还能再成功生成一次；两次成功后才达到上限。
+    again = client.post(f"/api/mistakes/{mistake_id}/variants")
+    assert again.status_code == 201
     limited = client.post(f"/api/mistakes/{mistake_id}/variants")
     assert limited.status_code == 429
 
     detail = client.get(f"/api/mistakes/{mistake_id}").json()
     stored = {variant["id"]: variant for variant in detail["variants"]}
-    assert len(stored) == 2
+    assert len(stored) == 4
     assert stored[variant_id]["result"] == "solved"
     assert stored[variant_id]["answer_code"] == "def lower_bound(a, x):\n    pass\n"
     assert stored[variants[1]["id"]]["result"] == "unattempted"

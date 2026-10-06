@@ -143,8 +143,7 @@ def test_quota_exhausted_returns_429_and_never_calls_ai(client, monkeypatch):
 
 
 def test_quota_is_still_consumed_when_photo_has_no_recognizable_content(client, monkeypatch):
-    # .env 里写明了：调用失败也占用次数，避免失败重试造成无上限的成本。
-    # 识别不出有效内容跟识别失败一样，都不能免费重试。
+    # 识别不出有效内容属于用户内容问题（422），不退额度；只有 AI 服务端失败（502/503/504）才退还。
     account = register(client)
 
     def refuse(jpeg_bytes):

@@ -7,7 +7,7 @@ in tests keeps affecting the moved code.
 import main
 
 from activity import day_counts
-from ai_limits import release_attempt
+from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
 from datetime import date
 from datetime import timedelta
@@ -271,8 +271,9 @@ def create_variant(mistake_id: int, user=Depends(main.current_user)):
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        with main.track_call(user["id"], "variant"):
-            generated = ai.generate(item)
+        with refund_on_server_failure(user["id"], day, main.connect):
+            with main.track_call(user["id"], "variant"):
+                generated = ai.generate(item)
         is_code_zone = item["zone"] in main.CODE_ZONES
         rows = []
         for question in generated["questions"]:
@@ -360,14 +361,9 @@ def duck_panel_chat(mistake_id: int, data: main.DuckInput, user=Depends(main.cur
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        try:
+        with refund_on_server_failure(user["id"], day, main.connect):
             with main.track_call(user["id"], "duck"):
                 reply = main.duck_ai_reply(item, turns, data.finish)
-        except HTTPException as exc:
-            if exc.status_code in (502, 503, 504):
-                with main.connect(write=True) as conn:
-                    release_attempt(conn, user["id"], day)
-            raise
 
     return {
         "reply": reply,

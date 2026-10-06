@@ -134,7 +134,7 @@ def test_mock_provider_records_tokens_and_actual_request_model(client, monkeypat
 
 
 @pytest.mark.parametrize("feature", FEATURES)
-def test_failed_ai_keeps_status_spends_quota_and_releases_slot(client, monkeypatch, feature):
+def test_failed_ai_keeps_status_refunds_quota_and_releases_slot(client, monkeypatch, feature):
     user_id = register(client)["id"]
     mistake_id = seed_mistakes(user_id)[0]
     monkeypatch.setenv("AI_MAX_CONCURRENCY", "1")
@@ -149,10 +149,10 @@ def test_failed_ai_keeps_status_spends_quota_and_releases_slot(client, monkeypat
     row, = call_rows()
     assert row["ok"] == 0 and row["error"] == "http_504"
     assert "PRIVATE_EXCEPTION_WITH_USER_CONTENT" not in json.dumps(row)
-    assert attempts(user_id) == 1
+    assert attempts(user_id) == 0  # AI 服务端失败（504）退还这次额度
     mock_ai(monkeypatch, feature)
     assert request_ai(client, feature, mistake_id).status_code == (201 if feature == "variant" else 200)
-    assert len(call_rows()) == 2 and attempts(user_id) == 2
+    assert len(call_rows()) == 2 and attempts(user_id) == 1
 
 
 def test_accounting_columns_only_contain_cost_metadata(client):
