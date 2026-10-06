@@ -229,10 +229,10 @@ def update_email(
         now = int(time.time())
         conn.execute(
             """
-            INSERT INTO email_changes(user_id, new_email, main.token_hash, expires_at, created_at)
+            INSERT INTO email_changes(user_id, new_email, token_hash, expires_at, created_at)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
-                new_email = excluded.new_email, main.token_hash = excluded.token_hash,
+                new_email = excluded.new_email, token_hash = excluded.token_hash,
                 expires_at = excluded.expires_at, created_at = excluded.created_at
             """,
             (user["id"], data.email, main.token_hash(token), now + main.EMAIL_CHANGE_SECONDS, now),
@@ -257,7 +257,7 @@ def confirm_email_change(data: main.EmailChangeConfirm, request: Request):
     try:
         with main.connect(write=True) as conn:
             row = conn.execute(
-                "SELECT user_id, new_email, expires_at FROM email_changes WHERE main.token_hash = ?",
+                "SELECT user_id, new_email, expires_at FROM email_changes WHERE token_hash = ?",
                 (main.token_hash(data.token),),
             ).fetchone()
             if row is None:
