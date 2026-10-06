@@ -131,9 +131,108 @@ def parse_question(title, lines):
     return record
 
 
+CUOTI_TITLE = re.compile(r"^# (.+?)\s*$")
+CUOTI_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+LANGUAGE_NAMES = {"cpp": "C++", "c++": "C++", "python": "Python"}
+
+
+def is_cuoti_format(text):
+    """错题本（cuoti）格式：一个文件一道题，H1 标题 + 固定的二级小节。"""
+    return bool(
+        re.search(r"^# \S", text, re.M)
+        and re.search(r"^## 错误原因分析\s*$", text, re.M)
+    )
+
+
+def first_fence(items):
+    """返回该小节第一个代码围栏的 (语言, 代码)；没有围栏返回 None。"""
+    language, body, inside = None, [], False
+    for line, kind, info in items:
+        if kind == "open" and not inside:
+            language, inside = info, True
+        elif kind == "code" and inside:
+            body.append(line)
+        elif kind == "close" and inside:
+            return language, "\n".join(body)
+    return None
+
+
+def parse_cuoti(text):
+    title, header, sections, current = None, [], {}, None
+    for line, kind, info in scan(text):
+        if kind == "text" and title is None and CUOTI_TITLE.fullmatch(line):
+            title = CUOTI_TITLE.fullmatch(line)[1]
+            continue
+        heading = HEADING.fullmatch(line) if kind == "text" else None
+        if heading:
+            current = heading[1].strip()
+            sections[current] = []
+        elif current is None:
+            header.append((line, kind, info))
+        else:
+            sections[current].append((line, kind, info))
+    if not title:
+        raise ValueError("缺少一级标题")
+
+    def section(prefix):
+        for name, items in sections.items():
+            if name.startswith(prefix):
+                return items
+        return []
+
+    def body(prefix):
+        return "\n".join(line for line, _, _ in section(prefix)).strip()
+
+    fields = {}
+    for line, kind, _ in header:
+        match = FIELD.fullmatch(line.strip()) if kind == "text" else None
+        if match and match[2]:
+            fields[match[1].strip()] = match[2].strip()
+
+    wrong, right = first_fence(section("我的错误代码")), first_fence(section("正确代码"))
+    chosen = wrong or right
+    if not chosen or not chosen[0] or not chosen[1].strip():
+        raise ValueError("缺少带语言标签的代码围栏（我的错误代码或正确代码）")
+    language = LANGUAGE_NAMES.get(chosen[0].lower(), chosen[0])
+
+    parts = []
+    if fields.get("标签"):
+        parts.append("标签：" + fields["标签"])
+    for label, prefix in (
+        ("题目大意", "题目大意"), ("来源", "题目来源"),
+        ("当时的思路", "我当时的思路"), ("错误原因", "错误原因分析"),
+    ):
+        text_part = body(prefix)
+        if text_part:
+            parts.append(f"【{label}】\n{text_part}")
+    if wrong and right:
+        parts.append(f"【正确代码】\n```{right[0]}\n{right[1]}\n```")
+    takeaway = body("关键收获")
+    if not takeaway:
+        raise ValueError("缺少关键收获（它会作为复习用的易错点）")
+    record = {
+        "title": title.strip(), "language": language, "code": chosen[1] + "\n",
+        "thinking": "\n\n".join(parts), "mistakes": [takeaway], "fallback": False,
+    }
+    date = fields.get("记录日期", "")
+    if CUOTI_DATE.fullmatch(date):
+        record["created_at"] = f"{date}T12:00:00+00:00"
+    for name, limit in (
+        ("title", 200), ("language", 40), ("code", 40000), ("thinking", 8000)
+    ):
+        if not record[name].strip() or len(record[name]) > limit:
+            raise ValueError(f"{name} 为空或超过 {limit} 字符")
+    if len(takeaway) > 2000:
+        raise ValueError("关键收获超过 2000 字符")
+    return record
+
+
 def parse_file(path):
+    text = path.read_text(encoding="utf-8-sig")
+    if is_cuoti_format(text):
+        return [parse_cuoti(text)], []
     sections, current = [], None
-    for item in scan(path.read_text(encoding="utf-8-sig")):
+    for item in scan(text):
         heading = HEADING.fullmatch(item[0]) if item[1] == "text" else None
         if heading:
             current = (heading[1], [])
@@ -187,7 +286,7 @@ def insert_record(conn, record, user_id, day, now):
         "INSERT INTO problems(user_id,title,language,code,thinking,created_at) "
         "VALUES (?,?,?,?,?,?)",
         (user_id, record["title"], record["language"], record["code"],
-         record["thinking"], now),
+         record["thinking"], record.get("created_at", now)),
     )
     conn.executemany(
         "INSERT INTO mistakes(problem_id,description,due_date) VALUES (?,?,?)",
