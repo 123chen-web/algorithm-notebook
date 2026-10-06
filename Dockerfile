@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY static/ ./static/
 COPY assets/ ./assets/
+COPY routers/ ./routers/
 
 RUN groupadd --gid 10001 notebook \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin notebook \

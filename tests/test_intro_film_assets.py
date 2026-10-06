@@ -70,11 +70,11 @@ def test_assets_are_versioned_deferred_and_loaded_before_the_router(index):
     assert sources.count("/static/intro-film.js?v=2") == 1, "intro-film.js 改过，版本号要加一"
     assert sources.count("/static/intro-glyphs.js?v=1") == 1
     assert sources.count("/static/intro.js?v=13") == 1, "intro.js 改过，版本号要加一"
-    assert sources.count("/static/app.js?v=78") == 1, "app.js 改过，版本号要加一"
+    assert sources.count("/static/app.js?v=79") == 1, "app.js 改过，版本号要加一"
     film = sources.index("/static/intro-film.js?v=2")
     glyphs = sources.index("/static/intro-glyphs.js?v=1")
     assert "defer" in scripts[film] and "defer" in scripts[glyphs]
-    assert glyphs < film < sources.index("/static/app.js?v=78"), "字形数据要在开场脚本之前加载"
+    assert glyphs < film < sources.index("/static/app.js?v=79"), "字形数据要在开场脚本之前加载"
     assert all(attrs.get("src") for attrs in scripts), "CSP 不允许内联脚本"
 
 

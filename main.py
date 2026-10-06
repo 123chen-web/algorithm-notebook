@@ -133,6 +133,7 @@ ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 # 拍照识别：手机拍的一整页手写解题过程可能有好几 MB，上限比头像更宽松；
 # 识别前会重新编码压缩，不会把原始大图直接传给 AI。
 PHOTO_MAX_BYTES = 8 * 1024 * 1024
+API_MAX_BODY_BYTES = 10 * 1024 * 1024
 PHOTO_MAX_DIMENSION = 1600
 
 # 简单校验即可：真正确认邮箱能收到信，靠的是密码找回时能不能收到邮件，
@@ -194,6 +195,10 @@ def normalize_email(value):
     if not EMAIL_PATTERN.fullmatch(value):
         raise ValueError("请填写有效的邮箱地址")
     return value
+
+
+class EmailChangeConfirm(InputModel):
+    token: str = Field(min_length=1, max_length=200)
 
 
 class ForgotPassword(InputModel):
@@ -308,8 +313,8 @@ class ScratchPut(InputModel):
     # 草稿演算区：code/fixed 为代码文本，table 为 {cols, rows} 或 null；
     # table 的结构校验在接口里按 static/trace-table.js 的 validate 规则做。
     version: int = Field(strict=True, ge=0)
-    code: Annotated[str, StringConstraints(strict=True)]
-    fixed: Annotated[str, StringConstraints(strict=True)]
+    code: Annotated[str, StringConstraints(strict=True, max_length=100000)]
+    fixed: Annotated[str, StringConstraints(strict=True, max_length=100000)]
     table: dict | None
 
 
@@ -730,7 +735,19 @@ def check_username_available(username, *, allow_admin_name=False):
         raise HTTPException(400, "这个用户名已被保留")
 
 
-def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
+def cookie_secure(request):
+    """COOKIE_SECURE 显式设置时按显式值；未设置时按请求是否为 https 自动决定。"""
+    explicit = os.getenv("COOKIE_SECURE")
+    if explicit is not None and explicit.strip() != "":
+        return explicit.strip() == "1"
+    if os.getenv("TRUST_PROXY") == "1":
+        proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+        if proto:
+            return proto == "https"
+    return request.url.scheme == "https"
+
+
+def set_session(conn, user_id, response, request, *, sec_cleanup_expired=True):
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     if sec_cleanup_expired:
@@ -744,7 +761,7 @@ def set_session(conn, user_id, response, *, sec_cleanup_expired=True):
         value=token,
         max_age=SESSION_SECONDS,
         httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "0") == "1",
+        secure=cookie_secure(request),
         samesite="lax",
         path="/",
     )
@@ -943,9 +960,12 @@ LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
 FORGOT_PASSWORD_LIMIT = 5
 FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
+FORGOT_PASSWORD_EMAIL_LIMIT = 3
+FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS = 60 * 60
 RESET_PASSWORD_LIMIT = 10
 RESET_PASSWORD_WINDOW_SECONDS = 15 * 60
 RESET_TOKEN_SECONDS = 30 * 60
+EMAIL_CHANGE_SECONDS = 30 * 60
 # 举报是登录后的操作，按 user_id 限流比按 IP 更准（不会误伤同一 IP 下的其他人）。
 REPORT_LIMIT = 10
 REPORT_WINDOW_SECONDS = 60 * 60
@@ -953,6 +973,10 @@ REPORT_WINDOW_SECONDS = 60 * 60
 ANKI_EXPORT_LIMIT = 10
 ANKI_EXPORT_WINDOW_SECONDS = 60 * 60
 ANKI_MAX_RECORDS = 5000
+# 整本 JSON 导出：每用户每小时次数与题目记录数上限。
+EXPORT_LIMIT = 10
+EXPORT_WINDOW_SECONDS = 60 * 60
+EXPORT_MAX_RECORDS = 5000
 ANKI_SCOPES = ("all", "zone", "weak", "mastered")
 
 _rate_lock = threading.Lock()
@@ -978,6 +1002,14 @@ def reset_rate_limits():
 
 
 def client_ip(request: Request):
+    # 部署在 Caddy 之类的反向代理后面时，socket 地址永远是代理的内网 IP，
+    # 限流会变成全站共用一个桶；设置 TRUST_PROXY=1（且应用端口不对公网开放）后，
+    # 取代理追加在 X-Forwarded-For 最右侧的那一项（客户端自己伪造的项都在它左边）。
+    if os.getenv("TRUST_PROXY") == "1":
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        last = forwarded.split(",")[-1].strip()
+        if last:
+            return last
     return request.client.host if request.client else "unknown"
 
 
@@ -1015,6 +1047,15 @@ async def request_protection(request, call_next):
             status_code=403,
             content={"detail": "请求缺少必要的安全校验"},
         )
+
+    if request.url.path.startswith("/api/"):
+        declared = request.headers.get("content-length", "")
+        # 全局上限留足照片识别（8 MiB + multipart 开销）的余量；头像等各自的上限仍在接口内。
+        if declared.isdigit() and int(declared) > API_MAX_BODY_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "请求内容太大"},
+            )
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -1955,6 +1996,7 @@ def group_detail(conn, group_id, user_id):
 
 
 POST_LIST_DEFAULT_LIMIT = 20
+POST_LIST_MAX_OFFSET = 10000
 POST_LIST_MAX_LIMIT = 50
 POST_EXCERPT_LENGTH = 140
 POST_HOT_SCORE = 5

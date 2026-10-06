@@ -283,7 +283,7 @@ def test_refund_clears_subscription_preserves_usage_and_records_time(database, c
         ).fetchone()[0] == 7
 
 
-def test_refund_of_older_order_clears_entire_newer_subscription(database):
+def test_refund_of_older_order_only_rolls_back_its_own_days(database):
     older = payments.create_order(1, 1, "alipay")["order"]
     newer = payments.create_order(1, 2, "alipay")["order"]
     deliver(older)
@@ -293,9 +293,25 @@ def test_refund_of_older_order_clears_entire_newer_subscription(database):
 
     payments.refund_order(1, older["id"])
 
-    assert subscription()["plan_id"] is None
-    assert subscription()["plan_expires_at"] is None
+    assert subscription()["plan_id"] == 2
+    assert subscription()["plan_expires_at"] == "2026-10-21T10:00:00+00:00"
     assert payments.get_order(1, newer["id"])["status"] == "paid"
+
+
+def test_refund_failure_leaves_subscription_untouched(database, monkeypatch):
+    order = payments.create_order(1, 1, "alipay")["order"]
+    deliver(order)
+    before = subscription()
+
+    def boom(adapter, value):
+        raise PaymentChannelError("down")
+
+    monkeypatch.setattr(MockChannel, "refund", boom)
+    with pytest.raises(HTTPException) as exc:
+        payments.refund_order(1, order["id"])
+    assert exc.value.status_code == 502
+    assert subscription() == before
+    assert payments.get_order(1, order["id"])["status"] == "paid"
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "closed", "refunded"])

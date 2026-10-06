@@ -20,7 +20,7 @@
 
 ## 幂等（`client_op_id`）
 
-- 表 `review_ops`（迁移 12），主键 `(user_id, client_op_id)`，保存 `mistake_id`、第一次的响应 JSON、`created_at`。
+- 表 `review_ops`（迁移 13），主键 `(user_id, client_op_id)`，保存 `mistake_id`、第一次的响应 JSON、`created_at`。
 - 同一用户用同一个 `client_op_id` 再次提交：**不再评分**，直接返回第一次保存的响应（HTTP 200，内容相同），
   不重新校验版本、`reviewed_at`、到期状态——客户端重试、响应丢失后重发都是安全的。
 - 不同用户的相同 id 互不影响；一个用户看不到、也无法重放别人的记录。
@@ -84,7 +84,7 @@
 
 ## 升级与回滚
 
-- 迁移 12 新增表 `review_ops`，启动时自动迁移，无需手工操作。
+- 迁移 13 新增表 `review_ops`，启动时自动迁移，无需手工操作。
 - 先上线服务端、再发布前端：服务端对旧客户端（不带新字段）完全兼容。
 - 回滚程序版本前请先备份（见 [backup-and-restore.md](backup-and-restore.md)）；旧版程序拒绝打开更新的数据库。
 

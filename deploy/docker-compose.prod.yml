@@ -1,0 +1,91 @@
+# 生产环境 Compose 配置
+#
+# 用法（在仓库根目录 /srv/algorithm-notebook 下执行）：
+#   cp deploy/.env.prod.example .env   # 按手册填好
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+#
+# 设计要点：
+# - app 容器只挂在内部网络上，不发布任何端口到公网；所有外部流量走 caddy。
+# - 数据目录用宿主机明确目录 /srv/algorithm-notebook/data（可用 DATA_DIR 环境变量改），
+#   容器重建、镜像更新都不会丢数据；站长用 scp 也能直接看到文件。
+# - Caddy 自动申请并续期 Let's Encrypt 证书，域名从 SITE_DOMAIN 环境变量传入。
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: algorithm-notebook:prod
+    # 不发布端口：只在内部网络监听，公网只能经由 caddy 访问。
+    networks:
+      - internal
+    volumes:
+      # 宿主机明确目录；install.sh 会建好并授权给容器内的 notebook 用户（UID 10001）。
+      - type: bind
+        source: ${DATA_DIR:-/srv/algorithm-notebook/data}
+        target: /app/data
+    env_file:
+      - ${ENV_FILE:-/srv/algorithm-notebook/.env}
+    environment:
+      # 生产必需：强制安全 Cookie。即使 .env 里忘了改，这里也保证为 1。
+      COOKIE_SECURE: "1"
+      # 应用只在内部网络，所有请求都经 Caddy：限流按 Caddy 传来的真实客户端 IP 计算。
+      TRUST_PROXY: "1"
+      DATABASE_PATH: /app/data/notebook.db
+      AVATAR_DIR: /app/data/avatars
+      PAY_QR_DIR: /app/data/pay-qr
+      BACKUP_DIR: /app/data/backups
+      BACKUP_KEEP: "30"
+      # 邮件里的找回密码链接必须用真实域名拼接。
+      PUBLIC_BASE_URL: https://${SITE_DOMAIN}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).close()"
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3，可选
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    networks:
+      - internal
+      - public
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # 只给 caddy 用的对外网络
+  public:
+  # 应用所在的内部网络，不对外暴露
+  internal:
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -496,7 +496,6 @@ def admin_delete_comment(comment_id: int, user=Depends(main.current_user)):
 @router.delete("/api/admin/users/{user_id}/avatar")
 def admin_clear_avatar(user_id: int, user=Depends(main.current_user)):
     main.require_admin(user)
-    main.avatar_path(user_id).unlink(missing_ok=True)
     with main.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ? AND deleted_at IS NULL",
@@ -511,6 +510,8 @@ def admin_clear_avatar(user_id: int, user=Depends(main.current_user)):
             """,
             (main.utc_now(), user_id),
         )
+    # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
+    main.avatar_path(user_id).unlink(missing_ok=True)
     return {"ok": True, "has_avatar": False}
 
 

@@ -59,7 +59,7 @@ def register(data: main.Registration, request: Request, response: Response):
                   0, now, TERMS_VERSION),
             )
             user_id = cursor.lastrowid
-            main.set_session(conn, user_id, response)
+            main.set_session(conn, user_id, response, request)
     except sqlite3.IntegrityError as exc:
         if "users.email" in str(exc):
             raise HTTPException(409, "这个邮箱已经被使用") from None
@@ -92,7 +92,7 @@ def create_trial_account(data: main.TrialSignup, request: Request, response: Res
                     (username, hashed, data.timezone, main.utc_now()),
                 )
                 user_id = cursor.lastrowid
-                main.set_session(conn, user_id, response)
+                main.set_session(conn, user_id, response, request)
             break
         except sqlite3.IntegrityError:
             continue
@@ -141,7 +141,7 @@ def login(data: main.Credentials, request: Request, response: Response):
             raise HTTPException(401, "用户名或密码不正确")
         if fresh["is_banned"]:
             raise HTTPException(403, "账号已被封禁，无法登录")
-        main.set_session(conn, user["id"], response)
+        main.set_session(conn, user["id"], response, request)
     return {"ok": True}
 
 
@@ -157,6 +157,14 @@ def forgot_password(
         raise HTTPException(429, "尝试次数过多，请稍后再试")
 
     email = data.email.strip().lower()
+    # 同一邮箱每小时最多 3 次；不论邮箱是否存在都计数，超限时返回与正常相同的
+    # 响应，只是不再发信也不动旧 token（不泄露邮箱是否存在，也防止被刷信/刷掉旧链接）。
+    if main.rate_limited(
+        f"forgot-email:{email}",
+        main.FORGOT_PASSWORD_EMAIL_LIMIT,
+        main.FORGOT_PASSWORD_EMAIL_WINDOW_SECONDS,
+    ):
+        return {"ok": True}
     with main.connect() as conn:
         user = conn.execute(
             "SELECT id, username FROM users WHERE email = ? AND deleted_at IS NULL", (email,)

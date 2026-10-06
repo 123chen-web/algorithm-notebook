@@ -31,7 +31,7 @@ def list_posts(
     filter: Literal["all", "unanswered", "solved", "mine", "participated"] = "all",
     zone: str | None = None,
     limit: Annotated[int, Query(ge=1, le=main.POST_LIST_MAX_LIMIT)] = main.POST_LIST_DEFAULT_LIMIT,
-    offset: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0,
+    offset: Annotated[int, Query(ge=0, le=main.POST_LIST_MAX_OFFSET)] = 0,
     user=Depends(main.current_user),
 ):
     if zone is not None and zone != "none" and zone not in main.PROBLEM_ZONES:

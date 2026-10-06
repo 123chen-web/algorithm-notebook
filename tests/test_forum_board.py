@@ -276,9 +276,14 @@ def test_invalid_zone_is_rejected(world, zone):
 @pytest.mark.parametrize("params", [
     {"sort": "oldest"}, {"sort": ""}, {"filter": "everyone"}, {"filter": "mine; --"},
     {"limit": 0}, {"limit": 51}, {"limit": "x"}, {"offset": -1}, {"offset": "x"},
+    {"offset": 10001},
 ])
 def test_invalid_parameters_are_422(world, params):
     assert world.client.get("/api/posts", params=params).status_code == 422
+
+
+def test_offset_upper_bound_is_10000(world):
+    assert world.client.get("/api/posts", params={"offset": 10000}).status_code == 200
 
 
 def test_query_stacks_with_filter_and_zone(world):
@@ -332,7 +337,7 @@ def test_pagination_edges(world):
     assert world.list(limit=1, offset=4)["has_more"] is False
     beyond = world.list(limit=5, offset=5)
     assert beyond["posts"] == [] and beyond["has_more"] is False and beyond["total"] == 5
-    assert world.list(offset=2**63 - 1)["posts"] == []
+    assert world.list(offset=10000)["posts"] == []
     assert world.list(limit=50)["total"] == 5
     assert len(world.list()["posts"]) == 5
 

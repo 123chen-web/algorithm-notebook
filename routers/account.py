@@ -7,6 +7,7 @@ in tests keeps affecting the moved code.
 import main
 
 from anki_export import build_anki_text
+from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import File
 from fastapi import HTTPException
@@ -17,11 +18,13 @@ from fastapi.responses import FileResponse
 from legal import PRODUCT_NAME
 from urllib.parse import quote
 import json
+import mailer
 import os
 import push_channels
 import rank_cache
 import secrets
 import sqlite3
+import time
 from fastapi import APIRouter
 
 
@@ -43,10 +46,22 @@ def me(user=Depends(main.current_user)):
 
 @router.get("/api/export")
 def export_data(user=Depends(main.current_user)):
+    # 整本导出成本高，按用户每小时限流（与 Anki 导出同一套额度参数）。
+    if main.rate_limited(
+        f"export:{user['id']}", main.EXPORT_LIMIT, main.EXPORT_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "导出过于频繁，请一小时后再试")
     # 只导出学习笔记本，显式选择字段，避免账号或后续新增字段意外进入文件。
     with main.connect() as conn:
         # 四层记录共享只读快照，避免并发编辑/删除时读到不一致的从属关系。
         conn.execute("BEGIN")
+        total = conn.execute(
+            "SELECT COUNT(*) FROM problems WHERE user_id = ?", (user["id"],)
+        ).fetchone()[0]
+        if total > main.EXPORT_MAX_RECORDS:
+            raise HTTPException(
+                413, f"记录超过 {main.EXPORT_MAX_RECORDS} 条，无法一次导出整本，请联系站长"
+            )
         problems = {}
         for row in conn.execute(
             """
@@ -169,22 +184,106 @@ def export_anki(
     )
 
 
+def send_email_change_emails(new_address, old_address, username, token):
+    """后台任务：给新邮箱发确认链接，给旧邮箱发提醒；失败只记脱敏日志。"""
+    link = f"{main.public_base_url()}/?email_token={token}"
+    confirm_body = (
+        f"你好 {username}，\n\n"
+        f"有人（希望是你）在{PRODUCT_NAME}申请把账号邮箱换成这个地址。\n"
+        f"30 分钟内点击下面的链接确认，确认后才会生效：\n{link}\n\n"
+        "如果这不是你本人操作，忽略这封邮件即可，账号邮箱不会被改动。"
+    )
+    try:
+        mailer.send_email(new_address, f"{PRODUCT_NAME}：确认更换邮箱", confirm_body)
+    except Exception:
+        main.logger.exception("发送确认更换邮箱邮件失败（收件人 %s）", main.mask_email(new_address))
+    if old_address:
+        notice_body = (
+            f"你好 {username}，\n\n"
+            f"有人请求把你在{PRODUCT_NAME}的账号邮箱更换为 {main.mask_email(new_address)}。\n"
+            "新邮箱确认之前，账号邮箱不会改变。如果这不是你本人操作，"
+            "请尽快修改密码。"
+        )
+        try:
+            mailer.send_email(old_address, f"{PRODUCT_NAME}：有人请求更换账号邮箱", notice_body)
+        except Exception:
+            main.logger.exception("发送更换邮箱提醒失败（收件人 %s）", main.mask_email(old_address))
+
+
 @router.put("/api/me/email")
-def update_email(data: main.EmailUpdate, request: Request, user=Depends(main.current_user)):
-    # 在加入 email 列之前注册的老账号没有邮箱，没法用密码找回和复习
-    # 提醒；这个接口让已登录用户自己补一个，不用重新注册。
+def update_email(
+    data: main.EmailUpdate, request: Request, background_tasks: BackgroundTasks,
+    user=Depends(main.current_user),
+):
+    # 两步：先验当前密码并登记待确认记录，邮箱要等新邮箱里的链接确认后才改。
     stored = main.verify_current_password(user["id"], data.password, request)
+    token = secrets.token_urlsafe(32)
+    with main.connect(write=True) as conn:
+        main.sec_recheck_session(conn, user["id"], request)
+        fresh = main.recheck_account(conn, user["id"], stored)
+        taken = conn.execute(
+            "SELECT 1 FROM users WHERE email = ? AND id != ?", (data.email, user["id"])
+        ).fetchone()
+        if taken is not None:
+            raise HTTPException(409, "这个邮箱已经被使用")
+        now = int(time.time())
+        conn.execute(
+            """
+            INSERT INTO email_changes(user_id, new_email, main.token_hash, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                new_email = excluded.new_email, main.token_hash = excluded.token_hash,
+                expires_at = excluded.expires_at, created_at = excluded.created_at
+            """,
+            (user["id"], data.email, main.token_hash(token), now + main.EMAIL_CHANGE_SECONDS, now),
+        )
+        old_address = fresh["email"]
+    # 记录已提交；发信放到后台任务，SMTP 耗时或失败不影响响应。
+    background_tasks.add_task(
+        send_email_change_emails, data.email, old_address, user["username"], token
+    )
+    return {"ok": True, "pending": True, "email": data.email}
+
+
+@router.post("/api/me/email/confirm")
+def confirm_email_change(data: main.EmailChangeConfirm, request: Request):
+    if main.rate_limited(
+        f"email-confirm:{main.client_ip(request)}",
+        main.RESET_PASSWORD_LIMIT,
+        main.RESET_PASSWORD_WINDOW_SECONDS,
+    ):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
+    invalid = HTTPException(400, "确认链接无效或已过期")
     try:
         with main.connect(write=True) as conn:
-            main.sec_recheck_session(conn, user["id"], request)
-            main.recheck_account(conn, user["id"], stored)
+            row = conn.execute(
+                "SELECT user_id, new_email, expires_at FROM email_changes WHERE main.token_hash = ?",
+                (main.token_hash(data.token),),
+            ).fetchone()
+            if row is None:
+                raise invalid
+            # 一次性：不论后面成败，使用过的记录都删除。
+            conn.execute("DELETE FROM email_changes WHERE user_id = ?", (row["user_id"],))
+            if row["expires_at"] < int(time.time()):
+                raise invalid
+            owner = conn.execute(
+                "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", (row["user_id"],)
+            ).fetchone()
+            if owner is None:
+                raise invalid
+            taken = conn.execute(
+                "SELECT 1 FROM users WHERE email = ? AND id != ?",
+                (row["new_email"], row["user_id"]),
+            ).fetchone()
+            if taken is not None:
+                raise HTTPException(409, "这个邮箱已经被使用")
             conn.execute(
-                "UPDATE users SET email = ? WHERE id = ?", (data.email, user["id"])
+                "UPDATE users SET email = ? WHERE id = ?", (row["new_email"], row["user_id"])
             )
-            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (row["user_id"],))
     except sqlite3.IntegrityError:
         raise HTTPException(409, "这个邮箱已经被使用") from None
-    return {"ok": True, "email": data.email}
+    return {"ok": True, "email": row["new_email"]}
 
 
 @router.put("/api/me/username")
@@ -303,7 +402,7 @@ def change_password(data: main.PasswordChange, request: Request, response: Respo
         )
         revoked = main.revoke_other_sessions(conn, user["id"], request)
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
-        main.set_session(conn, user["id"], response, sec_cleanup_expired=False)
+        main.set_session(conn, user["id"], response, request, sec_cleanup_expired=False)
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user["id"],))
     return {"ok": True, "revoked_sessions": revoked}
 

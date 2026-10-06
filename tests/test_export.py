@@ -340,3 +340,31 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
     header["Content-Disposition"] = disposition
     assert header.get_content_disposition() == "attachment"
     assert header.get_filename() == f"欧叶OY导出_小明_{local_day}.json"
+
+
+def test_export_is_rate_limited_per_user(client, monkeypatch):
+    monkeypatch.setattr(main, "EXPORT_LIMIT", 2)
+    register(client)
+    assert client.get(ENDPOINT).status_code == 200
+    assert client.get(ENDPOINT).status_code == 200
+    limited = client.get(ENDPOINT)
+    assert limited.status_code == 429
+    assert "导出过于频繁" in limited.json()["detail"]
+    # 另一个用户有自己的额度。
+    client.post("/api/auth/logout")
+    register(client, "bob")
+    assert client.get(ENDPOINT).status_code == 200
+
+
+def test_export_over_record_cap_is_rejected_not_truncated(client, monkeypatch):
+    from test_app import new_problem
+
+    register(client)
+    new_problem(client)
+    new_problem(client)
+    monkeypatch.setattr(main, "EXPORT_MAX_RECORDS", 1)
+    response = client.get(ENDPOINT)
+    assert response.status_code == 413
+    assert "记录超过 1 条" in response.json()["detail"]
+    monkeypatch.setattr(main, "EXPORT_MAX_RECORDS", 2)
+    assert len(client.get(ENDPOINT).json()["problems"]) == 2

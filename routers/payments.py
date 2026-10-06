@@ -95,6 +95,8 @@ def create_manual_claim(data: main.NewManualClaim, user=Depends(main.current_use
             )
         except manual_claims.ClaimError as error:
             raise main.claim_http_error(error) from None
+        # 注意：这里是"先落库后限流"——限流触发时抛出 HTTPException，依赖 with 块
+        # 的异常回滚撤销上面刚写入的申请。不要调整这个顺序（也不要在此处吞掉异常）。
         # 待处理上限通过后才计入每日次数，被拒的提交不占额度。
         if main.rate_limited(f"manual-claim:{user['id']}", manual_claims.DAILY_SUBMISSIONS, 86400):
             raise HTTPException(429, "今天提交的次数太多了，请明天再试或联系站长")
