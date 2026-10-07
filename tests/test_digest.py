@@ -396,6 +396,45 @@ def test_ai_with_unknown_ids_and_bad_rows_is_partially_dropped():
     assert result == {1: "合法摘要"}
 
 
+@pytest.mark.parametrize("item_id", [[], {}, True, 1.0, "1", None])
+def test_ai_summary_ids_require_actual_integers(item_id):
+    content = json_text({"summaries": [{"id": item_id, "text": "摘要"}]})
+    assert digest._validate_summaries(content, {1}) == {}
+
+
+def test_malformed_ai_id_falls_back_and_still_sends(database, monkeypatch):
+    content = json_text({"summaries": [{"id": [], "text": "摘要"}]})
+    rc, _, poster, _ = run_main(database, monkeypatch, ai_content=content)
+    assert rc == 0
+    assert len(poster.calls) == 2
+    assert "Faster Sorting Networks" in poster.calls[0]["data"]["desp"]
+    assert "——" not in poster.calls[0]["data"]["desp"]
+
+
+def test_ai_summary_enforces_forty_character_limit():
+    content = json_text({"summaries": [
+        {"id": 1, "text": "摘" * 40},
+        {"id": 2, "text": "摘" * 41},
+    ]})
+    assert digest._validate_summaries(content, {1, 2}) == {1: "摘" * 40}
+
+
+@pytest.mark.parametrize("content", [
+    '{"summaries":[{"id":1,"text":"a","text":"b"}]}',
+    '{"summaries":[],"extra":true}',
+    '{"summaries":[{"id":1,"text":"摘要","extra":true}]}',
+], ids=["duplicate-key", "unknown-top-field", "unknown-row-field"])
+def test_ai_summary_rejects_ambiguous_or_unknown_json_fields(content):
+    assert digest._validate_summaries(content, {1}) == {}
+
+
+def test_deeply_nested_ai_json_falls_back():
+    import sys
+    depth = sys.getrecursionlimit() + 100
+    content = '[' * depth + '0' + ']' * depth
+    assert digest._validate_summaries(content, {1}) == {}
+
+
 def test_no_ai_key_still_sends(database, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY")
     record = install_fake_ai(monkeypatch, good_summaries_content())

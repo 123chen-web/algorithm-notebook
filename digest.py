@@ -59,7 +59,7 @@ ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
 SUMMARY_ABSTRACT_LIMIT = 600  # 发给 AI 的摘要原文截断到 600 字
 SUMMARY_MIN_LEN = 1
-SUMMARY_MAX_LEN = 80  # 模型输出放宽到 80 字校验，提示词里要求 40 字以内
+SUMMARY_MAX_LEN = 40
 
 SETTING_KEY = "digest_last_sent:{user_id}"
 
@@ -263,13 +263,22 @@ def _build_ai_messages(items: list[dict]) -> list[dict]:
     ]
 
 
+def _unique_json_object(pairs):
+    payload = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError("duplicate AI response field")
+        payload[key] = value
+    return payload
+
+
 def _validate_summaries(content: str, valid_ids: set) -> dict:
     """严格校验模型输出；不合格的条目丢掉，整体不合格返回空 dict（退回原标题）。"""
     try:
-        payload = json.loads(content)
-    except (ValueError, TypeError):
+        payload = json.loads(content, object_pairs_hook=_unique_json_object)
+    except (ValueError, TypeError, RecursionError):
         return {}
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or set(payload) != {"summaries"}:
         return {}
     rows = payload.get("summaries")
     if not isinstance(rows, list):
@@ -277,11 +286,11 @@ def _validate_summaries(content: str, valid_ids: set) -> dict:
 
     result: dict = {}
     for row in rows:
-        if not isinstance(row, dict):
+        if not isinstance(row, dict) or set(row) != {"id", "text"}:
             continue
         item_id = row.get("id")
         text = row.get("text")
-        if item_id not in valid_ids:
+        if type(item_id) is not int or item_id not in valid_ids:
             continue
         if not isinstance(text, str):
             continue
