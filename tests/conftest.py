@@ -6,6 +6,16 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def isolate_code_runner(monkeypatch):
+    import code_runner
+    monkeypatch.delenv("CODE_RUNNER_URL", raising=False)
+    monkeypatch.delenv("CODE_RUNNER_TOKEN", raising=False)
+    def forbidden(*args, **kwargs):
+        pytest.fail("Code execution services must be mocked in tests")
+    monkeypatch.setattr(code_runner, "build_opener", forbidden)
+
+
+@pytest.fixture(autouse=True)
 def isolate_alipay_configuration(monkeypatch):
     # A developer's real .env must not configure payment in unrelated tests.
     for name in tuple(os.environ):

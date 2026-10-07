@@ -2312,7 +2312,7 @@ def clear_deleted_thread_state(conn, *, post_id=None, comment_id=None):
 async def forum_action_validation_error(request: Request, exc: RequestValidationError):
     if re.fullmatch(
         r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful"
-        r"|/api/mistakes/[^/]+/(?:preview|review(?:/undo)?|snooze|suspend|unsuspend)"
+        r"|/api/mistakes/[^/]+/(?:preview|review(?:/undo)?|snooze|suspend|unsuspend|run)"
         r"|/api/me/review-settings|/api/review/queue",
         request.url.path,
     ):
@@ -2452,3 +2452,7 @@ from routers.review import rvb_undo_review  # noqa: F401
 from routers.groups import list_groups  # noqa: F401
 from routers.forum import accept_comment, create_thread_summary, delete_comment, delete_post, unaccept_comment  # noqa: F401
 # ===== [generated] end =====
+
+# Optional isolated code execution is registered outside the generated block.
+import routers.code_run
+app.include_router(routers.code_run.router)
