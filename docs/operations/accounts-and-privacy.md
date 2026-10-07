@@ -30,6 +30,7 @@
 | `sessions`、`password_resets` | 删除该用户全部会话和找回密码令牌 |
 | `problems` 及其易错点、复习记录、变体、标签关系 | 删除题目，通过外键级联删除个人学习数据 |
 | `weakness_insights`、`mistake_clusters`、`ai_usage` | 删除该用户的数据 |
+| `import_previews` | 删除该用户的私有文件预览和导入确认结果；预览有效 30 分钟，过期内容在下一次成功预览时清理 |
 | `avatar_reports` | 删除该用户作为举报人或头像主人的记录 |
 | `ai_calls` | 将 `user_id` 置为 NULL，保留无账号关联的调用成本元数据 |
 | `study_group_members` | 退出所有小组；用户创建且只剩自己的小组也删除 |

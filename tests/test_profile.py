@@ -86,7 +86,7 @@ def test_version_18_upgrade_preserves_user_and_pending_reason(tmp_path, monkeypa
         before = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == 19
+        assert db.schema_version(conn) == 20
         after = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
         assert after.pop('bio') == ''
         assert after == before

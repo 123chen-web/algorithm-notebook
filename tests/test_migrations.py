@@ -29,9 +29,9 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "users", "mistakes", "ai_usage", "ai_calls", "mistake_clusters",
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
-            "mistake_scratch", "user_push", "email_changes", "problem_recommendations",
+            "mistake_scratch", "user_push", "email_changes", "problem_recommendations", "import_previews",
         } <= tables
-        assert db.schema_version(conn) == 19
+        assert db.schema_version(conn) == 20
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -1087,7 +1087,7 @@ def test_push_migration_to_v15_creates_table_and_preserves_old_data(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 19
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 20
         columns = {row["name"]: row for row in conn.execute(
             "PRAGMA table_info(user_push)"
         )}
@@ -1212,7 +1212,7 @@ def test_recommend_and_pending_reason_upgrade_preserves_data_and_constraints(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 19
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 20
         after = dict(conn.execute("SELECT * FROM mistakes WHERE id = 10").fetchone())
         assert after.pop("pending_reason") == 0
         assert after == before
@@ -1249,4 +1249,26 @@ def test_recommend_and_pending_reason_upgrade_preserves_data_and_constraints(
                 "INSERT INTO problem_recommendations (user_id, contest_id, idx, recommended_at) "
                 "VALUES (999, 5, 'B', ?)", (CREATED_AT,),
             )
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_import_preview_upgrade_from_v18_preserves_notes_and_cascades(database_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [entry for entry in db.MIGRATIONS if entry[0] <= 18])
+        patch.setattr(db, "SCHEMA_VERSION", 18)
+        db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute("INSERT INTO users(id,username,password_hash,timezone,created_at) "
+                     "VALUES (8,'import-upgrade','hash','Asia/Shanghai',?)", (CREATED_AT,))
+        conn.execute("INSERT INTO problems(user_id,title,language,code,thinking,created_at) "
+                     "VALUES (8,'保留题','Python','pass','旧思路',?)", (CREATED_AT,))
+    db.init_db()
+    db.init_db()
+    with db.connect(write=True) as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 20
+        assert conn.execute("SELECT title FROM problems").fetchone()[0] == "保留题"
+        conn.execute("INSERT INTO import_previews(token,user_id,zone,records,expires_at) "
+                     "VALUES ('token',8,'算法','[]',123)")
+        conn.execute("DELETE FROM users WHERE id = 8")
+        assert conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] == 0
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
