@@ -85,6 +85,8 @@ def export_data(user=Depends(main.current_user)):
         ):
             mistake = {**dict(row), "reviews": [], "variants": [], "tags": []}
             mistake["pending_reason"] = bool(mistake["pending_reason"])
+            if mistake["pending_reason"]:
+                mistake["description"] = main.PENDING_REASON_DISPLAY
             problems[mistake.pop("problem_id")]["mistakes"].append(mistake)
             mistakes[mistake["id"]] = mistake
 

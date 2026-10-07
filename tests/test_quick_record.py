@@ -212,7 +212,10 @@ def test_export_json_includes_pending_reason(client):
     assert len(problems) == 2
     by_title = {p["title"]: p for p in problems}
     assert by_title["二分查找"]["mistakes"][0]["pending_reason"] is False
+    assert by_title["二分查找"]["mistakes"][0]["description"] == "循环结束条件漏掉 left == right。"
     assert by_title["速记"]["mistakes"][0]["pending_reason"] is True
+    assert by_title["速记"]["mistakes"][0]["description"] == main.PENDING_REASON_DISPLAY
+    assert main.QUICK_MISTAKE_PLACEHOLDER not in str(problems)
 
 
 def test_anki_export_masks_pending_reason(client):
