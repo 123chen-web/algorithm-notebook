@@ -2,7 +2,17 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const { load, tick, FakeEvent, deferred } = require("./js_harness.cjs");
+const APP = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+
+function productionFunction(name) {
+  const match = APP.match(new RegExp(`^(?:async )?function ${name}\\(`, "m"));
+  assert.ok(match, `production ${name} exists`);
+  return APP.slice(match.index, APP.indexOf("\n}", match.index) + 2);
+}
 
 const unhandled = [];
 process.on("unhandledRejection", (error) => unhandled.push(error));
@@ -194,6 +204,39 @@ function home(ctx, count = 2) {
   }));
   return ctx.env.document.getElementById("pending-reason-reminder");
 }
+
+function productionHome(ctx) {
+  Object.assign(ctx.env.context, {
+    $: (selector) => ctx.env.document.querySelector(selector),
+    user: ctx.state.user, sessionEpoch: ctx.state.epoch, view: ctx.state.view,
+    finishHomeOpening: null, api: ctx.hooks.api, updateUserInfo() {}, startHomeOpening() {},
+  });
+  ctx.env.window.Overview = { reset() {}, loadTrend() {}, renderError() {} };
+  for (const name of ["resetHomeSummary", "loadHome"]) {
+    vm.runInContext(productionFunction(name), ctx.env.context);
+  }
+  return ctx.env.context.loadHome({ refreshUser: false });
+}
+
+test("pending reason: production home failure clears old reminder and its in-flight request", async () => {
+  const ctx = setup("home"); const old = home(ctx); q(old, "button").click();
+  const loading = productionHome(ctx);
+  assert.equal(Boolean(ctx.env.document.getElementById("pending-reason-reminder")), false);
+  ctx.env.respond(ctx.env.calls[0], 200, { items: [{ id: 11 }] });
+  ctx.env.respond(ctx.env.calls[1], 503, { detail: "总览不可用" });
+  await loading; await settle();
+  assert.equal(Boolean(ctx.env.document.getElementById("pending-reason-reminder")), false);
+  assert.deepEqual(ctx.opened, []);
+});
+
+test("pending reason: production home failure cannot show a previous account's count", async () => {
+  const ctx = setup("home"); home(ctx, 9);
+  ctx.state.user = { id: 8 }; ctx.state.epoch += 1;
+  const loading = productionHome(ctx);
+  ctx.env.respond(ctx.env.calls[0], 503, { detail: "总览不可用" });
+  await loading;
+  assert.equal(Boolean(ctx.env.document.getElementById("pending-reason-reminder")), false);
+});
 
 test("pending reason: overview reminder opens the owner's pending record through all records", async () => {
   const ctx = setup("home"); const reminder = home(ctx);

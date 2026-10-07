@@ -942,6 +942,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
 }
 
 function resetHomeSummary() {
+  window.PendingReason?.resetHome();
   window.Overview?.reset();
   $("#home-quota").hidden = true;
   $("#home-quota-text").textContent = "";

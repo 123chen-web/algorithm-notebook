@@ -202,9 +202,14 @@
     return form;
   }
 
-  function homeRendered(detail) {
-    const sequence = ++homeSequence;
+  function resetHome() {
+    homeSequence += 1;
     document.getElementById("pending-reason-reminder")?.remove();
+  }
+
+  function homeRendered(detail) {
+    resetHome();
+    const sequence = homeSequence;
     if (!hooks?.getUser() || hooks.getView() !== "home" || detail?.user?.id !== hooks.getUser().id) return;
     const count = detail.overview?.pending_reason_count;
     if (!Number.isInteger(count) || count <= 0) return;
@@ -241,5 +246,5 @@
 
   document.addEventListener("app:view-changed", () => { pageGeneration += 1; });
   document.addEventListener("app:home-rendered", (event) => homeRendered(event.detail));
-  window.PendingReason = { configure(options) { hooks = options; pageGeneration += 1; }, render };
+  window.PendingReason = { configure(options) { hooks = options; pageGeneration += 1; }, render, resetHome };
 })();
