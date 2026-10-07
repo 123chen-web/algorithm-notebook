@@ -31,7 +31,8 @@
 注销会清空简介；封禁或注销账号的资料不可见。退出公开榜单不隐藏讨论中的资料入口。
 
 FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
-线上使用 DeepSeek。不会执行用户代码。用 Docker + Caddy 部署，自动 HTTPS，
+线上使用 DeepSeek。Web 进程不执行用户代码；可选的独立运行服务支持 Python、C++，
+未配置时保持关闭，详见 [代码运行服务](docs/operations/code-runner.md)。用 Docker + Caddy 部署，自动 HTTPS，
 每天自动备份，带宕机告警和公开状态页。
 
 - 部署与升级：[docs/operations/deploy.md](docs/operations/deploy.md)
@@ -222,7 +223,9 @@ macOS / Linux：
 - **今日一条** `GET /api/rank/notice`：管理员手写的一句话（≤ 80 字）+ 可选链接（只允许
   http/https，不带账号密码）+ 展示日期范围（北京时间自然日，含首尾）。管理后台“今日一条”
   卡片可发布、编辑、停用/启用并查看历史（`GET/POST /api/admin/daily-notices`、
-  `PUT /api/admin/daily-notices/{id}`，写接口走 CSRF，非管理员 403）。不抓取任何第三方网站。
+  `PUT /api/admin/daily-notices/{id}`，写接口走 CSRF，非管理员 403）。可选每日任务从官方
+  Codeforces 元信息缓存补充一道练习链接，保留管理员内容（含停用记录），不抓题面；
+  配置步骤见 [推荐题任务](docs/operations/recommend.md)，不会自动安装或启用任务。
 - **昨日之星** `GET /api/rank/yesterday`：北京时间（Asia/Shanghai）昨天复习次数最多的名次 ≤ 10
   的账号，显示名次、头像、用户名、次数、截至昨日的连续天数和一句模板生成的表扬语
   （`rank_board.praise`，不用 AI）。同一天对同一条错题的多次评分最多算 3 次

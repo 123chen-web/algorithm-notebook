@@ -37,6 +37,18 @@ def test_fixed_refresh_command_preserves_failure_exit_and_never_runs_a_shell(mon
 def test_missing_configuration_and_docker_report_failure(monkeypatch):
     monkeypatch.setattr(schedule.Path, "is_file", lambda self: False)
     assert schedule.main([]) == 2
+
+
+def test_successful_refresh_publishes_once_and_preserves_notice_job_failure(monkeypatch):
+    monkeypatch.setattr(schedule.Path, "is_file", lambda self: True)
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0 if len(calls) == 1 else 3)
+    monkeypatch.setattr(schedule.subprocess, "run", run)
+    assert schedule.main([]) == 3
+    repo = SCRIPT.resolve().parents[2]
+    assert calls == [schedule.command(repo), schedule.command(repo, "daily_notice.py")]
     monkeypatch.setattr(schedule.Path, "is_file", lambda self: True)
     def unavailable(*args, **kwargs):
         raise FileNotFoundError("docker")

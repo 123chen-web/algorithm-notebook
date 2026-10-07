@@ -5,10 +5,10 @@ from pathlib import Path
 import subprocess
 
 
-def command(repo):
+def command(repo, script="cf_problems.py"):
     return ["docker", "compose", "--env-file", str(repo / ".env"),
             "-f", str(repo / "deploy" / "docker-compose.prod.yml"),
-            "exec", "-T", "app", "python", "cf_problems.py", "refresh"]
+            "exec", "-T", "app", "python", script] + (["refresh"] if script == "cf_problems.py" else [])
 
 
 def main(argv=None):
@@ -19,12 +19,16 @@ def main(argv=None):
     if args.dry_run:
         print("Daily official Codeforces metadata refresh; no AI, email, or push notifications.")
         print("Command arguments:", command(repo))
+        print("Then publish 今日一条:", command(repo, "daily_notice.py"))
         return 0
     if not (repo / ".env").is_file() or not (repo / "deploy" / "docker-compose.prod.yml").is_file():
         print("Missing production configuration; set up the existing app before scheduling this task.")
         return 2
     try:
-        return subprocess.run(command(repo), cwd=repo, check=False).returncode
+        refresh = subprocess.run(command(repo), cwd=repo, check=False).returncode
+        if refresh != 0:
+            return refresh
+        return subprocess.run(command(repo, "daily_notice.py"), cwd=repo, check=False).returncode
     except OSError:
         print("Could not start Docker Compose; check the host installation and app container.")
         return 2
