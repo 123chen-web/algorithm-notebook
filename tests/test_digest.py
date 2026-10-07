@@ -696,6 +696,79 @@ def test_failed_send_then_cache_hit_second_run_no_network(database, monkeypatch)
     assert "第1条的中文一句话摘要" in body
 
 
+@pytest.mark.parametrize("bad_cache", [
+    {"date": TODAY, "papers": [None], "news": [], "summaries": {}},
+    {"date": TODAY, "papers": [{"title": "Paper"}], "news": [], "summaries": {}},
+    {"date": TODAY, "papers": [], "news": [], "summaries": []},
+    {"date": "1999-01-01", "papers": [], "news": [], "summaries": {}},
+    {"date": TODAY, "papers": [{"title": "Paper", "summary": "abstract", "url": "javascript:x"}],
+     "news": [], "summaries": {}},
+    {"date": TODAY, "papers": [], "news": [{
+        "title": "News", "summary": "", "url": "https://example.com", "score": True,
+    }], "summaries": {}},
+    {"date": TODAY, "papers": [{"title": "Paper", "summary": "", "url": "https://arxiv.org/abs/1"}],
+     "news": [], "summaries": {"1": []}},
+], ids=["null-item", "missing-item-fields", "bad-summaries", "wrong-date",
+        "unsafe-url", "boolean-score", "non-text-summary"])
+def test_invalid_cache_is_ignored(bad_cache, database):
+    path = digest._cache_path(TODAY)
+    path.parent.mkdir()
+    path.write_text(json_text(bad_cache), encoding="utf-8")
+    assert digest.load_cache(TODAY) is None
+
+
+def test_corrupt_cache_does_not_abort_delivery(database, monkeypatch):
+    path = digest._cache_path(digest._cache_day())
+    path.parent.mkdir()
+    path.write_text(json_text({
+        "date": digest._cache_day(), "papers": [None], "news": [], "summaries": {},
+    }), encoding="utf-8")
+    rc, requests, poster, _ = run_main(database, monkeypatch)
+    assert rc == 0 and requests and len(poster.calls) == 2
+    assert "Faster Sorting Networks" in poster.calls[0]["data"]["desp"]
+
+
+def test_concurrent_cache_writers_publish_complete_files(database, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+    from threading import Barrier
+
+    barrier = Barrier(2)
+    real_replace = Path.replace
+    publications = []
+
+    def publish_together(*args, **kwargs):
+        publications.append(args[0])
+        barrier.wait(timeout=5)
+        return real_replace(*args, **kwargs)
+
+    monkeypatch.setattr(Path, "replace", publish_together)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(digest.save_cache, TODAY, [], [], {}) for _ in range(2)]
+        assert [future.result(timeout=15) for future in futures] == [None, None]
+    assert len(set(publications)) == 2
+    cached = digest.load_cache(TODAY)
+    assert cached == {"date": TODAY, "papers": [], "news": [], "summaries": {}}
+    assert [path.name for path in digest._cache_path(TODAY).parent.iterdir()] == [f"{TODAY}.json"]
+
+
+def test_cache_replace_failure_keeps_previous_file_and_cleans_temp(database, monkeypatch):
+    from pathlib import Path
+
+    digest.save_cache(TODAY, [], [], {})
+    path = digest._cache_path(TODAY)
+    before = path.read_bytes()
+
+    def fail_replace(*args, **kwargs):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError):
+        digest.save_cache(TODAY, [], [], {})
+    assert path.read_bytes() == before
+    assert [entry.name for entry in path.parent.iterdir()] == [f"{TODAY}.json"]
+
+
 def test_hackernews_failure_only_skips_that_source(database, monkeypatch):
     routes = default_routes()
     routes["topstories"] = OSError("network down")

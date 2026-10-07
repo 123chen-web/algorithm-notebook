@@ -22,6 +22,7 @@ import logging
 import os
 import sqlite3
 import sys
+import tempfile
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -156,12 +157,35 @@ def load_cache(day: str):
     try:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or payload.get("date") != day:
         return None
     if not isinstance(payload.get("papers"), list) or not isinstance(payload.get("news"), list):
         return None
+    for kind in ("papers", "news"):
+        for item in payload[kind]:
+            if not isinstance(item, dict):
+                return None
+            if not isinstance(item.get("title"), str) or not item["title"].strip():
+                return None
+            if not isinstance(item.get("summary"), str) or not _valid_url(item.get("url")):
+                return None
+            if kind == "news" and type(item.get("score")) is not int:
+                return None
+    summaries = payload.get("summaries")
+    if not isinstance(summaries, dict):
+        return None
+    valid_ids = set(range(1, len(payload["papers"]) + len(payload["news"]) + 1))
+    valid_keys = {str(item_id) for item_id in valid_ids}
+    if any(key not in valid_keys for key in summaries):
+        return None
+    validated = _validate_summaries(json.dumps({"summaries": [
+        {"id": int(key), "text": text} for key, text in summaries.items()
+    ]}), valid_ids)
+    if len(validated) != len(summaries):
+        return None
+    payload["summaries"] = {str(key): text for key, text in validated.items()}
     return payload
 
 
@@ -169,10 +193,20 @@ def save_cache(day: str, papers: list, news: list, summaries: dict) -> None:
     path = _cache_path(day)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"date": day, "papers": papers, "news": news, "summaries": summaries}
-    tmp_path = path.with_suffix(".json.tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False)
-    tmp_path.replace(path)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            tmp_path = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp_path.replace(path)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 # ---------- arXiv ----------
