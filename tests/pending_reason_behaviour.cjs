@@ -324,3 +324,58 @@ test("pending reason: navigating away during the transition cannot open a late r
   ctx.env.document.dispatchEvent(new FakeEvent("app:view-changed", { detail: { view: "new" } }));
   waiting.resolve(); await settle(); assert.deepEqual(ctx.opened, []);
 });
+
+async function failingHomeTransition(stage, change) {
+  const ctx = setup("home"); const waiting = deferred(); const errors = [];
+  const show = ctx.hooks.showView;
+  ctx.hooks.reportError = (text) => errors.push(text);
+  ctx.hooks.showView = async (view) => {
+    ctx.state.detail += 1;
+    await show(view);
+    if (stage === "list") await waiting.promise;
+  };
+  ctx.hooks.openMistake = async () => {
+    ctx.state.detail += 1;
+    await waiting.promise;
+  };
+  ctx.env.window.PendingReason.configure(ctx.hooks);
+  const reminder = home(ctx); q(reminder, "button").click();
+  ctx.env.respond(ctx.env.calls[0], 200, { items: [{ id: 11 }] }); await settle();
+  assert.equal(ctx.state.view, "all");
+  if (change === "epoch") ctx.state.epoch += 1;
+  if (change === "user") ctx.state.user = { id: 8 };
+  if (change === "detail") ctx.state.detail += 1;
+  if (change === "leave-return") { await show("new"); await show("all"); }
+  waiting.reject(new Error("目标请求不可用")); await settle();
+  return errors;
+}
+
+for (const stage of ["list", "detail"]) {
+  test(`pending reason: ${stage} transition errors remain visible on the target page`, async () => {
+    const errors = await failingHomeTransition(stage);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /目标请求不可用/);
+  });
+  for (const change of ["epoch", "user", "detail", "leave-return"]) {
+    test(`pending reason: ${stage} transition ignores stale errors after ${change}`, async () => {
+      assert.deepEqual(await failingHomeTransition(stage, change), []);
+    });
+  }
+}
+
+for (const stale of [false, true]) {
+  test(`pending reason: completed elsewhere reopen failure is ${stale ? "ignored after selection" : "reported"}`, async () => {
+    const ctx = setup(); const form = await render(ctx); const errors = [];
+    submit(form); ctx.env.respond(ctx.env.calls[1], 409, { detail: "冲突" }); await settle();
+    q(form, ".pending-reason-refresh").click();
+    ctx.env.respond(ctx.env.calls[2], 200, { ...item(), pending_reason: false, version: 9 }); await settle();
+    const waiting = deferred();
+    ctx.hooks.reportError = (text) => errors.push(text);
+    ctx.hooks.openMistake = async () => { ctx.state.detail += 1; await waiting.promise; };
+    q(form, ".pending-reason-reopen").click();
+    if (stale) ctx.state.detail += 1;
+    waiting.reject(new Error("详情不可用")); await settle();
+    assert.equal(errors.length, stale ? 0 : 1);
+    assert.equal(q(form, ".pending-reason-save").disabled, true);
+  });
+}

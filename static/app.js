@@ -5358,6 +5358,7 @@ async function pendingReasonSaved(id) {
 window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
   getDetailGeneration: () => rvfDetailGeneration,
   onSaved: pendingReasonSaved,
+  reportError: (text) => message(text, true),
 });
 document.addEventListener("keydown", rvfDetailKeydown);
 $("#review-daily-cap").addEventListener("change", rvfSetDailyCap);

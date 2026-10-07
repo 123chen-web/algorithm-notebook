@@ -181,7 +181,16 @@
     }
     reopen.addEventListener("click", () => {
       if (!live() || busy) return;
-      Promise.resolve(hooks.openMistake(item.id)).catch((error) => { if (live()) notice(error.message, true); });
+      const opening = hooks.openMistake(item.id);
+      const target = { ...identity(), detail: hooks.getDetailGeneration?.() };
+      Promise.resolve(opening).catch((error) => {
+        if (live()) notice(error.message, true);
+        else if (sameSession(ticket) && current(target) && target.view === ticket.view
+          && target.page === ticket.page && form.isConnected
+          && target.detail === hooks.getDetailGeneration?.()) {
+          hooks.reportError?.(`暂时无法重新查看记录：${error.message}`);
+        }
+      });
     });
     async function suggestions() {
       const request = ++tagsSequence;
@@ -230,17 +239,28 @@
     async function openPending() {
       if (!live() || action.disabled) return;
       action.disabled = true;
+      let target = null, targetPage = null;
       try {
         const data = await hooks.api("/api/mistakes?due_only=false&pending_reason=1");
         if (!live()) return;
         const first = data.items?.[0];
         if (!first || !Number.isInteger(first.id)) { status.textContent = "当前没有待补原因的记录，刷新总览可更新数量。"; return; }
         const transition = pageGeneration;
-        await hooks.showView("all");
+        targetPage = transition + 1;
+        const loading = hooks.showView("all");
+        target = { ...identity(), detail: hooks.getDetailGeneration?.() };
+        await loading;
         if (!sameSession(ticket) || hooks.getView() !== "all" || pageGeneration !== transition + 1 || sequence !== homeSequence) return;
-        await hooks.openMistake(first.id);
+        const opening = hooks.openMistake(first.id);
+        target = { ...identity(), detail: hooks.getDetailGeneration?.() };
+        await opening;
       } catch (error) {
         if (live()) status.textContent = error.message;
+        else if (target && sameSession(ticket) && current(target) && target.view === "all"
+          && target.page === targetPage && sequence === homeSequence
+          && target.detail === hooks.getDetailGeneration?.()) {
+          hooks.reportError?.(`暂时无法打开待补记录：${error.message}`);
+        }
       } finally {
         if (live()) action.disabled = false;
       }
