@@ -85,6 +85,21 @@ def test_requires_login(client):
     assert client.post("/api/recommend/4/A", json={"state": "done"}).status_code == 401
 
 
+def test_daily_one_is_stable_and_next_day_picks_a_different_problem(client):
+    register(client)
+    owner = me(client)["id"]
+    seed(owner, tags=("BFS",))
+    write_cache([cf_problem(4, index, 800, ["graphs"]) for index in ("A", "B", "C")])
+    first = get(client)
+    assert [item["id"] for item in first["items"]] == ["4A"]
+    assert get(client) == first
+    with connect(write=True) as conn:
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (owner,)).fetchone()
+        items, hint = recommend.recommend_for_today(conn, user, TODAY + timedelta(days=1))
+        assert [item["id"] for item in items] == ["4B"]
+        assert hint == ""
+
+
 def test_no_cache_gives_hint_not_500(client):
     register(client)
     data = get(client)
@@ -127,10 +142,12 @@ def test_mapping_and_reason_use_user_tags(client):
         cf_problem(5, "A", 1000, ["greedy"], name="贪心题"),
         cf_problem(6, "A", 800, ["math"], name="数学题"),
     ])
-    data = get(client)
-    assert data["hint"] == ""
+    with connect() as conn:
+        scores = recommend.weakness_scores(conn, owner, "Asia/Shanghai", TODAY)
+    items = recommend.select_problems(cf_problems.load_cache()["problems"], scores,
+                                     (800, 1200), set(), count=3)
     # 弱点分：greedy=4，graphs=1，dfs and similar=1 → 前 2 是 greedy、dfs and similar。
-    by_id = {item["id"]: item for item in data["items"]}
+    by_id = {item["id"]: item for item in items}
     assert set(by_id) == {"5A", "4A"}
     assert by_id["5A"]["reason"] == "你在贪心上有4条未掌握的错题"
     assert by_id["4A"]["reason"] == "你在BFS上有1条未掌握的错题"
@@ -176,7 +193,13 @@ def test_default_band_excludes_hard_problems(client):
     data = get(client)
     ids = [item["id"] for item in data["items"]]
     assert "4B" not in ids
-    assert set(ids) == {"4A", "4C"}
+    assert ids == ["4A"]
+    with connect() as conn:
+        scores = recommend.weakness_scores(conn, owner, "Asia/Shanghai", TODAY)
+        band = recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY)
+    eligible = recommend.select_problems(cf_problems.load_cache()["problems"], scores,
+                                        band, set(), count=3)
+    assert {item["id"] for item in eligible} == {"4A", "4C"}
 
 
 def test_problems_without_rating_are_never_picked(client):
@@ -206,6 +229,9 @@ def test_skilled_band_raises_ceiling_to_1400(client):
         cf_problem(4, "B", 1300, ["graphs"]),
         cf_problem(4, "C", 1500, ["graphs"]),
     ])
+    with connect(write=True) as conn:
+        conn.execute("INSERT INTO problem_recommendations(user_id, contest_id, idx, recommended_at) "
+                     "VALUES (?, 4, 'A', ?)", (owner, at(TODAY - timedelta(days=1))))
     data = get(client)
     ids = [item["id"] for item in data["items"]]
     assert "4B" in ids, "高掌握度用户难度上限应提到 1400"
@@ -287,7 +313,7 @@ def test_excludes_previously_recommended(client):
     data = get(client)
     ids = [item["id"] for item in data["items"]]
     assert "4A" not in ids
-    assert set(ids) == {"4B", "4C", "4D"}
+    assert ids == ["4B"]
 
 
 def test_same_day_requests_return_the_same_items(client):
@@ -307,7 +333,7 @@ def test_same_day_requests_return_the_same_items(client):
         count = conn.execute(
             "SELECT COUNT(*) FROM problem_recommendations WHERE user_id = ?", (owner,)
         ).fetchone()[0]
-    assert count == 3, "同一天重复请求不应重复落库"
+    assert count == 1, "同一天重复请求不应重复落库"
 
 
 def test_same_day_multitag_order_is_stable(client):
@@ -321,6 +347,12 @@ def test_same_day_multitag_order_is_stable(client):
         cf_problem(5, "A", 800, ["greedy"]),
         cf_problem(5, "B", 800, ["greedy"]),
     ])
+    # Earlier versions saved up to three items. Changing tomorrow's limit must
+    # preserve the identities and ordering of an already saved day.
+    with connect(write=True) as conn:
+        for contest, index in [(5, "A"), (4, "A"), (5, "B")]:
+            conn.execute("INSERT INTO problem_recommendations(user_id, contest_id, idx, recommended_at) "
+                         "VALUES (?, ?, ?, ?)", (owner, contest, index, at(TODAY)))
     first = get(client)
     assert [item["id"] for item in first["items"]] == ["5A", "4A", "5B"]
     assert get(client) == first

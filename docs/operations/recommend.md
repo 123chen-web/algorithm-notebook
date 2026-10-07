@@ -1,7 +1,7 @@
 # 个性化推荐题（Codeforces）
 
 总览页的「今日推荐题」卡：按用户未掌握的错题标签，从 Codeforces 官方公开接口
-拉回来的题库缓存里挑 3 道难度合适的题，只给题名、难度、标签和原站链接，
+拉回来的题库缓存里每天挑 1 道难度合适的题，只给题名、难度、标签和原站链接，
 **不保存、不展示题面**。
 
 ## 题库怎么来
@@ -19,11 +19,24 @@
   退出码非 0，方便 cron 告警。
 - 缓存超过 14 天只在推荐日志里提醒一行，不影响推荐（题库本来就更新得慢）。
 
-### 定时刷新（cron 示例：每周一次）
+### 服务器每天自动刷新（仅提供脚本，不会自动安装）
+
+在服务器现有仓库中，先检查计划：
+
+```sh
+python3 deploy/bin/refresh-recommend.py --dry-run
+```
+
+它不会读密钥、修改文件、执行 Docker 或联网。确认后可手动运行同一脚本
+（去掉 `--dry-run`）刷新缓存。脚本使用生产 Compose 文件与根目录已有 `.env`，
+不修改 `.env`，也不发送邮件、微信消息或调用 AI。失败返回非零退出码并保留旧缓存。
+同一缓存目录的并发刷新由 `cf_problems.py` 的进程文件锁协调。
+
+由站长在服务器执行 `crontab -e` 添加以下一行；不要把它交给 Web 进程调度：
 
 ```cron
-# 每周一 04:00（容器时区）刷新 Codeforces 题库缓存
-0 4 * * 1 cd /path/to/app && docker compose exec -T app python cf_problems.py refresh >> /var/log/oy-cf-refresh.log 2>&1
+# 每天 04:00（宿主机时区）刷新；路径按服务器实际仓库目录修改
+0 4 * * * cd /srv/algorithm-notebook && /usr/bin/python3 deploy/bin/refresh-recommend.py >> /srv/algorithm-notebook/data/cf-refresh.log 2>&1
 ```
 
 也可以在宿主机直接跑（`python` 换成项目 venv 的 python）：
@@ -48,8 +61,9 @@ cd /path/to/app && /path/to/venv/bin/python cf_problems.py refresh
    近 30 天含用户本地的今天；只对这段时间复习过的易错点计算当前保持率均值，
    历史复习或从未复习的错题不混进近期均值。
 4. **去重**：`problem_recommendations` 表里该用户推荐过的题以后不再推荐；
-   当天重复请求返回同样的 3 道（按 `recommended_at` 的日期部分判断）。
-5. 同一次推荐的 3 道题优先来自不同标签（按弱点分轮询，池子空了顺延）。
+   当天重复请求返回同一道（按用户本地日期判断）。此前已保存的当天多题记录保留，
+   不删旧推荐；新的一天按 1 道生成。
+5. 优先从弱点分最高的标签池选题；该池为空时顺延到下一个标签。
 
 每道题带一条推荐理由，只含用户自己的标签名和数字，
 如「你在 BFS 上有 3 条未掌握的错题」。

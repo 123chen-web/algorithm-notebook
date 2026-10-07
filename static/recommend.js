@@ -1,7 +1,7 @@
 "use strict";
 
 /* 总览页的「今日推荐题」卡：按用户未掌握的错题标签，从 Codeforces 题库缓存里
-   推荐 3 道难度合适的题（只链原站，不保存题面）。
+   每天推荐 1 道难度合适的题（只链原站，不保存题面）。
    对外契约：window.RecommendCard = { configure({ api, getUser, getEpoch }), mount(container), reset() }。
    - 请求走宿主传入的 api()；每个响应都按登录代次（getEpoch()）、账号（getUser().id）和请求序号校验，
      登出、换号、reset() 之后晚到的响应一律丢弃；
