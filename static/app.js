@@ -23,6 +23,8 @@ let sessionEpoch = 0;
 let rvfPageGeneration = 0;
 let rvfListGeneration = 0;
 let rvfDetailGeneration = 0;
+// 只计选题动作；列表重新绘制/清空详情不会改变用户最后的选题意图。
+let rvfSelectionGeneration = 0;
 let rvfHeaderGeneration = 0;
 let rvfDetailState = null;
 let rvfListItems = new Map();
@@ -2410,6 +2412,7 @@ async function rvfRestoreItem(item, data) {
 async function loadList() {
   const isCurrent = rvfPageGuard();
   const generation = ++rvfListGeneration;
+  const selection = rvfSelectionGeneration;
   const valid = () => isCurrent() && generation === rvfListGeneration;
   const zoneParam = $("#zone-filter").value;
   const tagParam = $("#tag-filter").value;
@@ -2456,7 +2459,9 @@ async function loadList() {
     : `共 ${data.items.length} 条易错点 · 每一条，都有自己的复习节奏`;
 
   $("#cards").replaceChildren();
-  clearDetail();
+  // 请求期间用户另选了题：列表可更新，但不能清掉其已显示或仍在加载的详情。
+  const selectionChanged = selection !== rvfSelectionGeneration;
+  if (!selectionChanged) clearDetail();
 
   if (!data.items.length) {
     $("#cards").append(element(
@@ -2464,25 +2469,33 @@ async function loadList() {
       view === "today" ? "今天没有待复习的易错点。" : "你的第一条记录，会出现在这里。",
       "muted empty-list"
     ));
-    clearDetail(
-      view === "today" ? "今天的复习，告一段落" : "从一道做错的题开始",
-      view === "today"
-        ? "可以去「全部记录」回看笔记，也可以在「新增记录」留下今天的新发现。"
-        : "点击「新增记录」，留下代码、思路和错因。每条易错点都会单独安排复习。"
-    );
-    // 筛选条件下的"空"不代表没有记录，只在没有任何筛选时给出下一步按钮。
-    const unfiltered = !zoneParam && !tagParam && !listCreatedOn;
-    window.Onboarding?.emptyNext(view, $("#detail .empty-state"), unfiltered
-      ? (view === "all" ? { total: 0, view: "all" } : { view: "today" }) : null);
+    if (!selectionChanged) {
+      clearDetail(
+        view === "today" ? "今天的复习，告一段落" : "从一道做错的题开始",
+        view === "today"
+          ? "可以去「全部记录」回看笔记，也可以在「新增记录」留下今天的新发现。"
+          : "点击「新增记录」，留下代码、思路和错因。每条易错点都会单独安排复习。"
+      );
+      // 筛选条件下的"空"不代表没有记录，只在没有任何筛选时给出下一步按钮。
+      const unfiltered = !zoneParam && !tagParam && !listCreatedOn;
+      window.Onboarding?.emptyNext(view, $("#detail .empty-state"), unfiltered
+        ? (view === "all" ? { total: 0, view: "all" } : { view: "today" }) : null);
+    }
     return;
   }
 
   for (const item of data.items) {
-    $("#cards").append(rvfRecordButton(item, data.today));
+    const button = rvfRecordButton(item, data.today);
+    if (selectionChanged && rvfDetailState?.isCurrent() && rvfDetailState.item.id === item.id) {
+      button.classList.add("selected");
+      button.setAttribute("aria-pressed", "true");
+    }
+    $("#cards").append(button);
   }
 }
 
 async function openMistake(id) {
+  rvfSelectionGeneration += 1;
   const isCurrent = rvfPageGuard();
   rvfClearDetail();
   const generation = rvfDetailGeneration;
@@ -5357,6 +5370,7 @@ async function pendingReasonSaved(id) {
 }
 window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
   getDetailGeneration: () => rvfDetailGeneration,
+  getSelectionGeneration: () => rvfSelectionGeneration,
   onSaved: pendingReasonSaved,
   reportError: (text) => message(text, true),
 });

@@ -246,11 +246,13 @@
         const first = data.items?.[0];
         if (!first || !Number.isInteger(first.id)) { status.textContent = "当前没有待补原因的记录，刷新总览可更新数量。"; return; }
         const transition = pageGeneration;
+        const selection = hooks.getSelectionGeneration?.();
         targetPage = transition + 1;
         const loading = hooks.showView("all");
         target = { ...identity(), detail: hooks.getDetailGeneration?.() };
         await loading;
-        if (!sameSession(ticket) || hooks.getView() !== "all" || pageGeneration !== transition + 1 || sequence !== homeSequence) return;
+        if (!sameSession(ticket) || hooks.getView() !== "all" || pageGeneration !== transition + 1
+          || sequence !== homeSequence || selection !== hooks.getSelectionGeneration?.()) return;
         const opening = hooks.openMistake(first.id);
         target = { ...identity(), detail: hooks.getDetailGeneration?.() };
         await opening;

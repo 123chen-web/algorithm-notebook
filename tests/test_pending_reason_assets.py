@@ -30,6 +30,9 @@ def test_pending_reason_resources_and_host_hooks_are_wired():
     assert 'window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,' in app
     assert 'getEpoch: () => sessionEpoch, getView: () => view' in app
     assert 'getDetailGeneration: () => rvfDetailGeneration' in app
+    assert 'getSelectionGeneration: () => rvfSelectionGeneration' in app
+    opener = app[app.index('async function openMistake(id)'):app.index('const VARIANT_SECTION_PATTERN')]
+    assert 'rvfSelectionGeneration += 1;' in opener
     assert 'onSaved: pendingReasonSaved' in app
     assert 'reportError: (text) => message(text, true)' in app
     assert 'revealed: Boolean(item.pending_reason) || window.ReviewExtras?.hideReason() === false' in app
@@ -86,4 +89,4 @@ def test_pending_reason_async_behaviour():
     )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-1000:]
     assert re.search(r'(?m)^(?:ℹ|#) fail 0$', result.stdout), result.stdout[-1500:]
-    assert re.search(r'(?m)^(?:ℹ|#) pass 38$', result.stdout), result.stdout[-1500:]
+    assert re.search(r'(?m)^(?:ℹ|#) pass 40$', result.stdout), result.stdout[-1500:]

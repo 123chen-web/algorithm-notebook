@@ -66,7 +66,7 @@ function environment(source = SOURCE) {
   Object.assign(context, {
     $, user: { id: 1, ai_enabled: false, ai_daily_limit: 10 }, view: "today", sessionEpoch: 1,
     busy: false, codeZones: new Set(["算法"]), listCreatedOn: "",
-    rvfDetailState: null, rvfDetailGeneration: 0, rvfListGeneration: 0, rvfPageGeneration: 0,
+    rvfDetailState: null, rvfDetailGeneration: 0, rvfSelectionGeneration: 0, rvfListGeneration: 0, rvfPageGeneration: 0,
     rvfHeaderGeneration: 0, rvfListItems: new Map(), rvfQueue: null,
     localStorage: env.window.localStorage,
     timestamp: (value) => value || "尚未复习", confirm: () => false,
@@ -628,6 +628,26 @@ test("detail menu: a pending action after switching cards cannot remove or toast
   assert.match(env.$(".detail-heading").textContent, /题目2/);
   assert.equal(env.document.documentElement.querySelector(".review-toast"), null);
 });
+
+for (const responseOrder of ["detail-first", "list-first", "empty-list"]) {
+  test(`list: a late ${responseOrder} refresh preserves a user's new record selection`, async () => {
+    const env = environment(); seedList(env); env.render(CARD());
+    const loading = env.context.loadList();
+    const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+    const opening = env.context.openMistake(2);
+    const detail = env.calls.find((call) => call.url === "/api/mistakes/2");
+    if (responseOrder !== "list-first") { env.answer(detail, CARD(2)); await opening; }
+    env.answer(listing, { today: "2026-10-04", items: responseOrder === "empty-list" ? [] : [CARD(), CARD(2)] });
+    await loading;
+    if (responseOrder === "list-first") { env.answer(detail, CARD(2)); await opening; }
+    const heading = env.$(".detail-heading");
+    assert.ok(heading, "later list response must keep the selected detail");
+    assert.match(heading.textContent, /题目2/);
+    if (responseOrder !== "empty-list") {
+      assert.equal(env.$('.record-button[data-id="2"]').getAttribute("aria-pressed"), "true");
+    }
+  });
+}
 
 test("pending reason: production detail opens the editor while ordinary records remain concealed", async () => {
   const env = environment();

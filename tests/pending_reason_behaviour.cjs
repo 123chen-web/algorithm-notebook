@@ -24,11 +24,12 @@ const item = () => ({ id: 11, version: 7, pending_reason: true,
 function setup(view = "all") {
   const env = load(["pending-reason.js"]);
   env.document.querySelector("#home-page");
-  const state = { user: { id: 7 }, epoch: 1, view, detail: 1 };
+  const state = { user: { id: 7 }, epoch: 1, view, detail: 1, selection: 0 };
   const saved = [], opened = [];
   const hooks = {
     getUser: () => state.user, getEpoch: () => state.epoch, getView: () => state.view,
     getDetailGeneration: () => state.detail,
+    getSelectionGeneration: () => state.selection,
     api: async (path, options = {}) => {
       const response = await env.window.fetch(path, {
         ...options, headers: { "X-CSRF-Protection": "1" },
@@ -222,7 +223,7 @@ function productionSavedHook(ctx) {
   const context = ctx.env.context;
   ctx.messages = [];
   for (const [name, key] of [["user", "user"], ["sessionEpoch", "epoch"], ["view", "view"],
-    ["rvfDetailGeneration", "detail"]]) {
+    ["rvfDetailGeneration", "detail"], ["rvfSelectionGeneration", "selection"]]) {
     Object.defineProperty(context, name, { configurable: true,
       get: () => ctx.state[key], set: (value) => { ctx.state[key] = value; } });
   }
@@ -323,6 +324,37 @@ test("pending reason: navigating away during the transition cannot open a late r
   ctx.state.view = "new";
   ctx.env.document.dispatchEvent(new FakeEvent("app:view-changed", { detail: { view: "new" } }));
   waiting.resolve(); await settle(); assert.deepEqual(ctx.opened, []);
+});
+
+async function successfulHomeTransition(userSelects) {
+  const ctx = setup("home"); const waiting = deferred();
+  const show = ctx.hooks.showView;
+  ctx.hooks.showView = async (view) => {
+    ctx.state.detail += 1; // showView clears the previous detail
+    await show(view);
+    await waiting.promise;
+    ctx.state.detail += 1; // successful loadList clears detail again
+  };
+  ctx.hooks.openMistake = async (id) => {
+    ctx.state.selection += 1;
+    ctx.state.detail += 1;
+    ctx.opened.push(id);
+  };
+  ctx.env.window.PendingReason.configure(ctx.hooks);
+  const reminder = home(ctx); q(reminder, "button").click();
+  ctx.env.respond(ctx.env.calls[0], 200, { items: [{ id: 11 }] }); await settle();
+  assert.equal(ctx.state.view, "all");
+  if (userSelects) await ctx.hooks.openMistake(22);
+  waiting.resolve(); await settle();
+  return ctx.opened;
+}
+
+test("pending reason: successful list transition preserves a user's new choice", async () => {
+  assert.deepEqual(await successfulHomeTransition(true), [22]);
+});
+
+test("pending reason: successful list transition tolerates its own detail cleanup", async () => {
+  assert.deepEqual(await successfulHomeTransition(false), [11]);
 });
 
 async function failingHomeTransition(stage, change) {
