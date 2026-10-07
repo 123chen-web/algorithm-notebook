@@ -10,6 +10,19 @@ const profile = (id = 7) => ({ user_id: id, username: "<b>同学</b>", bio: "<sc
   has_avatar: false, avatar_version: 5, problem_count: 3, mistake_count: 4,
   review_count: 10, streak_days: 2, achievement_count: 1 });
 
+test("profile ignores an old queued close event after immediate reopening", async () => {
+  const ctx = setup();
+  ctx.env.window.Profile.open(7);
+  ctx.dialog.close();
+  ctx.env.window.Profile.open(7);
+  ctx.dialog.dispatchEvent(new FakeEvent("close"));
+  ctx.env.respond(ctx.env.calls[1], 200, profile(7)); await settle();
+  assert.equal(ctx.dialog.open, true);
+  assert.match(ctx.content.textContent, /当前录入题目/);
+  ctx.env.respond(ctx.env.calls[0], 200, { ...profile(7), bio: "旧简介" }); await settle();
+  assert.equal(ctx.content.textContent.includes("旧简介"), false);
+});
+
 function setup() {
   const env = load([]);
   const dialog = new FakeDialog(env.document);

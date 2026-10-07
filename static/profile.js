@@ -111,7 +111,7 @@
       if (current(identity)) loading.textContent = error.message || "读取失败，请重试。";
     }
   }
-  dialog.addEventListener("close", () => clear());
+  dialog.addEventListener("close", () => { if (!dialog.open) clear(); });
   document.addEventListener("app:view-changed", reset);
   window.Profile = { configure(next) { hooks = next; }, author, open, reset };
 })();
