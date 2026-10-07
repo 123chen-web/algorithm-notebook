@@ -128,6 +128,18 @@ def test_preview_limit_per_user_and_account_erasure(client):
         assert conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] == 0
 
 
+def test_completed_imports_release_active_preview_slots_without_losing_receipts(client):
+    register(client)
+    first = None
+    for index in range(3):
+        token = preview(client, question(f"题{index}")).json()["preview_id"]
+        assert confirm(client, token).json()["imported"] == 1
+        first = first or token
+    assert preview(client, question("第四题")).status_code == 200
+    assert confirm(client, first).json()["imported"] == 1
+    assert counts() == (3, 3)
+
+
 @pytest.mark.parametrize("filename", ["notes.md", "notes.markdown", "NOTES.MD"])
 def test_markdown_extensions_match_frontend(client, filename):
     register(client)

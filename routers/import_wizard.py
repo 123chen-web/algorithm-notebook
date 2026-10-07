@@ -25,6 +25,7 @@ IMPORT_MAX_BYTES = 2 * 1024 * 1024
 IMPORT_MAX_RECORDS = 200
 PREVIEW_TTL_SECONDS = 30 * 60
 PREVIEWS_PER_USER = 3
+PREVIEW_RECEIPTS_PER_USER = 20
 PREVIEWS_TOTAL = 200
 IMPORT_MAX_REQUEST_BYTES = IMPORT_MAX_BYTES + 64 * 1024
 
@@ -154,8 +155,10 @@ async def preview_import(request: Request, user=Depends(main.current_user)):
     with main.connect(write=True) as conn:
         main.sec_recheck_session(conn, user["id"], request)
         conn.execute("DELETE FROM import_previews WHERE expires_at <= ?", (now,))
-        if conn.execute("SELECT COUNT(*) FROM import_previews WHERE user_id = ?", (user["id"],)).fetchone()[0] >= PREVIEWS_PER_USER:
-            raise HTTPException(429, "已有 3 份有效预览，请完成导入或稍后再试")
+        if conn.execute("SELECT COUNT(*) FROM import_previews WHERE user_id = ? AND result IS NULL", (user["id"],)).fetchone()[0] >= PREVIEWS_PER_USER:
+            raise HTTPException(429, "已有 3 份未确认预览，请完成导入或稍后再试")
+        if conn.execute("SELECT COUNT(*) FROM import_previews WHERE user_id = ?", (user["id"],)).fetchone()[0] >= PREVIEW_RECEIPTS_PER_USER:
+            raise HTTPException(429, "短时间预览次数较多，最多保留 20 份预览或确认记录；请 30 分钟后再试")
         if conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] >= PREVIEWS_TOTAL:
             raise HTTPException(429, "当前导入预览较多，请稍后再试")
         existing = import_notes.existing_titles(conn, user["id"])
