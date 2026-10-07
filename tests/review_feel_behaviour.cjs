@@ -29,7 +29,7 @@ const CARD = (id = 1, changes = {}) => ({
 function seedList(env, items = [CARD(), CARD(2)]) {
   env.context.user.today = "2026-10-04";
   env.context.rvfListItems = new Map(items.map((item) => [item.id, item]));
-  env.$("#cards").replaceChildren(...items.map((item) => env.context.rvfRecordButton(item, "2026-10-04")));
+  env.context.rvfRenderCards("2026-10-04");
 }
 async function enableMenu(env) {
   const menu = env.$("#detail").querySelector(".review-more");
@@ -89,6 +89,8 @@ function environment(source = SOURCE) {
   for (const name of [...new Set(names)]) {
     if (new RegExp(`^(?:async )?function ${name}\\(`, "m").test(source)) vm.runInContext(topFunction(name, source), context);
   }
+  const tagHandler = source.indexOf('document.addEventListener("mistake:tags-changed"');
+  vm.runInContext(source.slice(tagHandler, source.indexOf('\nwindow.Onboarding?.configure', tagHandler)), context);
   return { ...env, $, calls, messages, notifications,
     render(item = CARD()) { context.user.today = item.today; context.renderDetail(item); return $("#detail"); },
     answer(call, data) {
@@ -449,6 +451,73 @@ test("list: suspended records retain their label in all-records", async () => {
   await pending;
   assert.match(env.$('.record-button[data-id="1"]').textContent, /已暂停/);
   assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 2);
+});
+
+test("list: one problem card groups separated causes without merging equal titles", async () => {
+  const env = environment(); env.context.view = "all";
+  const pending = env.context.loadList();
+  env.answer(env.calls[0], { today: "2026-10-04", items: [
+    CARD(11, { problem_id: 8, title: "共同题名", description: "错因一" }),
+    CARD(12, { problem_id: 9, title: "共同题名", description: "另一道题" }),
+    CARD(13, { problem_id: 8, title: "共同题名", description: "错因二" }),
+  ] });
+  await pending;
+  const cards = env.$("#cards").querySelectorAll(".problem-record-card");
+  assert.deepEqual(cards.map((card) => card.dataset.problemId), ["8", "9"]);
+  assert.equal(cards[0].querySelectorAll("h3").length, 1);
+  assert.deepEqual(cards[0].querySelectorAll(".record-button").map((button) => button.dataset.id), ["11", "13"]);
+  assert.equal(cards[0].querySelectorAll(".record-button").some((button) => button.textContent.includes("共同题名")), false);
+  assert.match(cards[0].textContent, /错因一/); assert.match(cards[0].textContent, /错因二/);
+});
+
+test("list: grouped due causes remain concealed and open only the chosen independent detail", async () => {
+  const env = environment();
+  const scrolls = []; env.$("#detail").scrollIntoView = (options) => scrolls.push(options.block);
+  const pending = env.context.loadList();
+  env.answer(env.calls[0], { today: "2026-10-04", items: [
+    CARD(11, { problem_id: 8, title: "同一道题" }), CARD(13, { problem_id: 8, title: "同一道题" }),
+  ] }); await pending;
+  assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
+  assert.doesNotMatch(env.$("#cards").textContent, /边界容易漏掉/);
+  env.$('.record-button[data-id="13"]').click(); await tick();
+  const opening = env.calls.find((call) => call.url === "/api/mistakes/13");
+  assert.ok(opening); env.answer(opening, CARD(13, { problem_id: 8, title: "同一道题" })); await tick();
+  assert.equal(env.$('.record-button[data-id="11"]').getAttribute("aria-pressed"), "false");
+  assert.equal(env.$('.record-button[data-id="13"]').getAttribute("aria-pressed"), "true");
+  assert.equal(env.context.rvfDetailState.item.id, 13);
+  assert.equal(env.context.rvfDetailState.revealed, false);
+  assert.deepEqual(scrolls, ["start"], "choosing a card brings its detail below the grid into view");
+});
+
+test("list: removing and restoring a cause preserves its sibling and removes empty problem cards", async () => {
+  const env = environment();
+  const first = CARD(11, { problem_id: 8, title: "同一道题" });
+  const second = CARD(13, { problem_id: 8, title: "同一道题" });
+  const pending = env.context.loadList();
+  env.answer(env.calls[0], { today: "2026-10-04", items: [first, second, CARD(2)] }); await pending;
+  env.context.rvfRemoveItem(first, { offline: true });
+  assert.deepEqual(env.$('[data-problem-id="8"]').querySelectorAll(".record-button").map((button) => button.dataset.id), ["13"]);
+  assert.equal(env.context.rvfListItems.get(13).due_date, "2026-10-04");
+  const restore = env.context.rvfRestoreItem(first, { version: 4 });
+  const opening = env.calls.find((call) => call.url === "/api/mistakes/11");
+  env.answer(opening, { ...first, version: 4 }); await restore;
+  assert.equal(env.$("#cards").querySelectorAll('[data-problem-id="8"]').length, 1);
+  assert.deepEqual(env.$('[data-problem-id="8"]').querySelectorAll(".record-button").map((button) => button.dataset.id), ["11", "13"]);
+  env.context.rvfRemoveItem(first, { offline: true }); env.context.rvfRemoveItem(second, { offline: true });
+  assert.equal(env.$('[data-problem-id="8"]'), null);
+  assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
+});
+
+test("list: edited cause tags survive regrouping after its sibling is reviewed", () => {
+  const env = environment();
+  env.window.TagEditor = { chips: (tags) => env.context.element("span", tags.join(" / "), "record-tags") };
+  const first = CARD(11, { problem_id: 8 });
+  const sibling = CARD(13, { problem_id: 8 });
+  seedList(env, [first, sibling]);
+  env.document.dispatchEvent(new FakeEvent("mistake:tags-changed", { props: { detail: { id: 13, tags: ["复杂度"] } } }));
+  env.context.rvfRemoveItem(first, { offline: true });
+  assert.match(env.$('.record-button[data-id="13"]').textContent, /复杂度/);
+  assert.doesNotMatch(env.$('.record-button[data-id="13"]').textContent, /边界$/);
 });
 
 test("list: today's left pane keeps every due record while queue metadata reports a smaller cap", async () => {

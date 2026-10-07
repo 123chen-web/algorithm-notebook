@@ -2284,12 +2284,12 @@ function rvfClearDetail() {
   rvfDetailState = null;
 }
 
-function rvfRecordButton(item, today) {
+function rvfRecordButton(item, today, index = 1) {
   const button = element("button", "", "record-button");
   button.type = "button";
   button.dataset.id = String(item.id);
   button.setAttribute("aria-pressed", "false");
-  button.append(element("strong", item.title));
+  button.append(element("strong", `易错点 ${index}${item.pending_reason ? " · 待补" : ""}`));
   // 今日队列也先保留问题，避免左栏直接透露待回忆的错因。
   if (view !== "today" || window.ReviewExtras?.hideReason() === false) {
     button.append(element("span", item.description || "错因待 AI 诊断", "record-description"));
@@ -2297,8 +2297,41 @@ function rvfRecordButton(item, today) {
   button.append(element("small", `${item.zone} · ${item.due_date <= today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted"));
   if (item.suspended_at) button.append(element("span", "已暂停", "review-suspended"));
   if (item.tags?.length && window.TagEditor) button.append(window.TagEditor.chips(item.tags));
-  button.addEventListener("click", () => run(() => openMistake(item.id)));
+  button.addEventListener("click", () => run(async () => {
+    await openMistake(item.id);
+    if (rvfDetailState?.isCurrent() && rvfDetailState.item.id === item.id) {
+      $("#detail").scrollIntoView({ block: "start", behavior: "auto" });
+    }
+  }));
   return button;
+}
+
+// 只归并展示；每个按钮仍指向自己独立的 mistake 和复习安排。
+function rvfRenderCards(today, selectedId = null) {
+  const groups = new Map();
+  for (const item of rvfListItems.values()) {
+    const problemId = item.problem_id ?? item.id;
+    if (!groups.has(problemId)) groups.set(problemId, []);
+    groups.get(problemId).push(item);
+  }
+  const root = $("#cards");
+  root.replaceChildren();
+  for (const [problemId, items] of groups) {
+    const card = element("section", "", "problem-record-card");
+    card.dataset.problemId = String(problemId);
+    card.append(element("h3", items[0].title));
+    card.append(element("p", `${items[0].zone} · ${items.length} 条易错点 · 逐条回忆、独立评分`, "problem-record-meta"));
+    const causes = element("div", "", "problem-record-causes");
+    items.forEach((item, index) => {
+      const button = rvfRecordButton(item, today, index + 1);
+      const selected = selectedId === item.id;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      causes.append(button);
+    });
+    card.append(causes);
+    root.append(card);
+  }
 }
 
 function rvfRenderQueueHeader(queue) {
@@ -2375,17 +2408,12 @@ async function rvfSetDailyCap() {
 function rvfRemoveItem(item, { offline = false } = {}) {
   rvfListGeneration += 1; // 已发出的旧列表不得把刚移除的卡片放回来。
   if (view === "today") {
-    document.querySelectorAll(".record-button").forEach((button) => {
-      if (Number(button.dataset.id) === item.id) button.remove();
-    });
     rvfListItems.delete(item.id);
     $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）${offline ? " · 离线模式，评分先存本机" : ""}`;
   } else {
     rvfListItems.set(item.id, item);
-    document.querySelectorAll(".record-button").forEach((button) => {
-      if (Number(button.dataset.id) === item.id) button.replaceWith(rvfRecordButton(item, user.today));
-    });
   }
+  rvfRenderCards(user.today);
   clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : "可以选择下一条继续复习。");
   if (offline) return; // 离线不触发会打网络的头部刷新与跨视图联动。
   notifyDataChanged("review");
@@ -2395,14 +2423,11 @@ function rvfRemoveItem(item, { offline = false } = {}) {
 async function rvfRestoreItem(item, data) {
   const restored = { ...item, ...data };
   rvfListGeneration += 1;
-  rvfListItems.set(item.id, restored);
-  document.querySelectorAll(".record-button").forEach((button) => {
-    if (Number(button.dataset.id) === item.id) button.remove();
-  });
-  $("#cards").querySelectorAll(".empty-list").forEach((empty) => empty.remove());
+  rvfListItems.delete(item.id);
   if (view !== "today" || (!restored.suspended_at && restored.due_date <= user.today)) {
-    $("#cards").prepend(rvfRecordButton(restored, user.today));
+    rvfListItems = new Map([[item.id, restored], ...rvfListItems]);
   }
+  rvfRenderCards(user.today);
   if (view === "today") $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）`;
   notifyDataChanged("review");
   void rvfLoadQueueHeader(rvfPageGuard());
@@ -2484,14 +2509,7 @@ async function loadList() {
     return;
   }
 
-  for (const item of data.items) {
-    const button = rvfRecordButton(item, data.today);
-    if (selectionChanged && rvfDetailState?.isCurrent() && rvfDetailState.item.id === item.id) {
-      button.classList.add("selected");
-      button.setAttribute("aria-pressed", "true");
-    }
-    $("#cards").append(button);
-  }
+  rvfRenderCards(data.today, selectionChanged && rvfDetailState?.isCurrent() ? rvfDetailState.item.id : null);
 }
 
 async function openMistake(id) {
@@ -2852,10 +2870,7 @@ function renderDetail(item, options = {}) {
       state.status.textContent = "先回忆，再显示错因。";
     }
     if (view === "today") {
-      for (const button of document.querySelectorAll(".record-button")) {
-        const record = rvfListItems.get(Number(button.dataset.id));
-        if (record) button.replaceWith(rvfRecordButton(record, user.today));
-      }
+      rvfRenderCards(user.today, state.item.id);
     }
   });
   toolbar.append(preference);
@@ -3436,6 +3451,8 @@ $("#tag-filter").addEventListener("change", () => run(loadList));
 // 详情页里改了标签：同步更新列表里那张卡片上的小标签。
 document.addEventListener("mistake:tags-changed", (event) => {
   const { id, tags } = event.detail || {};
+  const item = rvfListItems.get(Number(id));
+  if (item) item.tags = tags;
   const card = document.querySelector(`#cards .record-button[data-id="${id}"]`);
   if (!card) return;
   card.querySelector(".record-tags")?.remove();
