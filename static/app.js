@@ -2553,6 +2553,13 @@ async function openMistake(id) {
   user.today = item.today;
   updateUserInfo();
 
+  if (rvfListItems.has(item.id)) {
+    // 新详情修正现有卡片；已发出的旧列表不能把已补原因恢复成待补。
+    rvfListGeneration += 1;
+    rvfListItems.set(item.id, { ...rvfListItems.get(item.id), ...item });
+    rvfRenderCards(item.today, item.id);
+  }
+
   document.querySelectorAll(".record-button").forEach((button) => {
     button.classList.toggle("selected", Number(button.dataset.id) === id);
     button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));

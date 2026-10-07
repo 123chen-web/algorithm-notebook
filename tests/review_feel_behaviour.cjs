@@ -571,6 +571,56 @@ test("detail opening: logging back into the same account still discards the prio
   assert.match(env.$("#detail").textContent, /新的登录会话/);
 });
 
+test("detail opening: a saved reason refreshes its existing grouped card and tags", async () => {
+  const env = environment(); env.context.view = "all";
+  env.window.TagEditor = {
+    chips: (tags) => env.context.element("span", tags.join(" / "), "record-tags"),
+    render: () => env.context.element("span", ""),
+  };
+  const stale = CARD(1, { pending_reason: true, description: "（待补：为什么错）", tags: [] });
+  seedList(env, [stale, CARD(2, { problem_id: 1 })]);
+  const refreshing = env.context.openMistake(1);
+  const saved = CARD(1, { pending_reason: false, description: "入队时漏标记，导致重复访问。", tags: ["边界", "复杂度"], version: 4 });
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), saved);
+  await refreshing;
+  const card = env.$('.record-button[data-id="1"]');
+  assert.doesNotMatch(card.textContent, /待补/);
+  assert.match(card.textContent, /入队时漏标记.*边界.*复杂度/);
+  assert.equal(card.getAttribute("aria-pressed"), "true");
+  assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
+  assert.equal(env.context.rvfListItems.get(1).version, 4);
+  assert.equal(env.context.rvfListItems.get(2).id, 2);
+});
+
+test("detail opening: refresh does not insert a record outside the current filtered list", async () => {
+  const env = environment(); env.context.view = "all";
+  seedList(env, [CARD(2)]);
+  const refreshing = env.context.openMistake(1);
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, { pending_reason: false }));
+  await refreshing;
+  assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
+  assert.deepEqual(env.$("#cards").querySelectorAll(".record-button").map((button) => button.dataset.id), ["2"]);
+  assert.match(env.$(".detail-heading").textContent, /题目1/);
+});
+
+test("detail opening: an older list cannot restore pending data after a fresh detail", async () => {
+  const env = environment(); env.context.view = "all";
+  const stale = CARD(1, { pending_reason: true, description: "（待补：为什么错）", tags: [] });
+  seedList(env, [stale]);
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  const opening = env.context.openMistake(1);
+  const saved = CARD(1, { pending_reason: false, description: "检查空数组的边界。", tags: ["边界"], version: 4 });
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), saved);
+  await opening;
+  env.answer(listing, { today: "2026-10-04", items: [stale] });
+  await loading;
+  assert.equal(env.context.rvfListItems.get(1).pending_reason, false);
+  assert.equal(env.context.rvfListItems.get(1).version, 4);
+  assert.doesNotMatch(env.$('.record-button[data-id="1"]').textContent, /待补/);
+  assert.match(env.$('.record-button[data-id="1"]').textContent, /检查空数组的边界/);
+});
+
 test("app navigation: the real showView invalidates active detail requests before page change", async () => {
   const env = navigationEnvironment(); env.render();
   const pending = env.context.openMistake(2);
