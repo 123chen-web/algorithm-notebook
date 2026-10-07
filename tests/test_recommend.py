@@ -224,6 +224,50 @@ def test_band_unit_cases(client):
         assert recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY) == (800, 1200)
 
 
+def test_old_reviews_do_not_raise_the_difficulty_ceiling(client):
+    register(client)
+    owner = me(client)["id"]
+    for index in range(10):
+        seed(owner, title=f"Old {index}", created_days_ago=90, reviews=[(40, 5, 1000)])
+    with connect() as conn:
+        assert recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY) == (800, 1200)
+
+
+def test_recent_reviewed_mistakes_determine_recent_mastery(client):
+    register(client)
+    owner = me(client)["id"]
+    for index in range(10):
+        seed(owner, title=f"Recent {index}", created_days_ago=2, reviews=[(1, 5, 14)])
+    for index in range(20):
+        seed(owner, title=f"Never reviewed {index}", created_days_ago=90)
+    with connect() as conn:
+        assert recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY) == (800, 1400)
+
+
+def test_recent_review_window_uses_the_users_local_day(client):
+    register(client)
+    owner = me(client)["id"]
+    # UTC Aug 20 evening is Aug 21 locally, within the last 30 local days.
+    for index in range(10):
+        mistake = seed(owner, title=f"Boundary {index}", created_days_ago=90)
+        with connect(write=True) as conn:
+            conn.execute("INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, 5, ?, ?)",
+                (mistake, "2026-08-20T20:00:00+00:00", "2029-01-01"))
+    with connect() as conn:
+        assert recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY) == (800, 1400)
+        assert recommend.difficulty_band(conn, owner, "UTC", TODAY) == (800, 1200)
+
+
+def test_future_reviews_do_not_count_toward_ten_completed_reviews(client):
+    register(client)
+    owner = me(client)["id"]
+    for index in range(9):
+        seed(owner, title=f"Recent {index}", created_days_ago=2, reviews=[(1, 5, 14)])
+    seed(owner, title="Future", created_days_ago=2, reviews=[(-1, 5, 14)])
+    with connect() as conn:
+        assert recommend.difficulty_band(conn, owner, "Asia/Shanghai", TODAY) == (800, 1200)
+
+
 def test_excludes_previously_recommended(client):
     register(client)
     owner = me(client)["id"]

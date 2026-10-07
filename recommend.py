@@ -9,7 +9,8 @@
 import json
 import logging
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from mastery import AT_RISK_BELOW, load_mistakes, retention_on
 
@@ -49,6 +50,7 @@ RATING_MAX_DEFAULT = 1200
 RATING_MAX_SKILLED = 1400
 SKILLED_MIN_REVIEWS = 10
 SKILLED_MIN_MASTERY = 0.8
+RECENT_REVIEW_DAYS = 30
 TOP_TAG_COUNT = 2
 RECOMMEND_COUNT = 3
 
@@ -107,20 +109,30 @@ def weakness_scores(conn, user_id, timezone_name, today):
 def difficulty_band(conn, user_id, timezone_name, today):
     """难度带：默认 800–1200；复习 ≥10 次且近期平均掌握度 ≥0.8 时上限提到 1400。
 
-    平均掌握度复用 mastery 的保持率口径（当天有效的易错点取 retention_on 均值）。
+    近期均值只取最近 30 个用户本地日（含今天）复习过的易错点的当前保持率。
     """
-    review_count = conn.execute(
+    zone = ZoneInfo(timezone_name)
+    earliest = today - timedelta(days=RECENT_REVIEW_DAYS - 1)
+    review_count = 0
+    recent_ids = set()
+    for row in conn.execute(
         """
-        SELECT COUNT(*) FROM reviews r
+        SELECT r.mistake_id, r.reviewed_at FROM reviews r
         JOIN mistakes m ON m.id = r.mistake_id
         JOIN problems p ON p.id = m.problem_id
         WHERE p.user_id = ?
         """,
         (user_id,),
-    ).fetchone()[0]
+    ):
+        reviewed = datetime.fromisoformat(row["reviewed_at"]).astimezone(zone).date()
+        if reviewed <= today:
+            review_count += 1
+            if reviewed >= earliest:
+                recent_ids.add(row["mistake_id"])
     items = load_mistakes(conn, user_id, timezone_name)
     values = []
-    for item in items.values():
+    for mistake_id in recent_ids:
+        item = items[mistake_id]
         if item["created"] > today:
             continue
         value = retention_on(item, today)
