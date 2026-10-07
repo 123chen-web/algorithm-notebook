@@ -269,6 +269,23 @@ def test_parse_arxiv_rejects_doctype_and_entity(xml_text):
         digest._parse_arxiv(xml_text)
 
 
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+def test_parse_arxiv_rejects_encoded_entity_before_parsing(encoding, monkeypatch):
+    # The old UTF-8 replacement decoder preserves NULs. ElementTree can then
+    # autodetect UTF-16 and expand entities hidden from the text-level guard.
+    xml_text = ARXIV_WITH_DOCTYPE.encode(encoding).decode("utf-8", "replace")
+    parsed = []
+
+    def forbidden_parse(*args, **kwargs):
+        parsed.append(True)
+        raise AssertionError("unsafe XML reached the parser")
+
+    monkeypatch.setattr(digest.ET, "fromstring", forbidden_parse)
+    with pytest.raises(ValueError):
+        digest._parse_arxiv(xml_text)
+    assert parsed == []
+
+
 def test_non_http_links_are_dropped():
     items = digest._parse_arxiv(ARXIV_WITH_BAD_LINK)
     assert [item["title"] for item in items] == ["Good Paper"]
@@ -277,6 +294,46 @@ def test_non_http_links_are_dropped():
     assert digest._valid_url("javascript:alert(1)") is False
     assert digest._valid_url("ftp://example.com") is False
     assert digest._valid_url(None) is False
+
+
+@pytest.mark.parametrize("case", ["invalid-utf8", "too-large"])
+def test_http_get_rejects_invalid_utf8_and_oversized_response(case, monkeypatch):
+    from io import BytesIO
+
+    payload = b"\xff" if case == "invalid-utf8" else b" " * (digest.MAX_RESPONSE_BYTES + 1)
+
+    monkeypatch.setattr(digest.urllib.request, "urlopen", lambda *a, **k: BytesIO(payload))
+    monkeypatch.setattr(digest.urllib.request, "build_opener", lambda *a: SimpleNamespace(
+        open=lambda *a, **k: BytesIO(payload),
+    ))
+    with pytest.raises(ValueError):
+        digest._http_get(digest.HN_TOPSTORIES_URL)
+
+
+def test_http_get_does_not_follow_external_redirect(monkeypatch):
+    from email.message import Message
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from urllib.response import addinfourl
+
+    requests = []
+
+    def fake_open(handler, request):
+        requests.append(request.full_url)
+        headers = Message()
+        if len(requests) == 1:
+            headers["Location"] = "https://untrusted.example/news"
+            response = addinfourl(BytesIO(b""), headers, request.full_url, 302)
+            response.msg = "Found"
+        else:
+            response = addinfourl(BytesIO(b"[]"), headers, request.full_url, 200)
+            response.msg = "OK"
+        return response
+
+    monkeypatch.setattr(digest.urllib.request.HTTPSHandler, "https_open", fake_open)
+    with pytest.raises(HTTPError):
+        digest._http_get(digest.HN_TOPSTORIES_URL)
+    assert requests == [digest.HN_TOPSTORIES_URL]
 
 
 # ---------- 端到端 ----------

@@ -45,7 +45,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024  # 响应体最多读 1 MB
 USER_AGENT = "oy-digest/1 (+https://ouyeoy.com)"
 
 ARXIV_URL = (
-    "http://export.arxiv.org/api/query"
+    "https://export.arxiv.org/api/query"
     "?search_query=cat:{category}&sortBy=submittedDate&sortOrder=descending&max_results=3"
 )
 ARXIV_CATEGORIES = ("cs.DS", "cs.AI")
@@ -66,11 +66,20 @@ SETTING_KEY = "digest_last_sent:{user_id}"
 
 # ---------- 基础工具 ----------
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 def _http_get(url: str) -> str:
-    """默认网络实现：GET 一个固定 URL，超时 10 秒，响应体最多读 1 MB。"""
+    """GET 固定官方 URL；拒绝跳转、超限响应与非 UTF-8 文本。"""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as resp:
-        return resp.read(MAX_RESPONSE_BYTES).decode("utf-8", "replace")
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(request, timeout=TIMEOUT_SECONDS) as resp:
+        payload = resp.read(MAX_RESPONSE_BYTES + 1)
+    if len(payload) > MAX_RESPONSE_BYTES:
+        raise ValueError("digest response exceeds size limit")
+    return payload.decode("utf-8")
 
 
 def _clean_text(text) -> str:
@@ -134,6 +143,9 @@ def _parse_arxiv(xml_text: str) -> list[dict]:
     解析前看到 <!DOCTYPE / <!ENTITY 就直接拒绝（防实体炸弹），
     只用标准库 xml.etree.ElementTree。
     """
+    # NUL 字符会让 ElementTree 自动探测 UTF-16，绕过纯文本声明检查。
+    if not isinstance(xml_text, str) or "\x00" in xml_text:
+        raise ValueError("arxiv xml must be UTF-8 text without NUL characters")
     lowered = xml_text.lower()
     if "<!doctype" in lowered or "<!entity" in lowered:
         raise ValueError("arxiv xml contains doctype/entity declaration, rejected")

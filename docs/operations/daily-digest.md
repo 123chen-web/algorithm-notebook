@@ -70,7 +70,9 @@ python digest.py --username alice
 
 - arXiv 某个分类、Hacker News 或 AI 摘要任一环节失败，只跳过该环节，
   其余内容和待复习情况照常推送；脚本不会因为单个来源失败而中断。
-- 网络请求统一超时 10 秒、响应体最多读取 1 MB，User-Agent 为
+- 网络请求统一走官方 HTTPS 接口，拒绝任何重定向；超时 10 秒，超过 1 MB 的
+  响应会被拒绝（最多多读 1 字节判定超限），文本按严格 UTF-8 解码。
+  XML 解析前拒绝 NUL 字符、`<!DOCTYPE` 与 `<!ENTITY`，防止编码绕过。User-Agent 为
   `oy-digest/1 (+https://ouyeoy.com)`；两次 arXiv 请求之间至少间隔 3 秒。
 - 日志只打印来源名与失败类别（如 `URLError`、`ParseError`），不会打印密钥。
 
