@@ -137,7 +137,7 @@ def difficulty_band(conn, user_id, timezone_name, today):
 
 def _build_item(problem, cf_tag, tag_scores, state="new"):
     contest_id, index = problem["contestId"], problem["index"]
-    info = tag_scores[cf_tag]
+    info = tag_scores.get(cf_tag)
     return {
         "id": f"{contest_id}{index}",
         "contest_id": contest_id,
@@ -147,7 +147,7 @@ def _build_item(problem, cf_tag, tag_scores, state="new"):
         "tags": list(problem.get("tags") or []),
         "url": f"https://codeforces.com/problemset/problem/{contest_id}/{index}",
         # 理由只含用户自己的标签名和数字。
-        "reason": f"你在{info['label']}上有{info['count']}条未掌握的错题",
+        "reason": f"你在{info['label']}上有{info['count']}条未掌握的错题" if info else "",
         "state": state,
     }
 
@@ -215,7 +215,7 @@ def _today_rows(conn, user_id, day):
         """
         SELECT contest_id, idx, state FROM problem_recommendations
         WHERE user_id = ? AND substr(recommended_at, 1, 10) = ?
-        ORDER BY contest_id, idx
+        ORDER BY rowid
         """,
         (user_id, day),
     ).fetchall()
@@ -244,36 +244,24 @@ def recommend_for_today(conn, user, today):
     day = today.isoformat()
     problems = payload.get("problems") or []
     tag_scores = weakness_scores(conn, user_id, timezone_name, today)
-    band = difficulty_band(conn, user_id, timezone_name, today)
-    if not tag_scores:
-        return [], HINT_NO_MISTAKES
-
     rows = _today_rows(conn, user_id, day)
     if rows:
-        # 当天已生成过：用同样的确定性算法重算并与落库行对齐，保证同一天内稳定。
-        excluded = _previously_recommended(conn, user_id, day)
-        picked = select_problems(problems, tag_scores, band, excluded)
-        by_key = {(item["contest_id"], item["idx"]): item for item in picked}
+        # Restore the saved identities in insertion order, independent of later
+        # reviews, tag edits, difficulty changes, or additions to the cache.
+        by_key = {(problem["contestId"], problem["index"]): problem for problem in problems}
         items = []
         for row in rows:
-            item = by_key.get((row["contest_id"], row["idx"]))
-            if item is None:
-                # 缓存当天被刷新导致选题漂移：降级展示基本信息（极罕见）。
-                item = {
-                    "id": f"{row['contest_id']}{row['idx']}",
-                    "contest_id": row["contest_id"],
-                    "idx": row["idx"],
-                    "name": f"{row['contest_id']}{row['idx']}",
-                    "rating": None,
-                    "tags": [],
-                    "url": f"https://codeforces.com/problemset/problem/{row['contest_id']}/{row['idx']}",
-                    "reason": "",
-                }
-            item = dict(item)
-            item["state"] = row["state"]
-            items.append(item)
+            problem = by_key.get((row["contest_id"], row["idx"]))
+            if problem is None:
+                # The refreshed cache may no longer include a saved identity.
+                problem = {"contestId": row["contest_id"], "index": row["idx"]}
+            cf_tag = next((tag for tag in tag_scores if tag in (problem.get("tags") or [])), None)
+            items.append(_build_item(problem, cf_tag, tag_scores, row["state"]))
         return items, ""
 
+    if not tag_scores:
+        return [], HINT_NO_MISTAKES
+    band = difficulty_band(conn, user_id, timezone_name, today)
     excluded = _previously_recommended(conn, user_id, day)
     picked = select_problems(problems, tag_scores, band, excluded)
     stamp = _stamp(day)

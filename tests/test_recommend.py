@@ -241,6 +241,62 @@ def test_same_day_requests_return_the_same_items(client):
     assert count == 3, "同一天重复请求不应重复落库"
 
 
+def test_same_day_multitag_order_is_stable(client):
+    register(client)
+    owner = me(client)["id"]
+    seed(owner, tags=("BFS",))
+    for _ in range(4):
+        seed(owner, tags=("贪心",))
+    write_cache([
+        cf_problem(4, "A", 800, ["graphs", "dfs and similar"]),
+        cf_problem(5, "A", 800, ["greedy"]),
+        cf_problem(5, "B", 800, ["greedy"]),
+    ])
+    first = get(client)
+    assert [item["id"] for item in first["items"]] == ["5A", "4A", "5B"]
+    assert get(client) == first
+
+
+def test_same_day_recommendations_survive_mastering_all_weak_points(client):
+    register(client)
+    owner = me(client)["id"]
+    mistake = seed(owner, tags=("BFS",))
+    write_cache([cf_problem(4, "A", 800, ["graphs"])])
+    first = get(client)
+    with connect(write=True) as conn:
+        conn.execute("INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, 5, ?, ?)",
+            (mistake, at(TODAY), (TODAY + timedelta(days=14)).isoformat()))
+    second = get(client)
+    assert [item["id"] for item in second["items"]] == [item["id"] for item in first["items"]]
+    assert second["items"][0]["name"] == first["items"][0]["name"]
+    assert second["hint"] == ""
+
+
+def test_same_day_cache_refresh_keeps_saved_problem_metadata(client):
+    register(client)
+    owner = me(client)["id"]
+    seed(owner, tags=("BFS",))
+    original = [cf_problem(4, index, 800, ["graphs"], name=f"Original {index}")
+                for index in ("A", "B", "C")]
+    write_cache(original)
+    first = get(client)
+    write_cache([cf_problem(1, "A", 800, ["graphs"])] + original)
+    assert get(client) == first
+
+
+def test_same_day_recommendations_survive_tag_changes(client):
+    register(client)
+    owner = me(client)["id"]
+    mistake = seed(owner, tags=("BFS",))
+    write_cache([cf_problem(4, "A", 800, ["graphs"]), cf_problem(5, "A", 800, ["dp"])])
+    first = get(client)
+    with connect(write=True) as conn:
+        conn.execute("UPDATE mistake_tags SET tag = 'DP' WHERE mistake_id = ? AND user_id = ?", (mistake, owner))
+    second = get(client)
+    assert [item["id"] for item in second["items"]] == [item["id"] for item in first["items"]]
+    assert second["items"][0]["name"] == first["items"][0]["name"]
+
+
 def test_post_state_change_and_validation(client):
     register(client)
     owner = me(client)["id"]
