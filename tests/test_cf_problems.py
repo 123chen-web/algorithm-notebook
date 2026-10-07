@@ -112,6 +112,8 @@ def test_saving_cache_cannot_store_statement_fields(tmp_path):
     {"problems": [{"contestId": 4, "index": "A", "name": "x", "rating": "800", "tags": []}]},
     {"problems": [{"contestId": 4, "index": "../x", "name": "x", "rating": 800, "tags": []}]},
     {"problems": [], "fetched_at": float("nan")},
+    {"problems": [], "fetched_at": 10 ** 400},
+    {"problems": [{"contestId": 2 ** 63, "index": "A", "rating": 800, "tags": ["graphs"]}]},
 ])
 def test_malformed_cache_structures_are_rejected(tmp_path, payload):
     (tmp_path / "cf_problems.json").write_text(json.dumps(payload), encoding="utf-8")

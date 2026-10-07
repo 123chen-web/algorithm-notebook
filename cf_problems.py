@@ -144,7 +144,7 @@ def _metadata(problems):
         if not isinstance(problem, dict):
             raise ValueError("题目元信息结构无效")
         contest_id, index = problem.get("contestId"), problem.get("index")
-        if (type(contest_id) is not int or contest_id <= 0
+        if (type(contest_id) is not int or not 0 < contest_id <= 2 ** 63 - 1
                 or not isinstance(index, str)
                 or re.fullmatch(r"[A-Za-z0-9]{1,16}", index) is None):
             raise ValueError("题目编号无效")
@@ -228,7 +228,7 @@ def _load_cache_at(target):
                 or not math.isfinite(fetched_at) or fetched_at < 0):
             return None
         payload["problems"] = _metadata(payload.get("problems"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, OverflowError):
         return None
     return payload
 
