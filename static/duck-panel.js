@@ -11,7 +11,7 @@
    - 一切来自用户或服务器的文字都用 textContent；组件自己不直接发请求、不写本地存储。 */
 (() => {
   const MAX_CHARS = 600;   // 单条发言上限，与输入框 maxlength 一致
-  const MAX_TURNS = 6;     // 用户最多发言 6 轮（与 duck_prompt.MAX_USER_TURNS 一致）
+  const MAX_TURNS = 12;    // 与 duck_prompt.MAX_USER_TURNS 一致；每日额度仍单独限制
   const THINKING = "小黄鸭在想…";
   const SUMMING = "小黄鸭在整理总结…";
   const RETRYABLE_FALLBACK = "小黄鸭这次没答好，可以再试一次。";
@@ -38,7 +38,7 @@
   /* ---------- 纯函数（挂在 DuckPanel.helpers 上供测试） ---------- */
   const countUserTurns = (turns) => turns.reduce((total, turn) => total + (turn.role === "user" ? 1 : 0), 0);
 
-  /** “第 N / 6 轮”：N 是正在进行的这一轮；讲满 6 轮后定格并提示去总结。 */
+  /** N 是正在进行的这一轮；讲满上限后定格并提示去总结。 */
   function roundText(turns) {
     const used = countUserTurns(turns);
     if (used >= MAX_TURNS) return `第 ${MAX_TURNS} / ${MAX_TURNS} 轮 · 已讲完，点“结束并总结”收尾`;
@@ -247,7 +247,7 @@
     const restartBtn = button("重新开始", "duck-restart");
     actions.append(sendBtn, finishBtn, restartBtn);
     row.append(count, actions);
-    const hint = node("p", "duck-hint", "Enter 发送，Shift+Enter 换行。最多 6 轮。");
+    const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；每次回复和总结各使用 1 次每日 AI 额度。`);
     composer.append(input, row, hint);
 
     root.append(head, note, log, status, error, summary, composer);

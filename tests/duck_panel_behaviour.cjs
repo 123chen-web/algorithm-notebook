@@ -2,7 +2,7 @@
 
 /* “讲给小黄鸭听”面板的异步行为测试（Node 内置 node:test + tests/js_harness.cjs 的假浏览器）。
    重点覆盖字符串断言测不到的东西：迟到响应（登出换号 / 关闭面板 / 切换错题 / 重新开始）、
-   输入法组合输入、发送中防重、6 轮封顶、429 额度锁定、错误重试不丢字。 */
+   输入法组合输入、发送中防重、12 轮封顶、429 额度锁定、错误重试不丢字。 */
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { load, tick, FakeEvent } = require("./js_harness.cjs");
@@ -79,9 +79,9 @@ test("mount 渲染面板：标题、只存内存的说明、错题名", () => {
   assert.equal(container.querySelectorAll(".duck-panel").length, 1);
 });
 
-test("初始轮次提示是 第 1 / 6 轮", () => {
+test("初始轮次提示是 第 1 / 12 轮", () => {
   const { env } = setup();
-  assert.equal($(env, ".duck-round").textContent, "第 1 / 6 轮");
+  assert.equal($(env, ".duck-round").textContent, "第 1 / 12 轮");
 });
 
 test("初始字数提示 还可输入 600 字，输入后减少", () => {
@@ -185,11 +185,11 @@ test("成功后 aria-live 区域播报小黄鸭的新回复", async () => {
   assert.equal(status.textContent, "小黄鸭：追问一句？");
 });
 
-test("成功后输入框清空、轮次前进到 第 2 / 6 轮", async () => {
+test("成功后输入框清空、轮次前进到 第 2 / 12 轮", async () => {
   const { env } = setup();
   await exchange(env, "讲一句", "追问");
   assert.equal($(env, ".duck-input").value, "");
-  assert.equal($(env, ".duck-round").textContent, "第 2 / 6 轮");
+  assert.equal($(env, ".duck-round").textContent, "第 2 / 12 轮");
   assert.equal($(env, ".duck-send").disabled, true, "输入已清空，发送键回到禁用");
 });
 
@@ -300,7 +300,7 @@ test("429 之后重新开始：对话清空，但额度锁定保留", async () =
   $(env, ".duck-restart").click();
   await tick();
   assert.equal($$(env, ".duck-bubble").length, 0);
-  assert.equal($(env, ".duck-round").textContent, "第 1 / 6 轮");
+  assert.equal($(env, ".duck-round").textContent, "第 1 / 12 轮");
   assert.equal($(env, ".duck-input").disabled, true, "额度是服务端按天算的，清空对话不恢复");
   type(env, "再试");
   $(env, ".duck-send").click();
@@ -355,21 +355,31 @@ test("网络异常（reject）也走可重试路径", async () => {
   assert.equal($(env, ".duck-send").disabled, false, "失败后输入框里还有字，可以再发");
 });
 
-/* ---------------- 6 轮封顶与总结 ---------------- */
+/* ---------------- 12 轮封顶与总结 ---------------- */
 async function fillRounds(env, count) {
   for (let index = 0; index < count; index += 1) {
     await exchange(env, `第${index + 1}句`, `第${index + 1}答`);
   }
 }
 
-test("讲满 6 轮后：输入与发送禁用，只能点 结束并总结，轮次定格 第 6 / 6 轮", async () => {
+test("seven rounds remain usable within the twelve-round limit", async () => {
   const { env } = setup();
-  await fillRounds(env, 6);
-  assert.match($(env, ".duck-round").textContent, /^第 6 \/ 6 轮/);
+  await fillRounds(env, 7);
+  assert.equal($(env, ".duck-round").textContent, "第 8 / 12 轮");
+  assert.equal($(env, ".duck-input").disabled, false);
+  type(env, "第八句");
+  assert.equal($(env, ".duck-send").disabled, false);
+  assert.equal($$(env, ".duck-bubble").length, 14);
+});
+
+test("讲满 12 轮后：输入与发送禁用，只能点 结束并总结，轮次定格 第 12 / 12 轮", async () => {
+  const { env } = setup();
+  await fillRounds(env, 12);
+  assert.match($(env, ".duck-round").textContent, /^第 12 \/ 12 轮/);
   assert.equal($(env, ".duck-input").disabled, true);
   assert.equal($(env, ".duck-send").disabled, true);
   assert.equal($(env, ".duck-finish").disabled, false);
-  assert.equal($$(env, ".duck-bubble").length, 12);
+  assert.equal($$(env, ".duck-bubble").length, 24);
 });
 
 test("没讲过一轮时 结束并总结 不可用", () => {
@@ -439,14 +449,14 @@ test("总结时遇到 429：显示额度说明并锁定", async () => {
 });
 
 /* ---------------- 重新开始 ---------------- */
-test("重新开始：清空气泡与总结、轮次回 第 1 / 6 轮、输入恢复", async () => {
+test("重新开始：清空气泡与总结、轮次回 第 1 / 12 轮、输入恢复", async () => {
   const { env } = setup();
   await fillRounds(env, 2);
   $(env, ".duck-restart").click();
   await tick();
   assert.equal($$(env, ".duck-bubble").length, 0);
   assert.equal($(env, ".duck-summary").hidden, true);
-  assert.equal($(env, ".duck-round").textContent, "第 1 / 6 轮");
+  assert.equal($(env, ".duck-round").textContent, "第 1 / 12 轮");
   assert.equal($(env, ".duck-input").disabled, false);
   type(env, "重新开始的一句");
   $(env, ".duck-send").click();
@@ -530,7 +540,7 @@ test("切换错题之后才回来的响应被丢弃，新错题从第 1 轮开�
   env.respond(env.calls[0], 200, reply("旧题的迟到回答"));
   await tick();
   assert.equal($$(env, ".duck-bubble").length, 0);
-  assert.equal($(env, ".duck-round").textContent, "第 1 / 6 轮");
+  assert.equal($(env, ".duck-round").textContent, "第 1 / 12 轮");
   type(env, "给新题讲");
   $(env, ".duck-send").click();
   await tick();
@@ -576,13 +586,13 @@ test("未登录时点发送：提示先登录，不发请求", async () => {
 });
 
 /* ---------------- 纯函数 ---------------- */
-test("helpers.roundText：从 1 数到 6 并定格", () => {
+test("helpers.roundText：从 1 数到 12 并定格", () => {
   const { roundText } = load(["duck-panel.js"]).window.DuckPanel.helpers;
-  assert.equal(roundText([]), "第 1 / 6 轮");
-  assert.equal(roundText([{ role: "user", text: "u" }, { role: "duck", text: "d" }]), "第 2 / 6 轮");
+  assert.equal(roundText([]), "第 1 / 12 轮");
+  assert.equal(roundText([{ role: "user", text: "u" }, { role: "duck", text: "d" }]), "第 2 / 12 轮");
   const full = [];
-  for (let index = 0; index < 6; index += 1) full.push({ role: "user", text: "u" }, { role: "duck", text: "d" });
-  assert.match(roundText(full), /^第 6 \/ 6 轮/);
+  for (let index = 0; index < 12; index += 1) full.push({ role: "user", text: "u" }, { role: "duck", text: "d" });
+  assert.match(roundText(full), /^第 12 \/ 12 轮/);
 });
 
 test("helpers.payloadTurns：复制历史并追加当前发言，不改原数组", () => {

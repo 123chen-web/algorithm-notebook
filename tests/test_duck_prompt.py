@@ -113,9 +113,16 @@ class TestCheckTurns:
             turns.append({"role": "duck", "text": "d"})
         check_turns(turns)
 
-    def test_seven_user_turns_raise(self):
+    def test_twelve_user_turns_ok(self):
         turns = []
-        for _ in range(7):
+        for _ in range(12):
+            turns.append({"role": "user", "text": "u"})
+            turns.append({"role": "duck", "text": "d"})
+        check_turns(turns)
+
+    def test_thirteen_user_turns_raise(self):
+        turns = []
+        for _ in range(13):
             turns.append({"role": "user", "text": "u"})
             turns.append({"role": "duck", "text": "d"})
         with pytest.raises(ValueError):

@@ -44,7 +44,7 @@ def test_js_keyboard_ime_and_live_region_contract():
     assert 'setAttribute("aria-live", "polite")' in JS
     assert 'setAttribute("role", "alert")' in JS
     assert "input.maxLength = MAX_CHARS" in JS and "MAX_CHARS = 600" in JS
-    assert "MAX_TURNS = 6" in JS
+    assert "MAX_TURNS = 12" in JS
     for label in ("发送", "结束并总结", "重新开始", "重试"):
         assert f'"{label}"' in JS, label
     assert "小黄鸭在想…" in JS and "额度用完" in JS and "刷新或离开就没了" in JS

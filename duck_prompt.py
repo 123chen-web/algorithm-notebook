@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-MAX_USER_TURNS = 6        # 用户最多发言 6 轮
+MAX_USER_TURNS = 12       # 用户最多发言 12 轮；共享每日额度另行约束
 MAX_TOTAL_CHARS = 4000    # 对话文字总长度上限
 MAX_REPLY_LEN = 60        # 普通追问回复长度上限
 MAX_REPLY_LEN_FINISH = 120  # finish 总结回复长度上限

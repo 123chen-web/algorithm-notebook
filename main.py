@@ -60,7 +60,7 @@ from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
 from admin_metrics import PERIOD_CHOICES, compute_metrics as compute_admin_metrics
 from ai_limits import ai_slot, note_usage, release_attempt, track_call
-from duck_prompt import build_messages, check_turns, validate_reply
+from duck_prompt import MAX_USER_TURNS, build_messages, check_turns, validate_reply
 from db import ROOT, connect, init_db, normalize_username, schema_version, sec_username_key
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
@@ -1787,8 +1787,8 @@ class DuckTurn(InputModel):
 
 
 class DuckInput(InputModel):
-    # 用户最多 6 轮发言，严格交替下来最多 12 条；check_turns 会再细查。
-    turns: list[DuckTurn] = Field(max_length=13)
+    # 容许多一条进入轮数校验，以便返回清楚的轮数上限提示。
+    turns: list[DuckTurn] = Field(max_length=2 * MAX_USER_TURNS + 1)
     finish: bool = False
 
 

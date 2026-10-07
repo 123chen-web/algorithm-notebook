@@ -198,19 +198,36 @@ def test_invalid_turns_are_422_and_never_touch_quota(client, monkeypatch, turns,
     assert attempts() == 0, "校验失败不扣额度"
 
 
-def test_seven_user_turns_are_422(client, monkeypatch):
+def test_twelve_user_turns_are_accepted_with_one_shared_quota_charge(client, monkeypatch):
+    provider = fake_ai(monkeypatch, GOOD)
+    register(client)
+    mistake_id = new_mistake(client)
+    turns = []
+    for index in range(12):
+        turns += [{"role": "user", "text": f"第{index}句"}, {"role": "duck", "text": "嗯？"}]
+    turns.pop()
+
+    response = duck(client, mistake_id, turns)
+
+    assert response.status_code == 200
+    assert response.json() == {"reply": "哪里没想清楚？", "turns_used": 12, "ai_remaining": 1}
+    assert len(provider.requests) == 1
+    assert attempts() == 1
+
+
+def test_thirteen_user_turns_are_422(client, monkeypatch):
     fake_ai(monkeypatch, GOOD)
     register(client)
     mistake_id = new_mistake(client)
     turns = []
-    for index in range(7):
+    for index in range(13):
         turns += [{"role": "user", "text": f"第{index}句"}, {"role": "duck", "text": "嗯？"}]
     turns.pop()  # 以 user 结尾
 
     response = duck(client, mistake_id, turns)
 
     assert response.status_code == 422
-    assert "6" in response.json()["detail"]
+    assert "12" in response.json()["detail"]
 
 
 def test_total_chars_over_4000_are_422(client, monkeypatch):
