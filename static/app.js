@@ -531,6 +531,7 @@ function signedOut() {
   window.RecommendCard?.reset();
   window.DuckPanel?.reset();
   window.Scratch?.reset();
+  window.CodeRunner?.reset();
 window.PushSettings?.reset();
   window.NavFocus?.reset(); // 专注模式开关属于已注销的用户，收起状态与横幅一并还原
   window.Typical?.reset(); // 典型失误卡与一页纸属于已注销的用户，请求代次一并作废
@@ -2284,6 +2285,7 @@ function rvfPageGuard() {
 
 function rvfClearDetail() {
   window.Scratch?.unmount();
+  window.CodeRunner?.unmount();
   rvfDetailState?.menu?.destroy?.();
   rvfDetailGeneration += 1;
   rvfDetailState = null;
@@ -2954,6 +2956,12 @@ function renderDetail(item, options = {}) {
   root.append(scratchHost);
   window.Scratch?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.Scratch?.mount(scratchHost, item);
+  if (isCodeZone) {
+    const runnerHost = element("div", "", "code-runner-host");
+    root.append(runnerHost);
+    window.CodeRunner?.mount(runnerHost, item, { offline });
+    state.answers.push(runnerHost);
+  }
 
   const deleteMistakeBtn = element("button", "删除这条易错点", "danger");
   deleteMistakeBtn.type = "button";
@@ -5432,6 +5440,8 @@ window.ImportWizard?.configure({ ...rvfHooks, getZones: () => zones,
   onImported: async () => { notifyDataChanged("import"); await loadList(); } });
 window.ReviewExtras?.configure(rvfHooks);
 window.FocusReview?.configure(rvfHooks);
+window.CodeRunner?.configure({ ...rvfHooks,
+  getDetailGeneration: () => rvfDetailGeneration, getSelectionGeneration: () => rvfSelectionGeneration });
 async function pendingReasonSaved(id) {
   const pageCurrent = rvfPageGuard();
   const savedView = view;
