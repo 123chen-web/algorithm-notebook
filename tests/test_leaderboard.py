@@ -99,10 +99,10 @@ def test_trial_account_streak_hidden_from_entries_but_visible_to_self(client):
     assert body["me"] == {"streak_days": 3, "rank": None, "is_trial": True}
     # ……但不会挤进公开排行榜，正式账号的 1 天顶到第一名。
     assert body["entries"] == [
-        {"rank": 1, "display_name": f"用户 #{normal['id']}", "streak_days": 1}
+        {"rank": 1, "display_name": "regular", "streak_days": 1}
     ]
     assert all(
-        entry["display_name"] != f"用户 #{trial_id}" for entry in body["entries"]
+        entry["display_name"] != client.get("/api/me").json()["username"] for entry in body["entries"]
     )
 
 
@@ -115,7 +115,23 @@ def test_zero_streak_user_excluded_but_sees_own_zero(client):
     assert body["entries"] == []
 
 
-def test_entries_use_anonymized_display_name_not_real_username(client):
+def test_banned_user_does_not_occupy_rank_slot(client, monkeypatch):
+    monkeypatch.setattr(main, "LEADERBOARD_SIZE", 1)
+    banned = register(client, "banned")
+    first = new_problem(client)[0]
+    insert_review(first, "2026-09-19T04:00:00+00:00")
+    client.post("/api/auth/logout")
+    register(client, "active")
+    second = new_problem(client)[0]
+    insert_review(second, "2026-09-19T04:00:00+00:00")
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_banned = 1 WHERE id = ?", (banned["id"],))
+    body = client.get("/api/leaderboard").json()
+    assert body["entries"] == [{"rank": 1, "display_name": "active", "streak_days": 1}]
+    assert body["me"]["rank"] == 1
+
+
+def test_entries_use_actual_username(client):
     alice = register(client, "alice")
     mistake_id = new_problem(client)[0]
     insert_review(mistake_id, "2026-09-19T04:00:00+00:00")
@@ -124,9 +140,9 @@ def test_entries_use_anonymized_display_name_not_real_username(client):
 
     entries = client.get("/api/leaderboard").json()["entries"]
     assert entries == [
-        {"rank": 1, "display_name": f"用户 #{alice['id']}", "streak_days": 1}
+        {"rank": 1, "display_name": "alice", "streak_days": 1}
     ]
-    assert "alice" not in entries[0]["display_name"]
+    assert entries[0]["display_name"] == "alice"
 
 
 def test_ranking_orders_by_streak_desc_then_user_id_asc_on_ties(client):
@@ -147,9 +163,9 @@ def test_ranking_orders_by_streak_desc_then_user_id_asc_on_ties(client):
 
     entries = client.get("/api/leaderboard").json()["entries"]
     assert entries == [
-        {"rank": 1, "display_name": f"用户 #{first['id']}", "streak_days": 2},
-        {"rank": 2, "display_name": f"用户 #{second['id']}", "streak_days": 1},
-        {"rank": 3, "display_name": f"用户 #{third['id']}", "streak_days": 1},
+        {"rank": 1, "display_name": "first", "streak_days": 2},
+        {"rank": 2, "display_name": "second", "streak_days": 1},
+        {"rank": 3, "display_name": "third", "streak_days": 1},
     ]
 
 
@@ -172,6 +188,6 @@ def test_leaderboard_truncates_and_still_reports_own_rank_beyond_cutoff(
     # 前端就是靠这个字段判断"未进入前 N 名"，不能让它跟真实截断阈值脱节。
     assert body["leaderboard_size"] == 2
     assert [entry["display_name"] for entry in body["entries"]] == [
-        f"用户 #{ids[0]}", f"用户 #{ids[1]}",
+        "usera", "userb",
     ]
     assert body["me"] == {"streak_days": 1, "rank": 3, "is_trial": False}

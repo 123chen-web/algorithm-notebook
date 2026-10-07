@@ -43,8 +43,8 @@ def get_achievement_share_card(user=Depends(main.current_user)):
 def leaderboard(user=Depends(main.current_user)):
     with main.connect() as conn:
         users = conn.execute(
-            "SELECT id, timezone, is_trial, public_rank_opt_out FROM users "
-            "WHERE deleted_at IS NULL"
+            "SELECT id, username, timezone, is_trial, public_rank_opt_out FROM users "
+            "WHERE deleted_at IS NULL AND is_banned = 0"
         ).fetchall()
         review_rows = conn.execute(
             """
@@ -72,9 +72,7 @@ def leaderboard(user=Depends(main.current_user)):
     entries = [
         {
             "rank": index + 1,
-            # 匿名标识，不带出真实 username；跟 rank 是两个独立字段，
-            # 数字含义不同，不能把标识里的号码当成排名。
-            "display_name": f"用户 #{row['id']}",
+            "display_name": row["username"],
             "streak_days": streaks[row["id"]],
         }
         for index, row in enumerate(eligible[:main.LEADERBOARD_SIZE])
