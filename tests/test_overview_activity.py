@@ -222,6 +222,7 @@ def test_activity_endpoint_does_not_write_or_spend_quota(client):
 
 EMPTY_OVERVIEW = {
     "today": "2026-09-19",
+    "pending_reason_count": 0,
     "due_count": 0,
     "overdue_count": 0,
     "total_mistakes": 0,
@@ -289,12 +290,13 @@ def test_due_preview_lists_the_five_most_overdue_with_overdue_days(client):
     first = data["due_preview"][0]
     assert set(first) == {
         "id", "problem_id", "title", "zone", "description",
-        "due_date", "overdue_days", "repetitions",
+        "due_date", "overdue_days", "repetitions", "pending_reason",
     }
     assert first["due_date"] == "2026-09-10"
     assert first["title"] == "二分边界"
     assert first["description"] == "遗漏边界条件"
     assert first["repetitions"] == 0
+    assert first["pending_reason"] is False
 
 
 def test_last7_marks_review_days_by_local_date_oldest_first(client):
