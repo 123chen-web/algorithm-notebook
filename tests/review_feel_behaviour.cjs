@@ -126,6 +126,7 @@ function navigationEnvironment() {
   for (const name of ["stopOrderPolling", "resetWeaknessAnalysis", "resetAchievements", "resetWeeklyRecap",
     "resetGroups", "renderPageRoute", "closeAccountMenu", "showAuthPanels", "setForumPreview",
     "clearForumReply", "secClearEmailForm", "resetAdminDashboard", "addMistakeInput", "resetPhotoForm", "resetHomeSummary",
+    "resetQuickMode",
     "cancelAchievementStamps", "renderUserInfo", "renderHomeQuota", "loadHome"]) env.context[name] = () => {};
   for (const id of ["forum-comment-form", "problem-form"]) env.$("#" + id).reset = () => {};
   env.window.scrollTo = () => {};

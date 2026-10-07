@@ -535,6 +535,7 @@ window.PushSettings?.reset();
   $("#admin-reports").replaceChildren();
   $("#admin-status").textContent = "";
   $("#problem-form").reset();
+  resetQuickMode(); // 登出时如正处速记模式，一并恢复普通模式，避免界面卡在隐藏状态
   $("#mistake-inputs").replaceChildren();
   addMistakeInput();
   resetPhotoForm();
@@ -3694,35 +3695,106 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
   });
 });
 
+/* ---- 速记模式（E2 事项一）----
+   开关默认关闭。打开后：只要求题名 + 分区；code/thinking 去掉 required 并隐藏
+   对应区块；易错点区域提示"将自动创建一条待补原因的易错点"，留空的易错点不提交，
+   由后端自动建一条 pending_reason 的易错点。关闭后一切恢复原样，校验不变。 */
+const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
+
+// 开关当前是否打开。
+function isQuickMode() {
+  return $("#problem-quick")?.checked === true;
+}
+
+// 切换速记显隐：code/thinking 去 required 并隐藏区块，易错点换提示文案；
+// 关闭时原样恢复（required 只还原"原本就有"的，避免误加）。
+function applyQuickMode(on) {
+  const form = $("#problem-form");
+  if (!form) return;
+  const code = form.querySelector('[name="code"]');
+  const thinking = form.querySelector('[name="thinking"]');
+  for (const field of [code, thinking]) {
+    if (!field) continue;
+    if (on) {
+      if (field.hasAttribute("required")) {
+        field.dataset.quickRequired = "1";
+        field.removeAttribute("required");
+      }
+    } else if (field.dataset.quickRequired === "1") {
+      field.setAttribute("required", "");
+      delete field.dataset.quickRequired;
+    }
+  }
+  // 代码整块隐藏（basics 区没有折叠，直接隐藏 label）；思路整节隐藏。
+  const codeLabel = code?.closest("label");
+  if (codeLabel) codeLabel.hidden = on;
+  const thinkingSection = form.querySelector('[data-form-section="thinking"]');
+  if (thinkingSection) thinkingSection.hidden = on;
+  // 易错点提示：速记时换文案，关闭时恢复原文案。
+  const hint = document.getElementById("mistake-hint");
+  if (hint) {
+    if (on) {
+      if (hint.dataset.quickHint === undefined) hint.dataset.quickHint = hint.textContent;
+      hint.textContent = QUICK_MISTAKE_HINT;
+    } else if (hint.dataset.quickHint !== undefined) {
+      hint.textContent = hint.dataset.quickHint;
+      delete hint.dataset.quickHint;
+    }
+  }
+}
+
+// 拼建题请求体。速记：只带用户手写的易错点（留空的交给后端自动建待补易错点），
+// 并带上 quick 标记；普通模式的字段与原来一字不差。
+function buildProblemPayload(form, quick) {
+  const data = new FormData(form);
+  const mistakes = data.getAll("mistake");
+  return {
+    title: data.get("title"),
+    zone: data.get("zone"),
+    language: data.get("language"),
+    code: data.get("code"),
+    thinking: data.get("thinking"),
+    mistakes: quick ? mistakes.filter((text) => String(text ?? "").trim() !== "") : mistakes,
+    quick: Boolean(quick),
+  };
+}
+
+// 提交成功后恢复普通模式：开关复位、界面还原，避免用户无意识连续速记。
+function resetQuickMode() {
+  const toggle = $("#problem-quick");
+  if (toggle) toggle.checked = false;
+  applyQuickMode(false);
+}
+
+$("#problem-quick")?.addEventListener("change", (event) => {
+  applyQuickMode(event.currentTarget.checked);
+});
+
 $("#problem-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const anchor = sealAnchorPoint(event.submitter || form.querySelector('[type="submit"]:not([hidden])'));
   const cameFromPhoto = Boolean(photoRecognition);
+  const quick = isQuickMode(); // 提交瞬间锁定模式，避免请求在途时开关被拨动
 
   run(async () => {
-    const data = new FormData(form);
     const created = await api("/api/problems", {
       method: "POST",
-      body: JSON.stringify({
-        title: data.get("title"),
-        zone: data.get("zone"),
-        language: data.get("language"),
-        code: data.get("code"),
-        thinking: data.get("thinking"),
-        mistakes: data.getAll("mistake"),
-      }),
+      body: JSON.stringify(buildProblemPayload(form, quick)),
     });
     stampSeal("已录", { anchor });
     notifyDataChanged("create");
 
     form.reset();
+    resetQuickMode(); // 成功后恢复普通模式（开关复位）
     applyZoneFieldMode(form, form.zone.value);
     $("#mistake-inputs").replaceChildren();
     addMistakeInput();
     resetPhotoForm();
 
-    let noticeText = "记录已保存，新的易错点已加入今日复习。";
+    let noticeText = quick
+      ? "速记已保存，记得回来补上代码、思路和错因。"
+      : "记录已保存，新的易错点已加入今日复习。";
     if (cameFromPhoto && created.mistake_ids[0]) {
       try {
         await api(`/api/mistakes/${created.mistake_ids[0]}/variants`, { method: "POST" });

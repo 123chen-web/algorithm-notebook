@@ -116,3 +116,16 @@
 @media (prefers-reduced-motion: reduce) {
   #new-page *, #new-page *::before, #new-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* 速记模式开关：建题表单"题目和代码"标题行右侧 */
+#new-page .quick-toggle {
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
