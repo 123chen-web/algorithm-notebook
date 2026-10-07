@@ -2318,7 +2318,7 @@ async def forum_action_validation_error(request: Request, exc: RequestValidation
     if re.fullmatch(
         r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful"
         r"|/api/mistakes/[^/]+/(?:preview|review(?:/undo)?|snooze|suspend|unsuspend|run)"
-        r"|/api/me/review-settings|/api/review/queue",
+        r"|/api/me/review-settings|/api/review/queue|/api/import/confirm",
         request.url.path,
     ):
         return JSONResponse(

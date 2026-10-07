@@ -17,6 +17,12 @@ def question(title="二分边界"):
             "**思路**\n\n维护区间。\n\n**易错点**\n\n- 空数组。\n")
 
 
+def exported_problem(**overrides):
+    return {"title": "导出题", "language": "Python", "code": "pass\n", "thinking": "维护区间。",
+            "created_at": "2026-09-01T12:00:00+00:00", "mistakes": [
+                {"description": "（待补）", "pending_reason": True, "tags": [], "reviews": []}], **overrides}
+
+
 def preview(client, content=None, filename="notes.md", zone="算法"):
     return client.post("/api/import/preview", data={"zone": zone},
                        files={"file": (filename, content or question(), "application/octet-stream")})
@@ -131,13 +137,47 @@ def test_preview_limit_per_user_and_account_erasure(client):
 def test_completed_imports_release_active_preview_slots_without_losing_receipts(client):
     register(client)
     first = None
-    for index in range(3):
+    for index in range(4):
         token = preview(client, question(f"题{index}")).json()["preview_id"]
         assert confirm(client, token).json()["imported"] == 1
         first = first or token
-    assert preview(client, question("第四题")).status_code == 200
+    assert preview(client, question("第五题")).status_code == 200
     assert confirm(client, first).json()["imported"] == 1
-    assert counts() == (3, 3)
+    assert counts() == (4, 4)
+
+
+def test_parallel_preview_requests_cannot_exceed_active_cap(client):
+    register(client)
+    cookies = dict(client.cookies)
+    def submit(index):
+        with TestClient(main.app, cookies=cookies, headers={"X-CSRF-Protection": "1"}) as peer:
+            return preview(peer, question(f"并发题{index}"))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(submit, range(4)))
+    assert sorted(response.status_code for response in responses) == [200, 200, 200, 429]
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize("field", ["title", "code", "thinking", "language"])
+def test_json_lone_surrogates_rejected_with_no_preview_or_raw_input_echo(client, field):
+    register(client)
+    content = json.dumps({"problems": [exported_problem(**{field: "PRIVATE-SENTINEL-\ud800"})]})
+    response = preview(client, content, "export.json")
+    assert response.status_code == 422
+    assert "PRIVATE-SENTINEL" not in response.text
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("content", [
+    "[" * 1200 + "]" * 1200,
+    json.dumps({"problems": [exported_problem(title="x" * 100000)]}),
+    '{"problems":[],"problems":[]}',
+], ids=["too-deep", "too-long-title", "duplicate-key"])
+def test_json_malformed_large_structures_return_422(client, content):
+    register(client)
+    assert preview(client, content, "export.json").status_code == 422
 
 
 @pytest.mark.parametrize("filename", ["notes.md", "notes.markdown", "NOTES.MD"])
@@ -166,10 +206,19 @@ def test_confirm_rejects_invalid_indices(client, indices):
     assert counts() == (0, 0)
 
 
-def exported_problem(**overrides):
-    return {"title": "导出题", "language": "Python", "code": "pass\n", "thinking": "维护区间。",
-            "created_at": "2026-09-01T12:00:00+00:00", "mistakes": [
-                {"description": "（待补）", "pending_reason": True, "tags": [], "reviews": []}], **overrides}
+@pytest.mark.parametrize("payload", [
+    {"preview_id": "PRIVATE-SENTINEL-\ud800", "indices": [0]},
+    {"preview_id": "valid-token", "indices": ["PRIVATE-SENTINEL-\ud800"]},
+    {"preview_id": "valid-token", "indices": [float("nan")]},
+], ids=["surrogate-token", "surrogate-index", "non-finite-index"])
+def test_confirm_invalid_json_values_return_generic_422_without_echo(client, payload):
+    register(client)
+    response = client.post("/api/import/confirm", content=json.dumps(payload),
+                           headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "请求参数不正确，请检查后重试"}
+    assert "PRIVATE-SENTINEL" not in response.text
+    assert counts() == (0, 0)
 
 
 def test_export_json_retains_pending_flag_and_resets_schedule(client):

@@ -31,7 +31,7 @@ IMPORT_MAX_REQUEST_BYTES = IMPORT_MAX_BYTES + 64 * 1024
 
 
 class ImportConfirm(main.InputModel):
-    preview_id: str = Field(min_length=1, max_length=128)
+    preview_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     indices: list[StrictInt] = Field(min_length=1, max_length=IMPORT_MAX_RECORDS)
 
 
