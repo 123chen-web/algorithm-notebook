@@ -1,7 +1,7 @@
 """Run owned record drafts through a separately configured sandbox service."""
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 import code_runner
@@ -40,16 +40,17 @@ def capabilities(user=Depends(main.current_user)):
 
 
 @router.post("/api/mistakes/{mistake_id}/run")
-def run_draft(mistake_id: int, data: RunInput, user=Depends(main.current_user)):
+def run_draft(mistake_id: int, data: RunInput, request: Request, user=Depends(main.current_user)):
     if not 0 < mistake_id <= 9223372036854775807:
         raise HTTPException(404, "错题不存在")
     with main.connect() as conn:
-        main.recheck_account(conn, user["id"])
+        main.sec_recheck_session(conn, user["id"], request)
+        latest = main.rvb_account(conn, user["id"])
+        main.require_not_trial(latest, "运行代码")
         row = conn.execute("SELECT m.id FROM mistakes m JOIN problems p ON p.id = m.problem_id "
                            "WHERE m.id = ? AND p.user_id = ?", (mistake_id, user["id"])).fetchone()
     if row is None:
         raise HTTPException(404, "错题不存在")
-    main.require_not_trial(user, "运行代码")
     if main.rate_limited(f"code-run:{user['id']}", 6, 60):
         raise HTTPException(429, "运行过于频繁，请稍后再试")
     try:

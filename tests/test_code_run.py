@@ -174,3 +174,26 @@ def test_queue_timeout_releases_slot_and_large_output_is_clipped(monkeypatch):
         code_runner.run("Python", "print(1)", "")
     assert slot.releases == 1
     assert code_runner._output(base64.b64encode(b"x" * 8001).decode()) == ("x" * 8000, True)
+
+
+@pytest.mark.parametrize("change", ["ban", "revoke"])
+def test_authentication_change_before_dispatch_does_not_submit_code(client, monkeypatch, change):
+    import code_runner
+    from db import connect
+    from fastapi import Request
+    owner = register(client)
+    mistake = new_problem(client)[0]
+    monkeypatch.setattr(code_runner, "run", lambda *args: pytest.fail("revoked request must not submit source"))
+    def revoked(request: Request):
+        user = main.current_user(request)
+        with connect(write=True) as conn:
+            if change == "ban":
+                conn.execute("UPDATE users SET is_banned = 1 WHERE id = ?", (owner["id"],))
+            else:
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (owner["id"],))
+        return user
+    main.app.dependency_overrides[main.current_user] = revoked
+    try:
+        assert client.post(f"/api/mistakes/{mistake}/run", json=payload()).status_code == 401
+    finally:
+        main.app.dependency_overrides.pop(main.current_user)
