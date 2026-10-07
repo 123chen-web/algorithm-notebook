@@ -1,0 +1,64 @@
+.pending-reason-form,
+.pending-reason-reminder {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--surface);
+}
+.pending-reason-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.pending-reason-reminder-text { flex: 1 1 18em; margin: 0; }
+.pending-reason-title { margin: 0 0 var(--space-2); color: var(--ink); font-size: var(--text-lg); }
+.pending-reason-help,
+.pending-reason-count,
+.pending-reason-tag-status,
+.pending-reason-status { color: var(--ink-2); font-size: var(--text-sm); }
+.pending-reason-status { margin: var(--space-2) 0; overflow-wrap: anywhere; }
+.pending-reason-status:empty { display: none; }
+.pending-reason-status[data-error="true"] { color: var(--danger); }
+.pending-reason-label { display: grid; gap: var(--space-2); min-width: 0; color: var(--ink); }
+.pending-reason-input,
+.pending-reason-custom {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  color: var(--ink);
+  background: var(--surface);
+}
+.pending-reason-input { resize: vertical; line-height: var(--lh-prose); }
+.pending-reason-tags,
+.pending-reason-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pending-reason-custom-row { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); }
+.pending-reason-custom-row .pending-reason-label { flex: 1 1 12em; }
+.pending-reason-tag,
+.pending-reason-add,
+.pending-reason-refresh,
+.pending-reason-reopen {
+  min-height: 44px;
+  max-width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.pending-reason-tag[aria-pressed="true"] { color: var(--ink); background: var(--soft); border-color: var(--accent); }
+.pending-reason-save,
+.pending-reason-open { min-height: 44px; color: var(--on-accent); background: var(--azurite); border-color: var(--azurite); }
+.pending-reason-server { padding: var(--space-3); color: var(--ink); background: var(--soft); overflow-wrap: anywhere; }
+.pending-reason-form :focus-visible,
+.pending-reason-reminder :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.pending-reason-form button:disabled { cursor: not-allowed; }
+.pending-reason-refresh[hidden],
+.pending-reason-reopen[hidden],
+.pending-reason-server[hidden] { display: none; }

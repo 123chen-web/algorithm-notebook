@@ -2627,6 +2627,8 @@ function renderVariant(variant, isCodeZone) {
 }
 
 function renderMistakeText(item) {
+  const pendingReason = window.PendingReason?.render(item);
+  if (pendingReason) return pendingReason;
   const wrap = element("div", "", "mistake-text");
 
   function readOnly() {
@@ -2815,7 +2817,7 @@ function renderDetail(item, options = {}) {
   const offline = Boolean(options.offline) || Boolean(window.OfflineReview?.isOffline?.());
   const isCodeZone = codeZones.has(item.zone);
   const pageGuard = rvfPageGuard();
-  const state = { item, revealed: window.ReviewExtras?.hideReason() === false, submitting: false, removed: false, answers: [], buttons: [] };
+  const state = { item, revealed: Boolean(item.pending_reason) || window.ReviewExtras?.hideReason() === false, submitting: false, removed: false, answers: [], buttons: [] };
   state.isCurrent = () => pageGuard() && rvfDetailState === state;
   rvfDetailState = state;
   const toolbar = element("div", "", "review-toolbar");
@@ -5327,6 +5329,9 @@ $("#timezone").value =
 const rvfHooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view };
 window.ReviewExtras?.configure(rvfHooks);
 window.FocusReview?.configure(rvfHooks);
+window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
+  onSaved: async (id) => { notifyDataChanged("reason"); await openMistake(id); },
+});
 document.addEventListener("keydown", rvfDetailKeydown);
 $("#review-daily-cap").addEventListener("change", rvfSetDailyCap);
 
