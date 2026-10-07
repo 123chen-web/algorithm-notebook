@@ -1,6 +1,8 @@
 """速记模式（POST /api/problems quick=true）的后端测试。"""
 from datetime import date
 
+import pytest
+
 import main
 from test_app import client, new_problem, register
 
@@ -110,6 +112,32 @@ def test_quick_empty_string_code_thinking_get_placeholders(client):
     item = client.get(f"/api/mistakes/{response.json()['mistake_ids'][0]}").json()
     assert item["code"] == main.QUICK_CODE_PLACEHOLDER
     assert item["thinking"] == main.QUICK_THINKING_PLACEHOLDER
+
+
+@pytest.mark.parametrize("field", ["code", "thinking"])
+@pytest.mark.parametrize("value", [123, ["wrong type"], {"wrong": "type"}, False, 0])
+def test_quick_non_text_evidence_rejected_without_writes(client, field, value):
+    register(client)
+    response = client.post(
+        "/api/problems",
+        json={"title": "非法速记", "zone": "算法", "language": "Python",
+              "quick": True, field: value},
+    )
+    assert response.status_code == 422
+    assert client.get("/api/mistakes", params={"due_only": False}).json()["items"] == []
+
+
+@pytest.mark.parametrize("quick", ["false", "true", "yes", 0, 1, [], {}, None])
+def test_quick_requires_json_boolean(client, quick):
+    register(client)
+    response = client.post(
+        "/api/problems",
+        json={"title": "非法模式", "zone": "算法", "language": "Python",
+              "code": "pass", "thinking": "思路", "mistakes": ["原因"],
+              "quick": quick},
+    )
+    assert response.status_code == 422
+    assert client.get("/api/mistakes", params={"due_only": False}).json()["items"] == []
 
 
 def test_quick_trial_account_allowed(client):

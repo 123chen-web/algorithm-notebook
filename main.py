@@ -302,17 +302,21 @@ class NewProblem(ProblemFields):
     mistakes: list[MistakeText] = Field(default_factory=list, max_length=10)
     # 速记模式：只要求 title 和 zone；code/thinking/mistakes 可省略或为空，
     # 服务端补占位。quick=false 时行为与原来完全一致。
-    quick: bool = False
+    quick: StrictBool = False
 
     @model_validator(mode="before")
     @classmethod
     def _fill_quick_placeholders(cls, data):
-        if isinstance(data, dict) and data.get("quick"):
+        if isinstance(data, dict) and data.get("quick") is True:
             data = dict(data)
-            if not (data.get("code") or "").strip():
-                data["code"] = QUICK_CODE_PLACEHOLDER
-            if not (data.get("thinking") or "").strip():
-                data["thinking"] = QUICK_THINKING_PLACEHOLDER
+            for field, placeholder in (
+                ("code", QUICK_CODE_PLACEHOLDER),
+                ("thinking", QUICK_THINKING_PLACEHOLDER),
+            ):
+                value = data.get(field)
+                # 在字段校验前只识别缺失/空白文本；其他类型仍由 Pydantic 拒绝。
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    data[field] = placeholder
         return data
 
     @model_validator(mode="after")
