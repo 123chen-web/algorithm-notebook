@@ -35,8 +35,10 @@
   function render(item) {
     if (!hooks || !hooks.getUser() || !item.pending_reason) return null;
     const ticket = identity();
+    const detailGeneration = hooks.getDetailGeneration?.();
     const form = node("form", "pending-reason-form");
-    const live = () => current(ticket) && form.isConnected;
+    const live = () => current(ticket) && form.isConnected
+      && detailGeneration === hooks.getDetailGeneration?.();
     let busy = false, completed = false, completedElsewhere = false, sequence = 0;
     let tagsSequence = 0;
     const choices = new Map();

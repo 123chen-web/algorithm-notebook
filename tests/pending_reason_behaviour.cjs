@@ -14,10 +14,11 @@ const item = () => ({ id: 11, version: 7, pending_reason: true,
 function setup(view = "all") {
   const env = load(["pending-reason.js"]);
   env.document.querySelector("#home-page");
-  const state = { user: { id: 7 }, epoch: 1, view };
+  const state = { user: { id: 7 }, epoch: 1, view, detail: 1 };
   const saved = [], opened = [];
   const hooks = {
     getUser: () => state.user, getEpoch: () => state.epoch, getView: () => state.view,
+    getDetailGeneration: () => state.detail,
     api: async (path, options = {}) => {
       const response = await env.window.fetch(path, {
         ...options, headers: { "X-CSRF-Protection": "1" },
@@ -152,13 +153,14 @@ test("pending reason: another device's completed reason is shown without replaci
   assert.deepEqual(ctx.opened, [11]);
 });
 
-for (const change of ["epoch", "user", "view", "detach", "leave-return"]) {
+for (const change of ["epoch", "user", "view", "detail", "detach", "leave-return"]) {
   test(`pending reason: late successful save is ignored after ${change}`, async () => {
     const ctx = setup(); const record = item(); const form = await render(ctx, record);
     submit(form);
     if (change === "epoch") ctx.state.epoch += 1;
     if (change === "user") ctx.state.user = { id: 8 };
     if (change === "view") ctx.state.view = "home";
+    if (change === "detail") ctx.state.detail += 1;
     if (change === "detach") form.remove();
     if (change === "leave-return") {
       await ctx.hooks.showView("home"); await ctx.hooks.showView("all");

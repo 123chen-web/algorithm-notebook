@@ -629,8 +629,31 @@ test("detail menu: a pending action after switching cards cannot remove or toast
   assert.equal(env.document.documentElement.querySelector(".review-toast"), null);
 });
 
+test("pending reason: production detail opens the editor while ordinary records remain concealed", async () => {
+  const env = environment();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../static/pending-reason.js"), "utf8"), env.context);
+  env.window.PendingReason.configure({
+    api: env.context.api, getEpoch: () => env.context.sessionEpoch,
+    getUser: () => env.context.user, getView: () => env.context.view,
+    getDetailGeneration: () => env.context.rvfDetailGeneration,
+  });
+  vm.runInContext(topFunction("renderMistakeText"), env.context);
+  env.render(CARD(1, { pending_reason: true, description: "（待补：为什么错）" }));
+  const reason = env.$("#review-reason");
+  assert.equal(reason.hidden, false);
+  assert.ok(reason.querySelector(".pending-reason-form"));
+  assert.equal(reason.querySelector("textarea").value, "");
+  assert.doesNotMatch(reason.textContent, /（待补：为什么错）/);
+  env.answer(env.calls.find((call) => call.url === "/api/tags/suggest"), { mine: [], builtin: ["边界"] });
+  await tick();
+  assert.ok(reason.querySelector(".pending-reason-tag"));
+  env.render(CARD(2, { pending_reason: false }));
+  assert.equal(env.$("#review-reason").hidden, true);
+  assert.equal(env.$("#review-reason").querySelector(".pending-reason-form"), null);
+});
+
 test("mutation checks: revealing by default, omitting selection order and removing epoch each kill a probe", async () => {
-  const revealMutation = SOURCE.replace('revealed: window.ReviewExtras?.hideReason() === false', "revealed: true");
+  const revealMutation = SOURCE.replace('revealed: Boolean(item.pending_reason) || window.ReviewExtras?.hideReason() === false', "revealed: true");
   assert.notEqual(revealMutation, SOURCE, "recall default mutation must apply");
   const revealed = environment(revealMutation); revealed.render();
   assert.throws(() => assert.equal(revealed.$(".review-section").hidden, true), assert.AssertionError);

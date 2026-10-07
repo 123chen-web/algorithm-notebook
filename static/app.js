@@ -5340,6 +5340,7 @@ const rvfHooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getVi
 window.ReviewExtras?.configure(rvfHooks);
 window.FocusReview?.configure(rvfHooks);
 window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
+  getDetailGeneration: () => rvfDetailGeneration,
   onSaved: async (id) => { notifyDataChanged("reason"); await openMistake(id); },
 });
 document.addEventListener("keydown", rvfDetailKeydown);
