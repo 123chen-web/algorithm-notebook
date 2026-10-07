@@ -771,3 +771,53 @@ test("app submit keyboard: Ctrl/Cmd Enter submit valid edit/preview drafts once;
   send(field, "ctrlKey"); await tick();
   assert.equal(env.calls.length, 1);
 });
+
+test("app submit: late success cannot mutate a previous account's post", async () => {
+  const env = appEnv(); env.render();
+  const old = env.context.forumPost;
+  const count = old.comments.length;
+  env.$("#forum-comment-body").value = "旧账号草稿";
+  env.context.submitForumComment(); await tick();
+  env.context.sessionEpoch++;
+  env.context.user = { ...env.context.user, id: 99 };
+  env.calls[0].resolve(row(8, 8)); await env.pending();
+  assert.equal(old.comments.length, count);
+  assert.equal(env.messages.length, 0);
+  assert.equal(env.$("#forum-comment-body").value, "旧账号草稿");
+});
+
+test("app submit: failure explains retry without discarding the draft or reply target", async () => {
+  const env = appEnv(); env.render();
+  env.context.selectForumReply(env.context.forumPost.comments[0]);
+  const field = env.$("#forum-comment-body"); field.value = "保留回复草稿";
+  env.context.submitForumComment(); await tick();
+  env.calls[0].reject(Object.assign(new Error("HTTP 429"), { detail: "操作太频繁，请稍后再试" }));
+  await env.pending();
+  assert.equal(field.value, "保留回复草稿");
+  assert.equal(env.context.forumReplyTarget.id, 1);
+  assert.equal(env.$("#forum-comment-status").textContent, "操作太频繁，请稍后再试");
+  assert.equal(env.messages.at(-1), "操作太频繁，请稍后再试");
+  env.context.submitForumComment(); await tick();
+  assert.equal(env.calls.length, 2);
+  env.calls[1].resolve(row(8, 8)); await env.pending();
+});
+
+test("app submit: a late failure cannot display errors after leaving the discussion", async () => {
+  const env = appEnv(); env.render();
+  env.$("#forum-comment-body").value = "离开前草稿";
+  env.context.submitForumComment(); await tick();
+  env.context.view = "home";
+  env.calls[0].reject(new Error("旧请求失败")); await env.pending();
+  assert.equal(env.messages.length, 0);
+  assert.equal(env.$("#forum-comment-status").textContent, "");
+});
+
+test("app submit: successful send preserves text typed while its response was pending", async () => {
+  const env = appEnv(); env.render();
+  const field = env.$("#forum-comment-body"); field.value = "第一条回复";
+  env.context.submitForumComment(); await tick();
+  field.value = "下一条还没发的回复";
+  env.calls[0].resolve(row(8, 8, { body: "第一条回复", user_id: 1 })); await env.pending();
+  assert.equal(field.value, "下一条还没发的回复");
+  assert.equal(env.floor(8).textContent.includes("第一条回复"), true);
+});

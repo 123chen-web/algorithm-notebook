@@ -5302,16 +5302,29 @@ function submitForumComment() {
     const post = forumPost;
     const epoch = sessionEpoch;
     const generation = forumDetailGeneration;
+    const owner = user.id;
+    const current = () => post === forumPost && epoch === sessionEpoch
+      && generation === forumDetailGeneration && user?.id === owner && forumDetailVisible();
+    const sentBody = body.value;
     const data = new FormData(form);
     const payload = { body: data.get("body") };
     if (forumReplyTarget) payload.reply_to_id = forumReplyTarget.id;
-    const created = await api(`/api/posts/${post.id}/comments`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    let created;
+    try {
+      created = await api(`/api/posts/${post.id}/comments`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (!current()) return;
+      const detail = error.detail || error.message || "发送失败，请保留草稿稍后重试。";
+      forumAnnounce(detail);
+      message(detail, true);
+      return;
+    }
+    if (!current()) return;
     post.comments.push(created);
-    if (post !== forumPost || epoch !== sessionEpoch || generation !== forumDetailGeneration) return;
-    form.reset();
+    if (body.value === sentBody) form.reset();
     clearForumReply();
     setForumPreview(false);
     const wasHidden = !window.Thread.arrange([created, ...post.comments.filter((item) => item.id !== created.id)], forumFilters()).some((item) => item.id === created.id);
