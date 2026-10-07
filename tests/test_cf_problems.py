@@ -27,10 +27,13 @@ def isolated_cache(tmp_path, monkeypatch):
     return tmp_path
 
 
-def fake_response(payload_bytes):
+def fake_response(payload_bytes, status=200):
     stream = io.BytesIO(payload_bytes)
 
     class FakeResponse:
+        def getcode(self):
+            return status
+
         def read(self, size=-1):
             return stream.read(size)
 
@@ -41,6 +44,7 @@ def fake_response(payload_bytes):
             return False
 
     def opener(request, timeout=None):
+        assert request.full_url == cf_problems.API_URL
         assert request.get_header("User-agent") == cf_problems.USER_AGENT
         assert timeout == cf_problems.TIMEOUT_SECONDS
         return FakeResponse()
@@ -79,10 +83,92 @@ def test_fetch_rejects_non_ok_status():
         cf_problems.fetch_problems(opener=opener)
 
 
+def test_fetch_rejects_http_status_other_than_200():
+    with pytest.raises(ValueError, match="HTTP"):
+        cf_problems.fetch_problems(opener=fake_response(api_payload([]), status=201))
+
+
+def test_official_fetch_does_not_follow_redirects():
+    request = cf_problems.urllib.request.Request(cf_problems.API_URL)
+    with pytest.raises(ValueError, match="重定向"):
+        cf_problems._NoRedirect().redirect_request(
+            request, None, 302, "redirect", {}, "https://example.org/unofficial"
+        )
+
+
+def test_oversize_cache_is_rejected_before_parsing(tmp_path, monkeypatch):
+    monkeypatch.setattr(cf_problems, "MAX_BODY_BYTES", 16)
+    (tmp_path / "cf_problems.json").write_bytes(b" " * 17)
+    assert cf_problems.load_cache() is None
+
+
+def test_saving_cache_cannot_store_statement_fields(tmp_path):
+    cf_problems.save_cache([{"contestId": 1, "index": "A", "statement": "private text"}])
+    stored = json.loads((tmp_path / "cf_problems.json").read_text(encoding="utf-8"))
+    assert stored["problems"] == [{"contestId": 1, "index": "A"}]
+
+
+@pytest.mark.parametrize("payload", [None, [], {"problems": [None]},
+    {"problems": [{"contestId": 4, "index": "A", "name": "x", "rating": "800", "tags": []}]},
+    {"problems": [{"contestId": 4, "index": "../x", "name": "x", "rating": 800, "tags": []}]},
+    {"problems": [], "fetched_at": float("nan")},
+])
+def test_malformed_cache_structures_are_rejected(tmp_path, payload):
+    (tmp_path / "cf_problems.json").write_text(json.dumps(payload), encoding="utf-8")
+    assert cf_problems.load_cache() is None
+    assert cf_problems.cache_age_days() is None
+
+
+@pytest.mark.parametrize("payload", [None, [], {"status": "OK", "result": None},
+    {"status": "OK", "result": {"problems": [None]}},
+])
+def test_fetch_rejects_malformed_api_structures(payload):
+    with pytest.raises(ValueError):
+        cf_problems.fetch_problems(opener=fake_response(json.dumps(payload).encode()))
+
+
+def test_save_failure_keeps_old_cache_and_removes_staging_file(tmp_path, monkeypatch):
+    old = {"fetched_at": time.time(), "problems": []}
+    target = tmp_path / "cf_problems.json"
+    target.write_text(json.dumps(old), encoding="utf-8")
+
+    def fail_replace(source, destination):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(cf_problems.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="replace failed"):
+        cf_problems.save_cache([])
+    assert json.loads(target.read_text(encoding="utf-8")) == old
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["cf_problems.json", "cf_problems.lock"]
+
+
+def test_concurrent_cache_writers_use_independent_staging_files(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    replace = cf_problems.os.replace
+    sources = []
+
+    def synchronized_replace(source, destination):
+        sources.append(source)
+        replace(source, destination)
+
+    monkeypatch.setattr(cf_problems.os, "replace", synchronized_replace)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(cf_problems.save_cache, [{"contestId": contest, "index": "A"}])
+                for contest in (1, 2)]
+        for job in jobs:
+            job.result(timeout=10)
+    assert len(set(sources)) == 2
+    assert cf_problems.load_cache()["problems"][0]["contestId"] in (1, 2)
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["cf_problems.json", "cf_problems.lock"]
+
+
 def test_fetch_rejects_oversize_body(monkeypatch):
     calls = []
 
     class BigResponse:
+        def getcode(self):
+            return 200
+
         def read(self, size=-1):
             calls.append(1)
             return b"x" * (64 * 1024)
@@ -143,6 +229,14 @@ def test_refresh_writes_new_cache_on_success(tmp_path, monkeypatch):
     assert cf_problems.refresh() == 0
     payload = cf_problems.load_cache()
     assert len(payload["problems"]) == 1
+
+
+def test_refresh_reports_cache_write_failure(monkeypatch):
+    monkeypatch.setattr(cf_problems, "fetch_problems", lambda: [])
+    def fail_save(problems):
+        raise OSError("write failed")
+    monkeypatch.setattr(cf_problems, "save_cache", fail_save)
+    assert cf_problems.refresh() == 1
 
 
 def test_cache_age_days(tmp_path):

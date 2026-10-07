@@ -11,11 +11,16 @@ contestId / index / name / rating / tags 五个字段。
 """
 
 import json
+import errno
 import logging
+import math
 import os
+import re
 import sys
+import tempfile
 import time
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
 API_URL = "https://codeforces.com/api/problemset.problems"
@@ -30,6 +35,41 @@ CACHE_MAX_AGE_DAYS = 14
 KEEP_FIELDS = ("contestId", "index", "name", "rating", "tags")
 
 log = logging.getLogger("cf_problems")
+
+
+@contextmanager
+def _cache_lock():
+    """Serialize cache operations across processes without a new dependency."""
+    lock_path = cache_path().with_suffix(".lock")
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "r+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            deadline = time.monotonic() + TIMEOUT_SECONDS
+            while True:
+                handle.seek(0)
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                        raise
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("题库缓存锁等待超时") from exc
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield handle
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def cache_path():
@@ -48,7 +88,9 @@ def cache_age_days(path=None):
     """缓存距上次成功抓取的天数；没有缓存或读不出时返回 None。"""
     target = path or cache_path()
     try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload = _load_cache_at(target)
+        if payload is None:
+            return None
         fetched_at = payload.get("fetched_at")
         if not fetched_at:
             return None
@@ -60,7 +102,9 @@ def cache_age_days(path=None):
 def _respect_rate_limit():
     """同一进程/机器连续抓取时，遵守官方每 2 秒 1 次的限制。"""
     try:
-        payload = json.loads(cache_path().read_text(encoding="utf-8"))
+        payload = _load_cache_at(cache_path())
+        if payload is None:
+            return
         last = float(payload.get("fetched_at") or 0)
     except (OSError, ValueError, TypeError):
         return
@@ -85,45 +129,95 @@ def _read_limited(response):
     return b"".join(chunks)
 
 
+def _metadata(problems):
+    """Validate external/cache metadata and keep only the five public fields."""
+    if not isinstance(problems, list):
+        raise ValueError("题目列表结构无效")
+    result = []
+    for problem in problems:
+        if not isinstance(problem, dict):
+            raise ValueError("题目元信息结构无效")
+        contest_id, index = problem.get("contestId"), problem.get("index")
+        if (type(contest_id) is not int or contest_id <= 0
+                or not isinstance(index, str)
+                or re.fullmatch(r"[A-Za-z0-9]{1,16}", index) is None):
+            raise ValueError("题目编号无效")
+        name, rating, tags = problem.get("name"), problem.get("rating"), problem.get("tags")
+        if (name is not None and not isinstance(name, str)
+                or rating is not None and (type(rating) is not int or rating < 0)
+                or tags is not None and (not isinstance(tags, list)
+                    or any(not isinstance(tag, str) for tag in tags))):
+            raise ValueError("题目字段类型无效")
+        result.append({key: problem[key] for key in KEEP_FIELDS if key in problem})
+    return result
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, newurl):
+        # Fail closed: never follow the fixed official endpoint to another source.
+        raise ValueError("Codeforces 接口重定向，放弃抓取")
+
+
 def fetch_problems(opener=None):
     """抓取并裁剪题目列表；opener 参数只给测试注入假 HTTP 用。"""
     _respect_rate_limit()
     request = urllib.request.Request(
         API_URL, headers={"User-Agent": USER_AGENT}
     )
-    open_url = opener or urllib.request.urlopen
+    open_url = opener or urllib.request.build_opener(_NoRedirect()).open
     with open_url(request, timeout=TIMEOUT_SECONDS) as response:
+        if response.getcode() != 200:
+            raise ValueError(f"Codeforces HTTP 状态不是 200: {response.getcode()}")
         raw = _read_limited(response)
     payload = json.loads(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Codeforces 接口响应结构无效")
     if payload.get("status") != "OK":
         raise ValueError(f"Codeforces 接口返回异常状态: {payload.get('status')!r}")
-    problems = []
-    for problem in payload["result"]["problems"]:
-        problems.append({key: problem.get(key) for key in KEEP_FIELDS})
-    return problems
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise ValueError("Codeforces 接口 result 结构无效")
+    return _metadata(result.get("problems"))
 
 
 def save_cache(problems):
     """原子写缓存：临时文件 + os.replace；返回写入的路径。"""
     target = cache_path()
-    payload = {"fetched_at": time.time(), "problems": problems}
-    tmp = target.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, target)
+    payload = {"fetched_at": time.time(), "problems": _metadata(problems)}
+    tmp = None
+    try:
+        # Each writer gets its own file, on the same filesystem for atomic replace.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
+                prefix="cf_problems-", suffix=".tmp", delete=False) as handle:
+            tmp = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, allow_nan=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        with _cache_lock():
+            os.replace(tmp, target)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
     return target
 
 
 def load_cache():
     """读缓存；文件不存在、JSON 损坏或结构不对时返回 None（调用方给降级提示）。"""
+    return _load_cache_at(cache_path())
+
+
+def _load_cache_at(target):
     try:
-        payload = json.loads(cache_path().read_text(encoding="utf-8"))
+        with target.open("rb") as handle:
+            payload = json.loads(_read_limited(handle).decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        fetched_at = payload.get("fetched_at")
+        if fetched_at is not None and (type(fetched_at) not in (int, float)
+                or not math.isfinite(fetched_at) or fetched_at < 0):
+            return None
+        payload["problems"] = _metadata(payload.get("problems"))
     except (OSError, ValueError):
-        return None
-    problems = payload.get("problems")
-    if not isinstance(problems, list):
         return None
     return payload
 
@@ -133,10 +227,10 @@ def refresh():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         problems = fetch_problems()
+        target = save_cache(problems)
     except Exception as exc:  # noqa: BLE001 —— 任何抓取失败都保留旧缓存
         log.error("抓取 Codeforces 题库失败，已保留旧缓存：%s", exc)
         return 1
-    target = save_cache(problems)
     log.info("已写入 %d 道题 -> %s", len(problems), target)
     return 0
 
