@@ -108,9 +108,15 @@ function environment({ failApi = false } = {}) {
     function notifyDataChanged() {}
     function applyZoneFieldMode() {}
     function resetPhotoForm() {}
-    async function showView() {}
-    async function openMistake() {}
-    function message() {}
+    async function showView() {
+      if (window.probe.waitForView) await new Promise((resolve) => { window.probe.resolveView = resolve; });
+      if (window.probe.failView) throw new Error("view failed");
+    }
+    async function openMistake(id) {
+      (window.probe.opened ||= []).push(id);
+      if (window.probe.waitForDetail) await new Promise((resolve) => { window.probe.resolveDetail = resolve; });
+    }
+    function message(text) { (window.probe.messages ||= []).push(text); }
     // 贴近真实 run：action 抛错时吞掉并记录，resetQuickMode 只在成功路径执行。
     async function run(action) {
       try { await action(); } catch (error) { window.probe.error = error; }
@@ -335,4 +341,43 @@ test("creation: a late failure cannot notify a different session", async () => {
   await settle();
   assert.equal(env.probe.error, null);
   assert.equal(env.toggle.value, "quick");
+});
+
+
+test("creation: a session change during navigation cannot open the old record", async () => {
+  const env = environment();
+  env.probe.waitForView = true;
+  env.setMode("quick");
+  env.submit();
+  await tick();
+  vm.runInContext("sessionEpoch += 1; user = { id: 2 };", env.context);
+  env.probe.resolveView();
+  await settle();
+  assert.deepEqual(env.probe.opened || [], []);
+  assert.deepEqual(env.probe.messages || [], []);
+});
+
+test("creation: a session change during detail loading cannot show the old notice", async () => {
+  const env = environment();
+  env.probe.waitForDetail = true;
+  env.setMode("quick");
+  env.submit();
+  await tick();
+  vm.runInContext("sessionEpoch += 1; user = { id: 2 };", env.context);
+  env.probe.resolveDetail();
+  await settle();
+  assert.deepEqual(env.probe.messages || [], []);
+});
+
+test("creation: a late navigation failure cannot notify a new session", async () => {
+  const env = environment();
+  env.probe.waitForView = true;
+  env.probe.failView = true;
+  env.setMode("quick");
+  env.submit();
+  await tick();
+  vm.runInContext("sessionEpoch += 1; user = { id: 2 };", env.context);
+  env.probe.resolveView();
+  await settle();
+  assert.equal(env.probe.error, null);
 });

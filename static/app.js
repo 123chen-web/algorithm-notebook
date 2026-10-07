@@ -3793,6 +3793,7 @@ $("#problem-form").addEventListener("submit", (event) => {
   const epoch = sessionEpoch;
   const owner = user?.id;
   const payload = buildProblemPayload(form, quick);
+  const isCurrent = () => epoch === sessionEpoch && owner === user?.id && Boolean(user);
   if (mode === "sentence" && !payload.mistakes[0]) {
     message("请写一句真正的错因。", true);
     $("#problem-sentence")?.focus();
@@ -3807,10 +3808,10 @@ $("#problem-form").addEventListener("submit", (event) => {
         body: JSON.stringify(payload),
       });
     } catch (error) {
-      if (epoch !== sessionEpoch || owner !== user?.id || !user) return;
+      if (!isCurrent()) return;
       throw error;
     }
-    if (epoch !== sessionEpoch || owner !== user?.id || !user) return;
+    if (!isCurrent()) return;
     stampSeal("已录", { anchor });
     notifyDataChanged("create");
 
@@ -3827,15 +3828,24 @@ $("#problem-form").addEventListener("submit", (event) => {
     if (cameFromPhoto && created.mistake_ids[0]) {
       try {
         await api(`/api/mistakes/${created.mistake_ids[0]}/variants`, { method: "POST" });
+        if (!isCurrent()) return;
         noticeText = "记录已保存，已根据识别结果自动生成练习题。";
       } catch (error) {
+        if (!isCurrent()) return;
         noticeText = `记录已保存，但自动生成练习题失败：${error.message}`;
       }
     }
 
-    await showView("today");
-    await openMistake(created.mistake_ids[0]);
-    message(noticeText);
+    try {
+      await showView("today");
+      if (!isCurrent()) return;
+      await openMistake(created.mistake_ids[0]);
+      if (!isCurrent()) return;
+      message(noticeText);
+    } catch (error) {
+      if (!isCurrent()) return;
+      throw error;
+    }
   });
 });
 
