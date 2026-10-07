@@ -6,7 +6,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { load, deferred } = require("./js_harness.cjs");
+const { load, deferred, tick } = require("./js_harness.cjs");
 
 const NOW = Date.parse("2026-10-04T12:00:00Z");
 const DAY = 86400000;
@@ -351,7 +351,7 @@ function purchaseEnv({ immediate = false } = {}) {
   const e = env();
   const calls = [], effects = [];
   Object.assign(e.context, {
-    user: { id: 7, is_trial: false }, sessionEpoch: 3, view: "plan", planPurchase: null,
+    user: { id: 7, is_trial: false }, sessionEpoch: 3, view: "plan", rvfPageGeneration: 4, planPurchase: null,
     message: (text, error) => effects.push(["message", text, error]),
     stopOrderPolling: () => effects.push(["stop"]), startOrderPolling: () => effects.push(["start"]),
     renderPlanOrder: () => effects.push(["render"]),
@@ -397,6 +397,82 @@ for (const change of ["account", "epoch", "view"]) {
     });
   }
 }
+function leaveAndReturnToPlan(e) {
+  e.context.view = "home"; e.context.rvfPageGeneration += 1;
+  e.context.view = "plan"; e.context.rvfPageGeneration += 1;
+}
+for (const failure of [false, true]) {
+  test(`purchase: late ${failure ? "failure" : "success"} after leaving and returning cannot overwrite the new plan page`, async () => {
+    const e = purchaseEnv(); const buying = e.context.buyPlan(PLAN_A, "wechat");
+    leaveAndReturnToPlan(e);
+    const next = { order: { id: "new-page" } }; e.context.planPurchase = next;
+    const count = e.effects.length;
+    if (failure) e.calls[0].reject(new Error("old page failure")); else e.calls[0].resolve(PURCHASE);
+    await assert.doesNotReject(buying);
+    assert.equal(e.context.planPurchase, next); assert.equal(e.effects.length, count);
+  });
+}
+
+function chainedPurchaseEnv() {
+  const e = purchaseEnv();
+  for (const id of ["plan-orders-list", "plan-order-status", "plan-trial-note"]) {
+    const node = e.document.createElement("div"); node.id = id; e.document.body.append(node);
+  }
+  Object.assign(e.context, {
+    $: (selector) => e.document.querySelector(selector), planCatalog: [], busy: false,
+    yuan: e.View.formatPrice, timestamp: (value) => value,
+    updateUserInfo: () => e.effects.push(["user-info"]),
+    renderPlanStatus: () => e.effects.push(["subscription"]),
+  });
+  for (const name of ["refreshPlanSubscription", "loadPlanOrders", "finishPlanOrder"]) {
+    vm.runInContext(appFunction(name), e.context);
+  }
+  return e;
+}
+const OLD_ORDERS = [{ ...PURCHASE.order, plan_name: "旧页面套餐", channel: "wechat", created_at: "2026-10-07" }];
+const PAID_PURCHASE = { ...PURCHASE, order: { ...PURCHASE.order, status: "paid" } };
+for (const stage of ["pending-orders", "paid-me", "paid-orders"]) {
+  for (const failure of [false, true]) {
+    test(`purchase: late ${stage} ${failure ? "failure" : "success"} after returning leaves orders, subscription and messages untouched`, async () => {
+      const e = chainedPurchaseEnv(); const buying = e.context.buyPlan(PLAN_A, "wechat");
+      e.calls[0].resolve(stage === "pending-orders" ? PURCHASE : PAID_PURCHASE); await tick();
+      assert.equal(e.calls[1].url, stage === "pending-orders" ? "/api/orders" : "/api/me");
+      if (stage === "paid-orders") {
+        e.calls[1].resolve({ ...e.context.user, plan_active: true }); await tick();
+        assert.equal(e.calls[2].url, "/api/orders");
+      }
+      const orders = e.document.querySelector("#plan-orders-list"); orders.textContent = "新页面订单";
+      const nextUser = e.context.user; const count = e.effects.length; const requests = e.calls.length;
+      leaveAndReturnToPlan(e);
+      const pending = e.calls.at(-1);
+      // Unexpected follow-up requests must finish so the regression fails rather than hanging.
+      const api = e.context.api;
+      e.context.api = (...args) => {
+        const response = api(...args); e.calls.at(-1).resolve({ orders: OLD_ORDERS }); return response;
+      };
+      if (failure) pending.reject(new Error("old refresh failure"));
+      else pending.resolve(stage === "paid-me" ? { ...nextUser, plan_active: true } : { orders: OLD_ORDERS });
+      await assert.doesNotReject(buying);
+      assert.equal(orders.textContent, "新页面订单");
+      assert.equal(e.context.user, nextUser);
+      assert.equal(e.effects.length, count);
+      assert.equal(e.calls.length, requests);
+    });
+  }
+}
+
+test("purchase: a current paid order refreshes subscription and orders before reporting success", async () => {
+  const e = chainedPurchaseEnv(); const buying = e.context.buyPlan(PLAN_A, "wechat");
+  e.calls[0].resolve(PAID_PURCHASE); await tick();
+  const updated = { ...e.context.user, plan_active: true };
+  e.calls[1].resolve(updated); await tick();
+  e.calls[2].resolve({ orders: [{ ...OLD_ORDERS[0], status: "paid" }] }); await buying;
+  assert.equal(e.context.user, updated);
+  assert.match(e.document.querySelector("#plan-orders-list").textContent, /旧页面套餐/);
+  assert.equal(e.effects.filter(([name]) => name === "user-info").length, 1);
+  assert.ok(e.effects.some(([name, text]) => name === "message" && text === "购买成功，套餐已生效。"));
+});
+
 test("purchase: current errors remain visible to the host and keep prior order state", async () => {
   const e = purchaseEnv(); const prior = { order: { id: "prior" } }; e.context.planPurchase = prior;
   const buying = e.context.buyPlan(PLAN_A, "wechat");

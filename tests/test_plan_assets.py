@@ -79,7 +79,7 @@ def test_plan_css_is_scoped_and_mobile_safe():
 
 def test_plan_app_still_guards_late_responses_and_keeps_payment_flow():
     for needle in (
-        'if (user !== currentUser || !user || view !== "plan") return false;',
+        'if (user !== currentUser || !user || view !== "plan" || !isCurrent()) return false;',
         'planCatalog = [];',
         '"/api/orders"', 'JSON.stringify({ plan_id: plan.id, channel })', 'startOrderPolling', 'orderPollGeneration',
         'window.Redeem?.loadPlan(plans)', 'confirm(`确认申请退回',

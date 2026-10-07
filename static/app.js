@@ -2077,10 +2077,11 @@ function renderPlanStatus() {
   window.PlanView.renderStatus($("#plan-subscription"), window.PlanView.model(planCatalog, user, Date.now()), user, planCatalog);
 }
 
-async function loadPlanOrders() {
+async function loadPlanOrders(isCurrent = () => true) {
+  if (!isCurrent()) return false;
   const currentUser = user;
   const { orders } = await api("/api/orders");
-  if (user !== currentUser || !user || view !== "plan") return false;
+  if (user !== currentUser || !user || view !== "plan" || !isCurrent()) return false;
   window.PlanView.renderOrders($("#plan-orders-list"), orders, {
     yuan, time: timestamp, busy,
     onRefund: (order) => run(() => refundPlanOrder(order)),
@@ -2130,7 +2131,9 @@ async function buyPlan(plan, channel) {
   }
   const owner = user.id;
   const epoch = sessionEpoch;
-  const current = () => Boolean(user) && user.id === owner && sessionEpoch === epoch && view === "plan";
+  const page = rvfPageGeneration;
+  const current = () => Boolean(user) && user.id === owner && sessionEpoch === epoch
+    && page === rvfPageGeneration && view === "plan";
   message();
   try {
     const purchase = await api("/api/orders", {
@@ -2143,8 +2146,11 @@ async function buyPlan(plan, channel) {
     renderPlanOrder();
     if (purchase.order.status === "pending") {
       startOrderPolling();
-      await loadPlanOrders();
-    } else await finishPlanOrder();
+      if (!await loadPlanOrders(current) || !current()) return;
+    } else {
+      await finishPlanOrder(current);
+      if (!current()) return;
+    }
   } catch (error) {
     if (current()) throw error;
   }
@@ -2217,11 +2223,12 @@ function stopOrderPolling() {
   orderPollGeneration += 1;
 }
 
-async function finishPlanOrder() {
+async function finishPlanOrder(isCurrent = () => true) {
+  if (!isCurrent()) return;
   stopOrderPolling();
   const status = planPurchase.order.status;
-  if (!await refreshPlanSubscription()) return;
-  if (!await loadPlanOrders()) return;
+  if (!await refreshPlanSubscription(isCurrent) || !isCurrent()) return;
+  if (!await loadPlanOrders(isCurrent) || !isCurrent()) return;
   if (status === "paid") {
     message(user.plan_active
       ? "购买成功，套餐已生效。"
