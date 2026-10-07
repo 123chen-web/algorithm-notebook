@@ -3,7 +3,10 @@
 /* 套餐页视图（static/plan.js）：model 的边界、卡片与按钮分支、状态区、订单表、滚动。 */
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { load } = require("./js_harness.cjs");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const { load, deferred } = require("./js_harness.cjs");
 
 const NOW = Date.parse("2026-10-04T12:00:00Z");
 const DAY = 86400000;
@@ -315,4 +318,104 @@ test("re-rendering replaces the previous content instead of stacking", () => {
   const host = e.document.createElement("div");
   for (let i = 0; i < 2; i += 1) e.View.renderStatus(host, e.View.model([], FREE_ME, NOW), FREE_ME, []);
   assert.equal(host.querySelectorAll(".pl-status").length, 1);
+});
+
+test("cards: official purchases offer both channels and never offer an amount field", () => {
+  const bought = [];
+  const e = renderCards([PLAN_A, PLAN_B], FREE_ME, { onBuy: (plan, channel) => bought.push([plan.id, channel]) });
+  const card = e.host.querySelectorAll(".pl-card")[1];
+  const channel = card.querySelector("select");
+  assert.ok(channel);
+  assert.deepEqual(channel.querySelectorAll("option").map((option) => [option.value, option.textContent]),
+    [["alipay", "支付宝"], ["wechat", "微信支付"]]);
+  assert.equal(card.querySelectorAll("input").length, 0);
+  assert.match(card.textContent, /金额由后台订单确定/);
+  channel.value = "wechat"; card.querySelector("button").click();
+  channel.value = "alipay"; card.querySelector("button").click();
+  assert.deepEqual(bought, [[1, "wechat"], [1, "alipay"]]);
+  channel.value = "unsupported"; card.querySelector("button").click();
+  assert.equal(bought.length, 2);
+  assert.equal(e.host.querySelectorAll(".pl-card")[2].querySelector("select"), null);
+});
+
+const APP_SOURCE = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+function appFunction(name) {
+  const start = APP_SOURCE.search(new RegExp(`^(?:async )?function ${name}\\(`, "m"));
+  assert.ok(start >= 0, name);
+  const end = APP_SOURCE.indexOf("\n}", start) + 2;
+  return APP_SOURCE.slice(start, end);
+}
+const PURCHASE = { order: { id: "fixed-order", amount_cents: 990, status: "pending" },
+  payment: { provider: "mock", qr_code_url: "mock://wechat/fixed-order" } };
+function purchaseEnv({ immediate = false } = {}) {
+  const e = env();
+  const calls = [], effects = [];
+  Object.assign(e.context, {
+    user: { id: 7, is_trial: false }, sessionEpoch: 3, view: "plan", planPurchase: null,
+    message: (text, error) => effects.push(["message", text, error]),
+    stopOrderPolling: () => effects.push(["stop"]), startOrderPolling: () => effects.push(["start"]),
+    renderPlanOrder: () => effects.push(["render"]),
+    loadPlanOrders: async () => effects.push(["list"]), finishPlanOrder: async () => effects.push(["finish"]),
+    api: (url, options) => { const call = { url, options, ...deferred() }; calls.push(call); return immediate ? Promise.resolve(PURCHASE) : call.promise; },
+  });
+  vm.runInContext(appFunction("buyPlan"), e.context);
+  return { ...e, calls, effects };
+}
+for (const channel of ["alipay", "wechat"]) {
+  test(`purchase: ${channel} submits only plan and channel; the server supplies amount`, async () => {
+    const e = purchaseEnv();
+    const buying = e.context.buyPlan({ ...PLAN_A, price_cents: 1 }, channel);
+    assert.equal(e.calls[0].url, "/api/orders");
+    assert.deepEqual(JSON.parse(e.calls[0].options.body), { plan_id: 1, channel });
+    e.calls[0].resolve(PURCHASE); await buying;
+    assert.equal(e.context.planPurchase.order.amount_cents, 990);
+    assert.equal(e.effects.filter(([name]) => name === "render").length, 1);
+  });
+}
+test("purchase: invalid channels and unavailable accounts cannot submit an order", async () => {
+  for (const channel of ["unsupported", "", undefined, null]) {
+    const e = purchaseEnv({ immediate: true });
+    await e.context.buyPlan(PLAN_A, channel); assert.equal(e.calls.length, 0);
+  }
+  for (const user of [null, { id: 7, is_trial: true }]) {
+    const e = purchaseEnv({ immediate: true }); e.context.user = user;
+    await e.context.buyPlan(PLAN_A, "alipay"); assert.equal(e.calls.length, 0);
+  }
+});
+for (const change of ["account", "epoch", "view"]) {
+  for (const failure of [false, true]) {
+    test(`purchase: late ${failure ? "failure" : "success"} after ${change} leaves the next screen untouched`, async () => {
+      const e = purchaseEnv(); const buying = e.context.buyPlan(PLAN_A, "wechat");
+      if (change === "account") e.context.user = { id: 8, is_trial: false };
+      if (change === "epoch") e.context.sessionEpoch += 1;
+      if (change === "view") e.context.view = "home";
+      const next = { order: { id: "new-screen" } }; e.context.planPurchase = next;
+      const count = e.effects.length;
+      if (failure) e.calls[0].reject(new Error("old payment failure")); else e.calls[0].resolve(PURCHASE);
+      await assert.doesNotReject(buying);
+      assert.equal(e.context.planPurchase, next); assert.equal(e.effects.length, count);
+    });
+  }
+}
+test("purchase: current errors remain visible to the host and keep prior order state", async () => {
+  const e = purchaseEnv(); const prior = { order: { id: "prior" } }; e.context.planPurchase = prior;
+  const buying = e.context.buyPlan(PLAN_A, "wechat");
+  e.calls[0].reject(new Error("channel unavailable"));
+  await assert.rejects(buying, /channel unavailable/);
+  assert.equal(e.context.planPurchase, prior);
+});
+test("payment display: the order amount is text from the server, with no editable amount", () => {
+  const e = env();
+  for (const id of ["plan-catalog", "plan-order", "plan-order-details", "plan-order-status", "plan-payment"]) {
+    const node = e.document.createElement("div"); node.id = id; e.document.body.append(node);
+  }
+  Object.assign(e.context, { $: (selector) => e.document.querySelector(selector),
+    planPurchase: PURCHASE, yuan: e.View.formatPrice });
+  for (const name of ["element", "planFacts", "renderPlanOrder"]) vm.runInContext(appFunction(name), e.context);
+  e.context.renderPlanOrder();
+  const details = e.document.querySelector("#plan-order-details");
+  assert.match(details.textContent, /¥9\.90/);
+  assert.match(details.textContent, /金额来自服务端订单/);
+  assert.equal(details.querySelectorAll("input").length, 0);
+  assert.match(e.document.querySelector("#plan-payment").textContent, /Mock.*不能扫码/);
 });

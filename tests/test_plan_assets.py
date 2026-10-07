@@ -12,7 +12,7 @@ PAGE = HTML[HTML.index('<section id="plan-page"'):HTML.index("</main>")]
 
 def test_plan_assets_are_versioned_and_loaded_before_app():
     assert '/static/plan.css?v=1' in HTML
-    assert '/static/plan.js?v=1' in HTML
+    assert '/static/plan.js?v=2' in HTML
     assert HTML.index('/static/plan.js?') < HTML.index('/static/app.js?')
     assert int(re.search(r'/static/app.js\?v=(\d+)', HTML).group(1)) >= 59
 
@@ -70,7 +70,7 @@ def test_plan_app_still_guards_late_responses_and_keeps_payment_flow():
     for needle in (
         'if (user !== currentUser || !user || view !== "plan") return false;',
         'planCatalog = [];',
-        '"/api/orders"', 'channel: "alipay"', 'startOrderPolling', 'orderPollGeneration',
+        '"/api/orders"', 'JSON.stringify({ plan_id: plan.id, channel })', 'startOrderPolling', 'orderPollGeneration',
         'window.Redeem?.loadPlan(plans)', 'confirm(`确认申请退回',
     ):
         assert needle in APP, needle

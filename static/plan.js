@@ -149,7 +149,7 @@
     return list;
   }
 
-  /** 套餐卡片行。handlers.onBuy(planId) 下单；handlers.onHow() 滚到"开通方式"。 */
+  /** 套餐卡片行。onBuy(plan, channel) 下单；onHow() 滚到"开通方式"。 */
   function renderCards(host, view, plans, options) {
     const { isTrial = false, onBuy, onHow } = options || {};
     const byId = new Map((plans || []).map((plan) => [plan.id, plan]));
@@ -177,10 +177,26 @@
         ]));
         if (!isTrial) {
           const live = card.purchasable;
+          let channel = null;
+          if (live) {
+            const label = node("label", "官方支付方式", "pl-note");
+            channel = node("select");
+            channel.id = `plan-channel-${card.id}`;
+            label.setAttribute("for", channel.id);
+            for (const [value, text] of [["alipay", "支付宝"], ["wechat", "微信支付"]]) {
+              const option = node("option", text); option.value = value; channel.append(option);
+            }
+            channel.value = "alipay";
+            label.append(channel);
+            article.append(label, node("p", "付款金额由后台订单确定，不能自行输入或修改；支付渠道未配置时无法下单。", "pl-note"));
+          }
           const button = node("button", live ? "购买" : "开通方式", live ? "primary pl-card-action" : "pl-card-action");
           button.type = "button";
           button.setAttribute("aria-label", live ? `购买${card.name}` : `${card.name}的开通方式`);
-          button.addEventListener("click", () => (live ? onBuy?.(byId.get(card.id)) : onHow?.()));
+          button.addEventListener("click", () => {
+            if (!live) { onHow?.(); return; }
+            if (["alipay", "wechat"].includes(channel.value)) onBuy?.(byId.get(card.id), channel.value);
+          });
           article.append(button);
         }
       }

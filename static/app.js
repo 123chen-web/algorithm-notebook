@@ -2122,20 +2122,32 @@ async function refundPlanOrder(order) {
   }
 }
 
-async function buyPlan(plan) {
-  if (user.is_trial) return;
+async function buyPlan(plan, channel) {
+  if (!user || user.is_trial || view !== "plan") return;
+  if (!["alipay", "wechat"].includes(channel)) {
+    message("请选择支付宝或微信支付。", true);
+    return;
+  }
+  const owner = user.id;
+  const epoch = sessionEpoch;
+  const current = () => Boolean(user) && user.id === owner && sessionEpoch === epoch && view === "plan";
   message();
-  const purchase = await api("/api/orders", {
-    method: "POST",
-    body: JSON.stringify({ plan_id: plan.id, channel: "alipay" }),
-  });
-  stopOrderPolling();
-  planPurchase = purchase;
-  renderPlanOrder();
-  if (purchase.order.status === "pending") {
-    startOrderPolling();
-    await loadPlanOrders();
-  } else await finishPlanOrder();
+  try {
+    const purchase = await api("/api/orders", {
+      method: "POST",
+      body: JSON.stringify({ plan_id: plan.id, channel }),
+    });
+    if (!current()) return;
+    stopOrderPolling();
+    planPurchase = purchase;
+    renderPlanOrder();
+    if (purchase.order.status === "pending") {
+      startOrderPolling();
+      await loadPlanOrders();
+    } else await finishPlanOrder();
+  } catch (error) {
+    if (current()) throw error;
+  }
 }
 
 function renderPlans(plans) {
@@ -2147,7 +2159,7 @@ function renderPlans(plans) {
   }
   window.PlanView.renderCards(list, window.PlanView.model(plans, user, Date.now()), plans, {
     isTrial: Boolean(user.is_trial),
-    onBuy: (plan) => run(() => buyPlan(plan)),
+    onBuy: (plan, channel) => run(() => buyPlan(plan, channel)),
     onHow: () => window.PlanView.scrollTo($("#plan-how")),
   });
 }
@@ -2162,6 +2174,7 @@ function renderPlanOrder() {
     ["订单号", order.id],
     ["金额", yuan(order.amount_cents)],
   ]));
+  $("#plan-order-details").append(element("p", "应付金额来自服务端订单，支付平台按这笔订单收款；无需自行输入金额。", "muted"));
   const statuses = {
     pending: "等待支付，每 3 秒自动查询一次，最多查询 5 分钟。",
     paid: "支付成功。",
