@@ -117,15 +117,17 @@
   #new-page *, #new-page *::before, #new-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
-/* 速记模式开关：建题表单"题目和代码"标题行右侧 */
+/* 三档记录选择保持在桌面内容列，窄屏可换行。 */
 #new-page .quick-toggle {
-  margin-left: auto;
-  align-self: center;
+  align-self: start;
+  justify-self: start;
+  max-width: 100%;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 650;
-  white-space: nowrap;
   cursor: pointer;
 }
+#new-page .quick-toggle select { width: auto; max-width: 100%; }

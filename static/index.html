@@ -871,6 +871,8 @@
                   <h3 id="problem-basics-title">题目和代码</h3>
                   <p id="code-hint" class="form-card-description">代码会保存在记录中，不会被运行。</p>
                 </div>
+              </div>
+              <div class="form-fields">
                 <label class="quick-toggle">
                   记录方式
                   <select id="problem-quick" aria-describedby="record-mode-hint">
@@ -879,13 +881,11 @@
                     <option value="full" selected>完整</option>
                   </select>
                 </label>
-              </div>
-              <p id="record-mode-hint" class="field-hint">速记只填题目；一句话加上错因；完整记录代码、思路和易错点。</p>
-              <label id="problem-sentence-field" hidden>
-                用一句话记下错因
-                <textarea id="problem-sentence" name="quick_reason" maxlength="2000" rows="2" placeholder="例如：循环结束条件漏掉相等的情况。"></textarea>
-              </label>
-              <div class="form-fields">
+                <p id="record-mode-hint" class="field-hint">速记只填题目；一句话加上错因；完整记录代码、思路和易错点。</p>
+                <label id="problem-sentence-field" hidden>
+                  用一句话记下错因
+                  <textarea id="problem-sentence" name="quick_reason" maxlength="2000" rows="2" placeholder="例如：循环结束条件漏掉相等的情况。"></textarea>
+                </label>
                 <div class="form-grid">
                   <label>
                     题目名

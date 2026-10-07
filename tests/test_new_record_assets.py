@@ -158,6 +158,21 @@ def test_new_page_has_four_numbered_cards_and_display_only_progress(document):
     assert progress["tag"] not in {"input", "button", "select"}
 
 
+def test_record_modes_stay_in_the_desktop_grid_content_column(document):
+    basics_index = next(index for index, node in document.in_page()
+                        if node["attrs"].get("data-form-section") == "basics")
+    direct = [node for node in document.elements
+              if node["ancestors"] and node["ancestors"][-1] == basics_index]
+    assert len(direct) == 2
+    assert has_class(direct[0], "form-card-heading")
+    assert has_class(direct[1], "form-fields")
+    fields_index = next(index for index, node in enumerate(document.elements)
+                        if node is direct[1])
+    for name in ("problem-quick", "record-mode-hint", "problem-sentence-field"):
+        _, node = document.by_id(name)
+        assert fields_index in node["ancestors"]
+
+
 def test_fold_buttons_own_initially_inert_contents_and_basics_remain_open(document):
     toggles = [(index, node) for index, node in document.in_page() if has_class(node, "form-fold-toggle")]
     assert len(toggles) == 2
