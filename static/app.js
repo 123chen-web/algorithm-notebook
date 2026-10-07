@@ -3696,14 +3696,13 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
 });
 
 /* ---- 速记模式（E2 事项一）----
-   开关默认关闭。打开后：只要求题名 + 分区；code/thinking 去掉 required 并隐藏
-   对应区块；易错点区域提示"将自动创建一条待补原因的易错点"，留空的易错点不提交，
-   由后端自动建一条 pending_reason 的易错点。关闭后一切恢复原样，校验不变。 */
+   默认完整记录，保持原校验；速记只填题名和分区，一句话再补一条真正的错因。
+   两种简写模式都隐藏代码和思路，保留切换前写下的草稿。 */
 const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
 
 // 开关当前是否打开。
 function isQuickMode() {
-  return $("#problem-quick")?.checked === true;
+  return ["quick", "sentence"].includes($("#problem-quick")?.value);
 }
 
 // 切换速记显隐：code/thinking 去 required 并隐藏区块，易错点换提示文案；
@@ -3730,6 +3729,18 @@ function applyQuickMode(on) {
   if (codeLabel) codeLabel.hidden = on;
   const thinkingSection = form.querySelector('[data-form-section="thinking"]');
   if (thinkingSection) thinkingSection.hidden = on;
+  const mode = $("#problem-quick")?.value || "full";
+  const mistakesSection = form.querySelector('[data-form-section="mistakes"]');
+  if (mistakesSection) mistakesSection.hidden = on;
+  const sentence = $("#problem-sentence");
+  const sentenceField = $("#problem-sentence-field");
+  if (sentenceField) sentenceField.hidden = mode !== "sentence";
+  if (sentence) sentence.required = mode === "sentence";
+  const addButton = $("#add-mistake");
+  if (addButton) addButton.hidden = on;
+  for (const progress of document.querySelectorAll('[data-form-progress="thinking"], [data-form-progress="mistakes"]')) {
+    progress.hidden = on;
+  }
   // 易错点提示：速记时换文案，关闭时恢复原文案。
   const hint = document.getElementById("mistake-hint");
   if (hint) {
@@ -3743,18 +3754,18 @@ function applyQuickMode(on) {
   }
 }
 
-// 拼建题请求体。速记：只带用户手写的易错点（留空的交给后端自动建待补易错点），
-// 并带上 quick 标记；普通模式的字段与原来一字不差。
+// 简写模式只提交当前可见的错因；完整模式的字段及空错因语义沿用原行为。
 function buildProblemPayload(form, quick) {
   const data = new FormData(form);
   const mistakes = data.getAll("mistake");
+  const mode = $("#problem-quick")?.value || "full";
   return {
     title: data.get("title"),
     zone: data.get("zone"),
     language: data.get("language"),
     code: data.get("code"),
     thinking: data.get("thinking"),
-    mistakes: quick ? mistakes.filter((text) => String(text ?? "").trim() !== "") : mistakes,
+    mistakes: quick ? (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []) : mistakes,
     quick: Boolean(quick),
   };
 }
@@ -3762,12 +3773,12 @@ function buildProblemPayload(form, quick) {
 // 提交成功后恢复普通模式：开关复位、界面还原，避免用户无意识连续速记。
 function resetQuickMode() {
   const toggle = $("#problem-quick");
-  if (toggle) toggle.checked = false;
+  if (toggle) toggle.value = "full";
   applyQuickMode(false);
 }
 
 $("#problem-quick")?.addEventListener("change", (event) => {
-  applyQuickMode(event.currentTarget.checked);
+  applyQuickMode(event.currentTarget.value !== "full");
 });
 
 $("#problem-form").addEventListener("submit", (event) => {
@@ -3776,12 +3787,28 @@ $("#problem-form").addEventListener("submit", (event) => {
   const anchor = sealAnchorPoint(event.submitter || form.querySelector('[type="submit"]:not([hidden])'));
   const cameFromPhoto = Boolean(photoRecognition);
   const quick = isQuickMode(); // 提交瞬间锁定模式，避免请求在途时开关被拨动
+  const mode = $("#problem-quick")?.value || "full";
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  const payload = buildProblemPayload(form, quick);
+  if (mode === "sentence" && !payload.mistakes[0]) {
+    message("请写一句真正的错因。", true);
+    $("#problem-sentence")?.focus();
+    return;
+  }
 
   run(async () => {
-    const created = await api("/api/problems", {
-      method: "POST",
-      body: JSON.stringify(buildProblemPayload(form, quick)),
-    });
+    let created;
+    try {
+      created = await api("/api/problems", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (epoch !== sessionEpoch || owner !== user?.id || !user) return;
+      throw error;
+    }
+    if (epoch !== sessionEpoch || owner !== user?.id || !user) return;
     stampSeal("已录", { anchor });
     notifyDataChanged("create");
 
@@ -3793,7 +3820,7 @@ $("#problem-form").addEventListener("submit", (event) => {
     resetPhotoForm();
 
     let noticeText = quick
-      ? "速记已保存，记得回来补上代码、思路和错因。"
+      ? (mode === "sentence" ? "一句话记录已保存，已加入今日复习。" : "速记已保存，记得回来补上代码、思路和错因。")
       : "记录已保存，新的易错点已加入今日复习。";
     if (cameFromPhoto && created.mistake_ids[0]) {
       try {

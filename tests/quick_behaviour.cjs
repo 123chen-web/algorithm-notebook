@@ -48,8 +48,7 @@ function buildForm(document) {
   form.id = "problem-form";
 
   const toggleWrap = el("label");
-  const toggle = el("input", { type: "checkbox", id: "problem-quick" });
-  toggle.checked = false;
+  const toggle = el("select", { id: "problem-quick", value: "full" });
   toggleWrap.append(toggle, "速记模式");
 
   const basics = el("section");
@@ -80,16 +79,20 @@ function buildForm(document) {
   mistakesSection.append(hint, mistakeInputs);
 
   const save = el("button", { type: "submit", text: "保存这条记录" });
-  form.append(toggleWrap, basics, thinkingSection, mistakesSection, save);
+  const sentenceLabel = el("label", { id: "problem-sentence-field" });
+  sentenceLabel.hidden = true;
+  const sentence = el("textarea", { id: "problem-sentence", name: "quick_reason", value: "" });
+  sentenceLabel.append(sentence);
+  form.append(toggleWrap, basics, sentenceLabel, thinkingSection, mistakesSection, save);
   // 真实 DOM 里 form.zone 能拿到具名控件；假 DOM 里手动补上（提交成功分支会读它）。
   form.zone = zone;
   // 模拟浏览器原生 reset：开关回到默认（关闭），各字段值清空。
   form.reset = () => {
-    toggle.checked = false;
+    toggle.value = "full";
     for (const field of form.querySelectorAll("[name]")) field.value = "";
   };
   document.body.append(form);
-  return { form, toggle, title, code, thinking, codeLabel, thinkingSection, hint };
+  return { form, toggle, title, code, thinking, codeLabel, thinkingSection, mistakesSection, sentenceLabel, sentence, hint };
 }
 
 function environment({ failApi = false } = {}) {
@@ -99,7 +102,7 @@ function environment({ failApi = false } = {}) {
   env.window.probe = { requests: [], error: null };
   vm.runInContext(`
     const $ = (selector) => document.querySelector(selector);
-    let photoRecognition = null;
+    let photoRecognition = null; let sessionEpoch = 1; let user = { id: 1 };
     function sealAnchorPoint() { return {}; }
     function stampSeal() {}
     function notifyDataChanged() {}
@@ -114,6 +117,7 @@ function environment({ failApi = false } = {}) {
     }
     async function api(path, options = {}) {
       window.probe.requests.push({ path, options });
+      if (window.probe.waitForApi) await new Promise((resolve) => { window.probe.resolveApi = resolve; });
       if (${failApi}) throw new Error("network down");
       return { mistake_ids: [7] };
     }
@@ -129,12 +133,13 @@ function environment({ failApi = false } = {}) {
   vm.runInContext(quickSource, context, { filename: "app.js:quick" });
   vm.runInContext(submitSource, context, { filename: "app.js:problem-submit" });
   const setQuick = (on) => {
-    ui.toggle.checked = on;
+    ui.toggle.value = on ? "quick" : "full";
     ui.toggle.dispatchEvent(new FakeEvent("change", { bubbles: true }));
   };
   const submit = () => ui.form.dispatchEvent(new FakeEvent("submit", { bubbles: true, props: { submitter: null } }));
   return {
     ...env, ...ui, setQuick, submit,
+    setMode: (mode) => { ui.toggle.value = mode; ui.toggle.dispatchEvent(new FakeEvent("change")); },
     requests: env.window.probe.requests,
     probe: env.window.probe,
     isQuick: () => vm.runInContext("isQuickMode()", context),
@@ -148,7 +153,7 @@ const lastBody = (env) => JSON.parse(env.requests[env.requests.length - 1].optio
 
 test("quick: 开关默认关闭，普通模式下 required 与显隐保持原样", () => {
   const env = environment();
-  assert.equal(env.toggle.checked, false);
+  assert.equal(env.toggle.value, "full");
   assert.equal(env.isQuick(), false);
   assert.ok(env.title.hasAttribute("required"), "题名 required 不动");
   assert.ok(env.code.hasAttribute("required"));
@@ -188,7 +193,7 @@ test("quick: 速记请求体带 quick:true，留空的易错点被过滤", () =>
   const env = environment();
   const body = env.payload(true);
   assert.equal(body.quick, true);
-  assert.deepEqual(body.mistakes, ["边界条件没考虑"], "空串不提交，交给后端自动建待补易错点");
+  assert.deepEqual(Array.from(body.mistakes), [], "隐藏的易错点不提交，速记交给后端自动建待补易错点");
   assert.equal(body.title, "两数之和");
   assert.equal(body.zone, "算法");
   assert.equal(body.language, "Python");
@@ -215,9 +220,9 @@ test("quick: 速记提交发 quick:true，成功后开关复位、界面恢复�
   assert.equal(env.requests[0].path, "/api/problems");
   const body = lastBody(env);
   assert.equal(body.quick, true);
-  assert.deepEqual(body.mistakes, ["边界条件没考虑"]);
+  assert.deepEqual(body.mistakes, []);
 
-  assert.equal(env.toggle.checked, false, "开关复位");
+  assert.equal(env.toggle.value, "full", "开关复位");
   assert.equal(env.isQuick(), false);
   assert.ok(env.code.hasAttribute("required"), "required 恢复");
   assert.ok(env.thinking.hasAttribute("required"));
@@ -237,7 +242,7 @@ test("quick: 普通提交发 quick:false，校验与原来一致，不碰界面"
   assert.equal(body.quick, false);
   assert.deepEqual(body.mistakes, ["", "边界条件没考虑"]);
 
-  assert.equal(env.toggle.checked, false);
+  assert.equal(env.toggle.value, "full");
   assert.ok(env.code.hasAttribute("required"));
   assert.equal(env.codeLabel.hidden, false);
   assert.equal(env.thinkingSection.hidden, false);
@@ -252,8 +257,82 @@ test("quick: 提交失败不复位，速记状态保留给用户重试", async (
 
   assert.equal(env.requests.length, 1);
   assert.ok(env.probe.error, "失败被 run 吞掉并记录");
-  assert.equal(env.toggle.checked, true, "开关保持打开");
+  assert.equal(env.toggle.value, "quick", "开关保持打开");
   assert.equal(env.code.hasAttribute("required"), false, "required 保持去掉");
   assert.equal(env.codeLabel.hidden, true);
   assert.equal(env.hint.textContent, QUICK_HINT);
+});
+
+
+test("three modes: one sentence submits only the written reason", () => {
+  const env = environment();
+  env.setMode("sentence");
+  env.sentence.value = "忘记检查空列表";
+  const body = env.payload(true);
+  assert.equal(body.quick, true);
+  assert.deepEqual(Array.from(body.mistakes), ["忘记检查空列表"]);
+  assert.equal(env.sentenceLabel.hidden, false);
+  assert.equal(env.sentence.required, true);
+  assert.equal(env.mistakesSection.hidden, true);
+});
+
+test("three modes: quick never submits hidden old mistake inputs", () => {
+  const env = environment();
+  env.setMode("quick");
+  assert.deepEqual(Array.from(env.payload(true).mistakes), []);
+  assert.equal(env.sentenceLabel.hidden, true);
+  assert.equal(env.mistakesSection.hidden, true);
+});
+
+test("three modes: full restores original fields and retains written data", () => {
+  const env = environment();
+  env.code.value = "print(1)";
+  env.setMode("sentence");
+  env.setMode("full");
+  assert.equal(env.code.value, "print(1)");
+  assert.equal(env.code.hasAttribute("required"), true);
+  assert.equal(env.thinking.hasAttribute("required"), true);
+  assert.equal(env.mistakesSection.hidden, false);
+  assert.equal(env.sentence.required, false);
+  assert.equal(env.sentenceLabel.hidden, true);
+});
+
+
+test("creation: a late response cannot reset a different session's form", async () => {
+  const env = environment();
+  env.probe.waitForApi = true;
+  env.setMode("quick");
+  env.submit();
+  await tick();
+  vm.runInContext("sessionEpoch += 1; user = { id: 2 };", env.context);
+  env.code.value = "new session draft";
+  env.probe.resolveApi();
+  await settle();
+  assert.equal(env.toggle.value, "quick");
+  assert.equal(env.code.value, "new session draft");
+  assert.equal(env.requests.length, 1);
+});
+
+test("one sentence: whitespace cannot create a pending reason by accident", async () => {
+  const env = environment();
+  env.setMode("sentence");
+  env.sentence.value = "   ";
+  env.submit();
+  await settle();
+  assert.equal(env.requests.length, 0);
+  assert.equal(env.toggle.value, "sentence");
+});
+
+
+test("creation: a late failure cannot notify a different session", async () => {
+  const env = environment({ failApi: true });
+  env.probe.waitForApi = true;
+  env.setMode("quick");
+  env.submit();
+  await tick();
+  vm.runInContext("sessionEpoch += 1; user = { id: 2 };", env.context);
+  env.probe.resolveApi();
+  await settle();
+  assert.equal(env.probe.error, null);
+  assert.equal(env.toggle.value, "quick");
 });
