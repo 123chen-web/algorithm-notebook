@@ -1,6 +1,9 @@
 "use strict";
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const { load, tick, deferred, FakeEvent } = require("./js_harness.cjs");
 
 const CAPABILITIES = { configured: true, allowed: true, languages: ["Python", "C++"], cpu_seconds: 2, memory_kb: 128000 };
@@ -12,6 +15,15 @@ test.afterEach(() => assert.deepEqual(unhandled.splice(0).map(String), [], "no u
 
 function setup(item = ITEM, options = {}) {
   const env = load(["code-runner.js"]);
+  for (const id of ["app", "auth", "notice"]) {
+    const node = env.document.createElement("div"); node.id = id; env.document.body.append(node);
+  }
+  env.context.$ = (selector) => env.document.querySelector(selector);
+  const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+  const setBusy = source.match(/^function setBusy\(value\) \{[\s\S]*?^\}/m);
+  assert.ok(setBusy, "the production global button controller must be present");
+  vm.runInContext(setBusy[0], env.context);
+  const resetGlobalBusy = () => { env.context.setBusy(true); env.context.setBusy(false); };
   const session = { user: { id: 1, is_trial: false }, epoch: 1, view: "today", selection: 1, detail: 1 };
   const calls = [];
   const hooks = {
@@ -27,7 +39,7 @@ function setup(item = ITEM, options = {}) {
   const open = () => { const details = query("details"); details.open = true; details.dispatchEvent(new FakeEvent("toggle")); };
   const submit = () => { open(); query("form").dispatchEvent(new FakeEvent("submit")); };
   const caps = async (data = CAPABILITIES, call = calls[0]) => { call.resolve(data); await tick(); };
-  return { ...env, session, calls, host, mount, query, open, submit, caps };
+  return { ...env, session, calls, host, mount, query, open, submit, caps, resetGlobalBusy };
 }
 
 test("runner: configuration is read before any source is submitted", async () => {
@@ -218,4 +230,42 @@ test("runner: unavailable language is cleared and an explicit supported language
   env.query(".cr-language").value = "C++"; env.query(".cr-code").value = "int main() {}";
   env.submit(); assert.equal(JSON.parse(env.calls[1].request.body).language, "C++");
   env.calls[1].resolve(RESULT); await tick();
+});
+
+test("runner: global busy cleanup cannot enable run or retry during the initial configuration request", () => {
+  const env = setup(); env.resetGlobalBusy();
+  assert.equal(env.query(".cr-run").disabled, true);
+  assert.equal(env.query(".cr-retry").disabled, true);
+});
+
+for (const state of ["unconfigured", "disallowed", "trial", "offline"]) {
+  test(`runner: global busy cleanup preserves the ${state} run restriction`, async () => {
+    const env = setup(ITEM, { offline: state === "offline" });
+    if (state === "trial") env.session.user.is_trial = true;
+    if (state !== "offline") await env.caps({ ...CAPABILITIES,
+      configured: state !== "unconfigured", allowed: state !== "disallowed" });
+    env.resetGlobalBusy();
+    assert.equal(env.query(".cr-run").disabled, true);
+    env.submit(); assert.equal(env.calls.length, state === "offline" ? 0 : 1);
+  });
+}
+
+test("runner: global busy cleanup cannot unlock either button during a run, and completion releases both", async () => {
+  const env = setup(); await env.caps(); env.submit(); env.resetGlobalBusy();
+  assert.equal(env.query(".cr-run").disabled, true);
+  assert.equal(env.query(".cr-retry").disabled, true);
+  env.calls[1].resolve(RESULT); await tick(); env.resetGlobalBusy();
+  assert.equal(env.query(".cr-run").disabled, false);
+  assert.equal(env.query(".cr-retry").disabled, false);
+});
+
+test("runner: global busy cleanup preserves a pending configuration retry and releases it after failure", async () => {
+  const env = setup(); env.calls[0].reject(new Error("配置读取失败")); await tick();
+  env.resetGlobalBusy(); assert.equal(env.query(".cr-retry").disabled, false);
+  env.query(".cr-retry").click(); env.resetGlobalBusy();
+  assert.equal(env.query(".cr-run").disabled, true);
+  assert.equal(env.query(".cr-retry").disabled, true);
+  env.calls[1].reject(new Error("配置仍不可用")); await tick(); env.resetGlobalBusy();
+  assert.equal(env.query(".cr-run").disabled, true);
+  assert.equal(env.query(".cr-retry").disabled, false);
 });

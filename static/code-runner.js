@@ -78,9 +78,11 @@
       return "独立运行服务已就绪，展开面板后可运行这一轮代码。";
     }
     function controls() {
-      submit.disabled = busy || !allowed();
+      submit.dataset.blocked = busy || !allowed() ? "1" : "0";
+      submit.disabled = submit.dataset.blocked === "1";
       language.disabled = code.disabled = stdin.disabled = busy;
-      retry.disabled = busy || loading;
+      retry.dataset.blocked = busy || loading ? "1" : "0";
+      retry.disabled = retry.dataset.blocked === "1";
       form.setAttribute("aria-busy", String(busy));
     }
     async function loadCapabilities() {
