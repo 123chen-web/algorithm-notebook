@@ -33,10 +33,21 @@ def test_plan_page_keeps_every_id_the_scripts_and_redeem_flow_rely_on():
 def test_plan_page_sections_are_in_the_designed_order():
     order = [PAGE.index(f'id="{name}"') for name in ("plan-status", "plan-catalog", "plan-how", "plan-orders")]
     assert order == sorted(order)
-    # 手动付款三步在启用的面板里，兑换码输入在其后（付款 → 兑换）。
+    # 手动付款三步在启用的面板里，备用兑换码入口仍保留在其后。
     assert PAGE.index('id="manual-payment-panel"') < PAGE.index('id="redeem-panel"')
     assert PAGE.count('class="pl-steps"') == 1
     assert PAGE.index('class="pl-steps"') > PAGE.index('id="manual-payment-panel"')
+
+
+def test_manual_payment_steps_match_registration_and_actual_amount_limits():
+    for instruction in (
+        '按套餐价格扫码付款，备注写用户名',
+        '在下方「付款登记」提交「我已付款」',
+        '站长核对金额与备注后确认开通',
+        '网页无法锁定付款 App 的金额',
+    ):
+        assert instruction in PAGE
+    assert '站长确认后发给你兑换码' not in PAGE
 
 
 def test_plan_page_has_no_inline_style_or_script():
