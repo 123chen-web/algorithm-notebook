@@ -62,4 +62,4 @@ def test_profile_async_behaviour():
                             capture_output=True, text=True, encoding='utf-8', timeout=120)
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-1000:]
     assert re.search(r'(?m)^(?:ℹ|#) fail 0$', result.stdout)
-    assert re.search(r'(?m)^(?:ℹ|#) pass 15$', result.stdout)
+    assert re.search(r'(?m)^(?:ℹ|#) pass 16$', result.stdout)
