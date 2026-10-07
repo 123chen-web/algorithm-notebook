@@ -466,6 +466,77 @@ def test_same_day_not_sent_twice(database, monkeypatch):
     assert len(poster.calls) == 2
 
 
+def test_overlapping_digest_runs_send_once_per_recipient(database, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+    poster = fake_poster()
+
+    def bundle_after_both_have_planned(*args):
+        barrier.wait(timeout=5)
+        return {"papers": [], "news": [], "summaries": {}, "items": []}
+
+    monkeypatch.setattr(digest, "get_bundle", bundle_after_both_have_planned)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(digest.main, [], post=poster) for _ in range(2)]
+        assert [future.result(timeout=15) for future in futures] == [0, 0]
+    assert len(poster.calls) == 2
+    assert sum("alice" in call["data"]["desp"] for call in poster.calls) == 1
+    assert sum("erin" in call["data"]["desp"] for call in poster.calls) == 1
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM app_settings WHERE key LIKE 'digest_last_sent:%'"
+        ).fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("change", ["disable-push", "revoke-admin", "delete-account"])
+def test_recipient_revoked_while_fetching_is_not_sent(database, monkeypatch, change):
+    def bundle_after_revocation(*args):
+        with connect(write=True) as conn:
+            if change == "disable-push":
+                conn.execute("UPDATE user_push SET enabled=0 WHERE user_id=1")
+            elif change == "revoke-admin":
+                conn.execute("UPDATE users SET is_admin=0 WHERE id=1")
+            else:
+                conn.execute("UPDATE users SET deleted_at='2026-10-06' WHERE id=1")
+        return {"papers": [], "news": [], "summaries": {}, "items": []}
+
+    monkeypatch.setattr(digest, "get_bundle", bundle_after_revocation)
+    poster = fake_poster()
+    assert digest.main([], post=poster) == 0
+    assert len(poster.calls) == 1
+    assert "erin" in poster.calls[0]["data"]["desp"]
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT value FROM app_settings WHERE key='digest_last_sent:1'"
+        ).fetchone() is None
+
+
+def test_successful_recipient_record_survives_later_unexpected_failure(database, monkeypatch):
+    monkeypatch.setattr(digest, "get_bundle", lambda *args: {
+        "papers": [], "news": [], "summaries": {}, "items": [],
+    })
+    calls = []
+
+    def send_with_later_failure(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise RuntimeError("unexpected provider failure")
+        return {"ok": True, "kind": "ok"}
+
+    monkeypatch.setattr(digest.push_channels, "send", send_with_later_failure)
+    with pytest.raises(RuntimeError):
+        digest.main([])
+    with connect() as conn:
+        assert conn.execute(
+            "SELECT value FROM app_settings WHERE key='digest_last_sent:1'"
+        ).fetchone()["value"] == TODAY
+        assert conn.execute(
+            "SELECT value FROM app_settings WHERE key='digest_last_sent:2'"
+        ).fetchone() is None
+
+
 def test_dry_run_has_no_side_effects(database, monkeypatch, capsys):
     def no_network(url):
         raise AssertionError("dry-run must not access network")

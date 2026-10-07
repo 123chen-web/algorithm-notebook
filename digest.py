@@ -485,15 +485,18 @@ def digest_title(due: int) -> str:
 
 # ---------- 主流程 ----------
 
+_RECIPIENTS_SQL = (
+    "SELECT u.id, u.username, u.timezone, u.is_admin, "
+    "up.channel AS push_channel, up.secret AS push_secret, "
+    "up.enabled AS push_enabled, up.fail_count AS push_fail_count "
+    "FROM users u JOIN user_push up ON up.user_id = u.id "
+    "WHERE u.is_admin = 1 AND u.deleted_at IS NULL AND up.enabled = 1"
+)
+
+
 def _recipient_plans(args):
     with _read_connection(args.dry_run) as conn:
-        rows = conn.execute(
-            "SELECT u.id, u.username, u.timezone, u.is_admin, "
-            "up.channel AS push_channel, up.secret AS push_secret, "
-            "up.enabled AS push_enabled, up.fail_count AS push_fail_count "
-            "FROM users u JOIN user_push up ON up.user_id = u.id "
-            "WHERE u.is_admin = 1 AND u.deleted_at IS NULL AND up.enabled = 1"
-        ).fetchall()
+        rows = conn.execute(_RECIPIENTS_SQL).fetchall()
         users = [dict(row) for row in rows]
 
         recipients = [u for u in users if send_reminders.uses_push(u)]
@@ -571,13 +574,29 @@ def main(argv=None, post=None, http_get=None, sleep=None):
     # 全部来源失败也照常发送（正文里只有复习情况与占位说明）。
     bundle = get_bundle(_cache_day(), getter, sleeper)
 
-    # 第三阶段：写连接里逐条发送、记失败计数与“当天已发”标记。
+    # 第三阶段：每位收件人独立写事务，取得 SQLite 写锁后重查资格与发送记录。
+    # 第一位成功后立即提交，后续异常不能回滚已经成功的发送标记。
     sent = 0
-    with connect(write=True) as conn:
-        for plan in pending:
-            user = plan["user"]
-            title = digest_title(plan["due"])
-            body = digest_body(user["username"], plan["due"], plan["overdue"], bundle)
+    for plan in pending:
+        with connect(write=True) as conn:
+            row = conn.execute(
+                _RECIPIENTS_SQL + " AND u.id = ?", (plan["user"]["id"],),
+            ).fetchone()
+            if row is None:
+                continue
+            user = dict(row)
+            if not send_reminders.uses_push(user):
+                continue
+            day = today_in_timezone(user["timezone"]).isoformat()
+            setting = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (plan["setting_key"],),
+            ).fetchone()
+            if setting is not None and setting["value"] == day:
+                continue
+            due = send_reminders.due_count(conn, user["id"], day)
+            overdue = overdue_count(conn, user["id"], day)
+            title = digest_title(due)
+            body = digest_body(user["username"], due, overdue, bundle)
             result = push_channels.send(
                 user["push_channel"], user["push_secret"], title, body, post=post,
             )
@@ -593,7 +612,7 @@ def main(argv=None, post=None, http_get=None, sleep=None):
             conn.execute(
                 "INSERT INTO app_settings(key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (plan["setting_key"], plan["day"]),
+                (plan["setting_key"], day),
             )
             sent += 1
 
