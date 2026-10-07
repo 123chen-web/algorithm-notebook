@@ -1174,3 +1174,79 @@ def test_push_migration_rolls_back_on_failure(database_path, monkeypatch):
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE name = 'user_push'"
         ).fetchall() == []
+
+
+@pytest.mark.parametrize("from_version", [16, 17])
+def test_recommend_and_pending_reason_upgrade_preserves_data_and_constraints(
+    database_path, monkeypatch, from_version,
+):
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS", [e for e in db.MIGRATIONS if e[0] <= from_version])
+        patch.setattr(db, "SCHEMA_VERSION", from_version)
+        db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute(
+            "INSERT INTO users(id, username, password_hash, timezone, created_at) "
+            "VALUES (8, 'legacy-quick', 'unchanged-hash', 'Asia/Shanghai', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO problems(id, user_id, title, zone, language, code, thinking, created_at) "
+            "VALUES (9, 8, '旧题', '算法', 'Python', 'pass', '旧思路', ?)",
+            (CREATED_AT,),
+        )
+        conn.execute(
+            "INSERT INTO mistakes(id, problem_id, description, repetitions, interval_days, "
+            "ease_factor, due_date, last_reviewed_at, version, suspended_at) "
+            "VALUES (10, 9, '旧原因', 3, 15, 2.7, '2026-10-12', ?, 7, ?)",
+            (CREATED_AT, CREATED_AT),
+        )
+        before = dict(conn.execute("SELECT * FROM mistakes WHERE id = 10").fetchone())
+        assert "pending_reason" not in before
+        if from_version == 17:
+            conn.execute(
+                "INSERT INTO problem_recommendations "
+                "(user_id, contest_id, idx, recommended_at, state) VALUES (8, 4, 'A', ?, 'done')",
+                (CREATED_AT,),
+            )
+    db.init_db()
+    db.init_db()
+    with db.connect(write=True) as conn:
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 18
+        after = dict(conn.execute("SELECT * FROM mistakes WHERE id = 10").fetchone())
+        assert after.pop("pending_reason") == 0
+        assert after == before
+        pending = next(row for row in conn.execute("PRAGMA table_info(mistakes)")
+                       if row["name"] == "pending_reason")
+        assert pending["type"] == "INTEGER"
+        assert pending["notnull"] == 1
+        assert pending["dflt_value"] == "0"
+        for invalid in (-1, 2, None):
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute("UPDATE mistakes SET pending_reason = ? WHERE id = 10", (invalid,))
+        if from_version == 17:
+            assert conn.execute(
+                "SELECT state FROM problem_recommendations WHERE user_id = 8 AND contest_id = 4 AND idx = 'A'"
+            ).fetchone()[0] == "done"
+        else:
+            assert conn.execute("SELECT COUNT(*) FROM problem_recommendations").fetchone()[0] == 0
+        conn.execute(
+            "INSERT INTO problem_recommendations (user_id, contest_id, idx, recommended_at) "
+            "VALUES (8, 5, 'B', ?)", (CREATED_AT,),
+        )
+        assert conn.execute(
+            "SELECT state FROM problem_recommendations WHERE user_id = 8 AND contest_id = 5 AND idx = 'B'"
+        ).fetchone()[0] == "new"
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO problem_recommendations (user_id, contest_id, idx, recommended_at) "
+                "VALUES (8, 5, 'B', ?)", (CREATED_AT,),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE problem_recommendations SET state = 'invalid' WHERE user_id = 8")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO problem_recommendations (user_id, contest_id, idx, recommended_at) "
+                "VALUES (999, 5, 'B', ?)", (CREATED_AT,),
+            )
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
