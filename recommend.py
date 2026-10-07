@@ -72,18 +72,18 @@ def unmastered_ids(conn, user_id, timezone_name, today):
 def weakness_scores(conn, user_id, timezone_name, today):
     """{cf_tag: {"count": 未掌握条数, "label": 中文标签}}，按条数降序取前 2 个。
 
-    多个中文标签映射到同一 CF 标签时条数累加；推荐理由里用条数最多的中文标签。
+    多个中文标签映射到同一 CF 标签时按易错点去重；理由用该中文标签的真实条数。
     """
     ids = unmastered_ids(conn, user_id, timezone_name, today)
     if not ids:
         return {}
     rows = conn.execute(
         """
-        SELECT t.tag AS tag, COUNT(*) AS n
+        SELECT t.tag, t.mistake_id
         FROM mistake_tags t
         WHERE t.user_id = ?
           AND t.mistake_id IN (SELECT value FROM json_each(?))
-        GROUP BY t.tag
+        ORDER BY t.tag, t.mistake_id
         """,
         (user_id, json.dumps(ids)),
     ).fetchall()
@@ -93,12 +93,13 @@ def weakness_scores(conn, user_id, timezone_name, today):
         if not cf_tags:
             continue  # 映射不到的标签直接忽略
         for cf_tag in cf_tags:
-            bucket = scores.setdefault(cf_tag, {"count": 0, "labels": Counter()})
-            bucket["count"] += row["n"]
-            bucket["labels"][row["tag"]] += row["n"]
-    ordered = sorted(scores.items(), key=lambda kv: (-kv[1]["count"], kv[0]))
+            bucket = scores.setdefault(cf_tag, {"ids": set(), "labels": Counter()})
+            bucket["ids"].add(row["mistake_id"])
+            bucket["labels"][row["tag"]] += 1
+    ordered = sorted(scores.items(), key=lambda kv: (-len(kv[1]["ids"]), kv[0]))
     return {
-        cf_tag: {"count": info["count"], "label": info["labels"].most_common(1)[0][0]}
+        cf_tag: {"count": len(info["ids"]), "label": info["labels"].most_common(1)[0][0],
+                 "label_count": info["labels"].most_common(1)[0][1]}
         for cf_tag, info in ordered[:TOP_TAG_COUNT]
     }
 
@@ -147,7 +148,7 @@ def _build_item(problem, cf_tag, tag_scores, state="new"):
         "tags": list(problem.get("tags") or []),
         "url": f"https://codeforces.com/problemset/problem/{contest_id}/{index}",
         # 理由只含用户自己的标签名和数字。
-        "reason": f"你在{info['label']}上有{info['count']}条未掌握的错题" if info else "",
+        "reason": f"你在{info['label']}上有{info['label_count']}条未掌握的错题" if info else "",
         "state": state,
     }
 

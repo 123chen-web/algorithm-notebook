@@ -139,6 +139,31 @@ def test_mapping_and_reason_use_user_tags(client):
     assert by_id["4A"]["tags"] == ["graphs", "dfs and similar"]
 
 
+def test_overlapping_chinese_tags_count_each_mistake_once(client):
+    register(client)
+    owner = me(client)["id"]
+    seed(owner, tags=("BFS", "DFS"))
+    with connect() as conn:
+        scores = recommend.weakness_scores(conn, owner, "Asia/Shanghai", TODAY)
+    assert scores["graphs"]["count"] == 1
+    assert scores["dfs and similar"]["count"] == 1
+    write_cache([cf_problem(4, "A", 800, ["graphs", "dfs and similar"])])
+    assert get(client)["items"][0]["reason"] == "你在BFS上有1条未掌握的错题"
+
+
+def test_recommendation_reason_uses_the_named_labels_actual_count(client):
+    register(client)
+    owner = me(client)["id"]
+    seed(owner, tags=("BFS",))
+    seed(owner, tags=("BFS",))
+    seed(owner, tags=("DFS",))
+    with connect() as conn:
+        scores = recommend.weakness_scores(conn, owner, "Asia/Shanghai", TODAY)
+    assert scores["graphs"]["count"] == 3
+    write_cache([cf_problem(4, "A", 800, ["graphs", "dfs and similar"])])
+    assert get(client)["items"][0]["reason"] == "你在BFS上有2条未掌握的错题"
+
+
 def test_default_band_excludes_hard_problems(client):
     register(client)
     owner = me(client)["id"]
