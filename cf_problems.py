@@ -99,19 +99,25 @@ def cache_age_days(path=None):
         return None
 
 
-def _respect_rate_limit():
-    """同一进程/机器连续抓取时，遵守官方每 2 秒 1 次的限制。"""
+def _respect_rate_limit(handle):
+    """Persist attempted request times while holding the process-shared lock."""
+    handle.seek(0)
     try:
-        payload = _load_cache_at(cache_path())
-        if payload is None:
-            return
-        last = float(payload.get("fetched_at") or 0)
-    except (OSError, ValueError, TypeError):
-        return
-    wait = MIN_REQUEST_INTERVAL - (time.time() - last)
+        last = float(handle.read(64).decode("ascii") or "0")
+        if not math.isfinite(last):
+            last = 0
+    except (ValueError, UnicodeError):
+        last = 0
+    wait = min(MIN_REQUEST_INTERVAL, MIN_REQUEST_INTERVAL - (time.time() - last))
     if wait > 0:
         log.info("距离上次抓取不足 %.1f 秒，等待 %.1fs", MIN_REQUEST_INTERVAL, wait)
         time.sleep(wait)
+    # Record before opening HTTP: even a failed attempt counts toward the limit.
+    handle.seek(0)
+    handle.write(str(time.time()).encode("ascii"))
+    handle.truncate()
+    handle.flush()
+    os.fsync(handle.fileno())
 
 
 def _read_limited(response):
@@ -160,7 +166,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def fetch_problems(opener=None):
     """抓取并裁剪题目列表；opener 参数只给测试注入假 HTTP 用。"""
-    _respect_rate_limit()
+    with _cache_lock() as handle:
+        _respect_rate_limit(handle)
+        return _fetch_official(opener)
+
+
+def _fetch_official(opener):
     request = urllib.request.Request(
         API_URL, headers={"User-Agent": USER_AGENT}
     )

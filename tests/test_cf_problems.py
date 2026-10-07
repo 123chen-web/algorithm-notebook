@@ -258,3 +258,46 @@ def test_cli_usage_errors():
     )
     assert result.returncode == 2
     assert "refresh" in result.stderr
+
+
+def test_failed_requests_still_share_the_two_second_interval(monkeypatch):
+    clock = [1000.0]
+    started = []
+    monkeypatch.setattr(cf_problems.time, "time", lambda: clock[0])
+    monkeypatch.setattr(cf_problems.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    def fail(request, timeout=None):
+        started.append(clock[0])
+        raise ConnectionError("offline")
+    for _ in range(2):
+        with pytest.raises(ConnectionError, match="offline"):
+            cf_problems.fetch_problems(opener=fail)
+    assert started == [1000.0, 1002.0]
+
+
+def test_new_process_observes_failed_request_interval(monkeypatch):
+    import subprocess
+    import sys
+    monkeypatch.setattr(cf_problems.time, "time", lambda: 1000.0)
+    def fail(request, timeout=None):
+        raise ConnectionError("offline")
+    with pytest.raises(ConnectionError):
+        cf_problems.fetch_problems(opener=fail)
+    script = '''
+import cf_problems, io, json
+clock = [1000.0]
+waits = []
+cf_problems.time.time = lambda: clock[0]
+def sleep(seconds):
+    waits.append(seconds)
+    clock[0] += seconds
+cf_problems.time.sleep = sleep
+class Response(io.BytesIO):
+    def getcode(self):
+        return 200
+cf_problems.fetch_problems(opener=lambda request, timeout: Response(b'{"status":"OK","result":{"problems":[]}}'))
+print(json.dumps(waits))
+'''
+    result = subprocess.run([sys.executable, "-B", "-c", script],
+        cwd=Path(cf_problems.__file__).resolve().parent, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [2.0]
