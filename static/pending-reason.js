@@ -141,6 +141,9 @@
         completed = true;
         tagsSequence += 1;
         notice("原因已保存，复习安排保持不变。");
+        // 宿主刷新详情会主动更换详情代次，先结束本表单的忙状态。
+        busy = false;
+        controls();
         try { await hooks.onSaved?.(item.id); }
         catch { if (live()) notice("原因已保存，重新查看记录可读取最新内容。"); }
       } catch (error) {

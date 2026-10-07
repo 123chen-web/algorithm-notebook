@@ -218,6 +218,61 @@ function productionHome(ctx) {
   return ctx.env.context.loadHome({ refreshUser: false });
 }
 
+function productionSavedHook(ctx) {
+  const context = ctx.env.context;
+  ctx.messages = [];
+  for (const [name, key] of [["user", "user"], ["sessionEpoch", "epoch"], ["view", "view"],
+    ["rvfDetailGeneration", "detail"]]) {
+    Object.defineProperty(context, name, { configurable: true,
+      get: () => ctx.state[key], set: (value) => { ctx.state[key] = value; } });
+  }
+  Object.assign(context, { api: ctx.hooks.api, rvfPageGeneration: 1, rvfDetailState: null,
+    notifyDataChanged() {}, updateUserInfo() {},
+    message: (text, error) => ctx.messages.push({ text, error }),
+    renderDetail: (record) => ctx.opened.push(record.id),
+  });
+  for (const name of ["rvfPageGuard", "rvfClearDetail", "openMistake"]) {
+    vm.runInContext(productionFunction(name), context);
+  }
+  if (APP.includes("async function pendingReasonSaved(")) {
+    vm.runInContext(productionFunction("pendingReasonSaved"), context);
+  }
+  const wiring = APP.slice(APP.indexOf("window.PendingReason?.configure("));
+  const callback = wiring.split("onSaved: ")[1].split("\n")[0].trim().replace(/,$/, "");
+  vm.runInContext("hostSaved = " + callback + ";", context);
+  ctx.hooks.onSaved = context.hostSaved;
+  ctx.env.window.PendingReason.configure(ctx.hooks);
+}
+
+test("pending reason: production saved hook reports failed detail refresh without freezing or resubmitting", async () => {
+  const ctx = setup(); productionSavedHook(ctx); const form = await render(ctx);
+  submit(form); ctx.env.respond(ctx.env.calls[1], 200, {
+    id: 11, version: 8, pending_reason: false, description: "已保存", tags: [],
+  }); await settle();
+  assert.equal(ctx.env.calls[2].url, "/api/mistakes/11");
+  assert.equal(form.getAttribute("aria-busy"), "false");
+  assert.equal(q(form, ".pending-reason-save").disabled, true);
+  ctx.env.respond(ctx.env.calls[2], 503, { detail: "详情不可用" }); await settle();
+  assert.equal(ctx.messages.length, 1);
+  assert.match(ctx.messages[0].text, /原因已保存.*重新/);
+  submit(form); await settle(); assert.equal(ctx.env.calls.length, 3);
+});
+
+for (const change of ["epoch", "user", "view", "detail"]) {
+  test(`pending reason: production saved refresh ignores late failures after ${change}`, async () => {
+    const ctx = setup(); productionSavedHook(ctx); const form = await render(ctx);
+    submit(form); ctx.env.respond(ctx.env.calls[1], 200, {
+      id: 11, version: 8, pending_reason: false, description: "已保存", tags: [],
+    }); await settle();
+    if (change === "epoch") ctx.state.epoch += 1;
+    if (change === "user") ctx.state.user = { id: 8 };
+    if (change === "view") ctx.state.view = "home";
+    if (change === "detail") ctx.state.detail += 1;
+    ctx.env.respond(ctx.env.calls[2], 503, { detail: "晚到的详情错误" }); await settle();
+    assert.deepEqual(ctx.messages, []);
+  });
+}
+
 test("pending reason: production home failure clears old reminder and its in-flight request", async () => {
   const ctx = setup("home"); const old = home(ctx); q(old, "button").click();
   const loading = productionHome(ctx);

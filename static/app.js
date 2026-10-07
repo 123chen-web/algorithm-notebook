@@ -5340,9 +5340,24 @@ $("#timezone").value =
 const rvfHooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view };
 window.ReviewExtras?.configure(rvfHooks);
 window.FocusReview?.configure(rvfHooks);
+async function pendingReasonSaved(id) {
+  const pageCurrent = rvfPageGuard();
+  const savedView = view;
+  const selectedGeneration = rvfDetailGeneration;
+  notifyDataChanged("reason");
+  if (!pageCurrent() || view !== savedView || selectedGeneration !== rvfDetailGeneration) return;
+  const refreshing = openMistake(id);
+  const refreshGeneration = rvfDetailGeneration;
+  try { await refreshing; }
+  catch {
+    if (pageCurrent() && view === savedView && refreshGeneration === rvfDetailGeneration) {
+      message("原因已保存，但详情暂时无法重新读取；请重新选择这条记录。", true);
+    }
+  }
+}
 window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
   getDetailGeneration: () => rvfDetailGeneration,
-  onSaved: async (id) => { notifyDataChanged("reason"); await openMistake(id); },
+  onSaved: pendingReasonSaved,
 });
 document.addEventListener("keydown", rvfDetailKeydown);
 $("#review-daily-cap").addEventListener("change", rvfSetDailyCap);
