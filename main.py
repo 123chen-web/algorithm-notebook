@@ -2310,6 +2310,11 @@ def clear_deleted_thread_state(conn, *, post_id=None, comment_id=None):
 
 @app.exception_handler(RequestValidationError)
 async def forum_action_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path == "/api/me/bio" and request.method == "PUT":
+        # Validation errors must not echo malformed Unicode input into UTF-8 JSON.
+        return JSONResponse(
+            status_code=422, content={"detail": "简介内容无效，请填写最多 200 字的文字"},
+        )
     if re.fullmatch(
         r"/api/posts/[^/]+/(?:accepted|summary)|/api/comments/[^/]+/helpful"
         r"|/api/mistakes/[^/]+/(?:preview|review(?:/undo)?|snooze|suspend|unsuspend|run)"

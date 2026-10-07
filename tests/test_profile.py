@@ -1,5 +1,6 @@
 """Public profiles expose a fixed aggregate allowlist, never notebook contents."""
 import pytest
+import json
 from fastapi import HTTPException
 
 import db
@@ -21,6 +22,17 @@ def test_bio_limits_owner_and_clear(client):
     assert client.put('/api/me/bio', json={'bio': 'x', 'user_id': 99}).status_code == 422
     assert client.get(f"/api/users/{owner['id']}/public").json()['bio'] == exact
     assert client.put('/api/me/bio', json={'bio': ''}).json() == {'bio': ''}
+
+
+@pytest.mark.parametrize('payload', [{'bio': '\ud800'}, {'bio': '\udfff' * 201}, {'bio': ['\ud800']}])
+def test_bio_rejects_surrogate_strings_without_echo_or_write(client, payload):
+    owner = register(client)
+    assert client.put('/api/me/bio', json={'bio': '旧简介'}).status_code == 200
+    response = client.put('/api/me/bio', content=json.dumps(payload), headers={'Content-Type': 'application/json'})
+    assert response.status_code == 422
+    assert response.json() == {'detail': '简介内容无效，请填写最多 200 字的文字'}
+    with main.connect() as conn:
+        assert conn.execute('SELECT bio FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] == '旧简介'
 
 
 def test_profile_safe_aggregates_from_other_account(client, monkeypatch):
