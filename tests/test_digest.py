@@ -493,6 +493,62 @@ def test_dry_run_has_no_side_effects(database, monkeypatch, capsys):
         ).fetchone()["fail_count"] == 0
 
 
+def test_dry_run_missing_database_does_not_create_files(tmp_path, monkeypatch):
+    path = tmp_path / "missing" / "notebook.db"
+    monkeypatch.setenv("DATABASE_PATH", str(path))
+    poster = fake_poster()
+    rc = digest.main(["--dry-run"], post=poster)
+    assert rc == 1
+    assert not path.parent.exists()
+    assert poster.calls == []
+
+
+def test_dry_run_incomplete_schema_reports_failure_without_repair(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(str(path)) as conn:
+        conn.execute("CREATE TABLE marker(value TEXT)")
+    conn.close()
+    monkeypatch.setenv("DATABASE_PATH", str(path))
+    before = {entry.name: entry.read_bytes() for entry in tmp_path.iterdir()}
+    assert digest.main(["--dry-run"], post=fake_poster()) == 1
+    assert {entry.name: entry.read_bytes() for entry in tmp_path.iterdir()} == before
+
+
+def test_dry_run_does_not_migrate_or_create_wal_files(database, monkeypatch):
+    with connect(write=True) as conn:
+        conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
+        conn.execute("PRAGMA user_version = 17")
+    before = {path.name: path.read_bytes() for path in database.iterdir()}
+    rc, requests, poster, ai_record = run_main(database, monkeypatch, argv=["--dry-run"])
+    assert rc == 0
+    assert requests == [] and poster.calls == [] and ai_record["calls"] == 0
+    assert {path.name: path.read_bytes() for path in database.iterdir()} == before
+
+
+def test_dry_run_refuses_uncheckpointed_wal_without_changes(
+    database, monkeypatch, capsys
+):
+    import sqlite3
+
+    writer = sqlite3.connect(str(database / "test.db"))
+    try:
+        writer.execute("UPDATE users SET timezone = 'UTC' WHERE username = 'alice'")
+        writer.commit()  # Keep the connection open, retaining committed WAL pages.
+        before = {path.name: path.read_bytes() for path in database.iterdir()}
+        rc, requests, poster, ai_record = run_main(
+            database, monkeypatch, argv=["--dry-run"],
+        )
+        assert rc == 1
+        assert requests == [] and poster.calls == [] and ai_record["calls"] == 0
+        assert {path.name: path.read_bytes() for path in database.iterdir()} == before
+        output = capsys.readouterr().out
+        assert "checkpoint" in output and "alice" not in output
+    finally:
+        writer.close()
+
+
 def test_no_eligible_recipients_exits_quietly(database, monkeypatch, capsys):
     with connect(write=True) as conn:
         conn.execute("UPDATE user_push SET enabled = 0")

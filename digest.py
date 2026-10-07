@@ -20,11 +20,13 @@ import datetime as _dt
 import json
 import logging
 import os
+import sqlite3
 import sys
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from contextlib import contextmanager
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -94,12 +96,50 @@ def _valid_url(url) -> bool:
     return url.startswith("http://") or url.startswith("https://")
 
 
-def _data_dir() -> Path:
-    """data 目录取 DATABASE_PATH 所在目录，相对路径解析方式照抄 db.connect。"""
+def _database_path() -> Path:
     path = Path(os.getenv("DATABASE_PATH", "data/notebook.db")).expanduser()
     if not path.is_absolute():
         path = ROOT / path
-    return path.parent
+    return path.resolve()
+
+
+def _data_dir() -> Path:
+    """data 目录取 DATABASE_PATH 所在目录，相对路径解析方式照抄 db.connect。"""
+    return _database_path().parent
+
+
+class _DryRunSnapshotError(ValueError):
+    pass
+
+
+@contextmanager
+def _read_connection(dry_run: bool):
+    if not dry_run:
+        with connect(write=False) as conn:
+            yield conn
+        return
+
+    path = _database_path()
+    wal = path.with_name(path.name + "-wal")
+
+    def ensure_checkpointed():
+        if wal.exists() and wal.stat().st_size:
+            raise _DryRunSnapshotError(
+                "当前数据库有未 checkpoint 事务，dry-run 不输出可能过期结果。"
+            )
+
+    ensure_checkpointed()
+    before = path.stat().st_mtime_ns
+    # mode=ro 本身仍会创建 WAL/SHM；immutable 可避免所有数据库文件写入。
+    conn = sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        ensure_checkpointed()
+        if path.stat().st_mtime_ns != before:
+            raise _DryRunSnapshotError("读取期间数据库发生变化，dry-run 请稍后重试。")
+    finally:
+        conn.close()
 
 
 def _cache_day() -> str:
@@ -445,26 +485,8 @@ def digest_title(due: int) -> str:
 
 # ---------- 主流程 ----------
 
-def main(argv=None, post=None, http_get=None, sleep=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="只打印会发给谁、各有几条待复习，不发送、不写库、不联网、不调用 AI",
-    )
-    parser.add_argument(
-        "--username", default=None,
-        help="只给指定用户名的管理员发送（仍需满足管理员且开启微信提醒的条件）",
-    )
-    args = parser.parse_args(argv)
-
-    getter = http_get if http_get is not None else _http_get
-    sleeper = sleep if sleep is not None else time.sleep
-
-    init_db()
-
-    # 第一阶段：只读连接里挑收件人、算待复习数、判断今天是否已发。
-    # 网络抓取和 AI 调用必须在写事务之外做，否则 ai_limits 的记账连接会被锁住。
-    with connect(write=False) as conn:
+def _recipient_plans(args):
+    with _read_connection(args.dry_run) as conn:
         rows = conn.execute(
             "SELECT u.id, u.username, u.timezone, u.is_admin, "
             "up.channel AS push_channel, up.secret AS push_secret, "
@@ -479,36 +501,69 @@ def main(argv=None, post=None, http_get=None, sleep=None):
             recipients = [u for u in recipients if u["username"] == args.username]
             if not recipients:
                 print(f"没有找到符合条件的管理员：{args.username}")
-                return 1
+                return None
 
         plans = []
         for user in recipients:
             day = today_in_timezone(user["timezone"]).isoformat()
             due = send_reminders.due_count(conn, user["id"], day)
             overdue = overdue_count(conn, user["id"], day)
-            if args.dry_run:
-                print(
-                    f"{user['username']} <微信 {user['push_channel']}>："
-                    f"待复习 {due} 条，其中逾期 {overdue} 条"
-                )
-                continue
             setting_key = SETTING_KEY.format(user_id=user["id"])
-            setting = conn.execute(
-                "SELECT value FROM app_settings WHERE key = ?", (setting_key,)
+            setting = None if args.dry_run else conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (setting_key,),
             ).fetchone()
             already = setting is not None and setting["value"] == day
             plans.append({
                 "user": user, "day": day, "due": due, "overdue": overdue,
                 "setting_key": setting_key, "already": already,
             })
+    return plans
+
+
+def main(argv=None, post=None, http_get=None, sleep=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="只打印会发给谁、各有几条待复习，不发送、不写库、不联网、不调用 AI",
+    )
+    parser.add_argument(
+        "--username", default=None,
+        help="只给指定用户名的管理员发送（仍需满足管理员且开启微信提醒的条件）",
+    )
+    args = parser.parse_args(argv)
+
+    getter = http_get if http_get is not None else _http_get
+    sleeper = sleep if sleep is not None else time.sleep
+    if not args.dry_run:
+        init_db()
+
+    # 网络抓取和 AI 调用必须在写事务之外做，否则记账连接会被锁住。
+    try:
+        plans = _recipient_plans(args)
+    except (OSError, sqlite3.Error, _DryRunSnapshotError) as exc:
+        if not args.dry_run:
+            raise
+        if isinstance(exc, _DryRunSnapshotError):
+            print(str(exc))
+        else:
+            print(f"dry-run 无法读取已有数据库（{type(exc).__name__}），未修改数据库。")
+        return 1
+    if plans is None:
+        return 1
 
     if args.dry_run:
+        for plan in plans:
+            user = plan["user"]
+            print(
+                f"{user['username']} <微信 {user['push_channel']}>："
+                f"待复习 {plan['due']} 条，其中逾期 {plan['overdue']} 条"
+            )
         print("dry-run 完成，未发送、未写库、未联网、未调用 AI。")
         return 0
 
     pending = [plan for plan in plans if not plan["already"]]
     if not pending:
-        if recipients:
+        if plans:
             print("今天的简报已全部发送过，无需重复发送。")
         return 0
 

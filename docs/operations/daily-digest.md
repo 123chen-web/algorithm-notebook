@@ -26,6 +26,12 @@ python digest.py
 python digest.py --username alice
 ```
 
+`--dry-run` 只读取已存在的数据库，不初始化、不迁移、不创建目录、缓存或 WAL/SHM
+文件。数据库缺失、缺少读取所需表列、存在非空 WAL，或读取期间数据库变化时，
+返回退出码 1，不输出可能过期的待复习结果；其中非空 WAL 会提示
+「当前数据库有未 checkpoint 事务」。等正常数据库连接关闭并完成 checkpoint
+后再试；脚本不会主动 checkpoint、复制或修复数据库。
+
 脚本复用 `.env` 里的既有配置：
 
 - 微信推送：用户在账号设置里配置的 Server酱 / PushPlus 渠道与密钥（`user_push` 表）；
