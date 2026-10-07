@@ -751,6 +751,10 @@ def _apply_pending_reason(conn):
     )
 
 
+def _apply_user_bio(conn):
+    conn.execute("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -772,6 +776,7 @@ MIGRATIONS = [
     (16, "改邮箱待确认记录", _apply_email_changes),
     (17, "每日推荐题落库", _apply_problem_recommendations),
     (18, "错因待补标记", _apply_pending_reason),
+    (19, "个人简介", _apply_user_bio),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

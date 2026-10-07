@@ -31,7 +31,7 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
             "mistake_scratch", "user_push", "email_changes", "problem_recommendations",
         } <= tables
-        assert db.schema_version(conn) == 18
+        assert db.schema_version(conn) == 19
         accepted = next(
             row for row in conn.execute("PRAGMA table_info(posts)")
             if row["name"] == "accepted_comment_id"
@@ -1087,7 +1087,7 @@ def test_push_migration_to_v15_creates_table_and_preserves_old_data(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 18
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 19
         columns = {row["name"]: row for row in conn.execute(
             "PRAGMA table_info(user_push)"
         )}
@@ -1212,7 +1212,7 @@ def test_recommend_and_pending_reason_upgrade_preserves_data_and_constraints(
     db.init_db()
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 18
+        assert db.schema_version(conn) == db.SCHEMA_VERSION == 19
         after = dict(conn.execute("SELECT * FROM mistakes WHERE id = 10").fetchone())
         assert after.pop("pending_reason") == 0
         assert after == before

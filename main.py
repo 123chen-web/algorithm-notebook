@@ -1402,7 +1402,7 @@ def delete_account_data(conn, user_id, deleted_at):
     conn.execute(
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
-            avatar_version = 0, last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
+            avatar_version = 0, bio = '', last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,
         (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
@@ -2429,6 +2429,7 @@ import routers.groups
 import routers.forum
 import routers.admin
 import routers.recommend
+import routers.profile
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
@@ -2443,6 +2444,7 @@ app.include_router(routers.groups.router)
 app.include_router(routers.forum.router)
 app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
+app.include_router(routers.profile.router)
 
 # 以下名字被测试或其它 routers 以 main.<name> 引用，在此重新导出：
 from routers.account import revoke_sessions  # noqa: F401

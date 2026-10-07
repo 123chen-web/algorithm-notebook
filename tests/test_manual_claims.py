@@ -421,6 +421,8 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS problem_recommendations")
         # migration 18 adds this column, so a real version-10 database does not have it
         conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
+        # migration 19 adds bio; the frozen version-10 fixture must omit it too
+        conn.execute("ALTER TABLE users DROP COLUMN bio")
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:

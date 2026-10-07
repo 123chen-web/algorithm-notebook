@@ -24,6 +24,12 @@
 
 ## 技术与部署
 
+登录后可从账号菜单、讨论作者或小组成员打开个人资料，查看公开简介和学习统计。
+`PUT /api/me/bio` 接受 `{bio}`（最多 200 字，可清空），
+`GET /api/users/{id}/public` 只返回用户名、简介、头像存在标记与版本，以及当前保留的
+题目数、易错点数、复习次数、连续打卡天数和徽章数。不公开个人笔记内容或邮箱。
+注销会清空简介；封禁或注销账号的资料不可见。退出公开榜单不隐藏讨论中的资料入口。
+
 FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
 线上使用 DeepSeek。不会执行用户代码。用 Docker + Caddy 部署，自动 HTTPS，
 每天自动备份，带宕机告警和公开状态页。
@@ -805,6 +811,7 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 | 16 | 改邮箱待确认记录（`email_changes`） |
 | 17 | 今日推荐题（`problem_recommendations`） |
 | 18 | 错因待补标记（`mistakes.pending_reason`） |
+| 19 | 个人简介（`users.bio`，默认空字符串） |
 
 数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
 
