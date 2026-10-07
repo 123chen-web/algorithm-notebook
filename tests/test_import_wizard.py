@@ -182,3 +182,20 @@ def test_csrf_and_login_required(client):
     register(client)
     assert client.post("/api/import/preview", files={"file": ("n.md", question())},
                        headers={"X-CSRF-Protection": "0"}).status_code == 403
+
+
+def test_chunked_oversized_body_rejected_before_multipart_spooling(client, monkeypatch):
+    import starlette.formparsers
+    register(client)
+    def no_spooling(*args, **kwargs):
+        pytest.fail("oversized request reached multipart temporary-file parsing")
+    monkeypatch.setattr(starlette.formparsers, "SpooledTemporaryFile", no_spooling)
+    def chunks():
+        yield b'--boundary\r\nContent-Disposition: form-data; name="file"; filename="big.md"\r\n\r\n'
+        for _ in range(34):
+            yield b"x" * 65536
+        yield b"\r\n--boundary--\r\n"
+    response = client.post("/api/import/preview", content=chunks(),
+                           headers={"Content-Type": "multipart/form-data; boundary=boundary"})
+    assert response.status_code == 413
+    assert counts() == (0, 0)

@@ -13,8 +13,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, StrictInt, ValidationError
+from starlette.datastructures import UploadFile
 
 import import_notes
 import main
@@ -25,6 +26,7 @@ IMPORT_MAX_RECORDS = 200
 PREVIEW_TTL_SECONDS = 30 * 60
 PREVIEWS_PER_USER = 3
 PREVIEWS_TOTAL = 200
+IMPORT_MAX_REQUEST_BYTES = IMPORT_MAX_BYTES + 64 * 1024
 
 
 class ImportConfirm(main.InputModel):
@@ -100,15 +102,39 @@ def _parse_markdown(text):
         os.unlink(filename)
 
 
+async def _bounded_request(request):
+    # Check actual bytes before multipart parsing can spool files into TMP.
+    # This also bounds chunked uploads without a trustworthy Content-Length.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > IMPORT_MAX_REQUEST_BYTES:
+            raise HTTPException(413, "上传请求太大，文件最多 2 MiB")
+        body.extend(chunk)
+    async def receive():
+        return {"type": "http.request", "body": bytes(body), "more_body": False}
+    return Request(request.scope, receive)
+
+
+async def _read_form(request):
+    bounded = await _bounded_request(request)
+    async with bounded.form(max_files=1, max_fields=1, max_part_size=64 * 1024) as form:
+        if set(form) - {"file", "zone"} or len(form.getlist("file")) != 1 or len(form.getlist("zone")) > 1:
+            raise HTTPException(422, "请选择一个文件和目标分区")
+        file = form.get("file")
+        if not isinstance(file, UploadFile):
+            raise HTTPException(422, "请先选择文件")
+        content = await file.read(IMPORT_MAX_BYTES + 1)
+        return file.filename, form.get("zone", "算法"), content
+
+
 @router.post("/api/import/preview")
-async def preview_import(request: Request, file: UploadFile = File(...),
-                         zone: str = Form("算法"), user=Depends(main.current_user)):
+async def preview_import(request: Request, user=Depends(main.current_user)):
+    filename, zone, content = await _read_form(request)
     if zone not in main.PROBLEM_ZONES:
         raise HTTPException(422, "请选择一个有效的题目分区")
-    suffix = Path(file.filename or "").suffix.lower()
+    suffix = Path(filename or "").suffix.lower()
     if suffix not in {".md", ".markdown", ".json"}:
         raise HTTPException(415, "请上传 .md、.markdown 或本站导出的 .json 文件")
-    content = await file.read(IMPORT_MAX_BYTES + 1)
     if len(content) > IMPORT_MAX_BYTES:
         raise HTTPException(413, "文件太大，最多 2 MiB")
     try:
