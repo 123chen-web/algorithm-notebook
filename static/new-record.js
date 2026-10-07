@@ -94,9 +94,10 @@
   function syncFoldStatus() {
     for (const card of folds) {
       const filled = [...card.querySelectorAll("input, select, textarea")].some(field => field.value.trim());
+      const skipped = page.querySelector(`#problem-skip-${card.dataset.formSection}`)?.checked;
       const badge = card.querySelector(".form-fold-state");
-      badge.textContent = filled ? "已填写" : "待填写";
-      badge.classList.toggle("is-filled", filled);
+      badge.textContent = skipped ? "暂时跳过" : (filled ? "已填写" : "待填写");
+      badge.classList.toggle("is-filled", filled && !skipped);
     }
   }
   for (const card of folds) {

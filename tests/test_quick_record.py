@@ -28,6 +28,25 @@ def test_quick_create_minimal_fills_placeholders(client):
     assert item["due_date"] == "2026-09-19"
 
 
+@pytest.mark.parametrize("skip_thinking,skip_causes", [(True, False), (False, True), (True, True)])
+def test_full_record_explicit_skip_payload_preserves_code_and_independent_cause_state(client, skip_thinking, skip_causes):
+    register(client)
+    response = client.post("/api/problems", json={
+        "title": "完整记录暂时跳过", "zone": "算法", "language": "Python", "code": "print(1)",
+        "thinking": "" if skip_thinking else "逐个检查输入",
+        "mistakes": [] if skip_causes else ["边界漏判"], "quick": True,
+    })
+    assert response.status_code == 201
+    item = client.get(f"/api/mistakes/{response.json()['mistake_ids'][0]}").json()
+    assert item["code"] == "print(1)"
+    assert item["thinking"] == (main.QUICK_THINKING_PLACEHOLDER if skip_thinking else "逐个检查输入")
+    assert item["pending_reason"] is skip_causes
+    assert item["description"] == (main.QUICK_MISTAKE_PLACEHOLDER if skip_causes else "边界漏判")
+    assert item["repetitions"] == 0
+    assert item["last_reviewed_at"] is None
+    assert item["due_date"] == "2026-09-19"
+
+
 def test_quick_placeholders_are_constants(client):
     assert main.QUICK_CODE_PLACEHOLDER == "（速记：代码待补）"
     assert main.QUICK_THINKING_PLACEHOLDER == "（速记：思路待补）"

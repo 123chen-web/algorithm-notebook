@@ -833,6 +833,7 @@ async function uploadPhotoForRecognition(file) {
 function fillProblemFormFromPhoto(fields) {
   const form = $("#problem-form");
   form.reset();
+  resetQuickMode();
   form.title.value = fields.title;
   form.zone.value = fields.zone;
   applyZoneFieldMode(form, form.zone.value);
@@ -3735,7 +3736,8 @@ const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的�
 
 // 开关当前是否打开。
 function isQuickMode() {
-  return ["quick", "sentence"].includes($("#problem-quick")?.value);
+  return ["quick", "sentence"].includes($("#problem-quick")?.value)
+    || Boolean($("#problem-skip-thinking")?.checked || $("#problem-skip-mistakes")?.checked);
 }
 
 // 切换速记显隐：code/thinking 去 required 并隐藏区块，易错点换提示文案；
@@ -3745,9 +3747,11 @@ function applyQuickMode(on) {
   if (!form) return;
   const code = form.querySelector('[name="code"]');
   const thinking = form.querySelector('[name="thinking"]');
+  const skipThinking = !on && Boolean($("#problem-skip-thinking")?.checked);
+  const skipMistakes = !on && Boolean($("#problem-skip-mistakes")?.checked);
   for (const field of [code, thinking]) {
     if (!field) continue;
-    if (on) {
+    if (on || (field === thinking && skipThinking)) {
       if (field.hasAttribute("required")) {
         field.dataset.quickRequired = "1";
         field.removeAttribute("required");
@@ -3762,24 +3766,29 @@ function applyQuickMode(on) {
   if (codeLabel) codeLabel.hidden = on;
   const thinkingSection = form.querySelector('[data-form-section="thinking"]');
   if (thinkingSection) thinkingSection.hidden = on;
+  if (thinking?.closest("label")) thinking.closest("label").hidden = skipThinking;
   const mode = $("#problem-quick")?.value || "full";
   const mistakesSection = form.querySelector('[data-form-section="mistakes"]');
   if (mistakesSection) mistakesSection.hidden = on;
+  const skipOptions = $("#problem-skips");
+  if (skipOptions) skipOptions.hidden = on;
+  const mistakeInputs = $("#mistake-inputs");
+  if (mistakeInputs) mistakeInputs.hidden = skipMistakes;
   const sentence = $("#problem-sentence");
   const sentenceField = $("#problem-sentence-field");
   if (sentenceField) sentenceField.hidden = mode !== "sentence";
   if (sentence) sentence.required = mode === "sentence";
   const addButton = $("#add-mistake");
-  if (addButton) addButton.hidden = on;
+  if (addButton) addButton.hidden = on || skipMistakes;
   for (const progress of document.querySelectorAll('[data-form-progress="thinking"], [data-form-progress="mistakes"]')) {
     progress.hidden = on;
   }
   // 易错点提示：速记时换文案，关闭时恢复原文案。
   const hint = document.getElementById("mistake-hint");
   if (hint) {
-    if (on) {
+    if (on || skipMistakes) {
       if (hint.dataset.quickHint === undefined) hint.dataset.quickHint = hint.textContent;
-      hint.textContent = QUICK_MISTAKE_HINT;
+      hint.textContent = on ? QUICK_MISTAKE_HINT : "保存后会创建一条待补原因的易错点，复习时可以再补。";
     } else if (hint.dataset.quickHint !== undefined) {
       hint.textContent = hint.dataset.quickHint;
       delete hint.dataset.quickHint;
@@ -3792,13 +3801,16 @@ function buildProblemPayload(form, quick) {
   const data = new FormData(form);
   const mistakes = data.getAll("mistake");
   const mode = $("#problem-quick")?.value || "full";
+  const skipThinking = mode === "full" && $("#problem-skip-thinking")?.checked;
+  const skipMistakes = mode === "full" && $("#problem-skip-mistakes")?.checked;
   return {
     title: data.get("title"),
     zone: data.get("zone"),
     language: data.get("language"),
     code: data.get("code"),
-    thinking: data.get("thinking"),
-    mistakes: quick ? (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []) : mistakes,
+    thinking: skipThinking ? "" : data.get("thinking"),
+    mistakes: !quick || (skipThinking && !skipMistakes) ? mistakes
+      : (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []),
     quick: Boolean(quick),
   };
 }
@@ -3807,12 +3819,18 @@ function buildProblemPayload(form, quick) {
 function resetQuickMode() {
   const toggle = $("#problem-quick");
   if (toggle) toggle.value = "full";
+  for (const id of ["#problem-skip-thinking", "#problem-skip-mistakes"]) {
+    if ($(id)) $(id).checked = false;
+  }
   applyQuickMode(false);
 }
 
 $("#problem-quick")?.addEventListener("change", (event) => {
   applyQuickMode(event.currentTarget.value !== "full");
 });
+for (const id of ["#problem-skip-thinking", "#problem-skip-mistakes"]) {
+  $(id)?.addEventListener("change", () => applyQuickMode($("#problem-quick")?.value !== "full"));
+}
 
 $("#problem-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -3821,10 +3839,24 @@ $("#problem-form").addEventListener("submit", (event) => {
   const cameFromPhoto = Boolean(photoRecognition);
   const quick = isQuickMode(); // 提交瞬间锁定模式，避免请求在途时开关被拨动
   const mode = $("#problem-quick")?.value || "full";
+  const skipped = mode === "full" && quick;
   const epoch = sessionEpoch;
   const owner = user?.id;
   const payload = buildProblemPayload(form, quick);
   const isCurrent = () => epoch === sessionEpoch && owner === user?.id && Boolean(user);
+  // quick 接口允许缺少证据，但完整记录只能跳过明确勾选的部分。
+  if (skipped) {
+    for (const [name, label] of [["code", "代码或解题过程"], ["thinking", "思路"]]) {
+      if (name === "thinking" && $("#problem-skip-thinking")?.checked) continue;
+      if (String(payload[name] || "").trim()) continue;
+      message(`请填写${label}${name === "thinking" ? "，或勾选暂时跳过思路" : ""}。`, true);
+      const field = form.querySelector(`[name="${name}"]`);
+      const fold = field?.closest(".form-fold")?.querySelector(".form-fold-toggle");
+      if (fold?.getAttribute("aria-expanded") === "false") fold.click();
+      field?.focus();
+      return;
+    }
+  }
   if (mode === "sentence" && !payload.mistakes[0]) {
     message("请写一句真正的错因。", true);
     $("#problem-sentence")?.focus();
@@ -3854,9 +3886,10 @@ $("#problem-form").addEventListener("submit", (event) => {
     resetPhotoForm();
 
     let noticeText = quick
-      ? (mode === "sentence" ? "一句话记录已保存，已加入今日复习。" : "速记已保存，记得回来补上代码、思路和错因。")
+      ? (mode === "sentence" ? "一句话记录已保存，已加入今日复习。"
+        : (mode === "full" ? "记录已保存，暂时跳过的内容可以稍后补充。" : "速记已保存，记得回来补上代码、思路和错因。"))
       : "记录已保存，新的易错点已加入今日复习。";
-    if (cameFromPhoto && created.mistake_ids[0]) {
+    if (cameFromPhoto && !skipped && created.mistake_ids[0]) {
       try {
         await api(`/api/mistakes/${created.mistake_ids[0]}/variants`, { method: "POST" });
         if (!isCurrent()) return;

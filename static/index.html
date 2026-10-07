@@ -884,6 +884,12 @@
                   </select>
                 </label>
                 <p id="record-mode-hint" class="field-hint">速记只填题目；一句话加上错因；完整记录代码、思路和易错点。</p>
+                <div id="problem-skips" class="record-skip-options" role="group" aria-labelledby="problem-skips-title">
+                  <p id="problem-skips-title" class="field-hint">还没整理好的部分，可以明确选择稍后再补：</p>
+                  <label><input id="problem-skip-thinking" type="checkbox" aria-describedby="problem-skip-hint">暂时跳过思路</label>
+                  <label><input id="problem-skip-mistakes" type="checkbox" aria-describedby="problem-skip-hint">暂时跳过易错点</label>
+                  <p id="problem-skip-hint" class="field-hint">代码仍需填写；取消勾选会恢复草稿。跳过易错点后，复习页会提醒补原因。</p>
+                </div>
                 <label id="problem-sentence-field" hidden>
                   用一句话记下错因
                   <textarea id="problem-sentence" name="quick_reason" maxlength="2000" rows="2" placeholder="例如：循环结束条件漏掉相等的情况。"></textarea>

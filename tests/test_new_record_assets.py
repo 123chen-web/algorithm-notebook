@@ -173,6 +173,19 @@ def test_record_modes_stay_in_the_desktop_grid_content_column(document):
         assert fields_index in node["ancestors"]
 
 
+def test_explicit_skip_controls_are_visible_before_opening_folds(document):
+    _, group = document.by_id("problem-skips")
+    assert group["attrs"].get("role") == "group"
+    document.by_id(group["attrs"]["aria-labelledby"])
+    for name in ("problem-skip-thinking", "problem-skip-mistakes"):
+        _, node = document.by_id(name)
+        assert node["tag"] == "input" and node["attrs"].get("type") == "checkbox"
+        assert "checked" not in node["attrs"]
+        document.by_id(node["attrs"]["aria-describedby"])
+        assert any(document.elements[index]["tag"] == "label" for index in node["ancestors"])
+        assert not any(has_class(document.elements[index], "form-fold-content") for index in node["ancestors"])
+
+
 def test_fold_buttons_own_initially_inert_contents_and_basics_remain_open(document):
     toggles = [(index, node) for index, node in document.in_page() if has_class(node, "form-fold-toggle")]
     assert len(toggles) == 2

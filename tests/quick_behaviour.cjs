@@ -67,7 +67,8 @@ function buildForm(document) {
   thinkingSection.setAttribute("data-form-section", "thinking");
   const thinking = el("textarea", { name: "thinking", value: "" });
   thinking.setAttribute("required", "");
-  thinkingSection.append(thinking);
+  const thinkingLabel = el("label"); thinkingLabel.append(thinking);
+  thinkingSection.append(thinkingLabel);
 
   const mistakesSection = el("section");
   mistakesSection.setAttribute("data-form-section", "mistakes");
@@ -83,16 +84,22 @@ function buildForm(document) {
   sentenceLabel.hidden = true;
   const sentence = el("textarea", { id: "problem-sentence", name: "quick_reason", value: "" });
   sentenceLabel.append(sentence);
+  const skipOptions = el("div", { id: "problem-skips" });
+  const skipThinking = el("input", { id: "problem-skip-thinking", type: "checkbox", checked: false });
+  const skipMistakes = el("input", { id: "problem-skip-mistakes", type: "checkbox", checked: false });
+  skipOptions.append(skipThinking, skipMistakes); basics.append(skipOptions);
   form.append(toggleWrap, basics, sentenceLabel, thinkingSection, mistakesSection, save);
   // 真实 DOM 里 form.zone 能拿到具名控件；假 DOM 里手动补上（提交成功分支会读它）。
   form.zone = zone;
   // 模拟浏览器原生 reset：开关回到默认（关闭），各字段值清空。
   form.reset = () => {
     toggle.value = "full";
+    skipThinking.checked = false; skipMistakes.checked = false;
     for (const field of form.querySelectorAll("[name]")) field.value = "";
   };
   document.body.append(form);
-  return { form, toggle, title, code, thinking, codeLabel, thinkingSection, mistakesSection, sentenceLabel, sentence, hint };
+  return { form, toggle, title, code, thinking, thinkingLabel, codeLabel, thinkingSection, mistakesSection,
+    sentenceLabel, sentence, hint, mistakeInputs, skipOptions, skipThinking, skipMistakes };
 }
 
 function environment({ failApi = false } = {}) {
@@ -146,6 +153,7 @@ function environment({ failApi = false } = {}) {
   return {
     ...env, ...ui, setQuick, submit,
     setMode: (mode) => { ui.toggle.value = mode; ui.toggle.dispatchEvent(new FakeEvent("change")); },
+    skip: (field, checked) => { ui[field].checked = checked; ui[field].dispatchEvent(new FakeEvent("change", { bubbles: true })); },
     requests: env.window.probe.requests,
     probe: env.window.probe,
     isQuick: () => vm.runInContext("isQuickMode()", context),
@@ -301,6 +309,83 @@ test("three modes: full restores original fields and retains written data", () =
   assert.equal(env.mistakesSection.hidden, false);
   assert.equal(env.sentence.required, false);
   assert.equal(env.sentenceLabel.hidden, true);
+});
+
+test("full skips: thinking is optional only after an explicit choice and its draft is retained", () => {
+  const env = environment(); env.code.value = "print(1)"; env.thinking.value = "未整理好的思路";
+  env.skip("skipThinking", true);
+  assert.equal(env.isQuick(), true); assert.equal(env.code.hasAttribute("required"), true);
+  assert.equal(env.thinking.hasAttribute("required"), false); assert.equal(env.thinkingLabel.hidden, true);
+  const body = env.payload(env.isQuick());
+  assert.equal(body.quick, true); assert.equal(body.code, "print(1)"); assert.equal(body.thinking, "");
+  assert.deepEqual(body.mistakes, ["", "边界条件没考虑"]);
+  assert.equal(env.thinking.value, "未整理好的思路");
+  env.skip("skipThinking", false);
+  assert.equal(env.isQuick(), false); assert.equal(env.thinking.hasAttribute("required"), true);
+  assert.equal(env.thinkingLabel.hidden, false); assert.equal(env.payload(false).thinking, "未整理好的思路");
+});
+
+test("full skips: skipping causes submits a pending reason without dropping code or thinking", () => {
+  const env = environment(); env.code.value = "print(1)"; env.thinking.value = "逐项检查";
+  env.skip("skipMistakes", true);
+  const body = env.payload(env.isQuick());
+  assert.equal(body.quick, true); assert.deepEqual(Array.from(body.mistakes), []);
+  assert.equal(body.code, "print(1)"); assert.equal(body.thinking, "逐项检查");
+  assert.equal(env.code.hasAttribute("required"), true); assert.equal(env.thinking.hasAttribute("required"), true);
+  assert.equal(env.mistakeInputs.hidden, true); assert.match(env.hint.textContent, /待补原因/);
+  env.skip("skipMistakes", false);
+  assert.equal(env.mistakeInputs.hidden, false); assert.equal(env.hint.textContent, HINT_ORIGINAL);
+  assert.deepEqual(env.payload(false).mistakes, ["", "边界条件没考虑"]);
+});
+
+test("full skips: switching record modes retains explicit skip choices and drafts", () => {
+  const env = environment(); env.code.value = "保留代码"; env.thinking.value = "保留思路";
+  env.skip("skipThinking", true); env.skip("skipMistakes", true);
+  env.setMode("sentence"); env.sentence.value = "一句真错因";
+  assert.equal(env.skipOptions.hidden, true); assert.deepEqual(Array.from(env.payload(true).mistakes), ["一句真错因"]);
+  env.setMode("full");
+  assert.equal(env.skipOptions.hidden, false); assert.equal(env.skipThinking.checked, true); assert.equal(env.skipMistakes.checked, true);
+  assert.equal(env.code.value, "保留代码"); assert.equal(env.thinking.value, "保留思路");
+  assert.equal(env.payload(true).thinking, ""); assert.deepEqual(Array.from(env.payload(true).mistakes), []);
+});
+
+test("full skips: failed creation keeps the chosen skip state and drafts for retry", async () => {
+  const env = environment({ failApi: true }); env.code.value = "代码草稿"; env.thinking.value = "思路草稿";
+  env.skip("skipThinking", true); env.skip("skipMistakes", true); env.submit(); await settle();
+  assert.equal(lastBody(env).quick, true); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.equal(env.skipThinking.checked, true); assert.equal(env.skipMistakes.checked, true);
+  assert.equal(env.code.value, "代码草稿"); assert.equal(env.thinking.value, "思路草稿");
+});
+
+test("full skips: successful creation clears skip choices and restores full required fields", async () => {
+  const env = environment(); env.code.value = "print(1)"; env.thinking.value = "草稿";
+  env.skip("skipThinking", true); env.skip("skipMistakes", true); env.submit(); await settle();
+  assert.equal(lastBody(env).quick, true); assert.equal(lastBody(env).code, "print(1)");
+  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.equal(env.skipThinking.checked, false); assert.equal(env.skipMistakes.checked, false);
+  assert.equal(env.code.hasAttribute("required"), true); assert.equal(env.thinking.hasAttribute("required"), true);
+  assert.equal(env.thinkingLabel.hidden, false); assert.equal(env.mistakeInputs.hidden, false);
+});
+
+test("full skips: skip choices are captured before a pending request and never auto-diagnose a photo", async () => {
+  const env = environment(); env.code.value = "print(1)";
+  vm.runInContext("photoRecognition = {};", env.context);
+  env.probe.waitForApi = true; env.skip("skipThinking", true); env.skip("skipMistakes", true);
+  env.submit(); await tick();
+  env.skip("skipThinking", false); env.skip("skipMistakes", false);
+  env.probe.resolveApi(); await settle();
+  assert.equal(env.requests.length, 1, "explicitly deferred content must not trigger an automatic AI request");
+  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.match(env.probe.messages[0], /暂时跳过/);
+});
+
+test("full skips: unskipped code and thinking cannot use whitespace to become backend placeholders", async () => {
+  const code = environment(); code.code.value = " \n ";
+  code.skip("skipThinking", true); code.skip("skipMistakes", true); code.submit(); await settle();
+  assert.equal(code.requests.length, 0); assert.match(code.probe.messages[0], /代码|解题过程/);
+  const thinking = environment(); thinking.code.value = "print(1)"; thinking.thinking.value = " \n ";
+  thinking.skip("skipMistakes", true); thinking.submit(); await settle();
+  assert.equal(thinking.requests.length, 0); assert.match(thinking.probe.messages[0], /思路/);
 });
 
 
