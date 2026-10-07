@@ -43,6 +43,7 @@
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
   <link rel="stylesheet" href="/static/recommend.css?v=1">
   <link rel="stylesheet" href="/static/pending-reason.css?v=1">
+  <link rel="stylesheet" href="/static/profile.css?v=1">
   <link rel="stylesheet" href="/static/scratch.css?v=1">
   <link rel="stylesheet" href="/static/push-settings.css?v=1">
   <link rel="stylesheet" href="/static/duck-panel.css?v=1">
@@ -69,7 +70,8 @@
   <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=3"></script>
   <script defer src="/static/thread.js?v=1"></script>
-  <script defer src="/static/board.js?v=1"></script>
+  <script defer src="/static/board.js?v=2"></script>
+  <script defer src="/static/profile.js?v=1"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
   <script defer src="/static/rank.js?v=2"></script>
@@ -185,6 +187,7 @@
             </summary>
             <div class="account-menu-panel">
               <div id="user-info-wrap" class="muted account-user-info"></div>
+              <button id="my-profile" type="button">我的个人资料</button>
               <label class="avatar-upload-label" role="button" tabindex="0">
                 更换头像
                 <input id="avatar-file-input" type="file"
@@ -1627,6 +1630,9 @@
   </div>
   <dialog id="account-dialog" aria-labelledby="account-dialog-title">
     <div id="account-dialog-content" class="account-dialog-content"></div>
+  </dialog>
+  <dialog id="profile-dialog" class="profile-dialog" aria-labelledby="profile-title">
+    <div id="profile-content"></div>
   </dialog>
   <div id="seal-layer" aria-hidden="true"></div>
 </body>

@@ -507,7 +507,8 @@
     if (model.excerpt !== null) body.append(node("p", `board-excerpt${model.excerptIsCode ? " is-code" : ""}`, model.excerpt));
 
     const meta = node("div", "board-meta");
-    meta.append(avatarFor(model.author, true), node("span", "who", model.author.username), node("span", "id", model.idLabel));
+    meta.append(avatarFor(model.author, true), hooks.author?.(model.author.userId, model.author.username)
+      || node("span", "who", model.author.username), node("span", "id", model.idLabel));
     if (model.published) meta.append(timeNode(model.published, model.createdAt, "发布"));
     if (model.last && model.last.text) {
       const last = node("span", "board-last");

@@ -393,6 +393,20 @@ const keydown = (env, key, props = {}) => {
 
 /* ───────────── 控制器：列表 ───────────── */
 
+test("rows: author profile entry selects its user without opening the post", async () => {
+  const selected = [];
+  const ctx = setup();
+  ctx.hooks.author = (id, name) => {
+    const link = ctx.env.document.createElement("button"); link.className = "profile-author";
+    link.textContent = name; link.addEventListener("click", () => selected.push(id)); return link;
+  };
+  const loading = ctx.Board.show();
+  await answer(ctx.env, 0, page([post(42, { user_id: 9, username: "作者九" })])); await loading;
+  click(q(ctx.env, ".board-meta .profile-author"));
+  assert.deepEqual(selected, [9]);
+  assert.deepEqual(ctx.state.opened, []);
+});
+
 test("show: skeleton while loading, then rows, readouts, tab counts, zone chips and the status line", async () => {
   const { env, Board } = setup();
   const loading = Board.show();

@@ -462,6 +462,7 @@ function signedOut() {
   window.OfflineReview?.reset();
   if (user) window.Capture?.reset(); // 真正的登出才清；启动时 401 不能丢掉书签带来的预填
   window.Account?.reset();
+  window.Profile?.reset();
   window.AnkiExport?.reset();
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
@@ -729,6 +730,7 @@ function updateUserInfo() {
   window.AppShell?.setUser(user.username);
   renderHomeQuota();
   configureRank();
+  window.Profile?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement });
   window.Rank?.syncSetting(user);
   window.NavFocus?.configure({ getUser: () => user, getView: () => view }); // 专注模式按用户 id 读取开关
   window.PushSettings?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
@@ -1247,7 +1249,7 @@ function renderStudyGroup(group) {
     const row = element("li", "", "groups-member-card");
     const identity = element("div", "", "groups-member-identity");
     const name = element("div", "", "groups-member-name");
-    name.append(element("strong", member.username));
+    name.append(profileAuthor(member.id, member.username));
     const tags = element("span", "", "groups-member-tags");
     if (member.is_creator) tags.append(element("span", "组长", "groups-creator-tag"));
     if (member.id === user.id) tags.append(element("span", "我", "groups-self-tag"));
@@ -3471,6 +3473,11 @@ $("#home-refresh").addEventListener("click", () => run(async () => {
   await loadHome();
 }));
 
+$("#my-profile").addEventListener("click", () => {
+  if (!user) return;
+  closeAccountMenu();
+  window.Profile?.open(user.id);
+});
 $("#weakness-analyze").addEventListener("click", () => run(analyzeWeakness));
 $("#achievements-retry").addEventListener("click", () => run(loadAchievements));
 $("#achievements-share-generate").addEventListener("click", () => {
@@ -4354,7 +4361,7 @@ function renderForumPost(post) {
     const authorLine = element("div", "", "forum-post-author");
     const authorInfo = element("div", "", "forum-post-author-info");
     const authorName = element("div", "", "forum-author-name");
-    authorName.append(element("strong", post.username), element("span", "楼主", "forum-op-stamp"));
+    authorName.append(profileAuthor(post.user_id, post.username), element("span", "楼主", "forum-op-stamp"));
     const date = element("div", "", "forum-post-date");
     date.append(forumTime(post.created_at));
     if (post.updated_at) date.append(" · 编辑于 ", forumTime(post.updated_at));
@@ -4522,7 +4529,7 @@ function renderForumComment(comment) {
     author.append(avatarElement(comment.user_id, comment.username, comment.avatar_version, { hasAvatar: comment.has_avatar }));
     const content = element("div", "", "forum-comment-content thread-card");
     const meta = element("header", "", "forum-comment-meta thread-head");
-    meta.append(element("strong", comment.username));
+    meta.append(profileAuthor(comment.user_id, comment.username));
     if (comment.is_op) meta.append(element("span", "楼主", "forum-op-stamp"));
     if (comment.user_id === user.id) meta.append(element("span", "我", "forum-self-badge"));
     meta.append(element("span", `#${String(comment.floor).padStart(2, "0")}`, "forum-floor-number thread-floor"), forumTime(comment.created_at, true));
@@ -5389,6 +5396,10 @@ function submitForumComment() {
 }
 
 // 讨论区主页与发帖页（static/board.js）：请求都带登录代次，登出再登录之后迟到的响应会被丢弃。
+function profileAuthor(userId, username) {
+  return window.Profile?.author(userId, username) || element("strong", username);
+}
+
 window.Board?.mount({
   api,
   getUser: () => user,
@@ -5406,6 +5417,7 @@ window.Board?.mount({
     message("帖子已发布。");
   }),
   avatar: avatarElement,
+  author: (userId, username) => profileAuthor(userId, username),
   renderBody: forumBody,
   timestamp,
 });
