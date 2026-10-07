@@ -464,6 +464,7 @@ function signedOut() {
   window.Account?.reset();
   window.Profile?.reset();
   window.AnkiExport?.reset();
+  window.ImportWizard?.reset();
   finishHomeOpening?.();
   for (const entry of [...sealStamps]) entry.remove();
   stopOrderPolling();
@@ -550,7 +551,8 @@ async function api(path, options = {}) {
     credentials: "same-origin",
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(typeof FormData !== "undefined" && options.body instanceof FormData
+        ? {} : { "Content-Type": "application/json" }),
       "X-CSRF-Protection": "1",
       ...(options.headers || {}),
     },
@@ -5426,6 +5428,8 @@ $("#timezone").value =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
 
 const rvfHooks = { api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view };
+window.ImportWizard?.configure({ ...rvfHooks, getZones: () => zones,
+  onImported: async () => { notifyDataChanged("import"); await loadList(); } });
 window.ReviewExtras?.configure(rvfHooks);
 window.FocusReview?.configure(rvfHooks);
 async function pendingReasonSaved(id) {
