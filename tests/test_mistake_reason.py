@@ -115,16 +115,24 @@ def test_reason_tag_normalization_still_applies(client):
     assert response.status_code == 422
 
 
-def test_reason_description_validation_same_as_mistake_text(client):
+@pytest.mark.parametrize("description", ["", "   ", "\t\n"])
+def test_reason_empty_description_rejected_without_updates(client, description):
     register(client)
     mistake_id = quick_mistake_id(client)
-    version = client.get(f"/api/mistakes/{mistake_id}").json()["version"]
-    # MistakeText 允许留空（错因描述可选），与创建时一致。
+    client.put(f"/api/mistakes/{mistake_id}/tags", json={"tags": ["旧标签"]})
+    before = client.get(f"/api/mistakes/{mistake_id}").json()
+    # 补原因必须真有一句原因；空白不能消除待补提醒或覆盖标签。
     response = client.post(
         reason_url(mistake_id),
-        json={"description": "   ", "tags": [], "version": version},
+        json={"description": description, "tags": ["新标签"], "version": before["version"]},
     )
-    assert response.status_code == 200
+    assert response.status_code == 422
+    assert client.get(f"/api/mistakes/{mistake_id}").json() == before
+
+
+def test_reason_description_length_limit(client):
+    register(client)
+    mistake_id = quick_mistake_id(client)
     # 超长描述：MistakeText 最大长度 2000。
     version = client.get(f"/api/mistakes/{mistake_id}").json()["version"]
     response = client.post(

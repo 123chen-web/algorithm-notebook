@@ -342,9 +342,11 @@ class MistakeTags(InputModel):
 
 
 class MistakeReasonInput(InputModel):
-    # 补原因：description 走 MistakeText 同样的校验；标签个数上限 3 在接口里
-    # 单独校验（normalize_tags 的上限是 8，不适用这里）。
-    description: MistakeText
+    # 创建/普通编辑允许留空；消除待补标记则必须真有一句原因。
+    # 标签个数上限 3 在接口里单独校验（normalize_tags 的上限是 8）。
+    description: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ]
     tags: list[str] = Field(max_length=50)
     version: int = Field(strict=True, ge=0)
 
