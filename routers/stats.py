@@ -5,6 +5,7 @@ Names living in main's namespace are referenced as ``main.<name>``
 in tests keeps affecting the moved code.
 """
 import main
+from problem_progress import enrich_problems
 
 from activity import activity_summary
 from activity import day_counts
@@ -232,9 +233,13 @@ def get_overview(user=Depends(main.current_user)):
         preview_rows = conn.execute(
             main.MISTAKE_SELECT
             + " WHERE p.user_id = ? AND m.suspended_at IS NULL AND m.due_date <= ?"
+            " AND m.id = (SELECT mm.id FROM mistakes mm WHERE mm.problem_id = p.id"
+            " AND mm.suspended_at IS NULL AND mm.due_date <= ?"
+            " ORDER BY mm.due_date, mm.id LIMIT 1)"
             " ORDER BY m.due_date ASC, m.id ASC LIMIT 5",
-            (user["id"], day),
+            (user["id"], day, day),
         ).fetchall()
+        preview_rows = enrich_problems(conn, user['id'], [dict(row) for row in preview_rows], day)
         review_days, _, mistake_days = day_counts(conn, user["id"], user["timezone"])
         weakness = main.weakness_analysis_state(conn, user["id"])
         pending_reason_count = conn.execute(
@@ -285,6 +290,7 @@ def get_overview(user=Depends(main.current_user)):
                 "overdue_days": max(0, (today - main.datetime.fromisoformat(row["due_date"]).date()).days),
                 "repetitions": row["repetitions"],
                 "pending_reason": bool(row["pending_reason"]),
+                **{key: row[key] for key in ('progress', 'problem_tags', 'problem_due_count', 'problem_mistakes')},
             }
             for row in preview_rows
         ],
