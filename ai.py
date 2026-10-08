@@ -21,15 +21,29 @@ REFUSAL_MARKER = "REFUSED_OFF_TOPIC"
 # 只对传输层的临时性错误（超时、连接失败、供应商 5xx）重试一次；
 # 鉴权、请求格式、额度不足和输出解析失败都不重试。整个请求仍只占一个并发名额、只扣一次额度。
 RETRY_DELAY_SECONDS = 2.0
-_TRANSIENT_ERRORS = (APITimeoutError, APIConnectionError, InternalServerError)
-
-
 def call_with_retry(func, sleep=time.sleep):
     try:
         return func()
-    except _TRANSIENT_ERRORS:
+    except (APIConnectionError, APIStatusError) as exc:
+        if isinstance(exc, APIStatusError) and not 500 <= exc.status_code < 600:
+            raise
         sleep(RETRY_DELAY_SECONDS)
         return func()
+
+
+MODEL_REFUSAL = "AI 拒绝处理这份内容，请调整学习材料后再试"
+
+
+def check_model_refusal(response):
+    """Classify explicit provider refusals before output-format validation."""
+    try:
+        choice = response.choices[0]
+        refusal = getattr(choice.message, "refusal", None)
+        filtered = choice.finish_reason == "content_filter"
+    except (AttributeError, IndexError, TypeError):
+        return  # Malformed responses are handled as 502 by the caller.
+    if filtered or (isinstance(refusal, str) and refusal.strip()):
+        raise HTTPException(422, MODEL_REFUSAL)
 
 # 与 main.py 的 CODE_ZONES / NON_CODE_ZONES 保持一致，仅用于拼提示词里的说明文字；
 # 不引入对 main.py 的依赖，真正的分区校验由 main.py 的 Pydantic 模型负责。
@@ -254,6 +268,7 @@ def generate(mistake: dict) -> dict:
                 max_tokens=30000,
             ))
             note_usage(model, response)
+            check_model_refusal(response)
     except APITimeoutError:
         raise HTTPException(504, "AI 生成超时，请稍后重试") from None
     except RateLimitError:
@@ -263,11 +278,15 @@ def generate(mistake: dict) -> dict:
     except APIStatusError:
         raise HTTPException(502, "AI 请求失败，请管理员检查模型和 API 配置") from None
 
-    choice = response.choices[0]
-    text = (choice.message.content or "").strip()
-    # finish_reason 不是 "stop"：要么被内容过滤拒绝（content_filter），
-    # 要么在说完整句话之前就被截断（length），都不算生成成功。
-    incomplete = choice.finish_reason != "stop"
+    try:
+        choice = response.choices[0]
+        content = choice.message.content
+        complete = choice.finish_reason == "stop"
+    except (AttributeError, IndexError, TypeError):
+        raise HTTPException(502, "AI 未生成完整内容，请稍后重试") from None
+    text = content.strip() if isinstance(content, str) else ""
+    # 拒答已按 422 处理；截断或其他不完整输出按 502 处理。
+    incomplete = not complete
 
     if incomplete or not text:
         raise HTTPException(502, "AI 未生成完整内容，请稍后重试")
@@ -412,6 +431,7 @@ def recognize_photo(jpeg_bytes: bytes) -> dict:
                 response_format={"type": "json_object"},
             ))
             note_usage(model, response)
+            check_model_refusal(response)
     except APITimeoutError:
         raise HTTPException(504, "AI 图片识别超时，请稍后重试") from None
     except RateLimitError:
@@ -604,6 +624,7 @@ def analyze_weaknesses(reference: dict) -> dict:
                 response_format={"type": "json_object"},
             ))
             note_usage(model, response)
+            check_model_refusal(response)
     except APITimeoutError:
         raise HTTPException(504, "AI 薄弱点分析超时，请稍后重试") from None
     except RateLimitError:
@@ -765,6 +786,7 @@ def cluster_mistakes(reference: dict) -> dict:
                 response_format={"type": "json_object"},
             ))
             note_usage(model, response)
+            check_model_refusal(response)
     except APITimeoutError:
         raise HTTPException(504, "AI 专题归并超时，请稍后重试") from None
     except RateLimitError:

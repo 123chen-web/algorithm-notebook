@@ -73,6 +73,8 @@ window.DuckPanel?.reset();
 
 `POST /api/mistakes/{id}/duck`，请求体 `{"turns": [{"role": "user"|"duck", "text": str}], "finish": bool}`；
 `turns` 是完整对话（含当前这句用户发言，user/duck 严格交替、以 user 开头，≤ 6 轮用户发言——与 `duck_prompt.check_turns` 一致）。
+额度与自动重试规则见 [AI 额度与计费](../../static/ai-billing.html)。
+
 200 → `{"reply": str, "turns_used": int, "ai_remaining": int}`；429 今日额度用完、503 AI 未配置、422 参数错、502 这次没答好（前端给重试）。
 目前 `main.py` 里还没有这个路由（只有 `duck_prompt.py` 纯函数），需要后端同事补上。
 

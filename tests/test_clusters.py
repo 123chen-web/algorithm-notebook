@@ -730,7 +730,8 @@ def test_ai_incomplete_provider_responses_are_safe_errors(monkeypatch, ai_refere
     install_response(monkeypatch, content, finish_reason)
     with pytest.raises(HTTPException) as exc:
         ai.cluster_mistakes(ai_reference)
-    assert exc.value.status_code == 502 and exc.value.detail == ai.CLUSTERS_BAD_RESPONSE
+    expected = (422, ai.MODEL_REFUSAL) if finish_reason == "content_filter" else (502, ai.CLUSTERS_BAD_RESPONSE)
+    assert (exc.value.status_code, exc.value.detail) == expected
 
 
 @pytest.mark.parametrize("response", [

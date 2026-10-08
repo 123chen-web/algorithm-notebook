@@ -10,7 +10,7 @@ from openai import (
     APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError,
 )
 
-from ai import REFUSAL_MARKER, ZONE_NAMES, _is_off_topic_refusal
+from ai import REFUSAL_MARKER, ZONE_NAMES, _is_off_topic_refusal, call_with_retry, check_model_refusal
 from ai_limits import note_usage
 
 
@@ -218,7 +218,7 @@ def summarize_thread(reference):
     try:
         with OpenAI(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=0) as client:
             note_usage(model, None)
-            response = client.chat.completions.create(
+            response = call_with_retry(lambda: client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": SUMMARY_INSTRUCTIONS},
@@ -227,8 +227,9 @@ def summarize_thread(reference):
                 ],
                 max_tokens=3000,
                 response_format={"type": "json_object"},
-            )
+            ))
             note_usage(model, response)
+            check_model_refusal(response)
     except APITimeoutError:
         raise HTTPException(504, "AI 要点提炼超时，请稍后重试") from None
     except RateLimitError:

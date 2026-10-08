@@ -78,6 +78,52 @@ def mock_ai(monkeypatch, feature, replacement=None):
 
 
 @pytest.mark.parametrize("feature", FEATURES)
+@pytest.mark.parametrize("kind", ["content-filter", "sdk-refusal"])
+def test_explicit_model_refusal_charges_once_without_retry(client, monkeypatch, feature, kind):
+    user_id = register(client)["id"]
+    mistake_id = seed_mistakes(user_id)[0]
+    response = FakeResponse(None, "content_filter" if kind == "content-filter" else "stop")
+    response.choices[0].message.refusal = "PRIVATE_REFUSAL" if kind == "sdk-refusal" else None
+    calls = []
+
+    class Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return response
+
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(Completions()))
+    result = request_ai(client, feature, mistake_id)
+    assert result.status_code == 422
+    assert attempts(user_id) == 1
+    assert len(calls) == 1
+    assert "PRIVATE_REFUSAL" not in result.text
+    row, = call_rows()
+    assert row["error"] == "http_422"
+
+
+@pytest.mark.parametrize("response", [
+    None, SimpleNamespace(choices=[]), SimpleNamespace(choices=None),
+    SimpleNamespace(choices=[SimpleNamespace(message=None)]),
+    FakeResponse([]), FakeResponse(123),
+])
+def test_malformed_variant_response_is_502_and_refunded(client, monkeypatch, response):
+    user_id = register(client)["id"]
+    mistake_id = seed_mistakes(user_id)[0]
+    calls = []
+
+    class Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return response
+
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(Completions()))
+    result = request_ai(client, "variant", mistake_id)
+    assert result.status_code == 502
+    assert attempts(user_id) == 0
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("feature", FEATURES)
 def test_four_entries_record_one_success_without_usage(client, monkeypatch, feature):
     user_id = register(client)["id"]
     mistake_id = seed_mistakes(user_id)[0]
@@ -134,25 +180,26 @@ def test_mock_provider_records_tokens_and_actual_request_model(client, monkeypat
 
 
 @pytest.mark.parametrize("feature", FEATURES)
-def test_failed_ai_keeps_status_refunds_quota_and_releases_slot(client, monkeypatch, feature):
+@pytest.mark.parametrize("status,expected_used", [(502, 0), (503, 0), (504, 0), (422, 1)])
+def test_failed_ai_keeps_status_settles_quota_and_releases_slot(client, monkeypatch, feature, status, expected_used):
     user_id = register(client)["id"]
     mistake_id = seed_mistakes(user_id)[0]
     monkeypatch.setenv("AI_MAX_CONCURRENCY", "1")
 
     def fail(reference):
-        raise HTTPException(504, "PRIVATE_EXCEPTION_WITH_USER_CONTENT")
+        raise HTTPException(status, "PRIVATE_EXCEPTION_WITH_USER_CONTENT")
 
     mock_ai(monkeypatch, feature, fail)
     response = request_ai(client, feature, mistake_id)
-    assert response.status_code == 504
+    assert response.status_code == status
     assert response.json()["detail"] == "PRIVATE_EXCEPTION_WITH_USER_CONTENT"
     row, = call_rows()
-    assert row["ok"] == 0 and row["error"] == "http_504"
+    assert row["ok"] == 0 and row["error"] == f"http_{status}"
     assert "PRIVATE_EXCEPTION_WITH_USER_CONTENT" not in json.dumps(row)
-    assert attempts(user_id) == 0  # AI 服务端失败（504）退还这次额度
+    assert attempts(user_id) == expected_used
     mock_ai(monkeypatch, feature)
     assert request_ai(client, feature, mistake_id).status_code == (201 if feature == "variant" else 200)
-    assert len(call_rows()) == 2 and attempts(user_id) == 1
+    assert len(call_rows()) == 2 and attempts(user_id) == expected_used + 1
 
 
 def test_accounting_columns_only_contain_cost_metadata(client):

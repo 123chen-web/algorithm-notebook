@@ -109,7 +109,9 @@ def test_user_content_refusal_422_is_not_refunded(client, provider):
     openai.APITimeoutError(request=REQUEST),
     openai.APIConnectionError(request=REQUEST),
     status_error(openai.InternalServerError, 500),
-], ids=["timeout", "connection", "provider-5xx"])
+    status_error(openai.APIStatusError, 502),
+    status_error(openai.APIStatusError, 503),
+], ids=["timeout", "connection", "provider-500", "provider-502", "provider-503"])
 def test_call_with_retry_retries_transient_errors_once_after_two_seconds(error):
     sleeps, calls = [], []
 

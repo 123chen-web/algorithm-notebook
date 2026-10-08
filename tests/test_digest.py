@@ -341,6 +341,10 @@ def test_http_get_does_not_follow_external_redirect(monkeypatch):
 def test_happy_path_sends_digest_with_summaries(database, monkeypatch):
     rc, calls, poster, record = run_main(database, monkeypatch)
     assert rc == 0
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM ai_usage").fetchone()[0] == 0
+        call, = conn.execute("SELECT user_id, feature FROM ai_calls").fetchall()
+        assert (call["user_id"], call["feature"]) == (None, "digest")
     # 只给 alice、erin 两位管理员发；bob/carol/dave 排除。
     assert len(poster.calls) == 2
     bodies = [call["data"]["desp"] for call in poster.calls]

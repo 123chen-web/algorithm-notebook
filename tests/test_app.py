@@ -424,7 +424,7 @@ def test_generation_rolls_back_both_questions_if_second_insert_fails(client, mon
     assert detail["variants"] == []
     assert detail["description"] == ""
     with connect() as conn:
-        # 生成确实执行过，失败仍消耗一次额度；两道题和错因回填整体回滚。
+        # AI 已成功返回，落库约束异常不属于 AI 502/503/504；额度保持，两道题和错因回填整体回滚。
         assert conn.execute(
             "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
         ).fetchone()["attempts"] == 1

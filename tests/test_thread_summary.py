@@ -28,6 +28,7 @@ BUSY = "AI 现在比较忙，请稍后再试；这次没有消耗额度。"
 def isolated_provider(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-summary-key")
     monkeypatch.setenv("AI_MAX_CONCURRENCY", "6")
+    monkeypatch.setattr(ai, "RETRY_DELAY_SECONDS", 0)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.setattr(ai_limits, "_semaphore_state", None)
@@ -113,6 +114,60 @@ def install_provider(monkeypatch, result=None, *, finish_reason="stop", error=No
     completions = Completions()
     monkeypatch.setattr(thread_summary, "OpenAI", fake_openai_factory(completions, captured))
     return completions, captured
+
+
+@pytest.mark.parametrize("kind", ["timeout", "connection", "server"])
+def test_transient_errors_retry_once_without_extra_slot_or_charge(client, thread, monkeypatch, kind):
+    monkeypatch.setattr(ai, "RETRY_DELAY_SECONDS", 0)
+    provider, _ = install_provider(monkeypatch)
+    create = provider.create
+    calls = []
+    request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+    if kind == "timeout":
+        error = ai.APITimeoutError(request=request)
+    elif kind == "connection":
+        error = ai.APIConnectionError(request=request)
+    else:
+        error = ai.InternalServerError("down", response=httpx.Response(500, request=request), body=None)
+
+    def flaky(**kwargs):
+        calls.append(kwargs)
+        assert attempts(thread["op_id"]) == 1
+        with pytest.raises(HTTPException) as busy:
+            with ai_limits.ai_slot():
+                pytest.fail("The retry must retain the only slot")
+        assert busy.value.status_code == 429
+        if len(calls) == 1:
+            raise error
+        return create(**kwargs)
+
+    monkeypatch.setattr(provider, "create", flaky)
+    monkeypatch.setenv("AI_MAX_CONCURRENCY", "1")
+    response = client.post(f'/api/posts/{thread["id"]}/summary')
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert attempts(thread["op_id"]) == 1
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("kind", ["content-filter", "sdk-refusal"])
+def test_model_refusal_is_422_without_retry_or_refund(client, thread, monkeypatch, kind):
+    response = FakeResponse(None, "content_filter" if kind == "content-filter" else "stop")
+    response.choices[0].message.refusal = "PRIVATE_REFUSAL" if kind == "sdk-refusal" else None
+    calls = []
+
+    class Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return response
+
+    monkeypatch.setattr(thread_summary, "OpenAI", fake_openai_factory(Completions()))
+    result = client.post(f'/api/posts/{thread["id"]}/summary')
+    assert result.status_code == 422
+    assert attempts(thread["op_id"]) == 1
+    assert len(calls) == 1
+    assert "PRIVATE_REFUSAL" not in result.text
 
 
 def create_comment(client, post_id, body, **overrides):
@@ -368,7 +423,8 @@ def test_empty_or_incomplete_provider_output_is_safe(monkeypatch, reference, con
     monkeypatch.setattr(thread_summary, "OpenAI", fake_openai_factory(provider))
     with pytest.raises(HTTPException) as exc:
         thread_summary.summarize_thread(reference)
-    assert (exc.value.status_code, exc.value.detail) == (502, thread_summary.BAD_RESPONSE)
+    expected = (422, ai.MODEL_REFUSAL) if finish_reason == "content_filter" else (502, thread_summary.BAD_RESPONSE)
+    assert (exc.value.status_code, exc.value.detail) == expected
 
 
 @pytest.mark.parametrize("response", [
@@ -412,7 +468,7 @@ def test_sdk_exception_mapping_without_database(monkeypatch, reference, failure,
     with pytest.raises(HTTPException) as exc:
         thread_summary.summarize_thread(reference)
     assert (exc.value.status_code, exc.value.detail) == (status, detail)
-    assert provider.calls == 1
+    assert provider.calls == (2 if failure in {"timeout", "connection", "status"} else 1)
 
 
 def test_get_without_cache_is_free_for_member_and_trial(client, thread):
@@ -607,7 +663,8 @@ def test_provider_failures_restore_previous_quota_and_release_slot(client, threa
     endpoint = f"/api/posts/{thread['id']}/summary"
     response = client.post(endpoint)
     assert response.status_code == status and response.json() == {"detail": detail}
-    assert attempts(thread["op_id"]) == 3 and provider.calls == 1
+    assert attempts(thread["op_id"]) == 3
+    assert provider.calls == (2 if failure in {"timeout", "connection", "status"} else 1)
     assert cache_row(thread["id"]) is None
     with connect() as conn:
         row, = conn.execute("SELECT * FROM ai_calls").fetchall()

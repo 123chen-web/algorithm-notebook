@@ -2038,7 +2038,7 @@ async function analyzeWeakness() {
           updateUserInfo();
         }
       } catch {
-        // 调用失败同样可能已扣额度；读取失败时不显示过期的剩余次数。
+        // 调用结果按统一规则结算；读取失败时不显示过期的剩余次数。
       }
       if (weaknessRequestCurrent(generation, userId)) {
         weaknessPending = false;
@@ -3149,13 +3149,16 @@ function renderDetail(item, options = {}) {
   }
 
   const aiSection = element("section", "", "ai-section");
+  const billingLink = element("a", "AI 额度与计费");
+  billingLink.href = "/static/ai-billing.html";
   aiSection.append(
     element("h3", "诊断错因，再练两道"),
+    billingLink,
     element(
       "p",
       "生成时会把这道题的代码（或解题过程）、思路发送给 AI 模型服务商（DeepSeek）；" +
       "错因没填时 AI 会自己反推，已经填了则作为参考。" +
-      `每天最多 ${user.ai_daily_limit} 次尝试，AI 服务出错时不扣次数。`,
+      "额度规则见下方说明链接。",
       "muted"
     ),
     element(

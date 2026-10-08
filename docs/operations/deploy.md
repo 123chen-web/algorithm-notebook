@@ -60,12 +60,12 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 | `SAMPLE_WORLD_DIR` | `sample_world.py` 的数据目录，默认项目内 `data` |
 | `COOKIE_SECURE`、`PUBLIC_BASE_URL` | HTTPS Cookie、邮件链接所用地址 |
 | `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL` | AI 服务密钥、模型、兼容服务地址；密钥为空时 AI 不可用 |
-| `AI_DAILY_LIMIT`、`TRIAL_AI_DAILY_LIMIT` | 免费正式账号默认每日 20 次、体验账号默认每日 4 次；有效套餐额度按现有优先级覆盖 |
+| `AI_DAILY_LIMIT`、`TRIAL_AI_DAILY_LIMIT` | 默认值与优先级见[AI 额度与计费](../../static/ai-billing.html) |
 | `AI_MAX_CONCURRENCY` | 每个进程同时进行中的 AI 调用上限，默认 6 |
 | `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURITY`、`SMTP_TIMEOUT`、`SMTP_USERNAME`、`SMTP_PASSWORD`、`SMTP_FROM` | 找回密码和复习提醒发信；配置与自测见 [发信配置与自测](mail.md) |
 | `PAYMENTS_MOCK_*`、`ALIPAY_*`、`WECHAT_*` | 本地支付模拟及支付渠道配置，详见示例中的逐项说明 |
 
-`AI_MAX_CONCURRENCY` 必须是大于等于 1 的整数，非法值回落到 6。变体生成、薄弱点分析、拍照识别和错因归并共用该上限。达到上限时立即返回 429，提示“AI 现在比较忙，请稍后再试；这次没有消耗额度。”，不预留每日额度、不记录 AI 调用。上限是进程内的信号量，多个 worker 或实例会各自拥有一份，因此当前仍部署单 worker。
+AI 并发上限、扣额、失败退还与重试规则统一见[AI 额度与计费](../../static/ai-billing.html)。
 
 ## 反向代理
 
@@ -101,7 +101,7 @@ GROUP BY utc_day, feature
 ORDER BY utc_day DESC, feature;
 ```
 
-用量不完整时，汇总 token 只包含已知部分；需要估算费用时还应按 `model` 分组并使用服务商对应的定价。AI 实际调用失败仍消耗已预留的每日额度，并记录失败记账；并发忙碌、额度用尽、未配置密钥、输入不足等没有实际调用的分支不会产生记账。
+用量不完整时，汇总 token 只包含已知部分；需要估算费用时还应按 `model` 分组并使用服务商对应的定价。AI 失败会记录失败成本，用户额度结算见[AI 额度与计费](../../static/ai-billing.html)；并发忙碌、额度用尽、未配置密钥、输入不足等没有实际调用的分支不会产生记账。
 
 ## CI 与本地检查
 

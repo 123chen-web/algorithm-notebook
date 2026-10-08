@@ -324,7 +324,7 @@ def duck_panel_chat(mistake_id: int, data: main.DuckInput, user=Depends(main.cur
     """讲给小黄鸭听：与 create_variant 同一套额度/并发/记账写法。
 
     校验失败（422）在扣额度之前；502/503/504 退回本次扣的额度，
-    回复不合格重试一次仍失败也按 502 退回，不消耗用户的当日额度。
+    回复不合格直接按 502 退回额度，不自动重试输出解析失败。
     """
     turns = [{"role": turn.role, "text": turn.text} for turn in data.turns]
     try:

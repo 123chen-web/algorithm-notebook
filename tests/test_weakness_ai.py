@@ -162,8 +162,8 @@ def test_incomplete_or_nontext_response_is_safe_error(monkeypatch, reference, co
     install_response(monkeypatch, content, finish_reason)
     with pytest.raises(HTTPException) as exc:
         ai.analyze_weaknesses(reference)
-    assert exc.value.status_code == 502
-    assert exc.value.detail == ai.WEAKNESS_BAD_RESPONSE
+    expected = (422, ai.MODEL_REFUSAL) if finish_reason == "content_filter" else (502, ai.WEAKNESS_BAD_RESPONSE)
+    assert (exc.value.status_code, exc.value.detail) == expected
 
 
 @pytest.mark.parametrize("response", [

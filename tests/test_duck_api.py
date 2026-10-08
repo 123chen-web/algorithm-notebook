@@ -2,7 +2,7 @@
 
 全部用假 AI 客户端（monkeypatch main.OpenAI），绝不真实调用。
 覆盖：契约形状、turns 校验（422 不扣额度）、归属与登录、503 未配置、
-429 额度、回复不合格带原因重试一次、仍不合格 502 退额度、AI 异常映射与退额度、
+429 额度、输出不合格不重试且 502 退额度、传输错误重试一次、AI 异常映射与退额度、
 ai_calls 记账、提示词上下文。
 """
 import httpx
@@ -301,46 +301,26 @@ def test_quota_exhaustion_is_429_and_stops_calling_ai(client, monkeypatch):
     assert attempts() == 2
 
 
-# ---------------- 回复不合格：带原因重试一次，仍不合格 502 退额度 ----------------
+# ---------------- 输出不合格不重试，502 退额度 ----------------
 
-def test_invalid_reply_retries_once_with_the_reason_and_charges_once(client, monkeypatch):
-    provider = fake_ai(monkeypatch, FakeResponse("答案是 left <= right。", "stop"), GOOD)
+@pytest.mark.parametrize("bad", [
+    FakeResponse("答案是 left <= right。", "stop"),
+    FakeResponse("```code```", "stop"),
+    FakeResponse("说到一半", "length"),
+    FakeResponse("", "stop"),
+])
+def test_invalid_reply_is_not_retried_and_refunds_the_attempt(client, monkeypatch, bad):
+    provider = fake_ai(monkeypatch, bad, GOOD)
     register(client)
     mistake_id = new_mistake(client)
-
     response = duck(client, mistake_id, [USER])
-
-    assert response.status_code == 200
-    assert response.json()["reply"] == "哪里没想清楚？"
-    assert len(provider.requests) == 2, "不合格回复重试一次"
-    retry_messages = provider.requests[1]["messages"]
-    assert retry_messages[-2] == {"role": "assistant", "content": "答案是 left <= right。"}
-    assert "gave_answer" in retry_messages[-1]["content"], "重试提示带上了不合格原因"
-    assert attempts() == 1, "重试不重复扣额度"
-    assert response.json()["ai_remaining"] == 1
-
-
-def test_two_invalid_replies_are_502_and_refund_the_attempt(client, monkeypatch):
-    provider = fake_ai(monkeypatch, FakeResponse("答案是 x。", "stop"), FakeResponse("```code```", "stop"), GOOD)
-    register(client)
-    mistake_id = new_mistake(client)
-
-    response = duck(client, mistake_id, [USER])
-
     assert response.status_code == 502
-    assert "没答好" in response.json()["detail"]
-    assert len(provider.requests) == 2
-    assert attempts() == 0, "502 退回本次扣的额度"
-    assert duck(client, mistake_id, [USER]).status_code == 200, "退回后还能正常用"
-
-
-def test_truncated_reply_counts_as_a_failed_attempt(client, monkeypatch):
-    provider = fake_ai(monkeypatch, FakeResponse("说到一半", "length"), GOOD)
-    register(client)
-    mistake_id = new_mistake(client)
-
+    assert response.json()["detail"] == main.DUCK_BAD_REPLY
+    assert len(provider.requests) == 1
+    assert attempts() == 0
     assert duck(client, mistake_id, [USER]).status_code == 200
-    assert len(provider.requests) == 2, "finish_reason 不是 stop 也算一次不合格"
+    assert len(provider.requests) == 2
+    assert attempts() == 1
 
 
 # ---------------- AI 异常映射与退额度 ----------------
@@ -351,18 +331,27 @@ def upstream_error(kind):
         return ai.APITimeoutError(request=request)
     if kind == "connection":
         return ai.APIConnectionError(request=request)
-    return ai.RateLimitError("quota", response=httpx.Response(429, request=request), body=None)
+    cls, code = {
+        "rate": (ai.RateLimitError, 429),
+        "auth": (ai.APIStatusError, 401),
+        "bad-request": (ai.APIStatusError, 400),
+        "server": (ai.InternalServerError, 500),
+    }[kind]
+    return cls("provider failure", response=httpx.Response(code, request=request), body=None)
 
 
-@pytest.mark.parametrize("kind,status", [("timeout", 504), ("connection", 502), ("rate", 503)])
+@pytest.mark.parametrize("kind,status", [("timeout", 504), ("connection", 502), ("server", 502), ("rate", 503), ("auth", 502), ("bad-request", 502)])
 def test_upstream_errors_map_status_and_refund(client, monkeypatch, kind, status):
-    fake_ai(monkeypatch, upstream_error(kind), GOOD)
+    retryable = kind in {"timeout", "connection", "server"}
+    provider = fake_ai(monkeypatch, *([upstream_error(kind)] * (2 if retryable else 1)), GOOD)
+    monkeypatch.setattr(ai, "RETRY_DELAY_SECONDS", 0)
     register(client)
     mistake_id = new_mistake(client)
 
     response = duck(client, mistake_id, [USER])
 
     assert response.status_code == status
+    assert len(provider.requests) == (2 if retryable else 1)
     assert attempts() == 0, "上游失败退回额度"
     assert duck(client, mistake_id, [USER]).status_code == 200
 
@@ -381,3 +370,52 @@ def test_ai_calls_are_recorded_for_success_and_failure(client, monkeypatch):
     assert [call["feature"] for call in calls] == ["duck", "duck"]
     assert calls[0]["ok"] == 1 and calls[0]["error"] == ""
     assert calls[1]["ok"] == 0 and calls[1]["error"] == "http_502"
+
+
+@pytest.mark.parametrize("kind", ["timeout", "connection", "server"])
+def test_transient_retry_holds_one_slot_and_one_charge(client, monkeypatch, kind):
+    from contextlib import contextmanager
+    monkeypatch.setattr(ai, "RETRY_DELAY_SECONDS", 0)
+    provider = fake_ai(monkeypatch, upstream_error(kind), GOOD)
+    user_id = register(client)["id"]
+    mistake_id = new_mistake(client)
+    state = {"slots": 0, "entries": 0}
+
+    @contextmanager
+    def slot():
+        state["slots"] += 1
+        state["entries"] += 1
+        try:
+            yield
+        finally:
+            state["slots"] -= 1
+
+    create = provider.create
+    def checked_create(**kwargs):
+        assert state["slots"] == 1
+        assert attempts(user_id) == 1
+        return create(**kwargs)
+
+    monkeypatch.setattr(main, "ai_slot", slot)
+    monkeypatch.setattr(provider, "create", checked_create)
+    response = duck(client, mistake_id, [USER])
+    assert response.status_code == 200
+    assert response.json()["ai_remaining"] == 1
+    assert len(provider.requests) == 2
+    assert attempts(user_id) == 1
+    assert state == {"slots": 0, "entries": 1}
+    assert len(ai_calls(user_id)) == 1
+
+
+@pytest.mark.parametrize("kind", ["content-filter", "sdk-refusal"])
+def test_model_refusal_is_422_without_retry_or_refund(client, monkeypatch, kind):
+    response = FakeResponse(None, "content_filter" if kind == "content-filter" else "stop")
+    response.choices[0].message.refusal = "PRIVATE_REFUSAL" if kind == "sdk-refusal" else None
+    provider = fake_ai(monkeypatch, response)
+    user_id = register(client)["id"]
+    mistake_id = new_mistake(client)
+    result = duck(client, mistake_id, [USER])
+    assert result.status_code == 422
+    assert attempts(user_id) == 1
+    assert len(provider.requests) == 1
+    assert "PRIVATE_REFUSAL" not in result.text

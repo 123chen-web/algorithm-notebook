@@ -1,0 +1,13 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #343b31; background: #faf9f5; line-height: 1.75; }
+body { margin: 0; }
+main { max-width: 52rem; margin: auto; padding: 2rem 1.25rem 4rem; }
+a { color: #466647; text-underline-offset: .2em; }
+h1 { font-size: clamp(1.6rem, 5vw, 2.2rem); }
+h2 { font-size: 1.2rem; margin: 1.5rem 0 .5rem; }
+ol { padding-left: 1.5rem; }
+li { padding-left: .25rem; }
+p { overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+caption { text-align: left; font-weight: 600; margin-bottom: .5rem; }
+th, td { padding: .65rem .5rem; text-align: left; border-bottom: 1px solid #e5e8df; }
+code { font-size: .9em; overflow-wrap: anywhere; }

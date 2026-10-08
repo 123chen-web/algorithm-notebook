@@ -1793,15 +1793,11 @@ class DuckInput(InputModel):
     finish: bool = False
 
 
-DUCK_RETRY_HINT = (
-    "刚才的回答不合格（{reason}）。请重新回答：只能提问或简短肯定，"
-    "不要给出答案、解法、代码或结论，不要使用 Markdown。"
-)
 DUCK_BAD_REPLY = "小黄鸭这次没答好，请再试一次"
 
 
 def duck_ai_reply(item, turns, finish):
-    """一次请求内的橡皮鸭对话：回复不合格时带上原因提示重试一次，仍不合格抛 502。
+    """一次请求内的橡皮鸭对话：只对传输层临时错误重试，输出不合格直接抛 502。
 
     item 是 owned_mistake() 读出的当前用户记录；turns 已通过 check_turns 校验。
     回复校验与清理全部复用 duck_prompt.validate_reply，不另起一套。
@@ -1822,32 +1818,27 @@ def duck_ai_reply(item, turns, finish):
     }
     messages = build_messages(problem, turns, finish)
     try:
-        # 与其他 AI 入口一致：禁止 SDK 自动重试（重试由这里的校验逻辑显式控制）。
+        # 禁止 SDK 自动重试；统一只重试传输层临时错误。
         with OpenAI(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=0) as client:
-            for attempt in range(2):
-                note_usage(model, None)
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    # 回复上限 120 字；带隐藏推理过程的模型会把推理 token 也算进去，多留余量。
-                    max_tokens=4000,
-                )
-                note_usage(model, response)
-                try:
-                    choice = response.choices[0]
-                    content = choice.message.content
-                    complete = choice.finish_reason == "stop"
-                except (AttributeError, IndexError, TypeError):
-                    content, complete = None, False
-                text = content.strip() if complete and isinstance(content, str) else ""
-                ok, result = validate_reply(text, finish)
-                if ok:
-                    return result
-                if attempt == 0:
-                    messages = messages + [
-                        {"role": "assistant", "content": text or "（空回复）"},
-                        {"role": "user", "content": DUCK_RETRY_HINT.format(reason=result)},
-                    ]
+            note_usage(model, None)
+            response = ai.call_with_retry(lambda: client.chat.completions.create(
+                model=model,
+                messages=messages,
+                # 带隐藏推理过程的模型会把推理 token 也算进去，多留余量。
+                max_tokens=4000,
+            ))
+            note_usage(model, response)
+            ai.check_model_refusal(response)
+            try:
+                choice = response.choices[0]
+                content = choice.message.content
+                complete = choice.finish_reason == "stop"
+            except (AttributeError, IndexError, TypeError):
+                content, complete = None, False
+            text = content.strip() if complete and isinstance(content, str) else ""
+            ok, result = validate_reply(text, finish)
+            if ok:
+                return result
     except APITimeoutError:
         raise HTTPException(504, "小黄鸭回复超时，请稍后重试") from None
     except RateLimitError:

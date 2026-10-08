@@ -247,7 +247,10 @@
     const restartBtn = button("重新开始", "duck-restart");
     actions.append(sendBtn, finishBtn, restartBtn);
     row.append(count, actions);
-    const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；每次回复和总结各使用 1 次每日 AI 额度。`);
+    const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；额度规则见 `);
+    const billing = node("a", "", "AI 额度与计费");
+    billing.href = "/static/ai-billing.html";
+    hint.append(billing);
     composer.append(input, row, hint);
 
     root.append(head, note, log, status, error, summary, composer);

@@ -66,7 +66,7 @@
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
-  <script defer src="/static/clusters.js?v=6"></script>
+  <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=2"></script>
   <script defer src="/static/shell.js?v=4"></script>
@@ -80,14 +80,14 @@
   <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
-  <script defer src="/static/plan.js?v=3"></script>
+  <script defer src="/static/plan.js?v=4"></script>
   <script defer src="/static/manual-claims.js?v=2"></script>
   <script defer src="/static/nav-focus.js?v=1"></script>
   <script defer src="/static/goal-card.js?v=1"></script>
   <script defer src="/static/recommend.js?v=2"></script>
   <script defer src="/static/pending-reason.js?v=1"></script>
   <script defer src="/static/import-wizard.js?v=1"></script>
-  <script defer src="/static/duck-panel.js?v=2"></script>
+  <script defer src="/static/duck-panel.js?v=3"></script>
   <script defer src="/static/diff-lines.js?v=1"></script>
   <script defer src="/static/trace-table.js?v=1"></script>
   <script defer src="/static/scratch.js?v=2"></script>
@@ -98,7 +98,7 @@
   <script defer src="/static/pwa-register.js?v=1"></script>
   <script defer src="/static/offline-sync.js?v=1"></script>
   <script defer src="/static/offline-review.js?v=1"></script>
-  <script defer src="/static/app.js?v=84"></script>
+  <script defer src="/static/app.js?v=85"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -661,6 +661,7 @@
         <div class="clusters-toolbar">
           <button id="clusters-generate" type="button" class="primary" aria-disabled="true">归并相似错因 · 消耗 1 次 AI 额度</button>
           <p id="clusters-quota" class="muted"></p>
+          <p class="muted">额度规则见 <a href="/static/ai-billing.html">AI 额度与计费</a>。</p>
         </div>
         <p id="clusters-new" hidden></p>
         <p id="clusters-status" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -724,7 +725,7 @@
             </div>
             <details class="weakness-billing">
               <summary>怎么计费？</summary>
-              <p id="weakness-cost" class="field-hint">与拍照识别、生成练习题共用今日 AI 额度。AI 服务出错时不扣次数；不足 5 条易错点时不调用 AI、不扣额度。查看已有结果和刷新页面免费。</p>
+              <p id="weakness-cost" class="field-hint">不足 5 条易错点时不调用 AI，查看已有结果免费；额度规则见 <a href="/static/ai-billing.html">AI 额度与计费</a>。</p>
             </details>
           </aside>
           <div class="weakness-report">
@@ -868,7 +869,7 @@
               </div>
               <div class="form-photo-meta">
                 <p id="problem-photo-quota" class="muted"></p>
-                <p id="problem-photo-hint" class="field-hint">识别与生成练习各用 1 次额度，AI 服务出错时不扣次数。</p>
+                <p id="problem-photo-hint" class="field-hint">识别与生成练习共用额度，规则见 <a href="/static/ai-billing.html">AI 额度与计费</a>。</p>
               </div>
               <p id="problem-photo-status" class="field-hint" role="status" aria-live="polite"></p>
             </div>
@@ -1536,7 +1537,7 @@
         <div class="page-heading">
           <div>
             <h2 id="plan-title">我的套餐</h2>
-            <p class="muted">看清你现在的套餐和今日 AI 额度，选择适合你的套餐。</p>
+            <p class="muted">看清你现在的套餐和今日 AI 额度，选择适合你的套餐；规则见 <a href="/static/ai-billing.html">AI 额度与计费</a>。</p>
           </div>
         </div>
 

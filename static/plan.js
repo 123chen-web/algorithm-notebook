@@ -56,7 +56,7 @@
 
     const cards = [{
       id: "free", free: true, name: "免费版", priceText: "¥0 · 永久",
-      perDayText: `每天 ${freeLimit} 次 AI 生成`, multiplierText: "", periodText: "",
+      perDayText: `每天 ${freeLimit} 次 AI 调用`, multiplierText: "", periodText: "",
       recommended: false, current: !active, purchasable: false,
     }];
     for (const plan of paid) {
@@ -66,7 +66,7 @@
         id: plan.id,
         name: String(plan.name ?? ""),
         priceText: `${formatPrice(plan.price_cents)} / ${plan.period_days} 天`,
-        perDayText: `每天 ${planLimit} 次 AI 生成`,
+        perDayText: `每天 ${planLimit} 次 AI 调用`,
         multiplierText: ratio ? `是免费版的 ${ratio} 倍` : "",
         periodText: `${plan.period_days} 天有效，到期前续费会顺延`,
         recommended: plan.id === recommendedId,
@@ -135,7 +135,9 @@
     } else {
       head.append(node("h4", me.is_trial ? "体验账号" : "免费版", "pl-status-title"));
     }
-    box.append(head, usageBar(usage));
+    const billing = node("a", "AI 额度与计费", "pl-note");
+    billing.href = "/static/ai-billing.html";
+    box.append(head, usageBar(usage), billing);
     if (status.active) {
       if (status.urgent) box.append(node("p", "套餐即将到期，续费即可顺延", "pl-renew-hint"));
       box.append(node("p", "提前续费会顺延，不浪费剩余天数。", "pl-note"));

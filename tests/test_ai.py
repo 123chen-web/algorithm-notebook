@@ -249,7 +249,9 @@ def test_generate_rejects_non_stop_finish_reasons(monkeypatch, finish_reason):
 
     with pytest.raises(HTTPException) as exc:
         ai.generate(MISTAKE)
-    assert exc.value.status_code == 502
+    assert exc.value.status_code == (422 if finish_reason == "content_filter" else 502)
+    if finish_reason == "content_filter":
+        assert exc.value.detail == ai.MODEL_REFUSAL
 
 
 def test_generate_rejects_empty_text(monkeypatch):

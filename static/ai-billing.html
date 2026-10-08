@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 额度与计费 · 欧叶OY</title>
+  <link rel="stylesheet" href="/static/ai-billing.css?v=1">
+</head>
+<body>
+  <main>
+    <a href="/">返回学习笔记</a>
+    <h1>AI 额度与计费</h1>
+    <p>所有面向用户的 AI 功能共用每日额度，日期按账号时区计算。以下是统一规则。</p>
+    <ol>
+      <li>
+        <h2>每日次数与套餐</h2>
+        <table>
+          <caption>默认每日 AI 次数</caption>
+          <thead><tr><th scope="col">账号 / 套餐</th><th scope="col">每日次数</th><th scope="col">价格</th></tr></thead>
+          <tbody>
+            <tr><td>免费账号</td><td>20</td><td>免费</td></tr>
+            <tr><td>体验账号</td><td>4</td><td>免费体验</td></tr>
+            <tr><td>标准版</td><td>50</td><td>¥9.90 / 30 天</td></tr>
+            <tr><td>进阶版</td><td>120</td><td>¥19.90 / 30 天</td></tr>
+          </tbody>
+        </table>
+        <p>优先级：体验账号 &gt; 有效套餐 &gt; 免费默认。体验账号始终使用 <code>TRIAL_AI_DAILY_LIMIT</code>，默认 4 次，必须远低于免费账号的 <code>AI_DAILY_LIMIT</code>（默认 20 次）。正式账号的套餐到期时间严格晚于当前 UTC 时刻才有效，否则使用免费额度。</p>
+        <p>标准版和进阶版的默认价格不变，额度分别为免费默认额度的 2.5 倍、6 倍；套餐页按实际额度计算倍数。站长隐藏套餐不对外显示（<code>is_active=0</code>），已授予的有效套餐仍按其额度计算。</p>
+      </li>
+      <li>
+        <h2>先扣次数，再调用</h2>
+        <p>每次 AI 调用先在同一个写事务内读取当前套餐并原子扣除 1 次，提交后再调用供应商；网络调用不持有数据库写锁。读取已有结果、刷新页面、材料不足或未配置服务且未调用 AI 时不扣额度。</p>
+      </li>
+      <li>
+        <h2>哪些情况退还次数</h2>
+        <p>AI 服务端或供应商侧失败，最终返回 502/503/504（含超时、连接失败、供应商 5xx、模型输出格式不合格），统一由 <code>ai_limits.refund_on_server_failure</code> 退还这 1 次。</p>
+        <p>已调用 AI 后的用户内容问题不退还，包括 422、模型拒答、越界拒绝、识别不出有效内容，以及“没发现可靠规律”或暂时没有可归并共性的有效结果。调用前的输入校验拒绝没有扣额。并发已满的 429 本来就没有扣额度。</p>
+      </li>
+      <li>
+        <h2>自动重试的边界</h2>
+        <p><code>ai.call_with_retry</code> 只对传输层临时错误（超时、连接失败、供应商 5xx）自动重试 1 次，等待 2 秒。鉴权失败、请求格式错误、供应商额度不足、输出解析失败都不重试。SDK 自带重试关闭；整个用户请求只占 1 个并发名额、只扣 1 次额度。</p>
+        <p>用户入口共用进程内的 <code>AI_MAX_CONCURRENCY</code>，默认 6；非法值回落到 6。多个进程各有自己的上限。调用成本记入 <code>ai_calls</code>，记录失败成本与退还用户次数是两件独立的事。</p>
+      </li>
+      <li>
+        <h2>适用功能</h2>
+        <p>变体题（含错因、讲解和举一反三练习）、拍照识别（含代码截图）、薄弱点分析、专题归并、小黄鸭回复与总结、帖子 AI 要点均适用以上规则；每次用户主动发起的 AI 请求各计一次。</p>
+        <p>当前版本没有独立的“费曼讲解”“举一反三”“截图导入”AI 接口：讲解和练习在变体题请求中生成，图片识别走拍照入口；笔记文件导入不调用 AI。</p>
+        <p>每日简报是系统级调用，不扣用户额度；它复用传输错误重试规则，成本以 <code>feature='digest'</code>、<code>user_id=NULL</code> 记账。同日有效缓存可复用，不再调用供应商；一次逻辑调用发生临时错误时，最多发送两次供应商请求。</p>
+      </li>
+    </ol>
+  </main>
+</body>
+</html>

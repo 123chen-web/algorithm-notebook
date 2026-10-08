@@ -35,9 +35,9 @@ def test_assets_are_versioned_and_loaded_before_app():
 def test_changed_assets_had_their_versions_bumped():
     # 基线：app.js=58、mastery.js=2、clusters.js=4；改过的都加一。
     # 整合后：app.js 每个分支加一（此处 66），mastery.js / clusters.js 被 AN 与 ON 各改一次（4 / 6）。
-    assert "/static/app.js?v=84" in script_sources()
+    assert "/static/app.js?v=85" in script_sources()
     assert "/static/mastery.js?v=4" in script_sources()
-    assert "/static/clusters.js?v=6" in script_sources()
+    assert "/static/clusters.js?v=7" in script_sources()
 
 
 def test_overview_files_were_not_touched_by_this_task():

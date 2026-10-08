@@ -308,7 +308,7 @@
       setStatus(`${error.message || "归并失败，请稍后重试"}${report?.insight ? "。已保留上次专题结果。" : ""}`, { error: true, retry: true });
     } finally {
       if (current(ticket, userId)) {
-        // AI 失败也可能占额；始终读取真实额度，不在客户端猜测或递减。
+        // 调用结果按统一规则结算；始终读取真实额度，不在客户端猜测或递减。
         quotaAvailable = false;
         try {
           const requestUser = user;

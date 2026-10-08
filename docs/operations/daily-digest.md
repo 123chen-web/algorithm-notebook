@@ -72,8 +72,7 @@ python digest.py --username alice
 
 ## 成本估算
 
-- 每天每个运行实例只产生 **1 次** AI 调用（全部条目合并在一次请求里，
-  论文 6 篇 + 新闻 5 条，摘要各截断到 600 字，输出很短）。
+- 简报的系统调用、缓存与重试规则见 [AI 额度与计费](../../static/ai-billing.html)。
 - 按主流 OpenAI 兼容模型（如 `gpt-4.1-mini` / DeepSeek 同类价位）估算，
   每天约合人民币 **几分钱**，一个月通常不超过 1 元；网络请求本身免费。
 - AI 调用会以 `feature='digest'`、`user_id=NULL` 记入 `ai_calls` 表，

@@ -57,7 +57,7 @@ test("model: free account has free card current, usage ratio and no urgency", ()
   assert.equal(m.cards[0].priceText, "¥0 · 永久");
   assert.equal(m.cards[0].current, true);
   assert.equal(m.cards[1].priceText, "¥9.90 / 30 天");
-  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 生成");
+  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 调用");
   assert.equal(m.cards[1].multiplierText, "是免费版的 2.5 倍");
   assert.equal(m.cards[1].periodText, "30 天有效，到期前续费会顺延");
 });
@@ -68,9 +68,9 @@ test("model: standard and advanced quotas yield 2.5 and 6 times the free allowan
     { ...PLAN_A, name: "标准版" },
     { ...PLAN_B, name: "进阶版", period_days: 30, price_cents: 1990, ai_daily_limit: 120 },
   ], FREE_ME, NOW));
-  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 生成");
+  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 调用");
   assert.equal(m.cards[1].multiplierText, "是免费版的 2.5 倍");
-  assert.equal(m.cards[2].perDayText, "每天 120 次 AI 生成");
+  assert.equal(m.cards[2].perDayText, "每天 120 次 AI 调用");
   assert.equal(m.cards[2].multiplierText, "是免费版的 6 倍");
   assert.equal(m.cards[2].priceText, "¥19.90 / 30 天");
 });
@@ -104,7 +104,7 @@ test("model: free limit follows the user's allowance, non-integer multiplier kee
   const { View } = env();
   const m = plain(View.model([{ ...PLAN_A, ai_daily_limit: 50 }], { ...FREE_ME, ai_daily_limit: 40, ai_daily_used: 0, ai_daily_remaining: 40 }, NOW));
   assert.equal(m.freeLimit, 40);
-  assert.equal(m.cards[0].perDayText, "每天 40 次 AI 生成");
+  assert.equal(m.cards[0].perDayText, "每天 40 次 AI 调用");
   assert.equal(m.cards[1].multiplierText, "是免费版的 1.3 倍");
   const same = plain(View.model([{ ...PLAN_A, ai_daily_limit: 20 }], FREE_ME, NOW));
   assert.equal(same.cards[1].multiplierText, "", "no multiplier when not larger than free");
@@ -167,10 +167,10 @@ test("cards: free card first with fixed content, paid cards carry real benefits 
   assert.equal(cards.length, 3);
   assert.match(texts(cards[0]), /免费版/);
   assert.match(texts(cards[0]), /¥0 · 永久/);
-  assert.match(texts(cards[0]), /每天 20 次 AI 生成/);
+  assert.match(texts(cards[0]), /每天 20 次 AI 调用/);
   assert.match(texts(cards[0]), /全部复习、统计、小组、讨论区功能/);
   assert.equal(find(cards[0], "button"), null, "free card has no button");
-  assert.match(texts(cards[1]), /每天 50 次 AI 生成（是免费版的 2.5 倍）/);
+  assert.match(texts(cards[1]), /每天 50 次 AI 调用（是免费版的 2.5 倍）/);
   assert.match(texts(cards[1]), /其余功能与免费版相同/);
   assert.match(texts(cards[1]), /30 天有效，到期前续费会顺延/);
   assert.match(texts(cards[1]), /官方支付的订单可在“我的订单”自助全额退款（当天已用的 AI 次数不退）；手动付款请联系站长/);
