@@ -1,0 +1,22 @@
+# Separate runner VM only. TLS reaches server through this internal Docker network;
+# the 2358 host port remains loopback-only. No access log containing submitted code.
+{$RUNNER_DOMAIN} {
+    @website_submission {
+        remote_ip {$OY_APP_EGRESS_IP}
+        method GET POST
+        path /submissions /submissions/*
+    }
+    handle @website_submission {
+        request_body {
+            # 40000 source + 10000 stdin Unicode characters can require ~267 KB
+            # after UTF-8/Base64 encoding; allow the full adapter contract.
+            max_size 320KB
+        }
+        reverse_proxy server:2358 {
+            header_up -X-Auth-User
+        }
+    }
+    handle {
+        respond "Forbidden" 403
+    }
+}

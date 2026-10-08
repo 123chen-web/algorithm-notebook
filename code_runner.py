@@ -30,7 +30,8 @@ def configuration():
     if (not token or len(token) > 4096 or any(c in token for c in "\r\n")
             or parsed.username or parsed.password or parsed.query or parsed.fragment
             or not parsed.hostname or parsed.scheme not in ("http", "https")
-            or parsed.hostname == "judge0.com" or parsed.hostname.endswith(".judge0.com")
+            or parsed.hostname.rstrip(".") == "judge0.com"
+            or parsed.hostname.rstrip(".").endswith(".judge0.com")
             or (parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "localhost", "::1"))):
         raise RunnerUnavailable("独立运行服务尚未配置或配置无效。")
     return url, token

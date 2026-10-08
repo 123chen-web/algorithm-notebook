@@ -1,0 +1,88 @@
+# Manual-only template for a SEPARATE Linux VM. Never combine with website Compose.
+# judge0.conf and images.env must be created and checked by the operator first.
+name: oy-isolated-runner
+
+x-logging: &bounded-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  server:
+    image: judge0/judge0:${JUDGE0_VERSION:?set reviewed version}@sha256:${JUDGE0_SHA256:?set reviewed digest}
+    privileged: true
+    # Official Judge0 requires privileged containers. The VM is the outer boundary.
+    # No Docker socket, website data, website .env, or host directories are mounted.
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - ./safe-server.sh:/api/oy-safe-server.sh:ro
+      - ./oy_logging.rb:/api/config/initializers/oy_logging.rb:ro
+    command: ["bash", "/api/oy-safe-server.sh"]
+    ports:
+      - "127.0.0.1:2358:2358"
+    networks: [sandbox]
+    restart: unless-stopped
+    depends_on: [db, redis]
+    <<: *bounded-logging
+
+  workers:
+    image: judge0/judge0:${JUDGE0_VERSION:?set reviewed version}@sha256:${JUDGE0_SHA256:?set reviewed digest}
+    command: ["bash", "/api/oy-safe-workers.sh"]
+    privileged: true
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - ./safe-workers.sh:/api/oy-safe-workers.sh:ro
+      - ./oy_logging.rb:/api/config/initializers/oy_logging.rb:ro
+    networks: [sandbox]
+    restart: unless-stopped
+    depends_on: [db, redis]
+    <<: *bounded-logging
+
+  db:
+    image: postgres:${POSTGRES_TAG:?set reviewed version}@sha256:${POSTGRES_SHA256:?set reviewed digest}
+    environment:
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set distinct runner database password}
+    volumes:
+      - runner_database:/var/lib/postgresql/data
+    networks: [sandbox]
+    restart: unless-stopped
+    <<: *bounded-logging
+
+  redis:
+    image: redis:${REDIS_TAG:?set reviewed version}@sha256:${REDIS_SHA256:?set reviewed digest}
+    command: ["sh", "-c", 'exec docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set distinct runner redis password}
+    networks: [sandbox]
+    restart: unless-stopped
+    <<: *bounded-logging
+
+  gateway:
+    image: caddy:${CADDY_TAG:?set reviewed version}@sha256:${CADDY_SHA256:?set reviewed digest}
+    ports:
+      - "443:443"
+    environment:
+      RUNNER_DOMAIN: ${RUNNER_DOMAIN:?set owned DNS name}
+      OY_APP_EGRESS_IP: ${OY_APP_EGRESS_IP:?set single website egress IP}
+    volumes:
+      - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
+      - runner_tls_data:/data
+      - runner_tls_config:/config
+    networks: [sandbox, gateway]
+    depends_on: [server]
+    restart: unless-stopped
+    <<: *bounded-logging
+
+networks:
+  sandbox:
+    internal: true
+  gateway:
+
+volumes:
+  runner_database:
+  runner_tls_data:
+  runner_tls_config:
