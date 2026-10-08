@@ -203,7 +203,16 @@ def save_cache(day: str, papers: list, news: list, summaries: dict) -> None:
             json.dump(payload, handle, ensure_ascii=False)
             handle.flush()
             os.fsync(handle.fileno())
-        tmp_path.replace(path)
+        # Concurrent Windows replacements can briefly hold the destination.
+        # Retry only that operation; creation failures keep their original error.
+        for attempt in range(4):
+            try:
+                tmp_path.replace(path)
+                break
+            except PermissionError as exc:
+                if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 3:
+                    raise
+                time.sleep(0.05 * (2 ** attempt))
     finally:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

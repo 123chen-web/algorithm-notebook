@@ -738,8 +738,9 @@ def test_concurrent_cache_writers_publish_complete_files(database, monkeypatch):
     publications = []
 
     def publish_together(*args, **kwargs):
-        publications.append(args[0])
-        barrier.wait(timeout=5)
+        if args[0] not in publications:
+            publications.append(args[0])
+            barrier.wait(timeout=5)
         return real_replace(*args, **kwargs)
 
     monkeypatch.setattr(Path, "replace", publish_together)
@@ -765,6 +766,88 @@ def test_cache_replace_failure_keeps_previous_file_and_cleans_temp(database, mon
     monkeypatch.setattr(Path, "replace", fail_replace)
     with pytest.raises(OSError):
         digest.save_cache(TODAY, [], [], {})
+    assert path.read_bytes() == before
+    assert [entry.name for entry in path.parent.iterdir()] == [f"{TODAY}.json"]
+
+
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+def test_cache_windows_replace_conflict_reuses_complete_temp(database, monkeypatch, winerror):
+    import json
+    from pathlib import Path
+
+    real_replace = Path.replace
+    attempts = []
+    sleeps = []
+
+    def temporarily_occupied(source, target):
+        attempts.append((source, target, json.loads(source.read_text(encoding="utf-8"))))
+        if len(attempts) <= 2:
+            error = PermissionError("destination briefly occupied")
+            error.winerror = winerror
+            raise error
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", temporarily_occupied)
+    monkeypatch.setattr(digest.time, "sleep", sleeps.append)
+    digest.save_cache(TODAY, [], [], {})
+    payload = {"date": TODAY, "papers": [], "news": [], "summaries": {}}
+    assert len(attempts) == 3
+    assert len({source for source, _, _ in attempts}) == 1
+    assert all(target == digest._cache_path(TODAY) and content == payload
+               for _, target, content in attempts)
+    assert sleeps == [0.05, 0.1]
+    assert digest.load_cache(TODAY) == payload
+    assert [entry.name for entry in digest._cache_path(TODAY).parent.iterdir()] == [f"{TODAY}.json"]
+
+
+@pytest.mark.parametrize("winerror,attempt_count,sleeps", [
+    (5, 4, [0.05, 0.1, 0.2]),
+    (None, 1, []),
+])
+def test_cache_replace_permission_failure_is_bounded(database, monkeypatch, winerror, attempt_count, sleeps):
+    from pathlib import Path
+
+    digest.save_cache(TODAY, [], [], {})
+    path = digest._cache_path(TODAY)
+    before = path.read_bytes()
+    attempts = []
+    observed_sleeps = []
+
+    def denied(source, target):
+        attempts.append(source)
+        error = PermissionError("replacement denied")
+        if winerror is not None:
+            error.winerror = winerror
+        raise error
+
+    monkeypatch.setattr(Path, "replace", denied)
+    monkeypatch.setattr(digest.time, "sleep", observed_sleeps.append)
+    with pytest.raises(PermissionError, match="replacement denied"):
+        digest.save_cache(TODAY, [], [], {})
+    assert len(attempts) == attempt_count
+    assert len(set(attempts)) == 1
+    assert observed_sleeps == sleeps
+    assert path.read_bytes() == before
+    assert [entry.name for entry in path.parent.iterdir()] == [f"{TODAY}.json"]
+
+
+def test_cache_temp_creation_permission_failure_has_no_retry_or_fallback(database, monkeypatch):
+    digest.save_cache(TODAY, [], [], {})
+    path = digest._cache_path(TODAY)
+    before = path.read_bytes()
+    creations = []
+    sleeps = []
+
+    def denied_creation(**kwargs):
+        creations.append(kwargs["dir"])
+        raise PermissionError("temporary directory is not writable")
+
+    monkeypatch.setattr(digest.tempfile, "NamedTemporaryFile", denied_creation)
+    monkeypatch.setattr(digest.time, "sleep", sleeps.append)
+    with pytest.raises(PermissionError, match="temporary directory is not writable"):
+        digest.save_cache(TODAY, [], [], {})
+    assert creations == [path.parent]
+    assert sleeps == []
     assert path.read_bytes() == before
     assert [entry.name for entry in path.parent.iterdir()] == [f"{TODAY}.json"]
 
