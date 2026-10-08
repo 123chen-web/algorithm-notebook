@@ -530,6 +530,41 @@ class WechatPayChannel:
             raise CallbackVerificationError("微信支付回调内容无效") from None
 
 
+def payments_configured(channel: str) -> bool:
+    """集中校验：该渠道是否有可用的商户配置。
+
+    纯环境变量检查，不导入 SDK、不发起网络请求、不读写数据库，
+    与各渠道构造函数的必填项保持一致（那边是实例化时的最终校验）。
+    PAYMENTS_MOCK_ENABLED=1 的显式本地联调模式视为已配置。
+    """
+    if channel not in ("alipay", "wechat"):
+        return False
+    if os.getenv("PAYMENTS_MOCK_ENABLED") == "1":
+        return True
+    if channel == "alipay":
+        if os.getenv("ALIPAY_SANDBOX", "0") not in ("0", "1"):
+            return False
+        required = (
+            "ALIPAY_APP_ID",
+            "ALIPAY_PRIVATE_KEY",
+            "ALIPAY_PUBLIC_KEY",
+            "ALIPAY_SELLER_ID",
+            "ALIPAY_NOTIFY_URL",
+        )
+    else:
+        required = (
+            "WECHAT_APP_ID",
+            "WECHAT_MCH_ID",
+            "WECHAT_API_V3_KEY",
+            "WECHAT_CERT_SERIAL_NO",
+            "WECHAT_PRIVATE_KEY",
+            "WECHAT_PUBLIC_KEY",
+            "WECHAT_PUBLIC_KEY_ID",
+            "WECHAT_NOTIFY_URL",
+        )
+    return all(os.getenv(name, "").strip() for name in required)
+
+
 def get_channel(channel: str) -> PaymentChannel:
     if channel not in ("alipay", "wechat"):
         raise ValueError("不支持的支付渠道")

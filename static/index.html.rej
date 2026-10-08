@@ -1,0 +1,10 @@
+diff a/static/index.html b/static/index.html	(rejected hunks)
+@@ -92,7 +92,7 @@
+   <script defer src="/static/pwa-register.js?v=1"></script>
+   <script defer src="/static/offline-sync.js?v=1"></script>
+   <script defer src="/static/offline-review.js?v=1"></script>
+-  <script defer src="/static/app.js?v=82"></script>
++  <script defer src="/static/app.js?v=83"></script>
+   <script defer src="/static/account.js?v=3"></script>
+   <script defer src="/static/new-record.js?v=4"></script>
+ </head>

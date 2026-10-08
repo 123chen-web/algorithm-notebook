@@ -72,15 +72,23 @@ def test_overdue_does_not_change_first_two_successful_intervals(
 
 @pytest.mark.parametrize("quality", [0, 1, 2])
 @pytest.mark.parametrize("ease_before, next_ease", [(2.5, 2.3), (1.4, 1.3), (1.3, 1.3)])
-def test_failure_resets_state_and_only_reduces_ease_by_point_two(quality, ease_before, next_ease):
+def test_failure_halves_repetitions_and_only_reduces_ease_by_point_two(quality, ease_before, next_ease):
+    # 答错不再清零：repetitions 折半（5→2），interval 回 1 天。
     expected = {
-        "repetitions": 0,
+        "repetitions": 2,
         "interval_days": 1,
         "ease_factor": next_ease,
         "due_date": "2026-01-02",
     }
     assert schedule(5, 40, ease_before, quality, DAY) == expected
     assert schedule(5, 40, ease_before, quality, DAY, overdue_days=365) == expected
+
+
+@pytest.mark.parametrize("repetitions, expected", [(5, 2), (4, 2), (3, 1), (2, 1), (1, 0), (0, 0)])
+def test_failure_halving_floors_at_zero(repetitions, expected):
+    state = schedule(repetitions, 10, 2.5, 0, DAY)
+    assert state["repetitions"] == expected
+    assert state["interval_days"] == 1
 
 
 @pytest.mark.parametrize("quality", [3, 4, 5])

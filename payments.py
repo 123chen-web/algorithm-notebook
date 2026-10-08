@@ -9,6 +9,7 @@ from payment_channels import (
     CallbackVerificationError,
     PaymentChannelError,
     get_channel,
+    payments_configured,
 )
 
 sec_payment_logger = logging.getLogger(__name__)
@@ -72,12 +73,17 @@ def list_orders(user_id):
 
 
 def channel_adapter(channel):
+    if channel not in ("alipay", "wechat"):
+        raise HTTPException(400, "不支持的支付渠道") from None
+    if not payments_configured(channel):
+        # fail-closed：无商户配置时绝不实例化渠道、不调 SDK，直接 503。
+        # 手动收款（/api/manual-claims 等）不走这里，不受影响。
+        raise HTTPException(503, "支付通道未配置，请使用手动收款") from None
     try:
         return get_channel(channel)
-    except ValueError:
-        raise HTTPException(400, "不支持的支付渠道") from None
     except PaymentChannelError:
-        raise HTTPException(503, "支付渠道尚未配置或未启用") from None
+        # 校验与实例化之间的竞态兜底：同样 fail-closed。
+        raise HTTPException(503, "支付通道未配置，请使用手动收款") from None
 
 
 def create_order(user_id, plan_id, channel):

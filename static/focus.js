@@ -418,6 +418,9 @@
           window.stampSeal(stamp, { anchor: button });
         }
         message = `已保存，下次复习约 ${data.interval_days} 天后`;
+        if (data.leech_suspended) {
+          message = "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。";
+        }
       }
       active.revealed = modern() && !hiddenByDefault();
       render();

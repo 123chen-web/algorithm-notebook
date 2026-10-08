@@ -105,7 +105,7 @@ def test_sm2_success_failure_and_floor():
     assert third["interval_days"] == 15
 
     failed = schedule(3, 15, 2.5, 0, day)
-    assert failed["repetitions"] == 0
+    assert failed["repetitions"] == 1  # 答错折半：3 // 2（原为清零）
     assert failed["interval_days"] == 1
     assert failed["ease_factor"] == 2.3
 

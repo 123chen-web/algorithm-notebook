@@ -48,7 +48,7 @@ def test_preview_all_retains_overdue_credit_and_failure_point_two_penalty():
     } == {"0": 1, "2": 1, "3": 23, "4": 30, "5": 45}
     for quality in ("0", "2"):
         assert previews[quality] == {
-            "repetitions": 0,
+            "repetitions": 1,  # 答错折半：2 // 2（原为清零）
             "interval_days": 1,
             "ease_factor": 2.3,
             "due_date": "2026-10-05",

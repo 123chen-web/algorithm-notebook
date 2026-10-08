@@ -136,7 +136,7 @@ def test_failed_overdue_review_only_reduces_ease_by_point_two(client, quality):
 
     assert response.status_code == 200
     assert response.json() == {
-        "repetitions": 0,
+        "repetitions": 1,  # 答错折半：2 // 2（原为清零）
         "interval_days": 1,
         "ease_factor": 2.3,
         "due_date": "2026-09-20",

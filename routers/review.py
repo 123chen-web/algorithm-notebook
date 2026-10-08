@@ -134,7 +134,26 @@ def review_mistake(
                 item["due_date"], item["last_reviewed_at"], item["version"] + 1,
             ),
         )
-        response = {**state, "version": item["version"] + 1}
+        # leech 判定：连续失败 8 次（对标 Anki 默认）自动暂停。
+        # 注意不能直接调 main.rvb_set_suspension：它内部另开写连接，
+        # 在本事务内嵌套调用会触发 BEGIN IMMEDIATE 冲突；这里执行与它
+        # 完全相同的 UPDATE（suspended_at + version+1），语义一致。
+        leech_suspended = False
+        if data.quality < 3:
+            recent = conn.execute(
+                "SELECT quality FROM reviews WHERE mistake_id = ? ORDER BY id DESC LIMIT 8",
+                (mistake_id,),
+            ).fetchall()
+            if len(recent) == 8 and all(row["quality"] < 3 for row in recent):
+                conn.execute(
+                    "UPDATE mistakes SET suspended_at = ?, version = version + 1 WHERE id = ?",
+                    (now, mistake_id),
+                )
+                leech_suspended = True
+        final_version = item["version"] + (2 if leech_suspended else 1)
+        response = {**state, "version": final_version}
+        if leech_suspended:
+            response["leech_suspended"] = True
         if data.client_op_id is not None:
             conn.execute(
                 "INSERT INTO review_ops(user_id, client_op_id, mistake_id, response, created_at) "

@@ -28,12 +28,16 @@ def schedule(
 
     前端提供 0、3、4、5 四个按钮。
     下一次日期始终从实际复习当天计算。
+
+    答错（quality<3）时 repetitions 折半（不清零），interval 回到 1 天，
+    易度减 0.2（下限 1.3）。连续失败 8 次的 leech 暂停由复习接口处理，
+    不在本函数内。
     """
     if type(quality) is not int or not 0 <= quality <= 5:
         raise ValueError("quality 必须是 0 到 5 的整数")
 
     if quality < 3:
-        next_repetitions = 0
+        next_repetitions = repetitions // 2
         next_interval = 1
         next_ease = max(1.3, ease_factor - 0.2)
     else:

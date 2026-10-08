@@ -3100,6 +3100,9 @@ function renderDetail(item, options = {}) {
         stampSeal(sealText, { anchor });
         if (result) {
           rvfRemoveItem({ ...item, ...result });
+          if (result.leech_suspended && state.isCurrent()) {
+            status.textContent = "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。";
+          }
           window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
             onUndo: (restored) => rvfRestoreItem(item, restored) });
         } else {
