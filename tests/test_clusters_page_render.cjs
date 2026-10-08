@@ -132,6 +132,7 @@ function harness(options = {}) {
   context.renderHomeQuota = context.updateUserInfo;
   if (options.focus !== false) context.window.FocusReview = { start: (args) => practices.push(JSON.parse(JSON.stringify(args))) };
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(require("node:path").join(__dirname, "../static/problem-cards.js"), "utf8"), context, { timeout: 1000 });
   vm.runInContext(payload.practice, context, { timeout: 1000 });
   vm.runInContext(payload.source, context, { timeout: 1000 });
   vm.runInContext(payload.appBehavior, context, { timeout: 1000 });
@@ -178,13 +179,13 @@ async function readyPage() {
   assert.equal(cards.length, 2);
   assert.equal(byClass(cards[0], "clusters-member").length, 3);
   assert.equal(byClass(result, "clusters-summary")[0].textContent, "<b>区间的端点需要先说明</b>");
-  assert.equal(byClass(cards[0], "clusters-member-title")[0].textContent, "<img src=x onerror=alert(1)>");
+  assert.equal(byClass(cards[0], "problem-card-open")[0].children[0].textContent, "<img src=x onerror=alert(1)>");
   assert.equal(descendants(result).filter((item) => ["img", "script", "svg", "b"].includes(item.tagName)).length, 0);
-  assert.equal(byClass(cards[0], "clusters-due").map((item) => item.textContent).join("|"), "已逾期|今天到期|2026-10-08 到期");
+  assert.equal(byClass(cards[0], "problem-card-summary").map((item) => item.textContent).join("|"), "待复习 1 条 · 共 1 条易错点|待复习 1 条 · 共 1 条易错点|待复习 0 条 · 共 1 条易错点");
   assert.equal(h.get("clusters-new").textContent, "有 3 条新错题还没归并");
   assert.equal(h.get("clusters-new").hidden, false);
   assert.equal(h.get("clusters-generate").textContent, "重新归并 · 消耗 1 次 AI 额度");
-  await byClass(cards[0], "clusters-member-open")[0].click();
+  await byClass(cards[0], "problem-card-open")[0].click();
   const navigation = h.events.find((event) => event.type === "app:navigate");
   assert.deepEqual(JSON.parse(JSON.stringify(navigation.detail)), { view: "all", recordId: 11 });
   // 每个专题卡片底部都有"现在就练这个专题"；第二个专题没有到期的，按钮禁用并写明原因。
@@ -241,7 +242,7 @@ async function failureQuota() {
   assert.equal(h.get("clusters-retry").hidden, false);
   assert.ok(h.get("clusters-retry").textContent.includes("消耗 1 次 AI 额度"));
   assert.equal(byClass(h.get("clusters-result"), "clusters-card").length, 2);
-  await byClass(h.get("clusters-result"), "clusters-member-open")[0].click();
+  await byClass(h.get("clusters-result"), "problem-card-open")[0].click();
   await byClass(h.get("clusters-result"), "clusters-practise")[0].click();
   assert.equal(h.events.filter((event) => event.type === "app:navigate").length, 1);
   assert.deepEqual(h.practices, [{ ids: [11, 12] }], "Retained cards must remain usable after an error");
@@ -328,7 +329,7 @@ async function loadError() {
   assert.equal(h.get("clusters-retry").hidden, false);
   assert.ok(h.get("clusters-status").textContent.includes("读取失败文案"));
   assert.equal(byClass(h.get("clusters-result"), "clusters-card").length, 2);
-  await byClass(h.get("clusters-result"), "clusters-member-open")[0].click();
+  await byClass(h.get("clusters-result"), "problem-card-open")[0].click();
   await byClass(h.get("clusters-result"), "clusters-practise")[0].click();
   assert.equal(h.practices.length, 1);
   assert.equal(h.events.filter((event) => event.type === "app:navigate").length, 1);
@@ -416,7 +417,7 @@ async function deferredRefresh(events = ["data", "data", "focus"]) {
   assert.equal(posts, 1);
   assert.equal(reads, 1, "Data changes and focus completion must coalesce into one follow-up read");
   assert.equal(profiles, 2);
-  assert.equal(byClass(h.get("clusters-result"), "clusters-due")[0].textContent, "2026-10-20 到期");
+  assert.equal(byClass(h.get("clusters-result"), "problem-card-summary")[0].textContent, "待复习 0 条 · 共 1 条易错点");
   assert.equal(byClass(h.get("clusters-result"), "clusters-practise")[0].textContent, "现在就练这个专题（1 条）");
   assert.equal(h.get("clusters-generate").disabled, false);
 }
@@ -435,7 +436,7 @@ async function focusClosed() {
   assert.equal(h.context.view, "clusters");
   assert.equal(h.get("clusters-page").hidden, false);
   assert.equal(h.calls.length, prior + 2, "The real focus listener must reread saved clusters and quota");
-  assert.equal(byClass(h.get("clusters-result"), "clusters-due")[0].textContent, "2026-10-20 到期");
+  assert.equal(byClass(h.get("clusters-result"), "problem-card-summary")[0].textContent, "待复习 0 条 · 共 1 条易错点");
 }
 
 async function resetRefresh() {

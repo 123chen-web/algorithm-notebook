@@ -93,7 +93,7 @@
 #weakness-page .weakness-pattern > .multiline { margin: var(--space-5) 0; font-size: var(--text-base); line-height: var(--lh-prose); }
 #weakness-page .weakness-pattern > h4 { margin: var(--space-5) 0 var(--space-2); font-size: var(--text-sm); color: var(--ink-2); }
 #weakness-page .weakness-evidence { margin: 0; padding: 0; list-style: none; }
-#weakness-page .weakness-evidence li { display: grid; grid-template-columns: 6em minmax(0, 1fr); align-items: start; gap: var(--space-4); margin: 0; padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
+#weakness-page .weakness-evidence li { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-2); margin: 0; padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
 #weakness-page .weakness-evidence-zone { justify-self: start; max-width: 100%; padding: var(--space-1) var(--space-2); border-radius: var(--radius-chip); background: var(--paper-2); color: var(--ink-2); font-size: var(--text-xs); }
 #weakness-page .weakness-evidence-copy { min-width: 0; font-size: var(--text-base); line-height: var(--lh-prose); }
 #weakness-page .weakness-evidence-copy strong { font-weight: 600; }

@@ -39,3 +39,17 @@ def enrich_problems(conn, user_id, items, today):
             ],
         }
     return [{**item, **metadata[item['problem_id']]} for item in items]
+
+
+def enrich_insight(conn, user_id, state, today, kind):
+    """展示用实时元数据放在报告之外；不改 AI 的已保存证据或专题成员。"""
+    content = (state.get('insight') or {}).get('content', {})
+    entries = [entry for group in content.get(kind, [])
+               for entry in group.get('evidence' if kind == 'patterns' else 'members', [])]
+    ids = sorted({entry['problem_id'] for entry in entries if 'problem_id' in entry})
+    rows = conn.execute(
+        'SELECT id AS problem_id, title, zone FROM problems '
+        'WHERE user_id=? AND id IN (SELECT value FROM json_each(?))',
+        (user_id, json.dumps(ids)),
+    ).fetchall() if ids else []
+    return {**state, 'problem_cards': enrich_problems(conn, user_id, [dict(row) for row in rows], today)}

@@ -185,6 +185,8 @@
   function renderCard(item) {
     const card = node("article", "focus-card");
     const meta = node("div", "focus-meta");
+    const position = window.ProblemCards?.position(item, [...session.items.values()]);
+    if (position) meta.append(node("span", "problem-position", position));
     meta.append(node("span", "focus-zone", item.zone));
     const reviewed = item.repetitions > 0 ? `已复习 ${item.repetitions} 次` : "第一次复习";
     meta.append(node("span", "", reviewed));

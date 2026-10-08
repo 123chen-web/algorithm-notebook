@@ -31,7 +31,7 @@ function setup() {
       return wrap;
     },
   };
-  const env = load(["focus.js"], { extra: { ReviewExtras: extras } });
+  const env = load(["problem-cards.js", "focus.js"], { extra: { ReviewExtras: extras } });
   const api = async (url, init = {}) => {
     const response = await env.window.fetch(url, init);
     const data = await response.json();
@@ -192,7 +192,7 @@ test("focus feel: 409 skips the conflicted card while preserving the exact Chine
 });
 
 function realSetup() {
-  const env = load(["review-extras.js", "focus.js"]);
+  const env = load(["problem-cards.js", "review-extras.js", "focus.js"]);
   const state = { epoch: 1, user: { id: 7 }, view: "review" };
   const options = { getEpoch: () => state.epoch, getUser: () => state.user, getView: () => state.view,
     api: async (url, init = {}) => {

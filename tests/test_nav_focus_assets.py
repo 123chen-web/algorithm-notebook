@@ -72,7 +72,7 @@ def test_assets_are_served_once_and_before_app():
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
     assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=84")
+    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=85")
 
 
 def test_changed_assets_bump_their_cache_busting_version():
