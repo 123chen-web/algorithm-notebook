@@ -385,6 +385,32 @@ async function answer(env, index, body, status = 200) {
 }
 const rows = (env) => qa(env, "#forum-posts .board-row");
 const rowTitles = (env) => rows(env).map((row) => row.querySelector(".board-open").textContent);
+
+// Feedback regression: users tap the row/status, and browsers focus a button before clicking it.
+test("feedback: focusin keeps a zero-reply post title connected and clickable", async () => {
+  const { env, Board, state } = setup();
+  const loading = Board.show();
+  await answer(env, 0, page([post(71, { comment_count: 0, last_commenter: null })]));
+  await loading;
+  const title = q(env, "#forum-posts .board-open");
+  title.focus();
+  title.dispatchEvent(new FakeEvent("focusin", { bubbles: true }));
+  assert.equal(title.isConnected, true, "focus must not replace the pending click target");
+  assert.equal(q(env, "#forum-posts .board-open"), title);
+  click(title);
+  assert.deepEqual(state.opened, [71]);
+});
+
+for (const [target, selector] of [["post row", ".board-row"], ["待回复 status", ".board-stat"], ["等你来回 pill", ".board-pill.is-open"]]) {
+  test(`feedback: tapping ${target} opens a zero-reply post exactly once`, async () => {
+    const { env, Board, state } = setup();
+    const loading = Board.show();
+    await answer(env, 0, page([post(72, { comment_count: 0, last_commenter: null })]));
+    await loading;
+    click(q(env, `#forum-posts ${selector}`));
+    assert.deepEqual(state.opened, [72]);
+  });
+}
 const keydown = (env, key, props = {}) => {
   const event = new FakeEvent("keydown", { props: { key, target: env.document.body, ...props } });
   env.document.dispatchEvent(event);

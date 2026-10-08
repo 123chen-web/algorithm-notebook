@@ -802,6 +802,32 @@ test("app submit: failure explains retry without discarding the draft or reply t
   env.calls[1].resolve(row(8, 8)); await env.pending();
 });
 
+test("feedback: reply network failure explains retry in Chinese and allows another send", async () => {
+  const env = appEnv(); env.render();
+  const field = env.$("#forum-comment-body"); field.value = "网络中断时保留草稿";
+  env.context.selectForumReply(env.context.forumPost.comments[0]);
+  env.context.submitForumComment(); await tick();
+  env.calls[0].reject(new TypeError("Failed to fetch")); await env.pending();
+  assert.match(env.$("#forum-comment-status").textContent, /网络.*重试|发送失败.*重试/);
+  assert.equal(field.value, "网络中断时保留草稿");
+  assert.equal(env.context.forumReplyTarget.id, 1);
+  env.context.submitForumComment(); await tick();
+  assert.equal(env.calls.length, 2);
+  env.calls[1].resolve(row(8, 8)); await env.pending();
+});
+
+test("feedback: reply 401 explains login expiry even after api invalidates the session", async () => {
+  const env = appEnv(); env.render();
+  env.$("#forum-comment-body").value = "过期登录的草稿";
+  env.context.submitForumComment(); await tick();
+  // The production api() calls signedOut() before rejecting a 401 response.
+  env.context.sessionEpoch++;
+  env.context.user = null;
+  env.context.view = "home";
+  env.calls[0].reject(Object.assign(new Error("请先登录"), { status: 401 })); await env.pending();
+  assert.match(env.messages.join(" "), /登录.*过期|重新登录|请先登录/);
+});
+
 test("app submit: a late failure cannot display errors after leaving the discussion", async () => {
   const env = appEnv(); env.render();
   env.$("#forum-comment-body").value = "离开前草稿";
