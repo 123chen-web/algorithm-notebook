@@ -176,6 +176,18 @@ def test_queue_timeout_releases_slot_and_large_output_is_clipped(monkeypatch):
     assert code_runner._output(base64.b64encode(b"x" * 8001).decode()) == ("x" * 8000, True)
 
 
+def test_exec_format_error_is_a_runtime_result(monkeypatch):
+    import code_runner
+    monkeypatch.setenv("CODE_RUNNER_URL", "https://runner.example.invalid")
+    monkeypatch.setenv("CODE_RUNNER_TOKEN", "test-only-token")
+    monkeypatch.setattr(code_runner, "_request", lambda url, token, data=None:
+        {"token": "12345678-1234-1234-1234-123456789012"} if data is not None else
+        {"status": {"id": 14}, "stderr": base64.b64encode(b"Exec Format Error").decode()})
+    result = code_runner.run("C++", "int main() {}", "")
+    assert result["status"] == "runtime_error"
+    assert result["stderr"] == "Exec Format Error"
+
+
 @pytest.mark.parametrize("change", ["ban", "revoke"])
 def test_authentication_change_before_dispatch_does_not_submit_code(client, monkeypatch, change):
     import code_runner
