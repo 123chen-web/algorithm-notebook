@@ -146,6 +146,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "public_rank_opt_out": 0,
             "daily_review_cap": None,
             "bio": "",
+            "lifetime_problem_count": 0,
         }
         plan_id = insert_plan(conn)
         conn.execute(
