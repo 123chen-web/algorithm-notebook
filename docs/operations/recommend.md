@@ -19,7 +19,7 @@
   退出码非 0，方便 cron 告警。
 - 缓存超过 14 天只在推荐日志里提醒一行，不影响推荐（题库本来就更新得慢）。
 
-### 服务器每天自动刷新（仅提供脚本，不会自动安装）
+### 服务器每天自动刷新（提供配置与脚本，由站长手动启用）
 
 在服务器现有仓库中，先检查计划：
 
@@ -40,12 +40,92 @@ python3 deploy/bin/refresh-recommend.py --dry-run
 独立虚拟环境部署可在刷新后运行 `python daily_notice.py`；
 `python daily_notice.py --dry-run` 只打印计划，不读取缓存或数据库。
 
-由站长在服务器执行 `crontab -e` 添加以下一行；不要把它交给 Web 进程调度：
+仓库另外提供两个 systemd 配置和一个标准库管理工具：
 
-```cron
-# 每天 04:00（宿主机时区）刷新；路径按服务器实际仓库目录修改
-0 4 * * * cd /srv/algorithm-notebook && /usr/bin/python3 deploy/bin/refresh-recommend.py >> /srv/algorithm-notebook/data/cf-refresh.log 2>&1
+- `deploy/systemd/algorithm-notebook-recommend.service.in`：单次任务，调用现有刷新脚本，
+  宿主机服务超时设为 5 分钟；输出进 journal，不在仓库中新建日志或临时目录。
+- `deploy/systemd/algorithm-notebook-recommend.timer`：每天 **04:00 Asia/Taipei** 触发，
+  不依赖宿主机当前时区，调度精度设为 1 秒。主机关机或停用期间错过触发时，
+  重新启用后补一次，不逐日回放。服务仍在运行时不会另起同名实例。
+- `deploy/bin/recommend-schedule.py`：只管理以上两个固定任务名；
+  `install / verify / enable / disable / run` **全部默认预览**，
+  只有显式添加 `--apply` 才会执行 Linux 上的相应操作。Windows 也可预览。
+
+当前交付仅包含代码、模板和离线测试；尚未在任何服务器安装、启用或抓取。
+未来要启用时，由站长在现有的 **Linux systemd + Docker Compose** 主机上按以下顺序执行。
+仓库路径如果不是 `/srv/algorithm-notebook`，给每一步加同一个 `--repo /实际路径`。
+路径必须是规范的 Linux 绝对路径，不支持空格、符号链接或 systemd 特殊字符。
+
+1. 先在本机或服务器预览。以下命令不会写文件、读取 `.env`、调用 systemd/Docker 或联网：
+
+   ```sh
+   python3 deploy/bin/recommend-schedule.py install
+   python3 deploy/bin/recommend-schedule.py enable
+   ```
+
+2. 站长先检查是否曾配置旧的推荐刷新 cron 或其他计时任务。
+   如有，手工移除同一推荐任务的旧调度，避免两个调度器重复抓取。
+   管理工具不会读取或修改任何人的 crontab。
+
+3. 确认现有网站、Docker、生产 Compose 文件及 `.env` 已配置好。
+   实际操作要求 root；仓库目录及其祖先、任务入口和 Compose 文件必须由 root 所有，
+   不可允许组或其他用户写入，不接受符号链接。工具不会改变这些权限，也不会读取或修改 `.env`。
+   两个目标 unit 的同名外来文件、运行时覆盖文件或额外配置目录
+   （包括名称前缀和通用 service/timer drop-in）会让操作直接失败，留给站长手工审阅。
+
+4. 安装配置，再核查；这两步不会主动启用或开始抓取：
+
+   ```sh
+   sudo python3 deploy/bin/recommend-schedule.py install --apply
+   sudo python3 deploy/bin/recommend-schedule.py verify --apply
+   ```
+
+   `install` 先检查两个目标，再分别以临时文件 + `fsync` + 原子替换写入
+   `/etc/systemd/system/`，仅执行 `daemon-reload`。它可更新自身安装的原样任务，
+   不能只凭头部标记接管被修改的文件。两个文件分别原子写入，并非跨文件事务；
+   写入或重载失败时返回非零，请先核查，不要继续启用。
+   已经启用的旧任务不会因为重复安装自动停用；要调整现有部署时，先按下方命令停用。
+   `verify` 检查配置语法、日历和实际加载来源，显示启停状态、运行结果与下次触发时间；
+   不开始任务。首次安装、尚未运行时没有成功执行记录是正常的。
+   启用、停用或手工运行前也会只读核查 systemd 当前加载来源、额外配置及重载需求，
+   避免操作尚未重载的外来旧任务或同路径旧配置。
+
+5. 确认核查结果后，站长明确启用每天运行：
+
+   ```sh
+   sudo python3 deploy/bin/recommend-schedule.py enable --apply
+   ```
+
+   **启用可能因 Persistent 立即补跑一次，并发生官方题库请求和今日一条发布。**
+   如希望立即做一次真实刷新，也可单独执行：
+
+   ```sh
+   sudo python3 deploy/bin/recommend-schedule.py run --apply
+   ```
+
+   两者都不调用 AI、SMTP、微信推送；只刷新 Codeforces 官方题库元信息，成功后发布一道链接。
+   `run` 只提交单次任务请求，不等待抓取完成；命令成功只表示 systemd 接收了请求。
+   真正执行结果需通过 `verify` 的 `Result / ExecMainStatus` 及 journal 核查。
+   刷新失败保留旧缓存，且不会发布新的今日一条，服务结果为失败，日志保留在 journal。
+   宿主服务超时不证明容器里的 Docker exec 作业已经取消；发生超时后，
+   请站长检查容器与 journal 确认没有残留作业，再手工重试。
+   正常运行的同名 systemd 服务不会重叠；容器内刷新另有缓存文件锁。
+   次日仍会按计划运行；需要当天重试时由站长手工 `run`。
+
+停用后续计时，并检查状态与日志：
+
+```sh
+sudo python3 deploy/bin/recommend-schedule.py disable --apply
+sudo python3 deploy/bin/recommend-schedule.py verify --apply
+sudo journalctl -u algorithm-notebook-recommend.service -n 50 --no-pager
 ```
+
+`disable` 只停用这一个 timer，不删除文件或影响其他任务，也不打断已开始的单次刷新。
+再次 `enable` 仍可能因错过触发而补一次。重复启用、停用与安装可安全重用。
+以上服务器实际操作均由用户自行执行；离线测试不能证明目标主机的时区数据库、
+Docker 状态、官方网络可达性或任务真实成功，需要安装后的 `verify` 和 journal 确认。
+systemd 行为依据官方 [timer 说明](https://github.com/systemd/systemd/blob/main/man/systemd.timer.xml)
+与 [时间表达式说明](https://github.com/systemd/systemd/blob/main/man/systemd.time.xml)。
 
 也可以在宿主机直接跑（`python` 换成项目 venv 的 python）：
 

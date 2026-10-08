@@ -1,0 +1,12 @@
+# Managed-By: OY recommend-schedule.py v1
+[Unit]
+Description=OY recommendation every day at 04:00 Asia/Taipei
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Taipei
+Persistent=true
+AccuracySec=1s
+Unit=algorithm-notebook-recommend.service
+
+[Install]
+WantedBy=timers.target

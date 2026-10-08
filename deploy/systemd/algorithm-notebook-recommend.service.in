@@ -1,0 +1,17 @@
+# Managed-By: OY recommend-schedule.py v1
+# Repository: @REPO@
+[Unit]
+Description=OY daily official problem metadata and notice
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/deploy/bin/refresh-recommend.py
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
