@@ -4,7 +4,7 @@
    数据获取、下单、轮询、退款仍在 app.js，这里只负责把数据画出来。 */
 (() => {
   const DAY_MS = 86400000;
-  const DEFAULT_FREE_LIMIT = 10;
+  const DEFAULT_FREE_LIMIT = 20;
   const CHANNEL_NAMES = { alipay: "支付宝", wechat: "微信支付", mock: "Mock" };
   const ORDER_STATUS = {
     pending: ["待支付", "pending"],

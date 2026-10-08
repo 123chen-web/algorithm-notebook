@@ -526,13 +526,13 @@ def today_for(user):
 
 
 def ai_limit():
-    return max(1, int(os.getenv("AI_DAILY_LIMIT", "10")))
+    return max(1, int(os.getenv("AI_DAILY_LIMIT", "20")))
 
 
 def trial_ai_limit():
     # 体验账号任何人都能开，额度要远低于正式账号，否则等于把
     # AI_DAILY_LIMIT 变成"任何人每天可用次数 × 无限个体验账号"。
-    return max(0, int(os.getenv("TRIAL_AI_DAILY_LIMIT", "2")))
+    return max(0, int(os.getenv("TRIAL_AI_DAILY_LIMIT", "4")))
 
 
 def ai_quota(conn, user_id, day):

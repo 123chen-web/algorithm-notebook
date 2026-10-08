@@ -12,7 +12,7 @@ PAGE = HTML[HTML.index('<section id="plan-page"'):HTML.index("</main>")]
 
 def test_plan_assets_are_versioned_and_loaded_before_app():
     assert '/static/plan.css?v=1' in HTML
-    assert '/static/plan.js?v=2' in HTML
+    assert '/static/plan.js?v=3' in HTML
     assert HTML.index('/static/plan.js?') < HTML.index('/static/app.js?')
     assert int(re.search(r'/static/app.js\?v=(\d+)', HTML).group(1)) >= 59
 

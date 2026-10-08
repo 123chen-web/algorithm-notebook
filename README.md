@@ -852,7 +852,7 @@ AI 会自己从代码和思路反推具体错在哪，不要求用户先自己�
 返回一个固定标记，服务端拦下、不生成任何内容；错因字段缺失本身不算
 越界依据。
 
-每个用户默认每天最多尝试生成 10 次（`AI_DAILY_LIMIT`）；体验账号单独走
+每个用户默认每天最多尝试生成 20 次（`AI_DAILY_LIMIT`）；体验账号单独走
 `TRIAL_AI_DAILY_LIMIT`。已购买且未过期套餐的用户改用该套餐的
 `ai_daily_limit`，具体优先级见下方"套餐额度"一节。
 调用失败也消耗次数，服务端不自动重试。
@@ -1058,7 +1058,7 @@ AI 扮演小黄鸭追问、指出讲得含糊的地方，最后给一份总结�
 - 建号本身按客户端 IP 限流（`TRIAL_LIMIT`，默认每小时 3 次），防止
   脚本无限刷号。
 - 体验账号的 AI 生成额度单独由 `TRIAL_AI_DAILY_LIMIT` 控制（默认
-  每天 2 次），跟正式账号的 `AI_DAILY_LIMIT` 互不影响——如果两者共用
+  每天 4 次），跟正式账号的 `AI_DAILY_LIMIT` 互不影响——如果两者共用
   一个额度，等于把 `AI_DAILY_LIMIT` 变成"任何人每天可用次数 × 无限个
   体验账号"。
 
@@ -1323,7 +1323,8 @@ PAYMENTS_MOCK_SECRET=填写独立随机密钥
 | `POST /api/payments/mock/{channel}/callback` | 原始 JSON 正文加 `X-Mock-Signature`；只能处理自己的订单 |
 
 套餐由管理员直接维护数据库；本阶段没有面向普通用户的套餐编辑接口。
-周期或额度变化时新建套餐、停用旧套餐，保留原记录。订单以落库时的价格
+常规周期或额度变化时新建套餐、停用旧套餐，保留原记录；本次默认套餐提额
+提供下方的显式一次性更新工具。订单以落库时的价格
 作为金额快照，不接受前端自行指定金额，也不会因套餐停用而拒绝已有订单
 的有效支付回调。
 
@@ -1425,10 +1426,28 @@ Mock 退款仅同步模拟成功，不调用外部渠道，也不需要退款签
 V1 没有套餐管理后台，`plans` 表的行目前只能手动插入或者用独立脚本
 `seed_plans.py` 创建：
 
+默认标准版为 30 天 ¥9.9、每天 50 次 AI；进阶版为 30 天 ¥19.9、每天
+120 次 AI。免费额度默认 20 次，因此两档分别为免费版的 2.5 倍、6 倍；
+页面按实际额度计算倍数。每日上限保留作为防滥用限制。
+
 ```bash
 .venv/Scripts/python.exe seed_plans.py           # 按名字幂等插入默认的两档套餐
 .venv/Scripts/python.exe seed_plans.py --dry-run # 只打印会新增什么，不写入
 ```
+
+普通 seed 不会覆盖已存在套餐。已上线数据库提额时，先备份、预览，再显式执行：
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml exec -T app python seed_plans.py --update-limits
+docker compose -f deploy/docker-compose.prod.yml exec -T app python seed_plans.py --update-limits --apply
+```
+
+只更新名字精确为「标准版」「进阶版」的 `ai_daily_limit` 至 50 / 120；同名
+多行会逐行列出并更新，缺失套餐跳过。不改价格、周期、购买/启用开关，不新增
+套餐，不动站长专属等其他套餐。默认预览不写库也不做结构迁移；正式更新在
+同一个事务内完成，失败整体回滚，重复执行无额外变更。现有有效订阅也会按
+新额度计算，已用次数保持不变。`.env` 需另设 `AI_DAILY_LIMIT=20`、
+`TRIAL_AI_DAILY_LIMIT=4`，然后按部署流程重建 app 容器使环境变量生效。
 
 默认插入的套餐 `purchasable = 0`：会出现在 `GET /api/plans` 和"我的套餐"页里，
 但下单接口会拒绝（403），不会触发支付宝/微信真实扣款。确认价格无误后运行

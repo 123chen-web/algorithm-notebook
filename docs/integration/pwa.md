@@ -36,7 +36,7 @@ tests/test_pwa_assets.py
   <link rel="stylesheet" href="/static/pwa.css?v=1">
 ```
 
-脚本区，`<script defer src="/static/plan.js?v=1"></script>` 之后、**app.js 之前**加
+脚本区，`<script defer src="/static/plan.js?v=3"></script>` 之后、**app.js 之前**加
 （顺序固定：offline-queue.js 必须在 offline-sync.js 前面）：
 
 ```html

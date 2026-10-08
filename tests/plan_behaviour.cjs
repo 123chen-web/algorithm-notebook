@@ -11,12 +11,12 @@ const { load, deferred, tick } = require("./js_harness.cjs");
 const NOW = Date.parse("2026-10-04T12:00:00Z");
 const DAY = 86400000;
 const plain = (value) => JSON.parse(JSON.stringify(value));
-const PLAN_A = { id: 1, name: "月度", price_cents: 990, period_days: 30, ai_daily_limit: 30, purchasable: 1 };
+const PLAN_A = { id: 1, name: "月度", price_cents: 990, period_days: 30, ai_daily_limit: 50, purchasable: 1 };
 const PLAN_B = { id: 2, name: "季度", price_cents: 2490, period_days: 90, ai_daily_limit: 45, purchasable: 0 };
-const FREE_ME = { is_trial: false, plan_active: false, plan_id: null, plan_expires_at: null, ai_daily_limit: 10, ai_daily_used: 3, ai_daily_remaining: 7, timezone: "UTC" };
+const FREE_ME = { is_trial: false, plan_active: false, plan_id: null, plan_expires_at: null, ai_daily_limit: 20, ai_daily_used: 3, ai_daily_remaining: 17, timezone: "UTC" };
 const activeMe = (days, extra = {}) => ({
   ...FREE_ME, plan_active: true, plan_id: 1, plan_name: "月度", plan_expires_at: new Date(NOW + days * DAY - 1000).toISOString(),
-  ai_daily_limit: 30, ai_daily_used: 4, ai_daily_remaining: 26, ...extra,
+  ai_daily_limit: 50, ai_daily_used: 4, ai_daily_remaining: 46, ...extra,
 });
 
 function env(files = ["plan.js"], extra = {}) {
@@ -50,25 +50,38 @@ test("daysLeft: rounds up, expired/invalid is 0", () => {
 test("model: free account has free card current, usage ratio and no urgency", () => {
   const { View } = env();
   const m = plain(View.model([PLAN_A], FREE_ME, NOW));
-  assert.equal(m.freeLimit, 10);
+  assert.equal(m.freeLimit, 20);
   assert.deepEqual(m.status, { active: false, daysLeft: 0, expiresAt: null, urgent: false });
-  assert.deepEqual(m.usage, { used: 3, limit: 10, remaining: 7, ratio: 0.3, exhausted: false });
+  assert.deepEqual(m.usage, { used: 3, limit: 20, remaining: 17, ratio: 0.15, exhausted: false });
   assert.equal(m.cards[0].id, "free");
   assert.equal(m.cards[0].priceText, "¥0 · 永久");
   assert.equal(m.cards[0].current, true);
   assert.equal(m.cards[1].priceText, "¥9.90 / 30 天");
-  assert.equal(m.cards[1].perDayText, "每天 30 次 AI 生成");
-  assert.equal(m.cards[1].multiplierText, "是免费版的 3 倍");
+  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 生成");
+  assert.equal(m.cards[1].multiplierText, "是免费版的 2.5 倍");
   assert.equal(m.cards[1].periodText, "30 天有效，到期前续费会顺延");
 });
 
-test("model: active plan — days left, urgent at <=3 days, current marker, free limit falls back to 10", () => {
+test("model: standard and advanced quotas yield 2.5 and 6 times the free allowance", () => {
+  const { View } = env();
+  const m = plain(View.model([
+    { ...PLAN_A, name: "标准版" },
+    { ...PLAN_B, name: "进阶版", period_days: 30, price_cents: 1990, ai_daily_limit: 120 },
+  ], FREE_ME, NOW));
+  assert.equal(m.cards[1].perDayText, "每天 50 次 AI 生成");
+  assert.equal(m.cards[1].multiplierText, "是免费版的 2.5 倍");
+  assert.equal(m.cards[2].perDayText, "每天 120 次 AI 生成");
+  assert.equal(m.cards[2].multiplierText, "是免费版的 6 倍");
+  assert.equal(m.cards[2].priceText, "¥19.90 / 30 天");
+});
+
+test("model: active plan — days left, urgent at <=3 days, current marker, free limit falls back to 20", () => {
   const { View } = env();
   const m = plain(View.model([PLAN_A, PLAN_B], activeMe(29), NOW));
   assert.equal(m.status.active, true);
   assert.equal(m.status.daysLeft, 29);
   assert.equal(m.status.urgent, false);
-  assert.equal(m.freeLimit, 10, "active plan limit is not the free allowance");
+  assert.equal(m.freeLimit, 20, "active plan limit is not the free allowance");
   assert.equal(m.cards[0].current, false);
   assert.equal(m.cards[1].current, true);
   assert.equal(m.cards[2].current, false);
@@ -89,23 +102,24 @@ test("model: expired plan (expires <= now) counts as no plan even if plan_active
 
 test("model: free limit follows the user's allowance, non-integer multiplier keeps one decimal", () => {
   const { View } = env();
-  const m = plain(View.model([{ ...PLAN_A, ai_daily_limit: 25 }], { ...FREE_ME, ai_daily_limit: 20, ai_daily_used: 0, ai_daily_remaining: 20 }, NOW));
-  assert.equal(m.freeLimit, 20);
-  assert.equal(m.cards[0].perDayText, "每天 20 次 AI 生成");
+  const m = plain(View.model([{ ...PLAN_A, ai_daily_limit: 50 }], { ...FREE_ME, ai_daily_limit: 40, ai_daily_used: 0, ai_daily_remaining: 40 }, NOW));
+  assert.equal(m.freeLimit, 40);
+  assert.equal(m.cards[0].perDayText, "每天 40 次 AI 生成");
   assert.equal(m.cards[1].multiplierText, "是免费版的 1.3 倍");
-  const same = plain(View.model([{ ...PLAN_A, ai_daily_limit: 10 }], FREE_ME, NOW));
+  const same = plain(View.model([{ ...PLAN_A, ai_daily_limit: 20 }], FREE_ME, NOW));
   assert.equal(same.cards[1].multiplierText, "", "no multiplier when not larger than free");
 });
 
 test("model: ai_daily_limit 0, trial and missing data do not crash or divide by zero", () => {
   const { View } = env();
   const zero = plain(View.model([PLAN_A], { ...FREE_ME, ai_daily_limit: 0, ai_daily_used: 0, ai_daily_remaining: 0 }, NOW));
-  assert.equal(zero.freeLimit, 10);
+  assert.equal(zero.freeLimit, 20);
   assert.equal(zero.usage.ratio, 1);
   assert.equal(zero.usage.exhausted, true);
-  const trial = plain(View.model([PLAN_A], { ...FREE_ME, is_trial: true, ai_daily_limit: 2, ai_daily_used: 1, ai_daily_remaining: 1 }, NOW));
-  assert.equal(trial.freeLimit, 10);
+  const trial = plain(View.model([PLAN_A], { ...FREE_ME, is_trial: true, ai_daily_limit: 4, ai_daily_used: 1, ai_daily_remaining: 3 }, NOW));
+  assert.equal(trial.freeLimit, 20);
   const empty = plain(View.model(undefined, undefined, NOW));
+  assert.equal(empty.freeLimit, 20);
   assert.equal(empty.cards.length, 1);
   assert.equal(empty.cards[0].id, "free");
   assert.equal(plain(View.model([], FREE_ME, NOW)).cards.length, 1);
@@ -113,7 +127,7 @@ test("model: ai_daily_limit 0, trial and missing data do not crash or divide by 
 
 test("model: used above limit clamps ratio to 1 and marks exhausted", () => {
   const { View } = env();
-  const m = plain(View.model([], { ...FREE_ME, ai_daily_used: 12, ai_daily_remaining: 0 }, NOW));
+  const m = plain(View.model([], { ...FREE_ME, ai_daily_used: 22, ai_daily_remaining: 0 }, NOW));
   assert.equal(m.usage.ratio, 1);
   assert.equal(m.usage.exhausted, true);
 });
@@ -153,10 +167,10 @@ test("cards: free card first with fixed content, paid cards carry real benefits 
   assert.equal(cards.length, 3);
   assert.match(texts(cards[0]), /免费版/);
   assert.match(texts(cards[0]), /¥0 · 永久/);
-  assert.match(texts(cards[0]), /每天 10 次 AI 生成/);
+  assert.match(texts(cards[0]), /每天 20 次 AI 生成/);
   assert.match(texts(cards[0]), /全部复习、统计、小组、讨论区功能/);
   assert.equal(find(cards[0], "button"), null, "free card has no button");
-  assert.match(texts(cards[1]), /每天 30 次 AI 生成（是免费版的 3 倍）/);
+  assert.match(texts(cards[1]), /每天 50 次 AI 生成（是免费版的 2.5 倍）/);
   assert.match(texts(cards[1]), /其余功能与免费版相同/);
   assert.match(texts(cards[1]), /30 天有效，到期前续费会顺延/);
   assert.match(texts(cards[1]), /官方支付的订单可在“我的订单”自助全额退款（当天已用的 AI 次数不退）；手动付款请联系站长/);
@@ -214,16 +228,16 @@ function renderStatus(me, plans = [PLAN_A]) {
 test("status: free account shows 免费版 and the usage line, no renew hint", () => {
   const { host } = renderStatus(FREE_ME);
   assert.match(texts(host), /免费版/);
-  assert.match(texts(host), /今日 AI 3 \/ 10 次 · 午夜重置/);
+  assert.match(texts(host), /今日 AI 3 \/ 20 次 · 午夜重置/);
   assert.equal(find(host, ".pl-usage-warning"), null);
   assert.equal(find(host, ".pl-renew-hint"), null);
   const bar = find(host, ".pl-meter");
   assert.equal(bar.getAttribute("aria-valuenow"), "3");
-  assert.equal(bar.getAttribute("aria-valuemax"), "10");
+  assert.equal(bar.getAttribute("aria-valuemax"), "20");
 });
 
 test("status: exhausted quota shows the warning and marks the bar", () => {
-  const { host } = renderStatus({ ...FREE_ME, ai_daily_used: 10, ai_daily_remaining: 0 });
+  const { host } = renderStatus({ ...FREE_ME, ai_daily_used: 20, ai_daily_remaining: 0 });
   assert.match(texts(host), /今天的次数用完了，明天零点恢复/);
   assert.equal(find(host, ".pl-usage").dataset.exhausted, "true");
 });
@@ -244,8 +258,9 @@ test("status: three days or fewer flips to the urgent style and shows the renew 
 });
 
 test("status: trial account is labelled 体验账号", () => {
-  const { host } = renderStatus({ ...FREE_ME, is_trial: true, ai_daily_limit: 2, ai_daily_used: 0, ai_daily_remaining: 2 });
+  const { host } = renderStatus({ ...FREE_ME, is_trial: true, ai_daily_limit: 4, ai_daily_used: 0, ai_daily_remaining: 4 });
   assert.match(texts(host), /体验账号/);
+  assert.match(texts(host), /今日 AI 0 \/ 4 次 · 午夜重置/);
 });
 
 const ORDERS = [

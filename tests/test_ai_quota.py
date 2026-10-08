@@ -9,6 +9,31 @@ from db import connect
 from test_app import client, mock_generated_practice, new_problem, register
 
 
+@pytest.mark.parametrize("is_trial,limit", [(False, 20), (True, 4)])
+def test_default_quota_is_reported_and_enforced(client, monkeypatch, is_trial, limit):
+    monkeypatch.delenv("AI_DAILY_LIMIT", raising=False)
+    monkeypatch.delenv("TRIAL_AI_DAILY_LIMIT", raising=False)
+    assert main.ai_limit() == 20
+    assert main.trial_ai_limit() == 4
+    user_id = register(client)["id"]
+    mistake_id = new_problem(client)[0]
+    with connect(write=True) as conn:
+        conn.execute("UPDATE users SET is_trial = ? WHERE id = ?", (is_trial, user_id))
+        conn.execute(
+            "INSERT INTO ai_usage(user_id, day, attempts) VALUES (?, ?, ?)",
+            (user_id, "2026-09-19", limit - 1),
+        )
+    me = client.get("/api/me").json()
+    assert me["ai_daily_limit"] == limit
+    assert me["ai_daily_remaining"] == 1
+    monkeypatch.setattr(ai, "generate", mock_generated_practice)
+    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
+    assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 429
+    me = client.get("/api/me").json()
+    assert me["ai_daily_used"] == limit
+    assert me["ai_daily_remaining"] == 0
+
+
 def add_plan(conn, limit=3):
     return conn.execute(
         """
