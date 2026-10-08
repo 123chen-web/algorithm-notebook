@@ -1,4 +1,5 @@
 import os
+import secrets
 import sqlite3
 import unicodedata
 from contextlib import contextmanager
@@ -805,6 +806,108 @@ def _apply_manual_claim_receipts(conn):
     )
 
 
+def _apply_notes(conn):
+    # 记笔记：独立的 notes 表，与题目/错题解耦；删除时软删除，账号注销时
+    # 由 main.delete_account_data 显式清理（users 行是匿名化 UPDATE 而非 DELETE）。
+    conn.execute(
+        """
+        CREATE TABLE notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '',
+            problem_id INTEGER NULL REFERENCES problems(id) ON DELETE SET NULL,
+            pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_notes_user "
+        "ON notes(user_id, deleted_at, pinned DESC, updated_at DESC)"
+    )
+
+
+def _apply_reminder_prefs(conn):
+    # F2 复习提醒邮件：每日提醒开关 + 一键退订 token；老用户补生成 token。
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN reminder_opt_in INTEGER NOT NULL DEFAULT 1 "
+        "CHECK(reminder_opt_in IN (0,1))"
+    )
+    conn.execute("ALTER TABLE users ADD COLUMN reminder_token TEXT")
+    for row in conn.execute("SELECT id FROM users WHERE reminder_token IS NULL"):
+        conn.execute(
+            "UPDATE users SET reminder_token = ? WHERE id = ?",
+            (f"{row['id']}.{secrets.token_urlsafe(24)}", row["id"]),
+        )
+
+
+def _apply_explanations(conn):
+    # F4 费曼模式：用户讲解记录；score>=80 视为"讲清楚了"。
+    conn.execute(
+        """
+        CREATE TABLE explanations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+            explanation TEXT NOT NULL,
+            score INTEGER NOT NULL CHECK(score >= 0 AND score <= 100),
+            missing_points TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_explanations_user_mistake "
+        "ON explanations(user_id, mistake_id, created_at)"
+    )
+
+
+def _apply_boss_battle(conn):
+    # F5 Boss 战：毕业记录 / 对战场次 / 回合明细。
+    conn.execute(
+        """
+        CREATE TABLE boss_graduations (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+            graduated_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, mistake_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE boss_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            wins INTEGER NOT NULL DEFAULT 0,
+            losses INTEGER NOT NULL DEFAULT 0,
+            selected_mistake_ids TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE boss_rounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES boss_sessions(id) ON DELETE CASCADE,
+            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
+            result TEXT NOT NULL CHECK(result IN ('win','loss')),
+            seconds INTEGER NOT NULL DEFAULT 0 CHECK(seconds >= 0)
+        )
+        """
+    )
+
+
+def _apply_screenshot_daily(conn):
+    conn.execute("CREATE TABLE import_screenshot_daily (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0), PRIMARY KEY(user_id, day))")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -830,6 +933,11 @@ MIGRATIONS = [
     (20, "网页导入预览与幂等确认", _apply_import_previews),
     (21, "累计录入题目计数", _apply_lifetime_problem_count),
     (22, "手动付款快照与核账凭证", _apply_manual_claim_receipts),
+    (23, "私人笔记", _apply_notes),
+    (24, "复习提醒开关与退订token", _apply_reminder_prefs),
+    (25, "费曼讲解记录", _apply_explanations),
+    (26, "Boss战表", _apply_boss_battle),
+    (27, "截图识别每日计数", _apply_screenshot_daily),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

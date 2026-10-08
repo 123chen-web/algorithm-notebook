@@ -1,0 +1,71 @@
+/* 笔记页：Memos 式时间线。全部样式挂在 #notes-page 下，避免污染全局；用站内既有变量跟随主题。 */
+#notes-page .notes-wrap { display: grid; gap: var(--space-5); max-width: 860px; margin: 0 auto; padding: var(--space-2) 0 var(--space-8); }
+
+#notes-page .notes-head h2 { margin: 0; font: 500 clamp(22px, 3vw, 30px)/var(--lh-heading) var(--serif); }
+#notes-page .notes-sub { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); }
+
+/* ── composer ── */
+#notes-page .notes-composer { display: grid; gap: var(--space-3); padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+#notes-page .notes-composer-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+#notes-page .notes-field { display: block; }
+#notes-page .notes-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#notes-page #notes-content { width: 100%; min-height: 96px; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: var(--text-base); line-height: var(--lh-prose); resize: vertical; }
+#notes-page #notes-content:focus { outline: 2px solid var(--azurite); outline-offset: 1px; }
+#notes-page .notes-tags-field { flex: 1 1 220px; }
+#notes-page #notes-tags-input { width: 100%; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+#notes-page .notes-problem-field { flex: 1 1 180px; }
+#notes-page #notes-problem { width: 100%; min-height: 40px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+#notes-page #notes-save { min-height: 40px; padding: 0 var(--space-5); }
+#notes-page .notes-notice { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+#notes-page .notes-notice[hidden] { display: none; }
+
+/* ── 工具栏：搜索 + 标签筛选 ── */
+#notes-page .notes-toolbar { display: grid; gap: var(--space-3); }
+#notes-page .notes-search { display: block; }
+#notes-page #notes-search { width: 100%; min-height: 40px; padding: 0 var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); }
+#notes-page .notes-tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+#notes-page .notes-chip { min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+#notes-page .notes-chip:hover { border-color: var(--azurite); color: var(--ink); }
+#notes-page .notes-chip.is-active { border-color: var(--azurite); background: var(--soft); color: var(--ink); font-weight: 600; }
+#notes-page .notes-chip-sm { min-height: 28px; font-size: var(--text-xs); }
+
+/* ── 列表 ── */
+#notes-page .notes-list { display: grid; gap: var(--space-4); }
+#notes-page .notes-card { padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+#notes-page .notes-card.is-pinned { border-color: var(--azurite); }
+#notes-page .notes-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-3); }
+#notes-page .notes-card-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--text-md); }
+#notes-page .notes-card-title strong { overflow-wrap: anywhere; }
+#notes-page .notes-time { flex: none; color: var(--ink-2); font-size: var(--text-xs); }
+#notes-page .notes-body { overflow-wrap: anywhere; font-size: var(--text-base); line-height: var(--lh-prose); }
+#notes-page .notes-body p { margin: 0 0 var(--space-2); }
+#notes-page .notes-body p:last-child { margin-bottom: 0; }
+#notes-page .notes-body h1, #notes-page .notes-body h2, #notes-page .notes-body h3 { margin: var(--space-4) 0 var(--space-2); line-height: var(--lh-heading); }
+#notes-page .notes-body h1 { font-size: var(--text-lg); }
+#notes-page .notes-body h2 { font-size: var(--text-md); }
+#notes-page .notes-body h3 { font-size: var(--text-base); }
+#notes-page .notes-body ul { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
+#notes-page .notes-body pre { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); overflow-x: auto; }
+#notes-page .notes-body code { font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; font-size: .92em; }
+#notes-page .notes-body pre code { background: none; padding: 0; }
+#notes-page .notes-body a { color: var(--azurite); }
+#notes-page .notes-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+#notes-page .notes-actions { display: flex; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px dashed var(--line); }
+#notes-page .notes-action { min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+#notes-page .notes-action:hover { border-color: var(--azurite); color: var(--ink); }
+#notes-page .notes-action.is-danger:hover { border-color: var(--danger); color: var(--danger); }
+#notes-page .notes-actions[hidden] { display: none; }
+
+/* ── 原地编辑 ── */
+#notes-page .notes-editor { display: grid; gap: var(--space-2); }
+#notes-page .notes-edit-title, #notes-page .notes-edit-tags { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+#notes-page .notes-edit-content { min-height: 120px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); resize: vertical; }
+#notes-page .notes-editor-row { display: flex; gap: var(--space-2); }
+
+/* ── 状态与分页 ── */
+#notes-page .notes-status { margin: 0; color: var(--ink-2); font-size: var(--text-sm); text-align: center; }
+#notes-page .notes-status[hidden] { display: none; }
+#notes-page .notes-foot { display: flex; justify-content: center; }
+#notes-page #notes-more { min-height: 40px; padding: 0 var(--space-6); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); cursor: pointer; }
+#notes-page #notes-more:hover { border-color: var(--azurite); }
+#notes-page #notes-more[hidden] { display: none; }

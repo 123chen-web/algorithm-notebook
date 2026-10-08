@@ -132,10 +132,22 @@ def export_data(user=Depends(main.current_user)):
             variant = dict(row)
             mistakes[variant.pop("mistake_id")]["variants"].append(variant)
 
+        notes = []
+        for row in conn.execute(
+            "SELECT n.id, n.title, n.content, n.tags, n.problem_id, p.title AS problem_title, "
+            "n.pinned, n.created_at, n.updated_at, n.deleted_at FROM notes n "
+            "LEFT JOIN problems p ON p.id = n.problem_id AND p.user_id = n.user_id "
+            "WHERE n.user_id = ? ORDER BY n.id", (user["id"],),
+        ):
+            note = dict(row)
+            note["tags"] = [tag for tag in note["tags"].split(",") if tag]
+            note["pinned"] = bool(note["pinned"])
+            notes.append(note)
     payload = {
         "exported_at": main.utc_now(),
         "username": user["username"],
         "problems": list(problems.values()),
+        "notes": notes,
     }
     filename = f"{PRODUCT_NAME}导出_{user['username']}_{main.today_for(user).isoformat()}.json"
     return Response(

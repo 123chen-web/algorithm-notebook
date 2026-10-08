@@ -135,9 +135,8 @@ def review_mistake(
             ),
         )
         # leech 判定：连续失败 8 次（对标 Anki 默认）自动暂停。
-        # 注意不能直接调 main.rvb_set_suspension：它内部另开写连接，
-        # 在本事务内嵌套调用会触发 BEGIN IMMEDIATE 冲突；这里执行与它
-        # 完全相同的 UPDATE（suspended_at + version+1），语义一致。
+        # 暂停是本次评分的一部分，共用评分日志的 version_after，才能撤销。
+        # 评分前已拒绝暂停的记录，因此撤销时原暂停状态必然是 NULL。
         leech_suspended = False
         if data.quality < 3:
             recent = conn.execute(
@@ -146,11 +145,11 @@ def review_mistake(
             ).fetchall()
             if len(recent) == 8 and all(row["quality"] < 3 for row in recent):
                 conn.execute(
-                    "UPDATE mistakes SET suspended_at = ?, version = version + 1 WHERE id = ?",
+                    "UPDATE mistakes SET suspended_at = ? WHERE id = ?",
                     (now, mistake_id),
                 )
                 leech_suspended = True
-        final_version = item["version"] + (2 if leech_suspended else 1)
+        final_version = item["version"] + 1
         response = {**state, "version": final_version}
         if leech_suspended:
             response["leech_suspended"] = True
@@ -217,7 +216,7 @@ def rvb_undo_review(mistake_id: int, data: main.RvbVersionInput, user=Depends(ma
             """
             UPDATE mistakes SET repetitions = :repetitions, interval_days = :interval_days,
                 ease_factor = :ease_factor, due_date = :due_date,
-                last_reviewed_at = :last_reviewed_at, version = :version
+                last_reviewed_at = :last_reviewed_at, version = :version, suspended_at = NULL
             WHERE id = :id
             """,
             {**restored, "id": mistake_id},

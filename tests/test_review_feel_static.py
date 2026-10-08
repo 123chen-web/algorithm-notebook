@@ -23,9 +23,9 @@ def test_review_assets_have_bumped_versions_and_dependency_load_order():
     markup = Markup((STATIC / "index.html").read_text(encoding="utf-8"))
     scripts = [attrs["src"] for tag, attrs in markup.nodes if tag == "script" and "src" in attrs]
     styles = [attrs.get("href") for tag, attrs in markup.nodes if tag == "link" and attrs.get("rel") == "stylesheet"]
-    for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=3", "/static/app.js?v=85"):
+    for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=4", "/static/app.js?v=88"):
         assert scripts.count(src) == 1
-    assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=3") < scripts.index("/static/app.js?v=85")
+    assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=4") < scripts.index("/static/app.js?v=88")
     assert styles.count("/static/review-extras.css?v=1") == 1
     assert styles.count("/static/focus.css?v=3") == 1
 

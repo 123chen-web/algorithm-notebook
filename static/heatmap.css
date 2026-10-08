@@ -1,0 +1,57 @@
+/* 掌握度热力图（GROWTH F3）：标签 × 周热力图 + Dashboard"下周主攻"卡片。颜色走主题变量。 */
+
+.hm-grid { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.hm-caption { text-align: left; padding-bottom: var(--space-3); color: var(--ink-2); font-size: var(--text-sm); }
+.hm-rowhead { text-align: left; padding: var(--space-2) var(--space-3); white-space: nowrap; }
+.hm-colhead { padding: var(--space-2); color: var(--ink-2); font-weight: normal; white-space: nowrap; }
+.hm-cell { padding: 2px; text-align: center; }
+.hm-nodata { color: var(--ink-3, var(--ink-2)); }
+
+.hm-taglink {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--accent); font: inherit; text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hm-taglink:hover { color: var(--accent-hover); }
+
+.hm-cellbtn {
+  width: 100%; min-width: 44px; padding: var(--space-2) var(--space-1);
+  border: 1px solid var(--card-line); border-radius: var(--radius-sm);
+  cursor: pointer; font: inherit; color: var(--ink);
+}
+/* 五档：掌握越好底色越"生长"，越差越"告警"。 */
+.hm-cellbtn.hm-q0 { background: var(--danger-soft); border-color: var(--danger-line); }
+.hm-cellbtn.hm-q1 { background: color-mix(in srgb, var(--danger-soft) 45%, var(--field-surface)); }
+.hm-cellbtn.hm-q2 { background: var(--field-surface); }
+.hm-cellbtn.hm-q3 { background: color-mix(in srgb, var(--growth-soft) 55%, var(--field-surface)); }
+.hm-cellbtn.hm-q4 { background: var(--growth-soft); border-color: var(--growth-line); }
+.hm-cellbtn:focus-visible, .hm-taglink:focus-visible, .hm-focus-go:focus-visible, .hm-retry:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+
+.hm-empty, .hm-error { padding: var(--space-5); color: var(--ink-2); }
+.hm-error p { margin: 0 0 var(--space-3); color: var(--error-ink); }
+.hm-retry {
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
+  border: 1px solid var(--card-line); background: var(--field-surface);
+  color: var(--ink); cursor: pointer; font: inherit;
+}
+
+/* 下周主攻卡片 */
+.hm-focus {
+  padding: var(--space-5); border: 1px solid var(--card-line);
+  border-radius: var(--radius); background: var(--home-surface, var(--field-surface));
+}
+.hm-focus-title { margin: 0 0 var(--space-3); font-size: var(--text-lg); }
+.hm-focus-tagrow { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
+.hm-focus-tag { font-size: var(--text-xl); font-weight: 700; color: var(--ink); }
+.hm-focus-score { font-size: var(--text-lg); color: var(--danger, var(--accent)); font-weight: 700; }
+.hm-focus-reason { margin: 0 0 var(--space-4); color: var(--ink-2); font-size: var(--text-sm); }
+.hm-focus-empty { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+.hm-focus-actions { display: flex; gap: var(--space-2); }
+.hm-focus-go {
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  cursor: pointer; font: inherit;
+}
+.hm-focus-go:hover { background: var(--accent-hover); }

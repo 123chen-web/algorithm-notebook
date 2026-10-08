@@ -132,7 +132,9 @@ def seed_notebook(user_id, marker):
 
 
 def assert_export_keys(payload):
-    assert set(payload) == {"exported_at", "username", "problems"}
+    assert set(payload) == {"exported_at", "username", "problems", "notes"}
+    for note in payload["notes"]:
+        assert set(note) == {"id", "title", "content", "tags", "problem_id", "problem_title", "pinned", "created_at", "updated_at", "deleted_at"}
     for problem in payload["problems"]:
         assert set(problem) == PROBLEM_KEYS
         for mistake in problem["mistakes"]:
@@ -332,7 +334,7 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
     response = export(client)
     assert date_calls == [(user_id, timezone_name)]
     assert response.json() == {
-        "exported_at": now.isoformat(), "username": "小明", "problems": [],
+        "exported_at": now.isoformat(), "username": "小明", "problems": [], "notes": [],
     }
     disposition = response.headers["content-disposition"]
     assert disposition.startswith("attachment; filename*=UTF-8''")

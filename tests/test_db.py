@@ -126,6 +126,9 @@ def test_init_migrates_old_users_and_preserves_data(
 
     with connect(write=True) as conn:
         user = dict(conn.execute("SELECT * FROM users WHERE id = 7").fetchone())
+        # reminder_token 是随机生成的，只断言存在且非空，不比对具体值。
+        token = user.pop("reminder_token")
+        assert isinstance(token, str) and token
         assert user == {
             "id": 7,
             "username": "alice",
@@ -145,6 +148,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "terms_version": None,
             "public_rank_opt_out": 0,
             "daily_review_cap": None,
+            "reminder_opt_in": 1,
             "bio": "",
             "lifetime_problem_count": 0,
         }

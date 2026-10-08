@@ -1,0 +1,152 @@
+/* Boss 战样式：挑战氛围（深色竞技场卡片 + 倒计时条），不做"审判"感的红色警示。 */
+
+.boss-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.boss-card {
+  padding: 20px;
+}
+
+.boss-list {
+  margin: 12px 0 16px;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.boss-list li {
+  font-weight: 600;
+}
+
+.boss-arena {
+  border: 1px solid rgba(255, 170, 60, 0.35);
+  background: linear-gradient(180deg, rgba(40, 28, 16, 0.35), rgba(0, 0, 0, 0));
+}
+
+.boss-progress {
+  color: var(--muted, #8a8a93);
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.boss-title {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.boss-code {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.boss-hint {
+  font-size: 13px;
+  margin: 12px 0;
+}
+
+.boss-timer-wrap {
+  position: relative;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin: 8px 0 16px;
+}
+
+.boss-timer-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, #ffb347, #ff8c42);
+  transition: width 0.25s linear;
+}
+
+.boss-timer-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1208;
+  mix-blend-mode: normal;
+}
+
+.boss-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.boss-actions button {
+  flex: 1 1 160px;
+  padding: 12px;
+  font-size: 15px;
+}
+
+.boss-result-win {
+  color: #7ddf9a;
+  margin: 0 0 8px;
+}
+
+.boss-result-loss {
+  color: #f0b35e;
+  margin: 0 0 8px;
+}
+
+.boss-score,
+.boss-final-score {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 12px 0;
+}
+
+.boss-next-btn,
+.boss-start-btn,
+.boss-again-btn {
+  margin-top: 8px;
+}
+
+.boss-again-btn,
+.boss-back-btn {
+  margin-right: 12px;
+  margin-top: 8px;
+}
+
+/* 首页入口卡片 */
+.boss-entrance-title {
+  margin: 0 0 6px;
+}
+
+.boss-entrance-desc {
+  color: var(--muted, #8a8a93);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.boss-entrance-btn {
+  width: 100%;
+  padding: 10px;
+}
+
+@media (max-width: 560px) {
+  .boss-card {
+    padding: 14px;
+  }
+  .boss-actions button {
+    flex: 1 1 100%;
+  }
+}

@@ -129,16 +129,18 @@ def main(argv=None, post=None):
 
     with connect(write=not args.dry_run) as conn:
         users = conn.execute(
-            "SELECT u.id, u.username, u.email, u.timezone, u.last_reminder_sent, "
+            "SELECT u.id, u.username, u.email, u.timezone, u.last_reminder_sent, u.reminder_opt_in, "
             "up.channel AS push_channel, up.secret AS push_secret, "
             "up.enabled AS push_enabled, up.fail_count AS push_fail_count "
             "FROM users u LEFT JOIN user_push up ON up.user_id = u.id "
-            "WHERE u.deleted_at IS NULL"
+            "WHERE u.deleted_at IS NULL AND u.is_banned = 0"
         ).fetchall()
 
         for user in users:
             use_push = uses_push(user)
             if not use_push:
+                if not user["reminder_opt_in"]:
+                    continue
                 if not user["email"]:
                     skipped_no_email += 1
                     continue

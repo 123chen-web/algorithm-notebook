@@ -52,13 +52,15 @@ def register(data: main.Registration, request: Request, response: Response):
             cursor = conn.execute(
                 """
                 INSERT INTO users(username, password_hash, email, timezone, created_at,
-                                  is_admin, terms_accepted_at, terms_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                  is_admin, terms_accepted_at, terms_version,
+                                  reminder_token)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (username, hashed, data.email, data.timezone, now,
-                  0, now, TERMS_VERSION),
+                  0, now, TERMS_VERSION, None),
             )
             user_id = cursor.lastrowid
+            conn.execute("UPDATE users SET reminder_token = ? WHERE id = ?", (f"{user_id}.{secrets.token_urlsafe(24)}", user_id))
             main.set_session(conn, user_id, response, request)
     except sqlite3.IntegrityError as exc:
         if "users.email" in str(exc):

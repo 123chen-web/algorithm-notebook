@@ -113,7 +113,7 @@ def test_create_order_never_touches_sdk_without_config(client, monkeypatch):
     def boom(channel):
         raise AssertionError("SDK/渠道实例化不应被调用")
 
-    monkeypatch.setattr(payment_channels, "get_channel", boom)
+    monkeypatch.setattr(payments, "get_channel", boom)
     response = client.post("/api/orders", json={"plan_id": 1, "channel": "wechat"})
     assert response.status_code == 503
     assert response.json()["detail"] == EXPECTED_DETAIL

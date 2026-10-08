@@ -348,7 +348,7 @@ function load(files, { extra = {} } = {}) {
   };
   const context = vm.createContext({
     window, document, fetch: fetchStub, console, setTimeout, clearTimeout, Promise,
-    CustomEvent: FakeEvent, Event: FakeEvent, Intl, URLSearchParams, encodeURIComponent,
+    CustomEvent: FakeEvent, Event: FakeEvent, Intl, URL, URLSearchParams, encodeURIComponent,
     ResizeObserver: undefined,
     HTMLDialogElement: FakeDialog,
   });

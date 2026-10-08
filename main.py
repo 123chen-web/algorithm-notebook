@@ -819,7 +819,8 @@ def current_user(request: Request):
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
                    u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version,
-                   u.is_admin, u.deleted_at, u.public_rank_opt_out
+                   u.is_admin, u.deleted_at, u.public_rank_opt_out,
+                   u.reminder_opt_in
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL
@@ -839,6 +840,7 @@ def current_user(request: Request):
     user["is_trial"] = bool(user["is_trial"])
     user["is_admin"] = bool(user["is_admin"])
     user["public_rank_opt_out"] = bool(user["public_rank_opt_out"])
+    user["reminder_opt_in"] = bool(user["reminder_opt_in"])
     return user
 
 
@@ -1371,7 +1373,7 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews"):
+                  "problem_recommendations", "import_previews", "notes", "explanations", "boss_sessions", "boss_graduations", "import_screenshot_daily"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -1403,7 +1405,7 @@ def delete_account_data(conn, user_id, deleted_at):
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
             avatar_version = 0, bio = '', lifetime_problem_count = 0,
-            last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
+            last_reminder_sent = NULL, reminder_token = NULL, reminder_opt_in = 0, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,
         (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
@@ -2427,6 +2429,12 @@ import routers.groups
 import routers.forum
 import routers.admin
 import routers.recommend
+import routers.notes
+import routers.import_problem
+import routers.similar
+import routers.explain
+import routers.reminder
+import routers.boss
 import routers.profile
 import routers.import_wizard
 
@@ -2443,6 +2451,12 @@ app.include_router(routers.groups.router)
 app.include_router(routers.forum.router)
 app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
+app.include_router(routers.notes.router)
+app.include_router(routers.import_problem.router)
+app.include_router(routers.similar.router)
+app.include_router(routers.explain.router)
+app.include_router(routers.reminder.router)
+app.include_router(routers.boss.router)
 app.include_router(routers.profile.router)
 app.include_router(routers.import_wizard.router)
 

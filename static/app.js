@@ -519,6 +519,7 @@ function signedOut() {
   clearForumReply();
   forumListGeneration += 1;
   window.Board?.reset(); // 列表、搜索词、发帖表单都属于上一位用户（草稿按用户 id 存在 localStorage 里）
+  window.Notes?.reset(); // 笔记列表、筛选和题目下拉同样属于上一位用户
   $("#forum-post").replaceChildren();
   $("#forum-comments").replaceChildren();
   $("#forum-comment-form").reset();
@@ -530,6 +531,12 @@ function signedOut() {
   window.GoalCard?.reset();
   window.RecommendCard?.reset();
   window.DuckPanel?.reset();
+  window.Explain?.reset();
+  window.Reminder?.reset();
+  window.Boss?.reset();
+  window.Heatmap?.reset();
+  window.Similar?.reset();
+  window.ImportProblem?.reset();
   window.Scratch?.reset();
   window.CodeRunner?.reset();
 window.PushSettings?.reset();
@@ -738,6 +745,8 @@ function updateUserInfo() {
   window.NavFocus?.configure({ getUser: () => user, getView: () => view }); // 专注模式按用户 id 读取开关
   window.PushSettings?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   $("#push-settings-host") && window.PushSettings?.mount($("#push-settings-host"));
+  window.Reminder?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  $("#reminder-settings-host") && window.Reminder?.mount($("#reminder-settings-host"));
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -918,10 +927,13 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#achievements-page").hidden = view !== "achievements";
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
   $("#mastery-page").hidden = view !== "mastery";
+  $("#heatmap-page").hidden = view !== "heatmap";
+  $("#boss-page").hidden = view !== "boss";
   $("#clusters-page").hidden = view !== "clusters";
   $("#print-page").hidden = view !== "print";
   $("#groups-page").hidden = view !== "groups";
   $("#forum-page").hidden = view !== "forum";
+  $("#notes-page").hidden = view !== "notes";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
   renderHomeQuota();
@@ -933,11 +945,14 @@ async function showView(nextView, { refreshUser = true } = {}) {
   if (view === "home") await loadHome({ refreshUser });
   else if (view === "admin") await loadAdminPage();
   else if (view === "forum") await showForumList();
+  else if (view === "notes") await window.Notes.load();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
   else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "mastery") await window.Mastery.load();
+  else if (view === "heatmap") await window.Heatmap.loadHeatmap($("#heatmap-grid"), 8);
+  else if (view === "boss") await window.Boss.load();
   else if (view === "clusters") {
     await window.Clusters.load();
     window.Typical?.mount($("#typical-card")); // 我的三大典型失误：自带登录代次与视图守卫
@@ -1013,6 +1028,10 @@ async function loadHome({ refreshUser = true } = {}) {
     window.GoalCard?.mount(document.querySelector("#goal-card"));
     window.RecommendCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.RecommendCard?.mount(document.querySelector("#recommend-card"));
+    // GROWTH F3 下周主攻卡片：空数据/失败时模块自带兜底文案
+    window.Heatmap?.mountFocusCard($("#ov-focus"));
+    // GROWTH F5 Boss 战首页入口
+    window.Boss?.mountEntrance($("#boss-entrance-card"));
   } else {
     window.Overview.renderError();
   }
@@ -2441,7 +2460,7 @@ function rvfRemoveItem(item, { offline = false } = {}) {
     rvfListItems.set(item.id, item);
   }
   rvfRenderCards(user.today);
-  clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : "可以选择下一条继续复习。");
+  clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : item.leech_suspended ? "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。" : "可以选择下一条继续复习。");
   if (offline) return; // 离线不触发会打网络的头部刷新与跨视图联动。
   notifyDataChanged("review");
   void rvfLoadQueueHeader(rvfPageGuard());
@@ -2996,6 +3015,11 @@ function renderDetail(item, options = {}) {
   window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.DuckPanel?.mount(duckHost, item);
 
+  const explainHost = element("div", "", "explain-host");
+  root.append(explainHost);
+  window.Explain?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.Explain?.mount(explainHost, item);
+
   const scratchHost = element("div", "", "scratch-host");
   root.append(scratchHost);
   window.Scratch?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
@@ -3100,11 +3124,13 @@ function renderDetail(item, options = {}) {
         stampSeal(sealText, { anchor });
         if (result) {
           rvfRemoveItem({ ...item, ...result });
-          if (result.leech_suspended && state.isCurrent()) {
-            status.textContent = "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。";
-          }
           window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
             onUndo: (restored) => rvfRestoreItem(item, restored) });
+          // F6 趁热打铁：复习完成后推荐 3 道同类题
+          const similarHost = element("div", "", "similar-host");
+          reviewSection.append(similarHost);
+          window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+          window.Similar?.mount(similarHost, item.id);
         } else {
           // 离线评分没有撤销入口（没发到服务器，无从撤销）。
           rvfRemoveItem({ ...item }, { offline: true });
@@ -3133,6 +3159,20 @@ function renderDetail(item, options = {}) {
       else { state.removed = true; rvfRemoveItem({ ...item, ...result }); }
     } });
   if (menu) { state.menu = menu; toolbar.append(menu); }
+
+  // 题目详情里的"记笔记"：先切到笔记页，关联题目用 pendingPrefill 传给 Notes，
+  // load() 消费它，避免"showView 还没 load 完"的竞态。
+  const noteButton = document.createElement("button");
+  noteButton.type = "button";
+  noteButton.className = "review-more-button";
+  noteButton.textContent = "记笔记";
+  noteButton.setAttribute("aria-label", "为这道题记笔记");
+  noteButton.addEventListener("click", () => run(async () => {
+    message();
+    await showView("notes");
+    window.Notes?.openWithProblem(item.problem_id, item.title);
+  }));
+  toolbar.append(noteButton);
 
   if (item.reviews.length) {
     const history = document.createElement("details");
@@ -3796,10 +3836,50 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
   });
 });
 
+/* ---- GROWTH F1：从链接/截图导入题目预填 ----
+   只预填表单不直接建题，用户核对后走现有保存流程。 */
+$("#import-from-url-btn")?.addEventListener("click", () => run(async () => {
+  const url = prompt("粘贴 LeetCode / Codeforces 题目链接：");
+  if (!url || !url.trim()) return;
+  const guard = sessionGuard();
+  $("#import-status").textContent = "正在解析链接…";
+  try {
+    const prefill = await window.ImportProblem.fetchPrefill(url.trim());
+    if (!prefill || !guard()) return;
+    window.ImportProblem.fillProblemForm(prefill);
+    $("#import-status").textContent = "已预填，请核对后保存。";
+  } catch (error) {
+    if (!guard()) return;
+    $("#import-status").textContent = error.message || "抓取失败，请检查链接后重试。";
+    throw error;
+  }
+}));
+$("#import-screenshot-btn")?.addEventListener("click", () => {
+  $("#import-screenshot-file")?.click();
+});
+$("#import-screenshot-file")?.addEventListener("change", (event) => run(async () => {
+  const file = event.currentTarget.files[0];
+  event.currentTarget.value = "";
+  if (!file) return;
+  const guard = sessionGuard();
+  $("#import-status").textContent = "正在识别截图，可能需要几十秒…";
+  try {
+    const prefill = await window.ImportProblem.parseScreenshot(file);
+    if (!prefill || !guard()) return;
+    window.ImportProblem.fillProblemForm(prefill);
+    const left = prefill.screenshot_remaining;
+    $("#import-status").textContent = "已预填，请核对后保存。"
+      + (typeof left === "number" ? `（今日截图识别剩余 ${left} 次）` : "");
+  } catch (error) {
+    if (!guard()) return;
+    $("#import-status").textContent = error.message || "识别未成功，可以换一张更清晰的截图重试。";
+    throw error;
+  }
+}));
+
 /* ---- 速记模式（E2 事项一）----
    默认完整记录，保持原校验；速记只填题名和分区，一句话再补一条真正的错因。
-   两种简写模式都隐藏代码和思路，保留切换前写下的草稿。 */
-const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
+   两种简写模式都隐藏代码和思路，保留切换前写下的草稿。 */const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
 
 // 开关当前是否打开。
 function isQuickMode() {
@@ -5480,6 +5560,18 @@ window.Board?.mount({
   author: (userId, username) => profileAuthor(userId, username),
   renderBody: forumBody,
   timestamp,
+});
+
+for (const module of [window.ImportProblem, window.Heatmap, window.Boss]) module?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+
+// 记笔记页（static/notes.js）：请求带登录代次由内部 generation 守卫，登出时 reset 清掉数据。
+window.Notes?.configure({
+  api,
+  getUser: () => user,
+  getEpoch: () => sessionEpoch,
+  getView: () => view,
+  confirm: (text) => window.confirm(text),
+  notify: (text) => message(text),
 });
 
 $("#timezone").value =

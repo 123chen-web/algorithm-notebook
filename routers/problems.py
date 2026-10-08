@@ -25,6 +25,19 @@ def list_zones():
     return {"zones": list(main.PROBLEM_ZONES), "code_zones": list(main.CODE_ZONES)}
 
 
+@router.get("/api/problems")
+def list_problems(limit: int = 30, user=Depends(main.current_user)):
+    """最近的题目（id/title/zone），给记笔记 composer 的"关联题目"下拉用。"""
+    limit = max(1, min(limit, 100))
+    with main.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, title, zone FROM problems WHERE user_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (user["id"], limit),
+        ).fetchall()
+    return {"problems": [dict(row) for row in rows]}
+
+
 @router.post("/api/problems", status_code=201)
 def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
     day = main.today_for(user).isoformat()

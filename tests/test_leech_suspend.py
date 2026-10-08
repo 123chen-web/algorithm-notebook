@@ -69,11 +69,11 @@ def test_eighth_consecutive_failure_suspends_with_flag(client):
     body = response.json()
     assert body["leech_suspended"] is True
     # 评分 version+1，暂停 version+1，共 +2。
-    assert body["version"] == 2
+    assert body["version"] == 1
 
     row = stored(mistake)
     assert row["suspended_at"] is not None
-    assert row["version"] == 2
+    assert row["version"] == 1
     # 答错折半：0 // 2 == 0，interval 回 1。
     assert body["repetitions"] == 0
     assert body["interval_days"] == 1
@@ -116,7 +116,7 @@ def test_already_suspended_cannot_be_reviewed(client):
     seed_failures(mistake, 7)
     assert rate(client, mistake, quality=0, version=0).status_code == 200
     # 已暂停：再次评分 409，不会重复触发。
-    response = rate(client, mistake, quality=0, version=2)
+    response = rate(client, mistake, quality=0, version=1)
     assert response.status_code == 409
 
 
@@ -126,13 +126,13 @@ def test_unsuspend_then_review_works_again(client):
     seed_failures(mistake, 7)
     assert rate(client, mistake, quality=0, version=0).status_code == 200
     # 恢复（version=2 是暂停后的版本）。
-    unsuspend = client.post(f"/api/mistakes/{mistake}/unsuspend", json={"version": 2})
+    unsuspend = client.post(f"/api/mistakes/{mistake}/unsuspend", json={"version": 1})
     assert unsuspend.status_code == 200, unsuspend.text
     assert stored(mistake)["suspended_at"] is None
     # 恢复后可正常复习：due_date 是明天，改 due 到今天再评。
     with connect(write=True) as conn:
         conn.execute("UPDATE mistakes SET due_date = ? WHERE id = ?", (TODAY.isoformat(), mistake))
-    response = rate(client, mistake, quality=4, version=3)
+    response = rate(client, mistake, quality=4, version=2)
     assert response.status_code == 200, response.text
     assert "leech_suspended" not in response.json()
 
@@ -156,3 +156,41 @@ def test_auto_pause_score_can_be_undone_within_24_hours(client):
         assert after[field] == before[field]
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM reviews WHERE mistake_id=?", (mistake,)).fetchone()[0] == 7
+
+
+def test_leech_replay_after_undo_does_not_rescore(client):
+    register(client)
+    mistake = seed(owner_id(client))
+    seed_failures(mistake, 7)
+    payload = {"quality": 0, "version": 0, "client_op_id": "leech-replay-001"}
+    first = client.post(f"/api/mistakes/{mistake}/review", json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["leech_suspended"] is True
+    assert client.post(f"/api/mistakes/{mistake}/review/undo", json={"version": first.json()["version"]}).status_code == 200
+    assert client.post(f"/api/mistakes/{mistake}/review", json=payload).json() == first.json()
+    assert stored(mistake)["suspended_at"] is None
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reviews WHERE mistake_id=?", (mistake,)).fetchone()[0] == 7
+
+
+def test_manual_resume_blocks_undo_of_auto_pause(client):
+    register(client)
+    mistake = seed(owner_id(client))
+    seed_failures(mistake, 7)
+    scored = rate(client, mistake).json()
+    resumed = client.post(f"/api/mistakes/{mistake}/unsuspend", json={"version": scored["version"]})
+    assert resumed.status_code == 200
+    assert client.post(f"/api/mistakes/{mistake}/review/undo", json={"version": scored["version"] + 1}).status_code == 409
+
+
+def test_leech_is_per_mistake_even_on_same_problem(client):
+    register(client)
+    mistake = seed(owner_id(client))
+    seed_failures(mistake, 7)
+    with connect(write=True) as conn:
+        problem = stored(mistake)["problem_id"]
+        other = conn.execute("INSERT INTO mistakes(problem_id, description, due_date, pending_reason) VALUES (?, '?????', ?, 1)", (problem, TODAY.isoformat())).lastrowid
+    assert rate(client, mistake).json()["leech_suspended"] is True
+    assert stored(other)["suspended_at"] is None
+    assert stored(other)["pending_reason"] == 1
+    assert rate(client, other, quality=4).status_code == 200

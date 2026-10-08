@@ -439,6 +439,11 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS email_changes")
         conn.execute("DROP TABLE IF EXISTS problem_recommendations")
         conn.execute("DROP TABLE IF EXISTS import_previews")
+        conn.execute("DROP TABLE IF EXISTS notes")
+        for table in ("boss_rounds", "boss_sessions", "boss_graduations", "explanations", "import_screenshot_daily"):
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+        conn.execute("ALTER TABLE users DROP COLUMN reminder_opt_in")
+        conn.execute("ALTER TABLE users DROP COLUMN reminder_token")
         conn.execute("DROP TRIGGER problem_lifetime_insert")
         conn.execute("ALTER TABLE users DROP COLUMN lifetime_problem_count")
         # migration 18 adds this column, so a real version-10 database does not have it
