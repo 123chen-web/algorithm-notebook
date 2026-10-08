@@ -211,16 +211,39 @@ def admin_list_manual_claims(
         return manual_claims.list_admin_claims(conn, status, page)
 
 
+class ConfirmManualClaim(main.InputModel):
+    verified_amount_cents: int = main.Field(strict=True, gt=0, le=2**63 - 1)
+    receipt_reference: str = main.Field(strict=True, min_length=1, max_length=128)
+    legacy_reviewed: bool = main.Field(default=False, strict=True)
+    legacy_period_days: int | None = main.Field(default=None, strict=True, ge=1, le=3650)
+
+    @main.field_validator("receipt_reference")
+    @classmethod
+    def receipt(cls, value):
+        return manual_claims.normalize_receipt_reference(value)
+
+
+def manual_claim_admin(user=Depends(main.current_user)):
+    # 鉴权依赖先于请求体报错，未登录 / 非管理员仍分别是 401 / 403。
+    main.require_admin(user)
+    return user
+
+
 @router.post("/api/admin/manual-claims/{claim_id}/confirm")
 def admin_confirm_manual_claim(
-    claim_id: int, background_tasks: BackgroundTasks, user=Depends(main.current_user)
+    claim_id: int, data: ConfirmManualClaim, background_tasks: BackgroundTasks,
+    user=Depends(manual_claim_admin),
 ):
     main.require_admin(user)
     with main.connect(write=True) as conn:
         main.recheck_manual_account(conn, user["id"], admin=True)
         try:
             claim, mail_info = manual_claims.confirm_claim(
-                conn, claim_id, user["id"], main.utc_now()
+                conn, claim_id, user["id"], main.utc_now(),
+                verified_amount_cents=data.verified_amount_cents,
+                receipt_reference=data.receipt_reference,
+                legacy_reviewed=data.legacy_reviewed,
+                legacy_period_days=data.legacy_period_days,
             )
         except manual_claims.ClaimError as error:
             raise main.claim_http_error(error) from None

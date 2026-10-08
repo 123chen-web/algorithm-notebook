@@ -41,6 +41,24 @@ def make_claim(client, user_id=2, **changes):
     return response.json()["claim"]["id"]
 
 
+def confirmation(claim_id):
+    # The server now requires an actual reconciled amount and a full receipt.
+    row = claim_row(claim_id) if claim_id != 999 else None
+    return {"verified_amount_cents": row["amount_cents"] if row else 990,
+            "receipt_reference": f"alipay:test-{claim_id}"}
+
+
+def confirm_request(client, claim_id):
+    return client.post(f"/api/admin/manual-claims/{claim_id}/confirm",
+                       json=confirmation(claim_id))
+
+
+def confirm_cli(claim_id):
+    body = confirmation(claim_id)
+    return ["confirm-claim", str(claim_id), "--received-cents",
+            str(body["verified_amount_cents"]), "--receipt", body["receipt_reference"]]
+
+
 def count_claims():
     with connect() as conn:
         return conn.execute("SELECT COUNT(*) FROM manual_payment_claims").fetchone()[0]
@@ -54,7 +72,8 @@ def test_submit_returns_claim_shape(client):
     assert response.status_code == 201
     claim = response.json()["claim"]
     assert set(claim) == {"id", "plan_id", "plan_name", "payer_note", "contact", "status",
-                          "reject_reason", "created_at", "decided_at"}
+                          "reject_reason", "created_at", "decided_at", "amount_cents", "period_days",
+                          "plan_name_snapshot", "verified_amount_cents", "receipt_reference"}
     assert claim["status"] == "pending" and claim["plan_name"] == "月套餐"
     assert claim["payer_note"] == "支付宝尾号 1234" and claim["decided_at"] is None
     assert claim["created_at"] == NOW
@@ -242,7 +261,7 @@ def test_admin_list_paginates_twenty_per_page(client):
 def test_confirm_activates_plan_and_records_audit(client, caplog):
     claim_id = make_claim(client)
     caplog.set_level(logging.INFO, logger="algorithm_notebook")
-    response = client.post(f"/api/admin/manual-claims/{claim_id}/confirm")
+    response = confirm_request(client, claim_id)
     assert response.status_code == 200
     claim = response.json()["claim"]
     assert claim["status"] == "confirmed" and claim["decided_at"] == NOW
@@ -275,7 +294,7 @@ def test_confirm_stacking_matches_redeem_code(client, old_plan, old_expiry, plan
             conn.execute("UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
                          (old_plan, old_expiry, user_id))
     claim_id = make_claim(client, 3, plan_id=plan_id)
-    assert client.post(f"/api/admin/manual-claims/{claim_id}/confirm").status_code == 200
+    assert confirm_request(client, claim_id).status_code == 200
     as_user(client, 2)
     assert client.post("/api/redeem", json={"code": code}).status_code == 200
     assert subscription(3) == subscription(2) == {"plan_id": plan_id, "plan_expires_at": expected}
@@ -285,29 +304,29 @@ def test_confirm_inactive_plan_still_works_after_deactivation(client):
     claim_id = make_claim(client, plan_id=2)
     with connect(write=True) as conn:
         conn.execute("UPDATE plans SET is_active = 0 WHERE id = 2")
-    assert client.post(f"/api/admin/manual-claims/{claim_id}/confirm").status_code == 200
+    assert confirm_request(client, claim_id).status_code == 200
     assert subscription(2)["plan_id"] == 2
 
 
 def test_confirm_twice_and_after_reject_return_409_without_second_grant(client):
     first = make_claim(client)
     second = make_claim(client)
-    assert client.post(f"/api/admin/manual-claims/{first}/confirm").status_code == 200
+    assert confirm_request(client, first).status_code == 200
     after = subscription(2)
-    again = client.post(f"/api/admin/manual-claims/{first}/confirm")
+    again = confirm_request(client, first)
     assert again.status_code == 409 and "detail" in again.json()
     assert client.post(f"/api/admin/manual-claims/{first}/reject",
                        json={"reason": "x"}).status_code == 409
     assert subscription(2) == after
     assert client.post(f"/api/admin/manual-claims/{second}/reject",
                        json={"reason": "x"}).status_code == 200
-    assert client.post(f"/api/admin/manual-claims/{second}/confirm").status_code == 409
+    assert confirm_request(client, second).status_code == 409
     assert subscription(2) == after
     with connect() as conn:
         grants = conn.execute(
             "SELECT COUNT(*) FROM redeem_codes WHERE note LIKE '手动收款确认%'").fetchone()[0]
     assert grants == 1
-    assert client.post("/api/admin/manual-claims/999/confirm").status_code == 404
+    assert confirm_request(client, 999).status_code == 404
 
 
 def test_concurrent_confirm_grants_exactly_once(client):
@@ -319,7 +338,7 @@ def test_concurrent_confirm_grants_exactly_once(client):
         try:
             use_user(competitor, 1)
             barrier.wait(timeout=10)
-            return competitor.post(f"/api/admin/manual-claims/{claim_id}/confirm").status_code
+            return confirm_request(competitor, claim_id).status_code
         finally:
             competitor.close()
 
@@ -336,7 +355,7 @@ def test_confirm_refused_for_deleted_banned_and_trial_users(client):
         conn.execute("UPDATE users SET is_banned = 1 WHERE id = 3")
         conn.execute("UPDATE users SET is_trial = 1 WHERE id = 7")
     for claim_id, user_id in ((deleted, 2), (banned, 3), (trial, 7)):
-        response = client.post(f"/api/admin/manual-claims/{claim_id}/confirm")
+        response = confirm_request(client, claim_id)
         assert response.status_code == 409 and "detail" in response.json()
         assert claim_row(claim_id)["status"] == "pending"
         assert subscription(user_id)["plan_id"] is None
@@ -349,7 +368,7 @@ def test_confirm_sends_mail_in_background_and_failure_does_not_break(client, mon
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET email = 'alice@example.com' WHERE id = 2")
     first = make_claim(client)
-    assert client.post(f"/api/admin/manual-claims/{first}/confirm").status_code == 200
+    assert confirm_request(client, first).status_code == 200
     assert len(sent) == 1 and sent[0][0] == "alice@example.com"
 
     def broken(*args):
@@ -357,7 +376,7 @@ def test_confirm_sends_mail_in_background_and_failure_does_not_break(client, mon
 
     monkeypatch.setattr(mailer, "send_email", broken)
     second = make_claim(client)
-    assert client.post(f"/api/admin/manual-claims/{second}/confirm").status_code == 200
+    assert confirm_request(client, second).status_code == 200
     assert claim_row(second)["status"] == "confirmed"
 
 
@@ -368,7 +387,7 @@ def test_confirm_skips_mail_when_not_configured(client, monkeypatch):
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET email = 'alice@example.com' WHERE id = 2")
     claim_id = make_claim(client)
-    assert client.post(f"/api/admin/manual-claims/{claim_id}/confirm").status_code == 200
+    assert confirm_request(client, claim_id).status_code == 200
     assert sent == []
 
 
@@ -432,7 +451,9 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         assert db.schema_version(conn) == db.SCHEMA_VERSION >= 11
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(manual_payment_claims)")]
         assert columns == ["id", "user_id", "plan_id", "payer_note", "contact", "status",
-                           "reject_reason", "created_at", "decided_at", "decided_by"]
+                           "reject_reason", "created_at", "decided_at", "decided_by",
+                           "amount_cents", "period_days", "verified_amount_cents",
+                           "plan_name_snapshot", "receipt_reference"]
     with connect(write=True) as conn:
         conn.execute("INSERT INTO users(id, username, password_hash, timezone, created_at) "
                      "VALUES (1, 'u', 'x', 'Asia/Shanghai', 'now')")
@@ -458,15 +479,15 @@ def test_cli_pending_confirm_reject(cli, capsys):
     assert admin_tool.main(["pending-claims"]) == 0
     out = capsys.readouterr().out
     assert "alice" in out and "bob" in out and "wx-alice" not in out
-    assert admin_tool.main(["confirm-claim", str(first)]) == 0
+    assert admin_tool.main(confirm_cli(first)) == 0
     assert "已确认" in capsys.readouterr().out
     assert subscription(2) == {"plan_id": 1, "plan_expires_at": "2099-01-31T10:00:00+00:00"}
-    assert admin_tool.main(["confirm-claim", str(first)]) == 1
+    assert admin_tool.main(confirm_cli(first)) == 1
     assert "已经处理过" in capsys.readouterr().err
     assert admin_tool.main(["reject-claim", str(second), "--reason", "没收到"]) == 0
     assert claim_row(second)["status"] == "rejected" and claim_row(second)["reject_reason"] == "没收到"
     assert admin_tool.main(["reject-claim", str(second), "--reason", "x"]) == 1
-    assert admin_tool.main(["confirm-claim", "999"]) == 1
+    assert admin_tool.main(confirm_cli(999)) == 1
     assert admin_tool.main(["pending-claims"]) == 0
     assert "没有待处理" in capsys.readouterr().out
     with pytest.raises(SystemExit):

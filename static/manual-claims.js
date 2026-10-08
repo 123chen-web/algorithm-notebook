@@ -72,6 +72,36 @@
     return list;
   }
 
+  function snapshot(claim) {
+    const values = [claim.amount_cents, claim.period_days, claim.plan_name_snapshot];
+    if (values.every((value) => value == null)) return "legacy";
+    return Number.isSafeInteger(values[0]) && values[0] > 0
+      && Number.isSafeInteger(values[1]) && values[1] > 0
+      && typeof values[2] === "string" && values[2].trim() ? "fixed" : "invalid";
+  }
+
+  function money(cents) {
+    return `¥${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+  }
+
+  function snapshotPairs(claim) {
+    if (snapshot(claim) === "fixed") return [
+      ["登记套餐", claim.plan_name_snapshot], ["登记金额", money(claim.amount_cents)],
+      ["登记周期", `${claim.period_days} 天`],
+    ];
+    return [["历史登记", snapshot(claim) === "legacy"
+      ? "原套餐名称、金额与周期未知，需站长人工核账；当前套餐价格不能代替历史金额。"
+      : "登记信息不完整，请站长检查，暂不能确认。"]];
+  }
+
+  function centsFromInput(value) {
+    const text = value.trim();
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ""] = text.split(".");
+    const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+    return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+  }
+
   /* ==================== 用户端 ==================== */
   const ManualClaims = (() => {
     let hooks = null;
@@ -148,9 +178,9 @@
       list.replaceChildren(...(claims || []).map((claim) => {
         const row = node("li", `mc-claim ${statusMeta(claim.status).className}`);
         const head = node("div", "mc-claim-head");
-        head.append(node("span", "mc-claim-plan", String(claim.plan_name ?? "")), statePill(claim.status, "mc"));
+        head.append(node("span", "mc-claim-plan", snapshot(claim) === "fixed" ? claim.plan_name_snapshot : "历史登记（套餐信息未知）"), statePill(claim.status, "mc"));
         row.append(head);
-        const pairs = [
+        const pairs = [...snapshotPairs(claim),
           ["付款备注", String(claim.payer_note ?? "")],
           ["联系方式", claim.contact ? String(claim.contact) : "—"],
           ["提交时间", date(claim.created_at)],
@@ -355,13 +385,15 @@
 
     function claimPairs(claim) {
       const pairs = [
-        ["套餐", String(claim.plan_name ?? "")],
+        ...snapshotPairs(claim),
         ["付款备注", String(claim.payer_note ?? "")],
         ["联系方式", claim.contact ? String(claim.contact) : "—"],
         ["提交时间", date(claim.created_at)],
       ];
       if (claim.status === "rejected" && claim.reject_reason) pairs.push(["驳回原因", String(claim.reject_reason)]);
       if (claim.decided_at) pairs.push(["处理时间", date(claim.decided_at)]);
+      if (Number.isSafeInteger(claim.verified_amount_cents)) pairs.push(["核对实收", money(claim.verified_amount_cents)]);
+      if (claim.receipt_reference) pairs.push(["核账流水", String(claim.receipt_reference)]);
       return pairs;
     }
 
@@ -370,7 +402,7 @@
     }
 
     function setRowBusy(id, busy) {
-      rowOf(id)?.querySelectorAll("button").forEach((item) => { item.disabled = busy; });
+      rowOf(id)?.querySelectorAll("button, input").forEach((item) => { item.disabled = busy; });
     }
 
     function closePanels(except) {
@@ -379,7 +411,7 @@
       });
     }
 
-    async function decide(claim, action, reason) {
+    async function decide(claim, action, body) {
       const id = claim.id;
       if (!usable() || pending.has(id)) return;
       const request = ticket("action");
@@ -387,9 +419,7 @@
       setRowBusy(id, true);
       setStatus("正在处理…");
       const path = `/api/admin/manual-claims/${id}/${action}`;
-      const init = action === "reject"
-        ? { method: "POST", body: JSON.stringify({ reason }) }
-        : { method: "POST", body: JSON.stringify({}) };
+      const init = { method: "POST", body: JSON.stringify(action === "reject" ? { reason: body } : body) };
       try {
         await hooks.api(path, init);
         if (!current(request)) return;
@@ -399,7 +429,7 @@
         setStatus(action === "confirm" ? "已确认收款，套餐会自动开通。" : "已驳回。");
       } catch (error) {
         if (!current(request)) return;
-        if (error?.status === 409) {
+        if (error?.status === 409 && error.message === "这条登记已经处理过了") {
           await load();
           if (!current(request)) return;
           pending.delete(id);
@@ -427,14 +457,59 @@
       confirmPanel.hidden = true;
       confirmPanel.setAttribute("role", "group");
       confirmPanel.setAttribute("aria-label", `确认 ${name} 的收款`);
-      const confirmYes = button("我已核对，确认收款", "primary", () => decide(claim, "confirm"));
+      const mode = snapshot(claim);
+      const amountLabel = node("label", "", "账单实际到账金额（元，必须手工填写）");
+      const amount = node("input", "mca-amount");
+      amount.type = "text";
+      amount.setAttribute("inputmode", "decimal");
+      amount.setAttribute("autocomplete", "off");
+      amountLabel.append(amount);
+      const receiptLabel = node("label", "", "完整到账流水（alipay: 或 wechat: 开头）");
+      const receipt = node("input", "mca-receipt");
+      receipt.type = "text";
+      receipt.setAttribute("maxlength", "127");
+      receipt.setAttribute("autocomplete", "off");
+      receiptLabel.append(receipt);
+      const confirmationError = node("p", "mca-confirm-error");
+      confirmationError.setAttribute("role", "alert");
+      const legacyReview = node("input", "mca-legacy-reviewed");
+      legacyReview.type = "checkbox";
+      const legacyLabel = node("label", "mca-legacy-check");
+      legacyLabel.append(legacyReview, node("span", "", "我已人工核查历史账单；原登记金额和周期未知。"));
+      const daysLabel = node("label", "", "人工核定开通天数（1–3650，不能代作原登记周期）");
+      const days = node("input", "mca-legacy-days");
+      days.type = "text";
+      days.setAttribute("inputmode", "numeric");
+      daysLabel.append(days);
+      const confirmYes = button("我已核对，确认收款", "primary", () => {
+        const invalid = (text, field) => { confirmationError.textContent = text; field.focus(); };
+        if (mode === "invalid") return invalid("登记信息不完整，暂不能确认。", amount);
+        const cents = centsFromInput(amount.value);
+        if (cents === null) return invalid("请输入大于 0 的到账金额，最多两位小数，不接受科学计数法。", amount);
+        if (mode === "fixed" && cents !== claim.amount_cents) return invalid("实际到账金额必须与登记金额一致。", amount);
+        const reference = receipt.value.replace(/^ +| +$/g, "");
+        if (/[^\x20-\x7E]/.test(receipt.value) || !/^(?:alipay|wechat):[A-Za-z0-9_-]{1,120}$/.test(reference)) return invalid("请填写 alipay: 或 wechat: 开头的完整到账流水号，不能填昵称。", receipt);
+        const payload = { verified_amount_cents: cents, receipt_reference: reference };
+        if (mode === "legacy") {
+          if (!legacyReview.checked) return invalid("请先确认已经人工核查历史账单。", legacyReview);
+          const text = days.value.trim();
+          const period = /^[1-9][0-9]*$/.test(text) ? Number(text) : 0;
+          if (!Number.isSafeInteger(period) || period < 1 || period > 3650) return invalid("请手工填写 1–3650 的开通天数。", days);
+          payload.legacy_reviewed = true;
+          payload.legacy_period_days = period;
+        }
+        confirmationError.textContent = "";
+        decide(claim, "confirm", payload);
+      });
       const confirmNo = button("取消", "", () => { confirmPanel.hidden = true; openConfirm.focus(); });
       const confirmButtons = node("div", "mca-confirm-buttons", "");
       confirmButtons.append(confirmYes, confirmNo);
       confirmPanel.append(
         node("p", "mca-confirm-text", "确认已在微信/支付宝账单里核对到这笔款项？"),
-        confirmButtons,
+        amountLabel, receiptLabel,
       );
+      if (mode === "legacy") confirmPanel.append(legacyLabel, daysLabel);
+      confirmPanel.append(confirmationError, confirmButtons);
 
       const rejectPanel = node("div", "mca-reject-form");
       rejectPanel.hidden = true;
@@ -470,13 +545,13 @@
         confirmPanel.hidden = false;
         confirmYes.focus();
       });
-      openConfirm.setAttribute("aria-label", `确认收款：${name} 的 ${String(claim.plan_name ?? "")}`);
+      openConfirm.setAttribute("aria-label", `确认收款：${name} 的 ${mode === "fixed" ? claim.plan_name_snapshot : "历史登记（套餐信息未知）"}`);
       const openReject = button("驳回", "", () => {
         closePanels(rejectPanel);
         rejectPanel.hidden = false;
         reasonInput.focus();
       });
-      openReject.setAttribute("aria-label", `驳回：${name} 的 ${String(claim.plan_name ?? "")}`);
+      openReject.setAttribute("aria-label", `驳回：${name} 的 ${mode === "fixed" ? claim.plan_name_snapshot : "历史登记（套餐信息未知）"}`);
       actions.append(openConfirm, openReject);
       row.append(actions, confirmPanel, rejectPanel);
       return row;

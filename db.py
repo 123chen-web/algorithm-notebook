@@ -782,6 +782,29 @@ def _apply_lifetime_problem_count(conn):
     )
 
 
+def _apply_manual_claim_receipts(conn):
+    # Historical claims have no trustworthy price snapshot. Preserve NULLs.
+    for column in ("amount_cents", "period_days", "verified_amount_cents"):
+        conn.execute(
+            f"ALTER TABLE manual_payment_claims ADD COLUMN {column} INTEGER "
+            f"CHECK({column} IS NULL OR (typeof({column}) = 'integer' AND {column} > 0))"
+        )
+    conn.execute(
+        "ALTER TABLE manual_payment_claims ADD COLUMN plan_name_snapshot TEXT "
+        "CHECK(plan_name_snapshot IS NULL OR "
+        "(typeof(plan_name_snapshot) = 'text' AND length(plan_name_snapshot) > 0))"
+    )
+    conn.execute(
+        "ALTER TABLE manual_payment_claims ADD COLUMN receipt_reference TEXT "
+        "CHECK(receipt_reference IS NULL OR "
+        "(typeof(receipt_reference) = 'text' AND length(receipt_reference) BETWEEN 1 AND 128))"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_manual_claim_receipt ON manual_payment_claims(receipt_reference) "
+        "WHERE receipt_reference IS NOT NULL"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -806,6 +829,7 @@ MIGRATIONS = [
     (19, "个人简介", _apply_user_bio),
     (20, "网页导入预览与幂等确认", _apply_import_previews),
     (21, "累计录入题目计数", _apply_lifetime_problem_count),
+    (22, "手动付款快照与核账凭证", _apply_manual_claim_receipts),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

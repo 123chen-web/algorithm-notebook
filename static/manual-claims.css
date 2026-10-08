@@ -35,8 +35,11 @@
 .mca-confirm[hidden], .mca-reject-form[hidden] { display: none; }
 .mca-confirm-text { margin: 0; font-weight: 600; }
 .mca-confirm-buttons, .mca-reject-buttons { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.mca-reject-form label { display: grid; gap: var(--space-1); color: var(--ink); }
-.mca-reject-error { min-height: 1.5em; margin: 0; color: var(--danger); font-weight: 600; }
+.mca-reject-form label, .mca-confirm label { display: grid; gap: var(--space-1); min-width: 0; color: var(--ink); }
+.mca-confirm .mca-legacy-check { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.mca-confirm input { width: 100%; min-width: 0; }
+.mca-confirm input[type="checkbox"] { width: auto; }
+.mca-reject-error, .mca-confirm-error { min-height: 1.5em; margin: 0; color: var(--danger); font-weight: 600; }
 .mca-pages { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
 .mca-page-info { color: var(--ink-2); font-size: var(--text-sm); }
 

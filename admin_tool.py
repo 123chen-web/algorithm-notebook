@@ -74,7 +74,8 @@ def redeem_hash(raw):
 def pending_claims(limit=50):
     with connect() as conn:
         rows = conn.execute(
-            "SELECT c.id, u.username, p.name AS plan_name, c.payer_note, c.created_at "
+            "SELECT c.id, u.username, COALESCE(c.plan_name_snapshot, '历史套餐（名称未知）') AS plan_name, "
+            "c.amount_cents, c.period_days, c.payer_note, c.created_at "
             "FROM manual_payment_claims c JOIN users u ON u.id = c.user_id "
             "JOIN plans p ON p.id = c.plan_id WHERE c.status = 'pending' "
             "ORDER BY c.id LIMIT ?",
@@ -83,10 +84,13 @@ def pending_claims(limit=50):
     if not rows:
         print("没有待处理的付款登记。")
         return 0
-    print("编号\t用户\t套餐\t付款备注\t登记时间")
+    print("编号\t用户\t套餐\t登记金额\t开通天数\t付款备注\t登记时间")
     for row in rows:
+        amount = (manual_claims.price_text(row["amount_cents"])
+                  if row["amount_cents"] is not None else "历史金额未知")
+        days = str(row["period_days"]) if row["period_days"] is not None else "需人工核对"
         print(f"{row['id']}\t{row['username']}\t{row['plan_name']}\t"
-              f"{row['payer_note']}\t{row['created_at']}")
+              f"{amount}\t{days}\t{row['payer_note']}\t{row['created_at']}")
     return 0
 
 
@@ -137,6 +141,10 @@ def main(argv=None):
     commands.add_parser("pending-claims", help="列出待处理的付款登记")
     confirm = commands.add_parser("confirm-claim", help="确认收款并开通套餐")
     confirm.add_argument("claim_id", type=int, help="登记编号")
+    confirm.add_argument("--received-cents", type=int, required=True, help="已核对的实收金额，单位为分")
+    confirm.add_argument("--receipt", required=True, help="alipay: 或 wechat: 加完整到账流水号")
+    confirm.add_argument("--legacy-reviewed", action="store_true", help="明确已人工核对旧登记原始到账记录")
+    confirm.add_argument("--legacy-days", type=int, help="旧登记核对后实际开通天数（1–3650）")
     reject = commands.add_parser("reject-claim", help="驳回付款登记")
     reject.add_argument("claim_id", type=int, help="登记编号")
     reject.add_argument("--reason", required=True, help="驳回原因（最多 80 字）")
@@ -221,7 +229,11 @@ def run_payment_command(args):
         print(f"已驳回登记 #{args.claim_id}。")
         return 0
     with connect(write=True) as conn:
-        _, info = manual_claims.confirm_claim(conn, args.claim_id, None)
+        _, info = manual_claims.confirm_claim(
+            conn, args.claim_id, None, verified_amount_cents=args.received_cents,
+            receipt_reference=args.receipt, legacy_reviewed=args.legacy_reviewed,
+            legacy_period_days=args.legacy_days,
+        )
     print(f"已确认登记 #{args.claim_id}：『{info['username']}』的『{info['plan_name']}』"
           f"已开通，到期 {info['plan_expires_at']}（UTC）。")
     manual_claims.send_confirmation_email(info)

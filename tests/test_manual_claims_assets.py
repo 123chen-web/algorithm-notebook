@@ -3,13 +3,17 @@
 import re
 from pathlib import Path
 
+import pytest
+
+from test_contrast_tokens import THEMES, contrast_ratio, css_declarations, css_selectors
+
 STATIC = Path(__file__).resolve().parents[1] / "static"
 JS = (STATIC / "manual-claims.js").read_text(encoding="utf-8")
 CSS = (STATIC / "manual-claims.css").read_text(encoding="utf-8")
 
 
 def test_manual_claims_files_exist_and_stay_within_size_budget():
-    assert (STATIC / "manual-claims.js").stat().st_size <= 32_000  # 当前约 23 KB
+    assert (STATIC / "manual-claims.js").stat().st_size <= 32_000
     assert (STATIC / "manual-claims.css").stat().st_size <= 8_000   # 当前约 4 KB
 
 
@@ -76,3 +80,21 @@ def test_manual_claims_motion_only_under_no_preference():
     head, marker, _tail = CSS.partition("@media (prefers-reduced-motion: no-preference)")
     assert marker, "动效必须只出现在 prefers-reduced-motion: no-preference 媒体查询里"
     assert "transition" not in head and "animation" not in head
+
+
+def test_manual_claims_admin_requires_actual_account_receipt_and_preserves_frozen_snapshot():
+    for field in ("amount_cents", "period_days", "plan_name_snapshot", "verified_amount_cents",
+                  "receipt_reference", "legacy_reviewed", "legacy_period_days"):
+        assert field in JS
+    assert "Number.isSafeInteger(cents)" in JS
+    assert "这条登记已经处理过了" in JS
+    assert "原套餐名称、金额与周期未知" in JS
+    assert "mca-confirm-error" in CSS
+
+
+@pytest.mark.parametrize("context,tokens", list(THEMES.items()))
+def test_actual_receipt_error_is_readable_in_every_theme(context, tokens):
+    rules = [body for blocks, body in css_declarations(CSS)
+             if blocks and ".mca-confirm-error" in tuple(css_selectors(blocks[-1]))]
+    assert "color: var(--danger)" in rules
+    assert contrast_ratio(tokens["--danger"], tokens["--surface"]) >= 4.5, context

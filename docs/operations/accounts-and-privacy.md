@@ -36,6 +36,8 @@
 | `study_group_members` | 退出所有小组；用户创建且只剩自己的小组也删除 |
 | `posts`、`post_comments`、`reports` | 保留内容，通过作者关联显示占位用户名 |
 | `orders` | 保留财务记录，继续关联脱敏后的用户行 |
+| `manual_payment_claims` | 删除该用户的付款登记、套餐快照和明文核账流水 |
+| `redeem_codes` | 保留既有财务兑换审计及备注；新手动核账只在 `code_hash` 保存带域前缀的流水 SHA-256，以便注销后防重复开通，不在该审计新增明文流水 |
 | 头像文件 | 删除 `data/avatars/{id}.jpg`，事务提交后执行 |
 | `users` | 保留脱敏占位行，具体字段见下文；套餐字段保留原值 |
 

@@ -2,7 +2,7 @@
 
 /* 付款登记（ManualClaims / ManualClaimsAdmin）的异步行为测试：
    请求晚回来、登出再登录、换账号、关闭面板、切换状态 / 翻页之后才返回的响应一律丢弃；
-   重复点击只发一次请求；409 提示"已被处理"并刷新。Node 内置测试运行器 + tests/js_harness.cjs。 */
+   重复点击只发一次请求；明确已处理的409才刷新。Node 内置测试运行器 + tests/js_harness.cjs。 */
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { load, tick, deferred, FakeEvent } = require("./js_harness.cjs");
@@ -20,9 +20,16 @@ const PLANS = [
 const CLAIM = (id, overrides = {}) => ({
   id, plan_id: "pro", plan_name: "专业版", payer_note: "微信昵称小王", contact: "",
   status: "pending", reject_reason: null, created_at: "2026-10-05T09:30:00+00:00", decided_at: null,
+  amount_cents: 1200, period_days: 30, plan_name_snapshot: "专业版",
+  verified_amount_cents: null, receipt_reference: null,
   ...overrides,
 });
 const httpError = (status, detail) => Object.assign(new Error(detail), { status });
+
+function fillConfirm(row, amount = "12.00", receipt = "alipay:TEST_PAYMENT_001") {
+  row.querySelector(".mca-amount").value = amount;
+  row.querySelector(".mca-receipt").value = receipt;
+}
 
 function setup() {
   const timers = [];
@@ -509,12 +516,16 @@ test("admin: confirm posts once, locks the row and refreshes with a success note
   const row = env.container.querySelector(".mca-claim");
   row.querySelector(".mca-actions button").click();
   const yes = row.querySelector(".mca-confirm-buttons button");
+  fillConfirm(row);
   yes.click();
   yes.click(); // 防重复点击
   await tick();
   assert.equal(env.calls.length, 2);
   assert.equal(env.calls[1].url, "/api/admin/manual-claims/5/confirm");
   assert.equal(env.calls[1].init.method, "POST");
+  assert.deepEqual(JSON.parse(env.calls[1].init.body), {
+    verified_amount_cents: 1200, receipt_reference: "alipay:TEST_PAYMENT_001",
+  });
   assert.equal(row.querySelectorAll("button").every((item) => item.disabled), true);
   env.calls[1].resolve({ claim: CLAIM(5, { status: "confirmed" }) });
   await tick();
@@ -529,9 +540,10 @@ test("admin: a 409 confirm says '已被处理' and refreshes the queue", async (
   await mountAdmin(env, { claims: [{ ...CLAIM(5), username: "小陈" }], page: 1, pages: 1 });
   const row = env.container.querySelector(".mca-claim");
   row.querySelector(".mca-actions button").click();
+  fillConfirm(row);
   row.querySelector(".mca-confirm-buttons button").click();
   await tick();
-  env.calls[1].reject(httpError(409, "该登记已被处理"));
+  env.calls[1].reject(httpError(409, "这条登记已经处理过了"));
   await tick();
   assert.equal(env.calls.length, 3, "409 triggers a refresh");
   env.calls[2].resolve({ claims: [], page: 1, pages: 1 });
@@ -544,6 +556,7 @@ test("admin: other confirm failures re-enable the row without a refresh", async 
   await mountAdmin(env, { claims: [{ ...CLAIM(5), username: "小陈" }], page: 1, pages: 1 });
   const row = env.container.querySelector(".mca-claim");
   row.querySelector(".mca-actions button").click();
+  fillConfirm(row);
   row.querySelector(".mca-confirm-buttons button").click();
   await tick();
   env.calls[1].reject(httpError(500, "服务器开小差"));
@@ -600,7 +613,7 @@ test("admin: a 409 reject says '已被处理' and refreshes", async () => {
   row.querySelector(".mca-reason").value = "重复登记";
   row.querySelector(".mca-reject-buttons button").click();
   await tick();
-  env.calls[1].reject(httpError(409, "该登记已被处理"));
+  env.calls[1].reject(httpError(409, "这条登记已经处理过了"));
   await tick();
   env.calls[2].resolve({ claims: [], page: 1, pages: 1 });
   await tick();
@@ -737,6 +750,7 @@ test("admin: an action answer that arrives after sign-out does not refresh or un
   await mountAdmin(env, { claims: [{ ...CLAIM(5), username: "小陈" }], page: 1, pages: 1 });
   const row = env.container.querySelector(".mca-claim");
   row.querySelector(".mca-actions button").click();
+  fillConfirm(row);
   row.querySelector(".mca-confirm-buttons button").click();
   await tick();
   env.state.epoch += 1;
@@ -755,6 +769,7 @@ test("admin: two rows can be processed one after another without poisoning each 
   });
   const first = env.container.querySelector('[data-claim-id="5"]');
   first.querySelector(".mca-actions button").click();
+  fillConfirm(first);
   first.querySelector(".mca-confirm-buttons button").click();
   await tick();
   env.calls[1].resolve({ claim: CLAIM(5, { status: "confirmed" }) });
@@ -764,6 +779,7 @@ test("admin: two rows can be processed one after another without poisoning each 
   const second = env.container.querySelector('[data-claim-id="6"]');
   assert.ok(second, "the refreshed queue still shows the other claim");
   second.querySelector(".mca-actions button").click();
+  fillConfirm(second, "12.00", "wechat:TEST_PAYMENT_002");
   second.querySelector(".mca-confirm-buttons button").click();
   await tick();
   assert.equal(env.calls[3].url, "/api/admin/manual-claims/6/confirm");
@@ -782,4 +798,144 @@ test("admin: refresh before mount is a harmless no-op and reset clears everythin
   env.window.ManualClaimsAdmin.reset();
   assert.equal(env.container.children.length, 0);
   assert.equal(env.calls.length, 1);
+});
+
+test("user: registration price, period and name remain frozen after plan changes", async () => {
+  const env = setup();
+  await mountUser(env, { claims: [CLAIM(5, { plan_name: "改名后的套餐", amount_cents: 990,
+    period_days: 45, plan_name_snapshot: "原套餐" })], plans: [{ ...PLANS[0], price_text: "¥99.00 / 90 天" }] });
+  const row = env.container.querySelector(".mc-claim");
+  assert.match(row.textContent, /原套餐/);
+  assert.match(row.textContent, /¥9\.90/);
+  assert.match(row.textContent, /45 天/);
+  assert.equal(row.textContent.includes("¥99.00"), false);
+  assert.equal(row.textContent.includes("改名后的套餐"), false);
+});
+
+test("admin: frozen receipt form is blank and cannot submit without actual account details", async () => {
+  const env = setup();
+  await mountAdmin(env, { claims: [CLAIM(5)], page: 1, pages: 1 });
+  const row = env.container.querySelector(".mca-claim");
+  row.querySelector(".mca-actions button").click();
+  assert.equal(row.querySelector(".mca-amount").value, "");
+  assert.equal(row.querySelector(".mca-receipt").value, "");
+  assert.equal(row.querySelector(".mca-legacy-days"), null);
+  row.querySelector(".mca-confirm-buttons button").click();
+  assert.equal(env.calls.length, 1);
+  assert.match(row.querySelector(".mca-confirm-error").textContent, /到账金额/);
+});
+
+for (const amount of ["", "0", "0.00", "-12", "+12", "12e0", "12.001", "12,00", "01.00",
+  ".50", "十二", "Infinity", "90071992547409.92"]) {
+  test(`admin: invalid actual amount ${JSON.stringify(amount)} never reaches the server`, async () => {
+    const env = setup();
+    await mountAdmin(env, { claims: [CLAIM(5)], page: 1, pages: 1 });
+    const row = env.container.querySelector(".mca-claim");
+    fillConfirm(row, amount);
+    row.querySelector(".mca-confirm-buttons button").click();
+    assert.equal(env.calls.length, 1);
+    assert.match(row.querySelector(".mca-confirm-error").textContent, /到账金额/);
+  });
+}
+
+test("admin: valid cents are exact and a changed current plan cannot change the receipt snapshot", async () => {
+  const env = setup();
+  await mountAdmin(env, { claims: [CLAIM(5, { amount_cents: 990, plan_name: "当前不同套餐",
+    plan_name_snapshot: "登记套餐" })], page: 1, pages: 1 });
+  const row = env.container.querySelector(".mca-claim");
+  assert.match(row.textContent, /登记套餐/);
+  assert.match(row.textContent, /¥9\.90/);
+  fillConfirm(row, "9.89");
+  row.querySelector(".mca-confirm-buttons button").click();
+  assert.equal(env.calls.length, 1);
+  assert.match(row.querySelector(".mca-confirm-error").textContent, /登记金额一致/);
+  fillConfirm(row, " 9.90 ", " wechat:FULL_RECEIPT_77 ");
+  row.querySelector(".mca-confirm-buttons button").click();
+  assert.deepEqual(JSON.parse(env.calls[1].init.body), { verified_amount_cents: 990,
+    receipt_reference: "wechat:FULL_RECEIPT_77" });
+});
+
+for (const receipt of ["", "昵称小王", "alipay:", "paypal:123", "wechat:有汉字", "alipay:has space",
+  "alipay:bad\nreceipt", "\nalipay:123", "alipay:123\n", "\talipay:123", "alipay:123\t",
+  "\u00a0alipay:123", "alipay:" + "x".repeat(121)]) {
+  test(`admin: incomplete or invalid receipt ${JSON.stringify(receipt)} never reaches the server`, async () => {
+    const env = setup();
+    await mountAdmin(env, { claims: [CLAIM(5)], page: 1, pages: 1 });
+    const row = env.container.querySelector(".mca-claim");
+    fillConfirm(row, "12.00", receipt);
+    row.querySelector(".mca-confirm-buttons button").click();
+    assert.equal(env.calls.length, 1);
+    assert.match(row.querySelector(".mca-confirm-error").textContent, /完整到账流水号/);
+  });
+}
+
+test("admin: legacy unknown snapshots need explicit review and manually entered days", async () => {
+  const env = setup();
+  const legacy = CLAIM(5, { amount_cents: null, period_days: null, plan_name_snapshot: null });
+  await mountAdmin(env, { claims: [legacy], page: 1, pages: 1 });
+  const row = env.container.querySelector(".mca-claim");
+  assert.match(row.textContent, /原套餐名称、金额与周期未知/);
+  assert.match(row.textContent, /当前套餐价格不能代替历史金额/);
+  assert.match(row.querySelectorAll(".mca-actions button")[1].getAttribute("aria-label"), /历史登记（套餐信息未知）/);
+  assert.equal(row.querySelector(".mca-legacy-days").value, "");
+  fillConfirm(row, "8.88");
+  const yes = row.querySelector(".mca-confirm-buttons button");
+  yes.click();
+  assert.equal(env.calls.length, 1);
+  assert.match(row.querySelector(".mca-confirm-error").textContent, /人工核查历史账单/);
+  row.querySelector(".mca-legacy-reviewed").checked = true;
+  for (const days of ["", "0", "3651", "30.5", "30e0", "-30"]) {
+    row.querySelector(".mca-legacy-days").value = days;
+    yes.click();
+    assert.equal(env.calls.length, 1);
+    assert.match(row.querySelector(".mca-confirm-error").textContent, /1–3650/);
+  }
+  row.querySelector(".mca-legacy-days").value = "45";
+  yes.click();
+  assert.deepEqual(JSON.parse(env.calls[1].init.body), { verified_amount_cents: 888,
+    receipt_reference: "alipay:TEST_PAYMENT_001", legacy_reviewed: true, legacy_period_days: 45 });
+});
+
+test("admin: a partial snapshot cannot be treated as a legacy unknown record", async () => {
+  const env = setup();
+  await mountAdmin(env, { claims: [CLAIM(5, { period_days: null })], page: 1, pages: 1 });
+  const row = env.container.querySelector(".mca-claim");
+  assert.equal(row.querySelector(".mca-legacy-days"), null);
+  fillConfirm(row);
+  row.querySelector(".mca-confirm-buttons button").click();
+  assert.equal(env.calls.length, 1);
+  assert.match(row.querySelector(".mca-confirm-error").textContent, /信息不完整/);
+});
+
+for (const detail of ["实际到账金额与登记金额不符", "这笔流水已经用于其他登记", "该用户已被禁用", "未知冲突"]) {
+  test(`admin: pending 409 ${detail} preserves the form and never pretends it was handled`, async () => {
+    const env = setup();
+    await mountAdmin(env, { claims: [CLAIM(5)], page: 1, pages: 1 });
+    const row = env.container.querySelector(".mca-claim");
+    row.querySelector(".mca-actions button").click();
+    fillConfirm(row);
+    row.querySelector(".mca-confirm-buttons button").click();
+    env.calls[1].reject(httpError(409, detail));
+    await tick();
+    assert.equal(env.calls.length, 2, "no destructive refresh for a still pending conflict");
+    assert.equal(env.container.querySelector(".mca-status").textContent, detail);
+    assert.equal(row.querySelector(".mca-amount").value, "12.00");
+    assert.equal(row.querySelector(".mca-receipt").value, "alipay:TEST_PAYMENT_001");
+    assert.equal(row.querySelector(".mca-confirm").hidden, false);
+    assert.equal(row.querySelectorAll("button").every((item) => item.disabled), false);
+  });
+}
+
+test("admin: a late pending 409 cannot modify a newer session", async () => {
+  const env = setup();
+  await mountAdmin(env, { claims: [CLAIM(5)], page: 1, pages: 1 });
+  const row = env.container.querySelector(".mca-claim");
+  fillConfirm(row);
+  row.querySelector(".mca-confirm-buttons button").click();
+  env.state.epoch += 1;
+  env.window.ManualClaimsAdmin.reset();
+  env.calls[1].reject(httpError(409, "该用户已被禁用"));
+  await tick();
+  assert.equal(env.calls.length, 2);
+  assert.equal(env.container.children.length, 0);
 });

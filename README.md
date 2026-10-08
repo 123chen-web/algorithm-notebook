@@ -817,6 +817,7 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 | 19 | 个人简介（`users.bio`，默认空字符串） |
 | 20 | 网页导入预览与幂等确认（`import_previews`） |
 | 21 | 累计录入题目计数（`users.lifetime_problem_count`，插入触发器，删除不减少） |
+| 22 | 手动付款金额、周期、名称快照与实收/流水核账（历史未知保留 NULL） |
 
 数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
 
