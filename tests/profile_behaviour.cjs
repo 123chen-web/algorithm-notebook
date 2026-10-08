@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const { load, FakeEvent, FakeDialog, tick } = require("./js_harness.cjs");
 const settle = async () => { await tick(); await tick(); };
 const profile = (id = 7) => ({ user_id: id, username: "<b>同学</b>", bio: "<script>简介</script>",
-  has_avatar: false, avatar_version: 5, problem_count: 3, mistake_count: 4,
+  has_avatar: false, avatar_version: 5, problem_count: 3, lifetime_problem_count: 8, mistake_count: 4,
   review_count: 10, streak_days: 2, achievement_count: 1 });
 
 test("profile ignores an old queued close event after immediate reopening", async () => {
@@ -58,6 +58,11 @@ test("profile renders public strings literally and labels current retained total
   assert.match(ctx.content.textContent, /<b>同学<\/b>/);
   assert.match(ctx.content.textContent, /当前录入题目/);
   assert.match(ctx.content.textContent, /复习次数/);
+  const totals = ctx.content.querySelector('dl').children;
+  assert.equal(totals.length, 6);
+  assert.equal(totals[0].textContent, '累计录入题目8');
+  assert.equal(totals[1].textContent, '当前录入题目3');
+  assert.match(ctx.content.textContent, /以后删除不减少/);
   assert.equal(ctx.content.querySelector("textarea").value, "<script>简介</script>");
 });
 test("profile author button opens the selected member without a raw request", async () => {

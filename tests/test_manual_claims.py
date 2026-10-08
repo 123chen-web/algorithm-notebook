@@ -420,6 +420,8 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS email_changes")
         conn.execute("DROP TABLE IF EXISTS problem_recommendations")
         conn.execute("DROP TABLE IF EXISTS import_previews")
+        conn.execute("DROP TRIGGER problem_lifetime_insert")
+        conn.execute("ALTER TABLE users DROP COLUMN lifetime_problem_count")
         # migration 18 adds this column, so a real version-10 database does not have it
         conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
         # migration 19 adds bio; the frozen version-10 fixture must omit it too

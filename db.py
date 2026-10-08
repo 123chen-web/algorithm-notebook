@@ -764,6 +764,24 @@ def _apply_import_previews(conn):
     conn.execute("CREATE INDEX idx_import_previews_expiry ON import_previews(expires_at)")
 
 
+def _apply_lifetime_problem_count(conn):
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN lifetime_problem_count INTEGER NOT NULL DEFAULT 0 "
+        "CHECK(typeof(lifetime_problem_count) = 'integer' AND lifetime_problem_count >= 0)"
+    )
+    # Deleted records from before this migration cannot be reconstructed.
+    conn.execute(
+        "UPDATE users SET lifetime_problem_count = "
+        "(SELECT COUNT(*) FROM problems WHERE problems.user_id = users.id) "
+        "WHERE deleted_at IS NULL"
+    )
+    conn.execute(
+        "CREATE TRIGGER problem_lifetime_insert AFTER INSERT ON problems BEGIN "
+        "UPDATE users SET lifetime_problem_count = lifetime_problem_count + 1 "
+        "WHERE id = NEW.user_id AND deleted_at IS NULL; END"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -787,6 +805,7 @@ MIGRATIONS = [
     (18, "错因待补标记", _apply_pending_reason),
     (19, "个人简介", _apply_user_bio),
     (20, "网页导入预览与幂等确认", _apply_import_previews),
+    (21, "累计录入题目计数", _apply_lifetime_problem_count),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

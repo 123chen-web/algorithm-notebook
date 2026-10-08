@@ -16,7 +16,7 @@ def test_profile_resources_and_author_entries():
     app = (STATIC / 'app.js').read_text(encoding='utf-8')
     board = (STATIC / 'board.js').read_text(encoding='utf-8')
     assert '/static/profile.css?v=1' in page
-    assert page.index('/static/profile.js?v=1') < page.index('/static/app.js?v=')
+    assert page.index('/static/profile.js?v=2') < page.index('/static/app.js?v=')
     assert 'id="my-profile"' in page and 'id="profile-dialog"' in page
     assert 'window.Profile?.reset();' in app
     assert 'getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement' in app

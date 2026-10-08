@@ -51,14 +51,14 @@
     head.append(hooks.avatar(data.user_id, data.username, data.avatar_version, { hasAvatar: data.has_avatar }), title, close);
     const bio = node("p", data.bio || "还没有填写简介。", "profile-bio");
     const stats = node("dl", "", "profile-stats");
-    for (const [label, field] of [["当前录入题目", "problem_count"], ["易错点", "mistake_count"],
+    for (const [label, field] of [["累计录入题目", "lifetime_problem_count"], ["当前录入题目", "problem_count"], ["易错点", "mistake_count"],
       ["复习次数", "review_count"], ["连续打卡天数", "streak_days"], ["已获徽章", "achievement_count"]]) {
       const cell = node("div");
       cell.append(node("dt", label), node("dd", String(data[field])));
       stats.append(cell);
     }
     content.replaceChildren(head, bio, stats,
-      node("p", "这里只展示公开资料和汇总统计，个人笔记仍只对本人开放。题目数随删除记录减少。", "profile-note"));
+      node("p", "这里只展示公开资料和汇总统计，个人笔记仍只对本人开放。累计以功能启用时已有题目为起点，以后删除不减少；当前题目数随删除减少。", "profile-note"));
     if (data.user_id !== identity.owner) return;
     const form = node("form", "", "profile-edit");
     const label = node("label", "公开简介（最多 200 字，可留空）");

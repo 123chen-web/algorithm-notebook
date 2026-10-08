@@ -27,7 +27,7 @@ def get_public_profile(user_id: int, user=Depends(main.current_user)):
     with main.connect() as conn:
         conn.execute('BEGIN')
         target = conn.execute(
-            'SELECT id, username, timezone, avatar_version, bio FROM users '
+            'SELECT id, username, timezone, avatar_version, bio, lifetime_problem_count FROM users '
             'WHERE id = ? AND deleted_at IS NULL AND is_banned = 0', (user_id,),
         ).fetchone()
         if target is None:
@@ -42,6 +42,7 @@ def get_public_profile(user_id: int, user=Depends(main.current_user)):
         'user_id': user_id, 'username': target['username'], 'bio': target['bio'],
         'avatar_version': target['avatar_version'], 'has_avatar': main.sec_has_avatar(user_id),
         'problem_count': problem_count, 'mistake_count': metrics['mistake_count'],
+        'lifetime_problem_count': target['lifetime_problem_count'],
         'review_count': review_count, 'streak_days': metrics['current_streak_days'],
         'achievement_count': sum(badge['unlocked'] for badge in main.evaluate_achievements(metrics)),
     }

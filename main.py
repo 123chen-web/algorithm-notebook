@@ -1402,7 +1402,8 @@ def delete_account_data(conn, user_id, deleted_at):
     conn.execute(
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
-            avatar_version = 0, bio = '', last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
+            avatar_version = 0, bio = '', lifetime_problem_count = 0,
+            last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,
         (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
