@@ -621,6 +621,161 @@ test("detail opening: an older list cannot restore pending data after a fresh de
   assert.match(env.$('.record-button[data-id="1"]').textContent, /检查空数组的边界/);
 });
 
+for (const responseOrder of ["detail-first", "list-first"]) {
+  test(`detail opening: a later zone filter applies when ${responseOrder}`, async () => {
+    const env = environment(); env.context.view = "all";
+    seedList(env, [CARD(1, { pending_reason: true, description: "（待补：为什么错）" })]);
+    const opening = env.context.openMistake(1);
+    const detail = env.calls.find((call) => call.url === "/api/mistakes/1");
+    env.$("#zone-filter").value = "后端";
+    const loading = env.context.loadList();
+    const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+    assert.match(listing.url, /zone=/);
+    if (responseOrder === "detail-first") {
+      env.answer(detail, CARD(1, { pending_reason: false, version: 4 })); await opening;
+    }
+    env.answer(listing, { today: "2026-10-04", items: [CARD(2, { zone: "后端" })] }); await loading;
+    if (responseOrder === "list-first") {
+      env.answer(detail, CARD(1, { pending_reason: false, version: 4 })); await opening;
+    }
+    assert.equal(env.$("#zone-filter").value, "后端");
+    assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
+    assert.match(env.$("#cards").textContent, /后端.*题目2|题目2.*后端/);
+    assert.doesNotMatch(env.$("#cards").textContent, /题目1|待补/);
+    assert.match(env.$("#list-summary").textContent, /共 1 条/);
+  });
+}
+
+test("list: a later filter keeps the higher-version saved reason in a returned record", async () => {
+  const env = environment(); env.context.view = "all";
+  const stale = CARD(1, { pending_reason: true, description: "（待补：为什么错）", tags: ["边界"] });
+  seedList(env, [stale]);
+  const opening = env.context.openMistake(1);
+  env.$("#tag-filter").value = "边界";
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, {
+    pending_reason: false, description: "先检查空数组。", tags: ["边界"], version: 4,
+  })); await opening;
+  env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2)] }); await loading;
+  assert.deepEqual([...env.context.rvfListItems.keys()], [1, 2]);
+  assert.equal(env.context.rvfListItems.get(1).version, 4);
+  assert.doesNotMatch(env.$('.record-button[data-id="1"]').textContent, /待补/);
+  assert.match(env.$('.record-button[data-id="1"]').textContent, /先检查空数组/);
+  assert.match(env.$("#list-summary").textContent, /共 2 条/);
+});
+
+test("list: retained newer tags are filtered using SQLite ASCII case matching", async () => {
+  for (const [filter, savedTags, expected] of [["BFS", ["bfs"], [1, 2]], ["边界", ["复杂度"], [2]], ["Ä", ["ä"], [2]]]) {
+    const env = environment(); env.context.view = "all";
+    const stale = CARD(1, { pending_reason: true, tags: [filter] });
+    seedList(env, [stale]);
+    const opening = env.context.openMistake(1);
+    env.$("#tag-filter").value = filter;
+    const loading = env.context.loadList();
+    const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+    env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, {
+      pending_reason: false, description: "已补原因。", tags: savedTags, version: 4,
+    })); await opening;
+    env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2, { tags: [filter] })] }); await loading;
+    assert.deepEqual([...env.context.rvfListItems.keys()], expected);
+    assert.match(env.$("#list-summary").textContent, new RegExp(`共 ${expected.length} 条`));
+  }
+});
+
+test("list: retained newer scheduling still excludes future or suspended today records", async () => {
+  for (const changed of [{ due_date: "2026-10-06" }, { suspended_at: "2026-10-04" }]) {
+    const env = environment(); env.window.FocusReview = {};
+    const stale = CARD(1); seedList(env, [stale]);
+    const opening = env.context.openMistake(1);
+    const loading = env.context.loadList();
+    const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+    env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, { ...changed, version: 4 })); await opening;
+    env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2)] }); await loading;
+    assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
+    assert.match(env.$("#list-summary").textContent, /有 1 条/);
+    assert.equal(env.$("#list-focus").hidden, false);
+  }
+});
+
+test("list: retained newer due dates preserve the scheduler's due-date and id order", async () => {
+  const env = environment(); env.context.view = "all";
+  const stale = CARD(1); seedList(env, [stale]);
+  const opening = env.context.openMistake(1);
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, {
+    due_date: "2026-10-06", version: 4,
+  })); await opening;
+  env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2, { due_date: "2026-10-05" }), CARD(3, { due_date: "2026-10-06" })] }); await loading;
+  assert.deepEqual([...env.context.rvfListItems.keys()], [2, 1, 3]);
+  assert.equal(env.context.rvfListItems.get(1).version, 4);
+  assert.equal(env.context.rvfListItems.get(1).due_date, "2026-10-06");
+});
+
+test("list and detail: older responses cannot revive a cause after it was graded", async () => {
+  const env = environment(); seedList(env);
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  const oldOpening = env.context.openMistake(1);
+  const oldDetail = env.calls.find((call) => call.url === "/api/mistakes/1");
+  const opening = env.context.openMistake(1);
+  const details = env.calls.filter((call) => call.url === "/api/mistakes/1");
+  env.answer(details[1], CARD(1)); await opening;
+  env.$("#review-reveal").click(); env.$('[data-quality="4"]').click(); await tick();
+  env.answer(env.calls.find((call) => call.url.endsWith("/review")), {
+    version: 4, due_date: "2026-10-10", interval_days: 6,
+  }); await tick();
+  env.answer(listing, { today: "2026-10-04", items: [CARD(1), CARD(2)] }); await loading;
+  env.answer(oldDetail, CARD(1)); await oldOpening;
+  assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
+  assert.deepEqual(env.$("#cards").querySelectorAll(".record-button").map((button) => button.dataset.id), ["2"]);
+  assert.match(env.$("#detail").textContent, /已更新复习安排/);
+});
+
+test("detail opening: an older detail cannot downgrade a newer returned list snapshot", async () => {
+  const env = environment(); env.context.view = "all";
+  seedList(env, [CARD(1, { pending_reason: true })]);
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  const opening = env.context.openMistake(1);
+  const newer = CARD(1, {
+    version: 5, pending_reason: false, description: "循环不变量边界已修正。", tags: ["边界", "循环"], due_date: "2026-10-06",
+  });
+  // The list endpoint has no detail-only history or generated variants.
+  delete newer.reviews; delete newer.variants;
+  env.answer(listing, { today: "2026-10-04", items: [newer] }); await loading;
+  const older = CARD(1, {
+    version: 4, pending_reason: true, description: "（待补：为什么错）", tags: ["旧标签"],
+    reviews: [{ quality: 4, reviewed_at: "2026-10-03T12:00:00+00:00" }],
+    variants: [],
+  });
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), older); await opening;
+  assert.equal(env.context.rvfListItems.get(1).version, 5);
+  assert.equal(env.context.rvfDetailState.item.version, 5);
+  assert.equal(env.context.rvfDetailState.item.pending_reason, false);
+  assert.equal(env.context.rvfDetailState.item.description, newer.description);
+  assert.equal(env.context.rvfDetailState.item.due_date, "2026-10-06");
+  assert.deepEqual(env.context.rvfDetailState.item.tags, newer.tags);
+  assert.deepEqual(env.context.rvfDetailState.item.reviews, older.reviews);
+  assert.deepEqual(env.context.rvfDetailState.item.variants, older.variants);
+  assert.doesNotMatch(env.$('.record-button[data-id="1"]').textContent, /待补/);
+});
+
+test("detail opening: completing a detail keeps its list's in-flight queue header available", async () => {
+  const env = environment(); seedList(env);
+  const loading = env.context.loadList();
+  const listing = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  const opening = env.context.openMistake(1);
+  env.answer(listing, { today: "2026-10-04", items: [CARD(1), CARD(2)] }); await loading;
+  const queue = env.calls.find((call) => call.url.startsWith("/api/review/queue?"));
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1)); await opening;
+  env.answer(queue, { cap: 20, done_today: 3, capped: false, items: [CARD(1), CARD(2)] }); await tick();
+  assert.equal(env.$("#review-cap-controls").hidden, false);
+  assert.equal(env.$("#review-daily-cap").closest("label").hidden, false);
+  assert.match(env.$("#review-done-today").textContent, /3 \/ 20/);
+});
+
 test("app navigation: the real showView invalidates active detail requests before page change", async () => {
   const env = navigationEnvironment(); env.render();
   const pending = env.context.openMistake(2);

@@ -2487,6 +2487,22 @@ async function loadList() {
     if (!offlineToday) throw error;
   }
   if (!valid()) return;
+  // 与 SQLite NOCASE 一致，只折叠 ASCII 大写标签字符。
+  const tagKey = tagParam.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  let scheduleChanged = false;
+  const items = data.items.flatMap((item) => {
+    const current = rvfListItems.get(item.id);
+    if (!current || !(current.version > item.version)) return [item];
+    const fresh = { ...item, ...current };
+    // 新筛选决定成员；同一条记录已保存的较新版本不能被旧快照覆盖。
+    if ((zoneParam && fresh.zone !== zoneParam)
+      || (tagKey && !fresh.tags?.some((tag) => tag.replace(/[A-Z]/g, (letter) => letter.toLowerCase()) === tagKey))
+      || (view === "today" && (fresh.suspended_at || fresh.due_date > data.today))) return [];
+    scheduleChanged ||= fresh.due_date !== item.due_date;
+    return [fresh];
+  });
+  if (scheduleChanged) items.sort((left, right) => left.due_date.localeCompare(right.due_date) || left.id - right.id);
+  data = { ...data, items };
   rvfListItems = new Map(data.items.map((item) => [item.id, item]));
   if (offlineToday) {
     $("#review-cap-controls").hidden = true;
@@ -2560,10 +2576,11 @@ async function openMistake(id) {
   user.today = item.today;
   updateUserInfo();
 
-  if (rvfListItems.has(item.id)) {
-    // 新详情修正现有卡片；已发出的旧列表不能把已补原因恢复成待补。
-    rvfListGeneration += 1;
-    rvfListItems.set(item.id, { ...rvfListItems.get(item.id), ...item });
+  const current = rvfListItems.get(item.id);
+  if (current) {
+    // 列表与详情都保留同一条记录的较新版本，详情独有的历史仍可展示。
+    if (current.version > item.version) item = { ...item, ...current };
+    rvfListItems.set(item.id, { ...current, ...item });
     rvfRenderCards(item.today, item.id);
   }
 

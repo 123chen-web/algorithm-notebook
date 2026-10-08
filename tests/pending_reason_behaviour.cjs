@@ -228,6 +228,7 @@ function productionSavedHook(ctx) {
       get: () => ctx.state[key], set: (value) => { ctx.state[key] = value; } });
   }
   Object.assign(context, { api: ctx.hooks.api, rvfPageGeneration: 1, rvfDetailState: null,
+    rvfListGeneration: 0, rvfListItems: new Map(),
     notifyDataChanged() {}, updateUserInfo() {},
     message: (text, error) => ctx.messages.push({ text, error }),
     renderDetail: (record) => ctx.opened.push(record.id),
