@@ -23,7 +23,7 @@ SELECT c.id, c.plan_id, COALESCE(c.plan_name_snapshot, '历史套餐（名称未
        c.payer_note, c.contact, c.status,
        c.reject_reason, c.created_at, c.decided_at,
        c.amount_cents, c.period_days, c.plan_name_snapshot, c.verified_amount_cents,
-       c.receipt_reference
+       c.receipt_reference, c.actual_paid_cents, c.payer_receipt
 FROM manual_payment_claims c JOIN plans p ON p.id = c.plan_id
 """
 
@@ -80,7 +80,9 @@ def list_user_claims(conn, user_id):
     return [dict(row) for row in rows]
 
 
-def create_claim(conn, user_id, plan_id, payer_note, contact, now):
+def create_claim(conn, user_id, plan_id, payer_note, contact, now, *, actual_paid_cents, payer_receipt=''):
+    if type(actual_paid_cents) is not int or not 0 < actual_paid_cents < 2**53:
+        raise ClaimError(422, '请手动填写实际付款金额（正整数分）')
     plan = conn.execute(
         "SELECT id, name, price_cents, period_days FROM plans WHERE id = ? AND is_active = 1",
         (plan_id,)
@@ -99,10 +101,10 @@ def create_claim(conn, user_id, plan_id, payer_note, contact, now):
         raise ClaimError(429, f"你已有 {MAX_PENDING} 条待处理的登记，请等站长确认后再提交")
     claim_id = conn.execute(
         "INSERT INTO manual_payment_claims(user_id, plan_id, payer_note, contact, status, "
-        "created_at, amount_cents, period_days, plan_name_snapshot) "
-        "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+        "created_at, amount_cents, period_days, plan_name_snapshot, actual_paid_cents, payer_receipt) "
+        "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)",
         (user_id, plan_id, payer_note, contact, now, plan["price_cents"],
-         plan["period_days"], plan["name"]),
+         plan["period_days"], plan["name"], actual_paid_cents, payer_receipt),
     ).lastrowid
     return get_claim(conn, claim_id)
 

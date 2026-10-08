@@ -62,6 +62,7 @@ async function mountUser(env, data = { claims: [], plans: PLANS }) {
   env.calls[0].resolve(data);
   await mounted;
   await tick();
+  env.container.querySelector(".mc-actual-amount").value = "12.00"; // explicit user input for submission fixtures
 }
 
 async function mountAdmin(env, data = { claims: [], page: 1, pages: 1 }) {
@@ -164,11 +165,29 @@ test("user: submit posts plan, note and trimmed contact as JSON", async () => {
   const call = env.calls[1];
   assert.equal(call.url, "/api/manual-claims");
   assert.equal(call.init.method, "POST");
-  assert.deepEqual(JSON.parse(call.init.body), { plan_id: "max", payer_note: "支付宝 * 王", contact: "wx-123" });
+  assert.deepEqual(JSON.parse(call.init.body), { plan_id: "max", payer_note: "支付宝 * 王", contact: "wx-123", actual_paid_cents: 1200, payer_receipt: "" });
   call.resolve({ claim: CLAIM(7) });
   await tick();
   env.calls[2].resolve({ claims: [CLAIM(7)], plans: PLANS });
   await tick();
+});
+
+test("feedback: actual amount starts blank, is required and never follows plan price", async () => {
+  const env = setup();
+  const mounting = env.window.ManualClaims.mount(env.container);
+  env.calls[0].resolve({ claims: [], plans: PLANS }); await mounting;
+  const amount = env.container.querySelector('.mc-actual-amount');
+  assert.equal(amount.value, '');
+  env.container.querySelector('.mc-plan').value = 'max';
+  env.container.querySelector('.mc-note').value = '付款人';
+  env.submit('.mc-form');
+  assert.equal(env.calls.length, 1);
+  assert.match(env.container.querySelector('.mc-status').textContent, /手动填写实际付款金额/);
+  amount.value = '8.88';
+  env.container.querySelector('.mc-payer-receipt').value = '测试凭证';
+  env.submit('.mc-form');
+  assert.equal(JSON.parse(env.calls[1].init.body).actual_paid_cents, 888);
+  assert.equal(JSON.parse(env.calls[1].init.body).payer_receipt, '测试凭证');
 });
 
 test("user: a numeric plan id is posted as a number (the backend validates a strict integer)", async () => {
@@ -264,6 +283,7 @@ test("user: the success hint fades on its timer and reset cancels that timer", a
   assert.equal(env.container.querySelector(".mc-status").textContent, "");
 
   env.container.querySelector(".mc-note").value = "再一次";
+  env.container.querySelector(".mc-actual-amount").value = "12.00";
   env.submit(".mc-form");
   env.calls[3].resolve({ claim: CLAIM(8) });
   await tick();
@@ -398,6 +418,7 @@ test("user: a late submit failure cannot unlock a newer submit", async () => {
   await remount;
   await tick();
   env.container.querySelector(".mc-note").value = "第二次";
+  env.container.querySelector(".mc-actual-amount").value = "12.00";
   env.submit(".mc-form");
   await tick();
   assert.equal(env.calls.length, 4);

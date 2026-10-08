@@ -88,6 +88,10 @@
     if (snapshot(claim) === "fixed") return [
       ["登记套餐", claim.plan_name_snapshot], ["登记金额", money(claim.amount_cents)],
       ["登记周期", `${claim.period_days} 天`],
+      ["用户实付", claim.actual_paid_cents == null ? "历史登记未填写" : money(claim.actual_paid_cents)],
+      ["用户凭证", claim.payer_receipt || "未提供"],
+      ...(claim.actual_paid_cents != null && claim.actual_paid_cents !== claim.amount_cents
+        ? [["人工核对", "用户实付与套餐标价不一致，请核实到账记录；提交登记不会开通套餐。"]] : []),
     ];
     return [["历史登记", snapshot(claim) === "legacy"
       ? "原套餐名称、金额与周期未知，需站长人工核账；当前套餐价格不能代替历史金额。"
@@ -215,6 +219,14 @@
       contact.setAttribute("autocomplete", "off");
       contact.setAttribute("placeholder", "微信号或手机号，核对不上时站长好找你");
       contactLabel.append(contact);
+      const amountLabel = node("label", "", "实际付款金额（元，必填）");
+      const amount = node("input", "mc-actual-amount"); amount.type = "text";
+      amount.inputMode = "decimal"; amount.required = true;
+      amount.setAttribute("placeholder", "请手动填写已付款金额");
+      amountLabel.append(amount);
+      const receiptLabel = node("label", "", "付款凭证（可选：单号或凭证说明）");
+      const receipt = node("input", "mc-payer-receipt"); receipt.type = "text"; receipt.maxLength = 200;
+      receiptLabel.append(receipt);
       const noPlans = node("p", "mc-hint", "暂时没有可登记的套餐，请稍后再试。");
       noPlans.hidden = true;
       const submit = node("button", "mc-submit primary", "我已付款，登记");
@@ -222,7 +234,7 @@
       const status = node("p", "mc-status");
       status.setAttribute("role", "status");
       status.setAttribute("aria-live", "polite");
-      form.append(planLabel, noteLabel, hint, contactLabel, noPlans, submit, status);
+      form.append(planLabel, amountLabel, receiptLabel, noteLabel, hint, contactLabel, noPlans, submit, status);
       panel.append(form);
       form.addEventListener("submit", submitClaim);
 
@@ -235,7 +247,7 @@
       listSection.append(list, listStatus);
 
       target.replaceChildren(panel, listSection);
-      els = { form, plan, note, contact, noPlans, submit, status, listSection, list, listStatus };
+      els = { form, plan, amount, receipt, note, contact, noPlans, submit, status, listSection, list, listStatus };
     }
 
     async function load() {
@@ -274,6 +286,8 @@
         field.focus();
       };
       if (!plans.length) return invalid("暂时没有可登记的套餐，请稍后再试。", els.submit);
+      const actualPaidCents = centsFromInput(els.amount.value);
+      if (actualPaidCents == null) return invalid("请手动填写实际付款金额，最多两位小数。", els.amount);
       if (!note) return invalid("请填付款备注：微信 / 支付宝昵称，或转账单号后 4 位。", els.note);
       if (note.length > NOTE_LIMIT) return invalid(`付款备注不能超过 ${NOTE_LIMIT} 个字。`, els.note);
       if (contact.length > CONTACT_LIMIT) return invalid(`联系方式不能超过 ${CONTACT_LIMIT} 个字。`, els.contact);
@@ -289,11 +303,13 @@
       try {
         await hooks.api("/api/manual-claims", {
           method: "POST",
-          body: JSON.stringify({ plan_id: /^[0-9]+$/.test(els.plan.value) ? Number(els.plan.value) : els.plan.value, payer_note: note, contact }),
+          body: JSON.stringify({ plan_id: /^[0-9]+$/.test(els.plan.value) ? Number(els.plan.value) : els.plan.value, payer_note: note, contact,
+            actual_paid_cents: actualPaidCents, payer_receipt: els.receipt.value.trim() }),
         });
         if (!stillCurrent()) return;
         els.note.value = "";
         els.contact.value = "";
+        els.amount.value = ""; els.receipt.value = "";
         flash("已收到，站长确认后会自动开通。");
         await load();
       } catch (error) {

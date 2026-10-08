@@ -6,9 +6,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { load, FakeEvent, FakeDialog, tick } = require("./js_harness.cjs");
 const settle = async () => { await tick(); await tick(); };
-const profile = (id = 7) => ({ user_id: id, username: "<b>同学</b>", bio: "<script>简介</script>",
-  has_avatar: false, avatar_version: 5, problem_count: 3, lifetime_problem_count: 8, mistake_count: 4,
-  review_count: 10, streak_days: 2, achievement_count: 1 });
+const profile = (id = 7) => ({ user_id: id, display_name: "<b>同学</b>", bio: "<script>简介</script>",
+  has_avatar: false, avatar_version: 5, lifetime_problem_count: 8, joined_at: "2026-10-01",
+  settings: { bio: "<script>简介</script>", rank_display_name: "", profile_public_bio: true, profile_public_count: true, profile_public_joined: true } });
 
 test("profile ignores an old queued close event after immediate reopening", async () => {
   const ctx = setup();
@@ -18,7 +18,7 @@ test("profile ignores an old queued close event after immediate reopening", asyn
   ctx.dialog.dispatchEvent(new FakeEvent("close"));
   ctx.env.respond(ctx.env.calls[1], 200, profile(7)); await settle();
   assert.equal(ctx.dialog.open, true);
-  assert.match(ctx.content.textContent, /当前录入题目/);
+  assert.match(ctx.content.textContent, /累计录入题目/);
   ctx.env.respond(ctx.env.calls[0], 200, { ...profile(7), bio: "旧简介" }); await settle();
   assert.equal(ctx.content.textContent.includes("旧简介"), false);
 });
@@ -56,12 +56,12 @@ test("profile renders public strings literally and labels current retained total
   assert.equal(ctx.content.querySelector("script"), null);
   assert.equal(ctx.content.querySelector("b"), null);
   assert.match(ctx.content.textContent, /<b>同学<\/b>/);
-  assert.match(ctx.content.textContent, /当前录入题目/);
-  assert.match(ctx.content.textContent, /复习次数/);
+  assert.match(ctx.content.textContent, /累计录入题目/);
+  assert.match(ctx.content.textContent, /加入时间/);
   const totals = ctx.content.querySelector('dl').children;
-  assert.equal(totals.length, 6);
+  assert.equal(totals.length, 2);
   assert.equal(totals[0].textContent, '累计录入题目8');
-  assert.equal(totals[1].textContent, '当前录入题目3');
+  assert.equal(totals[1].textContent, '加入时间2026-10-01');
   assert.match(ctx.content.textContent, /以后删除不减少/);
   assert.equal(ctx.content.querySelector("textarea").value, "<script>简介</script>");
 });
@@ -126,8 +126,8 @@ for (const transition of ["account", "epoch", "view", "close", "reset"]) {
 }
 test("profile newer selection wins reversed response order", async () => {
   const ctx = setup(); ctx.env.window.Profile.open(9); ctx.env.window.Profile.open(10);
-  ctx.env.respond(ctx.env.calls[1], 200, { ...profile(10), username: "十" }); await settle();
-  ctx.env.respond(ctx.env.calls[0], 200, { ...profile(9), username: "九" }); await settle();
+  ctx.env.respond(ctx.env.calls[1], 200, { ...profile(10), display_name: "十" }); await settle();
+  ctx.env.respond(ctx.env.calls[0], 200, { ...profile(9), display_name: "九" }); await settle();
   assert.equal(ctx.content.querySelector("h3").textContent, "十");
 });
 test("profile late save cannot replace a reopened profile or leave its controls disabled", async () => {
@@ -146,4 +146,28 @@ test("profile reports current failure, invalid ID and missing user send no extra
   assert.match(ctx.content.textContent, /用户不存在/);
   ctx.state.user = null; ctx.env.window.Profile.open(9);
   assert.equal(ctx.env.calls.length, 1);
+});
+
+test("feedback: another member's hidden fields and learning details are absent", async () => {
+  const ctx = setup();
+  await open(ctx, 9, { user_id: 9, display_name: "同学", avatar_version: 0, has_avatar: false });
+  assert.equal(ctx.content.querySelector(".profile-bio"), null);
+  assert.equal(ctx.content.querySelector("dl").children.length, 0);
+  assert.equal(ctx.content.querySelector("form"), null);
+  assert.equal(ctx.content.textContent.includes("undefined"), false);
+});
+
+test("feedback: owner saves rank name and three public preferences with CSRF api", async () => {
+  const ctx = setup(); await open(ctx);
+  const input = ctx.content.querySelector('.profile-rank-name');
+  const form = input.closest('form'); input.value = '张三';
+  form.querySelectorAll('input[type="checkbox"]')[0].checked = false;
+  form.dispatchEvent(new FakeEvent('submit')); form.dispatchEvent(new FakeEvent('submit'));
+  const call = ctx.env.calls[1];
+  assert.equal(call.url, '/api/me/profile-settings');
+  assert.deepEqual(JSON.parse(call.init.body), { rank_display_name: '张三', profile_public_bio: false,
+    profile_public_count: true, profile_public_joined: true });
+  ctx.env.respond(call, 422, { detail: '榜单显示名无效' }); await settle();
+  assert.match(form.textContent, /榜单显示名无效/);
+  assert.equal(form.querySelector('button').disabled, false);
 });

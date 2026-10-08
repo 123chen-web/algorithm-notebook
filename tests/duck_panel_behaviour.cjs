@@ -18,6 +18,13 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 const MISTAKE = { id: 7, title: "二分查找：循环条件写错" };
 const reply = (text, extra = {}) => ({ reply: text, turns_used: 1, ai_remaining: 9, ...extra });
 
+test('feedback: concurrency 429 allows retry and does not lock the daily quota', () => {
+  const env = load(['duck-panel.js']);
+  const info = env.window.DuckPanel.helpers.failureInfo({ status: 429, message: 'AI 现在比较忙，请稍后再试；这次没有消耗额度。' });
+  assert.equal(info.quota, undefined);
+  assert.equal(info.retry, true);
+});
+
 /** 与 app.js 的 api() 行为一致：失败时抛出带 status / message 的 Error。 */
 function makeApi(env) {
   return (path, options) => env.window.fetch(path, options).then(async (response) => {
@@ -607,7 +614,7 @@ test("helpers.payloadTurns：复制历史并追加当前发言，不改原数组
 test("helpers.failureInfo：429 锁额度、502 可重试、未知错误给通用文案", () => {
   const { failureInfo } = load(["duck-panel.js"]).window.DuckPanel.helpers;
   assert.deepEqual(plain(failureInfo({ status: 429, message: "x" })),
-    { text: "今天的 AI 额度用完了，明天再来找小黄鸭讲吧。", quota: true, retry: false });
+    { text: "今天的小黄鸭额度用完了，明天再来讲吧。", quota: true, retry: false });
   assert.equal(failureInfo({ status: 502 }).retry, true);
   assert.equal(failureInfo({ status: 503, message: "" }).text.length > 0, true);
   assert.equal(failureInfo({ status: 500, message: "服务错误" }).text, "服务错误");

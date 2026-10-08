@@ -62,7 +62,7 @@ SELECT user_id, SUM(MIN(c, {SAME_MISTAKE_DAILY_CAP})) AS n FROM (
 """
 
 RANKING_SQL = f"""
-SELECT t.user_id, t.n, u.username, u.avatar_version FROM ({CAPPED_COUNTS_SQL}) t
+SELECT t.user_id, t.n, COALESCE(NULLIF(u.rank_display_name, ''), u.username) AS username, u.avatar_version FROM ({CAPPED_COUNTS_SQL}) t
 JOIN users u ON u.id = t.user_id
 WHERE {ELIGIBLE_SQL} AND t.n > 0
 ORDER BY t.n DESC, t.user_id ASC

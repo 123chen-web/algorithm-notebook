@@ -15,7 +15,7 @@
   const THINKING = "小黄鸭在想…";
   const SUMMING = "小黄鸭在整理总结…";
   const RETRYABLE_FALLBACK = "小黄鸭这次没答好，可以再试一次。";
-  const QUOTA_TEXT = "今天的 AI 额度用完了，明天再来找小黄鸭讲吧。";
+  const QUOTA_TEXT = "今天的小黄鸭额度用完了，明天再来讲吧。";
 
   let hooks = null;
   let generation = 0; // mount / unmount / reset 都会加一：旧面板的迟到响应全部作废
@@ -58,6 +58,7 @@
 
   /** 把 api() 抛出的错误（带 .status / .message）翻译成界面说明；quota 为真时锁定面板到本次挂载结束。 */
   function failureInfo(error) {
+    if (error?.status === 429 && /没有消耗/.test(error.message || "")) return { text: error.message, retry: true };
     if (error?.status === 429) return { text: QUOTA_TEXT, quota: true, retry: false };
     if (error?.status === 502) return { text: RETRYABLE_FALLBACK, retry: true };
     if (error?.status === 503) return { text: error?.message || "小黄鸭还没有配置好，请稍后再来。", retry: true };
@@ -247,7 +248,7 @@
     const restartBtn = button("重新开始", "duck-restart");
     actions.append(sendBtn, finishBtn, restartBtn);
     row.append(count, actions);
-    const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；每次回复和总结各使用 1 次每日 AI 额度。`);
+    const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；小黄鸭有独立每日额度（默认 10 次，管理员可调整），每次回复和总结各用 1 次，不占其他 AI 额度；服务端失败退还，并发繁忙不扣。`);
     composer.append(input, row, hint);
 
     root.append(head, note, log, status, error, summary, composer);

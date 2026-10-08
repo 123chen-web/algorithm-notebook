@@ -221,6 +221,24 @@ def test_refresh_keeps_old_cache_on_failure(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "cf_problems.json").read_text(encoding="utf-8")) == old
 
 
+def test_refresh_rejects_empty_candidates_and_preserves_existing_cache(tmp_path, monkeypatch, caplog):
+    old = {"fetched_at": time.time() - 100, "problems": [{"contestId": 9, "index": "Z"}]}
+    target = tmp_path / "cf_problems.json"
+    original = json.dumps(old, ensure_ascii=False).encode("utf-8")
+    target.write_bytes(original)
+    monkeypatch.setattr(cf_problems, "fetch_problems", lambda: [])
+    assert cf_problems.refresh() == 1
+    assert target.read_bytes() == original
+    assert "题库为空" in caplog.text
+    assert "已保留旧缓存" in caplog.text
+
+
+def test_refresh_rejects_empty_candidates_without_creating_an_empty_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(cf_problems, "fetch_problems", lambda: [])
+    assert cf_problems.refresh() == 1
+    assert not (tmp_path / "cf_problems.json").exists()
+
+
 def test_refresh_writes_new_cache_on_success(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cf_problems,
@@ -233,12 +251,13 @@ def test_refresh_writes_new_cache_on_success(tmp_path, monkeypatch):
     assert len(payload["problems"]) == 1
 
 
-def test_refresh_reports_cache_write_failure(monkeypatch):
-    monkeypatch.setattr(cf_problems, "fetch_problems", lambda: [])
+def test_refresh_reports_cache_write_failure(monkeypatch, caplog):
+    monkeypatch.setattr(cf_problems, "fetch_problems", lambda: [{"contestId": 4, "index": "A"}])
     def fail_save(problems):
         raise OSError("write failed")
     monkeypatch.setattr(cf_problems, "save_cache", fail_save)
     assert cf_problems.refresh() == 1
+    assert "write failed" in caplog.text
 
 
 def test_cache_age_days(tmp_path):

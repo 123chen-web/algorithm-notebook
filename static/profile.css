@@ -33,6 +33,8 @@
 .profile-stats > div { min-width: 0; }
 .profile-stats dt { color: var(--muted); font-size: 13px; }
 .profile-stats dd { margin: 4px 0 0; font-size: 26px; font-weight: 600; }
+.profile-stats dd { overflow-wrap: anywhere; }
+.profile-avatar { min-width: 44px; min-height: 44px; }
 .profile-note { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .profile-edit { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
 .profile-edit label { display: grid; gap: 8px; }

@@ -4022,8 +4022,30 @@ async function openForumPost(postId) {
   const epoch = sessionEpoch;
   const owner = user?.id;
   forumSummaryController?.reset();
-  const post = await api(`/api/posts/${postId}`);
+  const status = $("#forum-open-status");
+  const retry = $("#forum-open-retry");
+  const current = () => generation === forumDetailGeneration && epoch === sessionEpoch && owner === user?.id && view === "forum";
+  status.textContent = "正在打开帖子…";
+  retry.hidden = true;
+  if (retry.forumRetryHandler) retry.removeEventListener("click", retry.forumRetryHandler);
+  retry.forumRetryHandler = () => { if (current()) void openForumPost(postId); };
+  retry.addEventListener("click", retry.forumRetryHandler);
+  let post;
+  try {
+    post = await api(`/api/posts/${postId}`);
+  } catch (error) {
+    if (error.status === 401 && !user && sessionEpoch === epoch + 1) {
+      message("登录已过期，请重新登录后回复。", true);
+      return;
+    }
+    if (!current()) return;
+    status.textContent = error.status ? (error.detail || error.message || "打不开帖子，请稍后重试。") : "打不开帖子，请检查网络后重试。";
+    retry.hidden = false;
+    message(status.textContent, true);
+    return;
+  }
   if (generation !== forumDetailGeneration || epoch !== sessionEpoch || owner !== user?.id || view !== "forum") return;
+  status.textContent = "";
   if (forumPost?.id !== post.id) {
     clearForumReply();
     $("#forum-comment-form").reset();
@@ -4580,7 +4602,12 @@ function renderForumComment(comment) {
       return;
     }
     const author = element("div", "", "thread-avatar-slot");
-    author.append(avatarElement(comment.user_id, comment.username, comment.avatar_version, { hasAvatar: comment.has_avatar }));
+    const avatarButton = element("button", "", "profile-author profile-avatar");
+    avatarButton.type = "button";
+    avatarButton.setAttribute("aria-label", `查看 ${comment.username} 的个人资料`);
+    avatarButton.append(avatarElement(comment.user_id, comment.username, comment.avatar_version, { hasAvatar: comment.has_avatar }));
+    avatarButton.addEventListener("click", () => window.Profile?.open(comment.user_id));
+    author.append(avatarButton);
     const content = element("div", "", "forum-comment-content thread-card");
     const meta = element("header", "", "forum-comment-meta thread-head");
     meta.append(profileAuthor(comment.user_id, comment.username));
@@ -5427,8 +5454,12 @@ function submitForumComment() {
         body: JSON.stringify(payload),
       });
     } catch (error) {
+      if (error.status === 401 && !user && sessionEpoch === epoch + 1) {
+        message("登录已过期，请重新登录后回复。", true);
+        return;
+      }
       if (!current()) return;
-      const detail = error.detail || error.message || "发送失败，请保留草稿稍后重试。";
+      const detail = error.detail || (/\p{Script=Han}/u.test(error.message || "") ? error.message : "网络连接失败，请保留草稿后重试。");
       forumAnnounce(detail);
       message(detail, true);
       return;
@@ -5461,7 +5492,12 @@ window.Board?.mount({
   getView: () => view,
   isListVisible: () => !$("#forum-page").hidden && !$("#forum-list").hidden,
   isDetailVisible: forumDetailVisible,
-  openPost: (id) => run(() => openForumPost(id)),
+  openPost: (id) => { void openForumPost(id); },
+  cancelOpening: () => {
+    forumDetailGeneration += 1;
+    $("#forum-open-status").textContent = "";
+    $("#forum-open-retry").hidden = true;
+  },
   openCompose: (options) => {
     message();
     showForumCompose(options);

@@ -238,6 +238,8 @@ def refresh():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         problems = fetch_problems()
+        if not problems:
+            raise ValueError('题库为空，放弃覆盖已有候选数据')
         target = save_cache(problems)
     except Exception as exc:  # noqa: BLE001 —— 任何抓取失败都保留旧缓存
         log.error("抓取 Codeforces 题库失败，已保留旧缓存：%s", exc)

@@ -60,6 +60,7 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 | `SAMPLE_WORLD_DIR` | `sample_world.py` 的数据目录，默认项目内 `data` |
 | `COOKIE_SECURE`、`PUBLIC_BASE_URL` | HTTPS Cookie、邮件链接所用地址 |
 | `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL` | AI 服务密钥、模型、兼容服务地址；密钥为空时 AI 不可用 |
+| `DUCK_DAILY_LIMIT` | 小黄鸭独立每日次数，所有账号默认 10 次；0 关闭，非法值回落到 10；每次回复及总结各扣 1 次，502/503/504 退还，429 并发不扣 |
 | `AI_DAILY_LIMIT`、`TRIAL_AI_DAILY_LIMIT` | 免费正式账号默认每日 20 次、体验账号默认每日 4 次；有效套餐额度按现有优先级覆盖 |
 | `AI_MAX_CONCURRENCY` | 每个进程同时进行中的 AI 调用上限，默认 6 |
 | `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURITY`、`SMTP_TIMEOUT`、`SMTP_USERNAME`、`SMTP_PASSWORD`、`SMTP_FROM` | 找回密码和复习提醒发信；配置与自测见 [发信配置与自测](mail.md) |

@@ -15,7 +15,7 @@ import manual_claims
 from db import connect
 from test_redeem_codes import CSRF, NOW, client, generate, subscription, use_user  # noqa: F401
 
-PAYLOAD = {"plan_id": 1, "payer_note": "支付宝尾号 1234", "contact": "wx-alice"}
+PAYLOAD = {"actual_paid_cents": 990, "plan_id": 1, "payer_note": "支付宝尾号 1234", "contact": "wx-alice"}
 
 
 def submit(client, **changes):
@@ -73,7 +73,7 @@ def test_submit_returns_claim_shape(client):
     claim = response.json()["claim"]
     assert set(claim) == {"id", "plan_id", "plan_name", "payer_note", "contact", "status",
                           "reject_reason", "created_at", "decided_at", "amount_cents", "period_days",
-                          "plan_name_snapshot", "verified_amount_cents", "receipt_reference"}
+                          "plan_name_snapshot", "verified_amount_cents", "receipt_reference", "actual_paid_cents", "payer_receipt"}
     assert claim["status"] == "pending" and claim["plan_name"] == "月套餐"
     assert claim["payer_note"] == "支付宝尾号 1234" and claim["decided_at"] is None
     assert claim["created_at"] == NOW
@@ -445,6 +445,9 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
         # migration 19 adds bio; the frozen version-10 fixture must omit it too
         conn.execute("ALTER TABLE users DROP COLUMN bio")
+        conn.execute('DROP TABLE duck_usage')
+        for column in ('rank_display_name', 'profile_public_bio', 'profile_public_count', 'profile_public_joined'):
+            conn.execute(f'ALTER TABLE users DROP COLUMN {column}')
         conn.execute("PRAGMA user_version = 10")
     db.init_db()
     with connect() as conn:
@@ -453,7 +456,7 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         assert columns == ["id", "user_id", "plan_id", "payer_note", "contact", "status",
                            "reject_reason", "created_at", "decided_at", "decided_by",
                            "amount_cents", "period_days", "verified_amount_cents",
-                           "plan_name_snapshot", "receipt_reference"]
+                           "plan_name_snapshot", "receipt_reference", "actual_paid_cents", "payer_receipt"]
     with connect(write=True) as conn:
         conn.execute("INSERT INTO users(id, username, password_hash, timezone, created_at) "
                      "VALUES (1, 'u', 'x', 'Asia/Shanghai', 'now')")

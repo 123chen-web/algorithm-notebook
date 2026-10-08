@@ -7,7 +7,7 @@ in tests keeps affecting the moved code.
 import main
 
 from activity import day_counts
-from ai_limits import refund_on_server_failure
+from ai_limits import refund_on_server_failure, duck_daily_limit
 from contextlib import ExitStack
 from datetime import date
 from datetime import timedelta
@@ -321,7 +321,7 @@ def create_variant(mistake_id: int, user=Depends(main.current_user)):
 
 @router.post("/api/mistakes/{mistake_id}/duck")
 def duck_panel_chat(mistake_id: int, data: main.DuckInput, user=Depends(main.current_user)):
-    """讲给小黄鸭听：与 create_variant 同一套额度/并发/记账写法。
+    """讲给小黄鸭听：独立每日额度，复用并发/记账与失败退还规则。
 
     校验失败（422）在扣额度之前；502/503/504 退回本次扣的额度，
     回复不合格重试一次仍失败也按 502 退回，不消耗用户的当日额度。
@@ -346,32 +346,34 @@ def duck_panel_chat(mistake_id: int, data: main.DuckInput, user=Depends(main.cur
                 raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
 
             day = main.today_for(user).isoformat()
-            quota = main.ai_quota(conn, user["id"], day)
-            limit = quota["ai_daily_limit"]
-            if quota["ai_daily_used"] >= limit:
-                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            main.rvb_account(conn, user['id'])
+            limit = duck_daily_limit()
+            usage = conn.execute('SELECT attempts FROM duck_usage WHERE user_id = ? AND day = ?', (user['id'], day)).fetchone()
+            used = usage['attempts'] if usage else 0
+            if used >= limit:
+                raise HTTPException(429, "今天的小黄鸭次数已用完，明天再来吧。")
             stack.enter_context(main.ai_slot())
             cursor = conn.execute(
                 """
-                INSERT INTO ai_usage(user_id, day, attempts)
+                INSERT INTO duck_usage(user_id, day, attempts)
                 SELECT ?, ?, 1 WHERE ? > 0
                 ON CONFLICT(user_id, day) DO UPDATE
-                SET attempts = ai_usage.attempts + 1
-                WHERE ai_usage.attempts < ?
+                SET attempts = duck_usage.attempts + 1
+                WHERE duck_usage.attempts < ?
                 """,
                 (user["id"], day, limit, limit),
             )
             if cursor.rowcount != 1:
-                raise HTTPException(429, "今天的 AI 生成次数已用完")
+                raise HTTPException(429, "今天的小黄鸭次数已用完，明天再来吧。")
 
-        with refund_on_server_failure(user["id"], day, main.connect):
+        with refund_on_server_failure(user["id"], day, main.connect, duck=True):
             with main.track_call(user["id"], "duck"):
                 reply = main.duck_ai_reply(item, turns, data.finish)
 
     return {
         "reply": reply,
         "turns_used": sum(1 for turn in turns if turn["role"] == "user"),
-        "ai_remaining": max(0, quota["ai_daily_remaining"] - 1),
+        "ai_remaining": max(0, limit - used - 1),
     }
 
 

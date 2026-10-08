@@ -32,10 +32,12 @@ def test_upgrade_preserves_old_claim_and_leaves_historical_snapshot_unknown(hist
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == 22
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         after = dict(conn.execute("SELECT * FROM manual_payment_claims WHERE id = 11").fetchone())
         for column in SNAPSHOT_COLUMNS:
             assert after.pop(column) is None
+        assert after.pop('actual_paid_cents') is None
+        assert after.pop('payer_receipt') == ''
         assert after == historical_claim
 
 

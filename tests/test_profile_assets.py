@@ -15,8 +15,8 @@ def test_profile_resources_and_author_entries():
     page = (STATIC / 'index.html').read_text(encoding='utf-8')
     app = (STATIC / 'app.js').read_text(encoding='utf-8')
     board = (STATIC / 'board.js').read_text(encoding='utf-8')
-    assert '/static/profile.css?v=1' in page
-    assert page.index('/static/profile.js?v=2') < page.index('/static/app.js?v=')
+    assert '/static/profile.css?v=2' in page
+    assert page.index('/static/profile.js?v=3') < page.index('/static/app.js?v=')
     assert 'id="my-profile"' in page and 'id="profile-dialog"' in page
     assert 'window.Profile?.reset();' in app
     assert 'getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement' in app
@@ -62,4 +62,4 @@ def test_profile_async_behaviour():
                             capture_output=True, text=True, encoding='utf-8', timeout=120)
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-1000:]
     assert re.search(r'(?m)^(?:ℹ|#) fail 0$', result.stdout)
-    assert re.search(r'(?m)^(?:ℹ|#) pass 16$', result.stdout)
+    assert re.search(r'(?m)^(?:ℹ|#) pass 18$', result.stdout)

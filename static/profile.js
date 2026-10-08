@@ -44,26 +44,27 @@
   }
   function render(data, identity) {
     const head = node("div", "", "profile-heading");
-    const title = node("h3", data.username);
+    const title = node("h3", data.display_name);
     title.id = "profile-title";
     const close = button("关闭", "profile-close");
     close.addEventListener("click", () => dialog.close());
-    head.append(hooks.avatar(data.user_id, data.username, data.avatar_version, { hasAvatar: data.has_avatar }), title, close);
+    head.append(hooks.avatar(data.user_id, data.display_name, data.avatar_version, { hasAvatar: data.has_avatar }), title, close);
     const bio = node("p", data.bio || "还没有填写简介。", "profile-bio");
     const stats = node("dl", "", "profile-stats");
-    for (const [label, field] of [["累计录入题目", "lifetime_problem_count"], ["当前录入题目", "problem_count"], ["易错点", "mistake_count"],
-      ["复习次数", "review_count"], ["连续打卡天数", "streak_days"], ["已获徽章", "achievement_count"]]) {
+    for (const [label, field] of [["累计录入题目", "lifetime_problem_count"], ["加入时间", "joined_at"]]) {
+      if (!(field in data)) continue;
       const cell = node("div");
-      cell.append(node("dt", label), node("dd", String(data[field])));
+      cell.append(node("dt", label), node("dd", field === "joined_at" ? String(data[field]).slice(0, 10) : String(data[field])));
       stats.append(cell);
     }
-    content.replaceChildren(head, bio, stats,
-      node("p", "这里只展示公开资料和汇总统计，个人笔记仍只对本人开放。累计以功能启用时已有题目为起点，以后删除不减少；当前题目数随删除减少。", "profile-note"));
+    content.replaceChildren(head);
+    if ("bio" in data) content.append(bio);
+    content.append(stats, node("p", "只显示对方选择公开的资料。累计以功能启用时已有题目为起点，以后删除不减少。", "profile-note"));
     if (data.user_id !== identity.owner) return;
     const form = node("form", "", "profile-edit");
     const label = node("label", "公开简介（最多 200 字，可留空）");
     const input = node("textarea");
-    input.rows = 3; input.maxLength = 200; input.value = data.bio;
+    input.rows = 3; input.maxLength = 200; input.value = data.bio ?? data.settings?.bio ?? "";
     label.append(input);
     const status = node("p", "", "profile-status");
     status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
@@ -92,6 +93,39 @@
       }
     });
     form.append(label, save, status); content.append(form);
+    if (!data.settings) return;
+    const settingsForm = node("form", "", "profile-edit");
+    const nameLabel = node("label", "榜单显示名（选填，建议真名，1~12 个字）");
+    const name = node("input"); name.type = "text"; name.maxLength = 12;
+    name.value = data.settings.rank_display_name;
+    name.className = "profile-rank-name"; nameLabel.append(name);
+    settingsForm.append(nameLabel, node("p", "仅在登录后的榜单与资料卡显示；留空继续使用昵称。不想公开可在账号菜单选择匿名。", "profile-note"));
+    const flags = {};
+    for (const [key, text] of [["bio", "公开简介"], ["count", "公开累计题目数"], ["joined", "公开加入时间"]]) {
+      const label = node("label", text);
+      const check = node("input"); check.type = "checkbox";
+      check.checked = Boolean(data.settings[`profile_public_${key}`]);
+      flags[key] = check; label.prepend(check); settingsForm.append(label);
+    }
+    const settingsSave = button("保存资料设置", "primary"); settingsSave.type = "submit";
+    const settingsStatus = node("p", "", "profile-status"); settingsStatus.setAttribute("role", "status");
+    let settingsBusy = false;
+    settingsForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!current(identity) || settingsBusy) return;
+      settingsBusy = true; settingsSave.disabled = true;
+      try {
+        const payload = { rank_display_name: name.value };
+        for (const [key, check] of Object.entries(flags)) payload[`profile_public_${key}`] = check.checked;
+        await hooks.api("/api/me/profile-settings", { method: "PUT", body: JSON.stringify(payload) });
+        if (current(identity)) await open(data.user_id);
+      } catch (error) {
+        if (current(identity)) settingsStatus.textContent = error.message || "保存失败，请重试。";
+      } finally {
+        if (current(identity)) { settingsBusy = false; settingsSave.disabled = false; }
+      }
+    });
+    settingsForm.append(settingsSave, settingsStatus); content.append(settingsForm);
   }
   async function open(userId) {
     if (!hooks?.getUser() || !Number.isSafeInteger(userId) || userId < 1) return;

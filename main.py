@@ -459,12 +459,14 @@ def _plain_text(value):
 
 class NewManualClaim(InputModel):
     plan_id: int = Field(strict=True, gt=0)
+    actual_paid_cents: int = Field(strict=True, gt=0, lt=2**53)
+    payer_receipt: Annotated[str, StringConstraints(strict=True, strip_whitespace=True, max_length=200)] = ''
     payer_note: Annotated[str, StringConstraints(
         strict=True, strip_whitespace=True, min_length=1, max_length=60)]
     contact: Annotated[str, StringConstraints(
         strict=True, strip_whitespace=True, max_length=60)] = ""
 
-    @field_validator("payer_note", "contact")
+    @field_validator("payer_note", "contact", "payer_receipt")
     @classmethod
     def plain_text(cls, value):
         return _plain_text(value)
@@ -1121,7 +1123,7 @@ async def request_protection(request, call_next):
             "/api/manual-payment/qr/alipay", "/api/manual-payment/qr/wechat"
         )
     )
-    if request.url.path.startswith("/api/") and not manual_qr_response:
+    if (request.url.path.startswith("/api/") and not manual_qr_response) or request.url.path in ("/", "/static/index.html"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -1369,7 +1371,7 @@ def delete_account_data(conn, user_id, deleted_at):
 
     for table in ("sessions", "password_resets", "user_push", "mistake_scratch", "problems",
                   "mistake_tags", "weakness_insights", "mistake_clusters",
-                  "ai_usage", "comment_votes",
+                  "ai_usage", "duck_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
                   "problem_recommendations", "import_previews"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
@@ -1402,7 +1404,7 @@ def delete_account_data(conn, user_id, deleted_at):
     conn.execute(
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
-            avatar_version = 0, bio = '', lifetime_problem_count = 0,
+            avatar_version = 0, bio = '', lifetime_problem_count = 0, rank_display_name = '',
             last_reminder_sent = NULL, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,

@@ -501,6 +501,10 @@
     const open = node("button", "board-open", model.title);
     open.type = "button";
     open.addEventListener("click", () => hooks.openPost(model.id));
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, input, textarea, select")) return;
+      hooks.openPost(model.id);
+    });
     title.append(open);
     body.append(title);
 
@@ -643,6 +647,7 @@
 
   /** keep=true：从详情返回时的刷新——先保留已显示的内容，数据回来再替换；已加载的条数最多取回 50 条。 */
   async function load({ keep = false } = {}) {
+    hooks.cancelOpening?.();
     const mine = ++generation;
     const t = { generation: mine, epoch: hooks.getEpoch(), userId: user()?.id };
     const hadContent = keep && data.loaded && data.posts.length > 0;
