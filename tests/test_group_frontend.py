@@ -40,6 +40,15 @@ const $ = selector => {
   return nodes.get(selector);
 };
 const window = { clearTimeout() {} };
+const profileAuthors = [];
+window.Profile = {
+  author(id, username) {
+    profileAuthors.push({ id, username });
+    const button = new Element("button");
+    button.textContent = username;
+    return button;
+  },
+};
 const storage = new Map();
 const localStorage = {
   getItem: key => storage.has(key) ? storage.get(key) : null,
@@ -92,7 +101,8 @@ NODE_CHECKS = r"""
     assert.equal(formatGroupDate(value, user.timezone), date.toLocaleDateString("zh-CN", { timeZone: "UTC" }) + "（UTC）");
     assert.equal(timestamp(value), date.toLocaleString("zh-CN", { timeZone: "UTC", hour12: false }) + "（UTC）");
     assert.equal(timestamp(null), "尚无");
-  } else if (scenario === "detail") {
+  } else if (["detail", "detail-no-profile"].includes(scenario)) {
+    if (scenario === "detail-no-profile") delete window.Profile;
     assert.doesNotThrow(() => renderStudyGroup(initialGroup));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal($("#groups-detail-title").textContent, initialGroup.name);
@@ -103,6 +113,15 @@ NODE_CHECKS = r"""
     assert.ok($("#groups-level-caption").textContent.includes("9 / 120 分"));
     assert.equal($("#groups-members").children.length, 1);
     assert.ok($("#groups-members").textContent.includes("组长"));
+    const author = $("#groups-members").children[0].children[0].children[1].children[0];
+    assert.equal(author.textContent, "组长");
+    if (scenario === "detail") {
+      assert.deepEqual(profileAuthors, [{ id: 7, username: "组长" }]);
+      assert.equal(author.tag, "button");
+    } else {
+      assert.deepEqual(profileAuthors, []);
+      assert.equal(author.tag, "strong");
+    }
     assert.equal($("#groups-level-ladder").children.length, 1);
     assert.equal($("#groups-level-rules").children.length, 1);
     assert.equal($("#groups-levels-status").textContent, "");
@@ -140,7 +159,7 @@ NODE_CHECKS = r"""
 
 
 @pytest.mark.parametrize("scenario", [
-    "dates", "detail", "reused-id", "legacy-key", "storage-unavailable",
+    "dates", "detail", "detail-no-profile", "reused-id", "legacy-key", "storage-unavailable",
 ])
 def test_group_frontend_timezone_and_level_storage_regressions(scenario):
     node = shutil.which("node")
@@ -149,7 +168,7 @@ def test_group_frontend_timezone_and_level_storage_regressions(scenario):
     source = (STATIC / "app.js").read_text(encoding="utf-8")
     functions = []
     for name in (
-        "element", "timestamp", "formatGroupDate", "groupLevelBadge",
+        "element", "profileAuthor", "timestamp", "formatGroupDate", "groupLevelBadge",
         "groupNextLevelText", "setGroupProgress", "renderStudyGroup",
         "renderGroupWeakness", "renderGroupLevelRules", "loadGroupLevelRules",
         "rememberGroupLevel",
