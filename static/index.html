@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=3">
   <link rel="stylesheet" href="/static/groups.css?v=2">
+  <link rel="stylesheet" href="/static/group-extras.css?v=1">
   <link rel="stylesheet" href="/static/forum.css?v=6">
   <link rel="stylesheet" href="/static/shell.css?v=3">
   <link rel="stylesheet" href="/static/overview.css?v=3">
@@ -77,6 +78,7 @@
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
   <script defer src="/static/rank.js?v=2"></script>
+  <script defer src="/static/group-extras.js?v=1"></script>
   <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=1"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
@@ -98,7 +100,7 @@
   <script defer src="/static/pwa-register.js?v=1"></script>
   <script defer src="/static/offline-sync.js?v=1"></script>
   <script defer src="/static/offline-review.js?v=1"></script>
-  <script defer src="/static/app.js?v=84"></script>
+  <script defer src="/static/app.js?v=85"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -225,6 +227,10 @@
               <label class="account-preference account-rank-pref" id="account-public-rank-label" for="account-public-rank" hidden>
                 <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
                 <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。</span>
+              </label>
+              <label class="account-preference account-rank-pref" id="account-group-today-label" for="account-group-today" hidden>
+                <span class="account-rank-pref-row"><input id="account-group-today" type="checkbox" checked><span>在小组里显示我的今日动态</span></span>
+                <span id="account-group-today-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，组内只会显示“未公开”。</span>
               </label>
               <div id="push-settings-host" class="push-settings-host"></div>
               <label class="account-preference" for="account-theme">风格
@@ -1124,6 +1130,34 @@
               <h3 id="groups-weakness-title">组内薄弱点信号</h3>
               <p class="muted">每个分区至少有 3 位非体验成员记录过易错点，才显示群体挣扎占比；其中累计有 3 条及以上易错点视为反复出错。体验账号的学习数据不参与聚合。</p>
               <div id="groups-weakness"></div>
+            </section>
+            <section class="panel groups-extras-section" id="groups-goal-section" aria-labelledby="groups-goal-title" hidden>
+              <h3 id="groups-goal-title">本周小目标</h3>
+              <div id="groups-goal-body"></div>
+              <div id="groups-goal-form-wrap"></div>
+            </section>
+            <section class="panel groups-extras-section" id="groups-today-section" aria-labelledby="groups-today-title">
+              <h3 id="groups-today-title">今天</h3>
+              <p id="groups-today-status" class="muted" role="status" aria-live="polite"></p>
+              <ul id="groups-today-list" aria-labelledby="groups-today-title"></ul>
+            </section>
+            <section class="panel groups-extras-section" id="groups-shared-section" aria-labelledby="groups-shared-title">
+              <h3 id="groups-shared-title">共享题单</h3>
+              <p class="muted">只分享题名、分区、来源链接和一句推荐语，不会分享你的错因、笔记和代码。</p>
+              <p id="groups-shared-status" class="muted" role="status" aria-live="polite"></p>
+              <ul id="groups-shared-list" aria-labelledby="groups-shared-title"></ul>
+              <button id="groups-shared-more" type="button" hidden>加载更多</button>
+              <div id="groups-recommend-form-wrap"></div>
+            </section>
+            <section class="panel groups-extras-section" id="groups-messages-section" aria-labelledby="groups-messages-title">
+              <h3 id="groups-messages-title">留言板</h3>
+              <div class="groups-messages-toolbar">
+                <button id="groups-messages-refresh" type="button">刷新</button>
+              </div>
+              <p id="groups-messages-status" class="muted" role="status" aria-live="polite"></p>
+              <ul id="groups-messages-list" aria-labelledby="groups-messages-title"></ul>
+              <button id="groups-messages-more" type="button" hidden>加载更早的留言</button>
+              <div id="groups-message-form-wrap"></div>
             </section>
             <div class="danger-zone">
               <p class="danger-hint">可以随时退出；最后一位成员退出后，小组会自动删除。</p>

@@ -819,7 +819,8 @@ def current_user(request: Request):
             """
             SELECT u.id, u.username, u.email, u.timezone, u.is_trial,
                    u.plan_id, u.plan_expires_at, u.is_banned, u.avatar_version,
-                   u.is_admin, u.deleted_at, u.public_rank_opt_out
+                   u.is_admin, u.deleted_at, u.public_rank_opt_out,
+                   u.show_group_today
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL
@@ -1371,8 +1372,12 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews"):
+                  "problem_recommendations", "import_previews",
+                  "group_shared_problems", "group_problem_collections"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+    # 小组留言板按匿名留存：留言保留，作者显示为"已注销用户 #id"（见下方的
+    # 用户名匿名化）；每周小目标属于小组资产，保留。
+    # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
         "DELETE FROM post_summaries WHERE post_id IN (SELECT id FROM posts WHERE user_id = ?) "
@@ -1902,11 +1907,59 @@ class PublicRankSetting(InputModel):
     participate: StrictBool
 
 
+class WeeklyGoalInput(InputModel):
+    goal_type: Literal["review", "record"]
+    target: Annotated[int, Field(ge=5, le=500)]
+
+
+class GroupTodayVisibilityInput(InputModel):
+    show: StrictBool
+
+
+class SharedProblemInput(InputModel):
+    title: Annotated[str, Field(min_length=1, max_length=200)]
+    zone: str
+    source_url: Annotated[str, Field(max_length=2000)] = ""
+    note: Annotated[str, Field(max_length=60)] = ""
+
+    @field_validator("zone")
+    @classmethod
+    def valid_zone(cls, value):
+        if value not in PROBLEM_ZONES:
+            raise ValueError("请选择一个有效的题目分区")
+        return value
+
+    @field_validator("source_url")
+    @classmethod
+    def valid_source_url(cls, value):
+        value = value.strip()
+        if value and not re.match(r"^https?://", value):
+            raise ValueError("来源链接必须以 http:// 或 https:// 开头")
+        return value
+
+
+class GroupMessageInput(InputModel):
+    body: Annotated[str, Field(min_length=1, max_length=300)]
+
+
 GROUP_MAX_MEMBERS = 10
 GROUP_MAX_PER_USER = 5
 GROUP_INVITE_CODE_LENGTH = 8
 # 统一大写，省去容易混淆的 0/O、1/I/L。
 GROUP_INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+# 学习小组新功能（任务 D）的限额与口径常量。
+GROUP_WEEK_TIMEZONE = "Asia/Shanghai"  # 每周小目标的自然周时区，周一起点。
+GROUP_WEEKLY_GOAL_MIN_TARGET = 5
+GROUP_WEEKLY_GOAL_MAX_TARGET = 500
+GROUP_WEEKLY_GOAL_DAILY_CAP = 20  # 每人每天对小组合计的贡献封顶，防刷数。
+GROUP_TODAY_GOAL_REVIEWS = 1  # 今日动态"完成每日目标"：当天至少复习 1 道即达标。
+GROUP_SHARED_MAX_PER_GROUP = 100  # 每组共享题单上限。
+GROUP_SHARED_MAX_PER_DAY = 5  # 每人每天最多推荐条数。
+GROUP_MESSAGE_MAX_PER_MINUTE = 6
+GROUP_MESSAGE_MAX_PER_DAY = 100
+GROUP_MESSAGE_LIST_MAX = 500  # 留言板最多展示最近 500 条可见留言。
+GROUP_MESSAGE_LIST_DEFAULT = 30
 
 
 def generate_group_invite_code():
@@ -2047,7 +2100,163 @@ def group_detail(conn, group_id, user_id):
         "weakness_by_zone": weakness_by_zone(
             conn, {row["id"] for row in members}, min_cohort=GROUP_WEAKNESS_MIN_COHORT
         ),
+        "weekly_goal": group_weekly_goal(conn, group_id),
     }
+
+
+def group_week_start(now=None):
+    """本周一（北京时间 Asia/Shanghai）的日期，ISO 字符串。"""
+    shanghai = ZoneInfo(GROUP_WEEK_TIMEZONE)
+    current = now if now is not None else datetime.now(timezone.utc)
+    local = current.astimezone(shanghai)
+    return (local.date() - timedelta(days=local.weekday())).isoformat()
+
+
+def _as_utc(value):
+    moment = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def group_weekly_goal_progress(conn, group_id, goal_type):
+    """实时统计本周小组目标进度（不落库）。
+
+    口径：
+    - 统计窗口：北京时间本周一 00:00（含）到下周一 00:00（不含）。
+    - 只统计成员加入该小组当刻及之后的行为（与小组等级积分口径一致）。
+    - review：reviews 表的复习记录条数；record：problems 表的新增题目条数。
+    - 每人每个本地日（按各自时区，与小组积分的日封顶口径一致）对合计的
+      贡献封顶 GROUP_WEEKLY_GOAL_DAILY_CAP（20），防止刷数。
+    - 不新增定时任务；目标可改，进度由数据实时得出、不可删除。
+    """
+    week_start_dt = _as_utc(group_week_start()).replace(
+        tzinfo=ZoneInfo(GROUP_WEEK_TIMEZONE)
+    )
+    week_end_dt = week_start_dt + timedelta(days=7)
+    members = conn.execute(
+        """
+        SELECT u.id, u.timezone, gm.joined_at
+        FROM study_group_members gm
+        JOIN users u ON u.id = gm.user_id
+        WHERE gm.group_id = ? AND u.deleted_at IS NULL
+        """,
+        (group_id,),
+    ).fetchall()
+    if not members:
+        return 0
+    memberships = {
+        row["id"]: (row["timezone"], _as_utc(row["joined_at"])) for row in members
+    }
+    user_ids = tuple(memberships)
+    placeholders = ",".join("?" for _ in user_ids)
+    if goal_type == "review":
+        rows = conn.execute(
+            f"""
+            SELECT p.user_id, r.reviewed_at AS occurred_at
+            FROM problems p
+            JOIN mistakes m ON m.problem_id = p.id
+            JOIN reviews r ON r.mistake_id = m.id
+            WHERE p.user_id IN ({placeholders})
+            """,
+            user_ids,
+        )
+    else:
+        rows = conn.execute(
+            f"""
+            SELECT user_id, created_at AS occurred_at FROM problems
+            WHERE user_id IN ({placeholders})
+            """,
+            user_ids,
+        )
+    days = defaultdict(int)
+    for row in rows:
+        timezone_name, joined_at = memberships[row["user_id"]]
+        occurred_at = _as_utc(row["occurred_at"])
+        if occurred_at < joined_at:
+            continue
+        if not week_start_dt <= occurred_at < week_end_dt:
+            continue
+        days[(row["user_id"], today_in_timezone(timezone_name, occurred_at))] += 1
+    return sum(
+        min(GROUP_WEEKLY_GOAL_DAILY_CAP, count) for count in days.values()
+    )
+
+
+def group_weekly_goal(conn, group_id):
+    """本周小组目标（含实时进度），未设定返回 None。"""
+    week_start = group_week_start()
+    goal = conn.execute(
+        """
+        SELECT goal_type, target, week_start FROM group_weekly_goals
+        WHERE group_id = ? AND week_start = ?
+        """,
+        (group_id, week_start),
+    ).fetchone()
+    if goal is None:
+        return None
+    total = group_weekly_goal_progress(conn, group_id, goal["goal_type"])
+    return {
+        "goal_type": goal["goal_type"],
+        "target": goal["target"],
+        "week_start": goal["week_start"],
+        "total": total,
+        "progress": min(100, round(total / goal["target"] * 100)),
+    }
+
+
+def group_today_feed(conn, group_id):
+    """组内今日动态：每位成员今天（按各自时区本地日）的复习道数与是否达标。
+
+    只返回数量与是否达标，不含题目名、错题内容、笔记。关闭隐私开关
+    （users.show_group_today = 0）的成员只显示"未公开"。显示名沿用
+    group_member_avatar 的字段。
+    """
+    members = conn.execute(
+        """
+        SELECT u.id, u.username, u.timezone, u.avatar_version, u.show_group_today
+        FROM study_group_members gm
+        JOIN users u ON u.id = gm.user_id
+        WHERE gm.group_id = ? AND u.deleted_at IS NULL
+        ORDER BY gm.joined_at ASC, u.id ASC
+        """,
+        (group_id,),
+    ).fetchall()
+    feed = []
+    for member in members:
+        entry = {
+            **group_member_avatar(member),
+            "visible": bool(member["show_group_today"]),
+        }
+        if not entry["visible"]:
+            feed.append(entry)
+            continue
+        today = today_in_timezone(member["timezone"])
+        # 按成员时区逐条判断本地日：复习记录量小，直接在 Python 里过滤。
+        reviewed_today = 0
+        for row in conn.execute(
+            """
+            SELECT r.reviewed_at FROM problems p
+            JOIN mistakes m ON m.problem_id = p.id
+            JOIN reviews r ON r.mistake_id = m.id
+            WHERE p.user_id = ?
+            """,
+            (member["id"],),
+        ):
+            if today_in_timezone(member["timezone"], _as_utc(row["reviewed_at"])) == today:
+                reviewed_today += 1
+        entry["reviews_today"] = reviewed_today
+        entry["goal_met"] = reviewed_today >= GROUP_TODAY_GOAL_REVIEWS
+        feed.append(entry)
+    return feed
+
+
+def normalize_shared_key(source_url, title):
+    """共享题单去重键：有来源链接按链接规范化，否则按题名规范化。"""
+    url = (source_url or "").strip().lower().rstrip("/")
+    if url:
+        return "url:" + url
+    return "title:" + " ".join(title.split()).lower()
 
 
 POST_LIST_DEFAULT_LIMIT = 20
@@ -2433,6 +2642,7 @@ import routers.mistakes
 import routers.review
 import routers.rank
 import routers.groups
+import routers.group_extras
 import routers.forum
 import routers.admin
 import routers.recommend
@@ -2449,6 +2659,7 @@ app.include_router(routers.mistakes.router)
 app.include_router(routers.review.router)
 app.include_router(routers.rank.router)
 app.include_router(routers.groups.router)
+app.include_router(routers.group_extras.router)
 app.include_router(routers.forum.router)
 app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
