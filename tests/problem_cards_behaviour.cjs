@@ -40,6 +40,7 @@ test("five visible chips, expandable +N is a sibling button, accessible progress
   card.querySelector(".record-button").click();
   assert.equal(opens, 1);
   assert.match(card.querySelector(".problem-progress-label").getAttribute("aria-label"), /复习完成度 50%/);
+  assert.equal(card.querySelector(".problem-progress-label").getAttribute("role"), "img");
 });
 
 test("accepts only server progress buckets; missing or invalid metadata stays unknown", () => {

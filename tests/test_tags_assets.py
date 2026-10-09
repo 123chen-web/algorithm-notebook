@@ -74,8 +74,14 @@ def test_filters_use_the_records_filter_event_and_the_list_query(script, app_sou
 
 def test_detail_and_cards_use_the_widgets_and_stay_in_sync(app_source):
     assert "window.TagEditor.render(item)" in app_source
-    assert "window.TagEditor.chips(item.tags)" in app_source
-    assert 'document.addEventListener("mistake:tags-changed"' in app_source
+    # 详情仍逐条编辑；列表题卡改为展示服务端合并后的全题标签。
+    cards = (STATIC / "problem-cards.js").read_text(encoding="utf-8")
+    assert "window.ProblemCards.card(group" in app_source
+    assert "metadata.problem_tags" in cards
+    assert 'node("span", "problem-chip", tag)' in cards
+    handler = re.search(r'document\.addEventListener\("mistake:tags-changed", \(event\) => \{(?P<body>[\s\S]*?)\n\}\);', app_source)
+    assert handler and "rvfRenderCards(" in handler["body"]
+    assert "rvfRefreshProblem(item)" in handler["body"]
 
 
 def test_stylesheet_follows_the_project_rules(stylesheet):

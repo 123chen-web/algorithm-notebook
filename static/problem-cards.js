@@ -62,6 +62,7 @@
     open.addEventListener("click", () => onOpen?.(item));
     const label = entry.progress === null ? "完成度待联网更新" : `复习完成度 ${entry.progress}%`;
     const meter = node("span", "problem-progress-label", entry.progress === null ? "—" : `${entry.progress}%`);
+    meter.setAttribute("role", "img");
     meter.setAttribute("aria-label", label);
     open.append(meter);
     root.append(open);
@@ -107,7 +108,7 @@
     if (!members.length) return root;
     const due = members.filter(m => !m.suspended_at && m.due_date <= item.today);
     const shown = due.some(m => m.id === item.id) ? due : members;
-    root.append(node("p", "problem-position", position(item, shown.map(m => ({ ...m, problem_id: item.problem_id })))));
+    root.append(node("p", "problem-position", item.problem_position || position(item, shown.map(m => ({ ...m, problem_id: item.problem_id })))));
     if (members.length > 1) {
       const label = node("label", "", "切换这道题的易错点");
       const select = node("select");

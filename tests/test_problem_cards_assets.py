@@ -8,8 +8,8 @@ STATIC = Path(__file__).resolve().parents[1] / 'static'
 def test_problem_cards_assets_and_load_order():
     index = (STATIC / 'index.html').read_text(encoding='utf-8')
     assert index.count('/static/problem-cards.css?v=1') == 1
-    assert index.count('/static/problem-cards.js?v=1') == 1
-    assert index.index('problem-cards.js?v=1') < index.index('focus.js?v=4') < index.index('app.js?v=85')
+    assert index.count('/static/problem-cards.js?v=2') == 1
+    assert index.index('problem-cards.js?v=2') < index.index('focus.js?v=4') < index.index('app.js?v=85')
     for file, version in [('overview.js', 4), ('clusters.js', 7), ('app.js', 85)]:
         assert f'/static/{file}?v={version}' in index
 

@@ -37,14 +37,14 @@ def test_index_loads_pwa_css_between_plan_and_print():
 def test_index_loads_offline_scripts_in_fixed_order_before_app_js():
     queue_js = INDEX.index('src="/static/offline-queue.js?v=1"')
     register_js = INDEX.index('src="/static/pwa-register.js?v=1"')
-    sync_js = INDEX.index('src="/static/offline-sync.js?v=2"')
-    review_ui_js = INDEX.index('src="/static/offline-review.js?v=1"')
+    sync_js = INDEX.index('src="/static/offline-sync.js?v=3"')
+    review_ui_js = INDEX.index('src="/static/offline-review.js?v=2"')
     plan_js = INDEX.index('src="/static/plan.js?v=3"')
     app_js = INDEX.index('src="/static/app.js?v=85"')
     # offline-queue 必须在 offline-sync 前；UI 编排紧随其后；全部在 app.js 前。
     assert plan_js < queue_js < register_js < sync_js < review_ui_js < app_js
     assert INDEX.count('src="/static/offline-queue.js?v=1"') == 1
-    assert INDEX.count('src="/static/offline-sync.js?v=2"') == 1
+    assert INDEX.count('src="/static/offline-sync.js?v=3"') == 1
 
 
 def test_app_js_bumped_to_78():

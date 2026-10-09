@@ -76,7 +76,7 @@ function uiEnv({ user = { id: 7 }, onLine = true, handler = () => Promise.resolv
   const session = { user, epoch: 1 };
   const navigator = { onLine };
   const idb = fakeIDB();
-  const env = load(["offline-queue.js", "offline-sync.js", "offline-review.js"], { extra: { navigator } });
+  const env = load(["problem-cards.js", "offline-queue.js", "offline-sync.js", "offline-review.js"], { extra: { navigator } });
   const api = apiStub(handler);
   const notifications = [];
   env.window.OfflineSync.configure({
@@ -144,6 +144,30 @@ test("ui: todayFallback 用预取队列返回今日列表数据并缓存题目�
   assert.ok(Array.isArray(cached.reviews) && Array.isArray(cached.variants), "详情需要的数组字段给默认值");
   assert.equal(cached.today, "2026-10-05");
   assert.equal(env.window.OfflineReview.cachedItem(999), null, "没预取到的题不给假数据");
+});
+
+test("ui: 同题离线详情保留原始待复习序号，只能切换已缓存条目", async () => {
+  const { env } = uiEnv();
+  const items = [11, 12, 13].map(id => ({ ...QUEUE_ITEM(id), problem_id: 1001 }));
+  // 服务端全题成员还包含未到期项；离线不能把未缓存项暴露为可切换入口。
+  items[0].problem_mistakes = [...items.map(m => ({ id: m.id, due_date: m.due_date })),
+    { id: 99, due_date: "2026-12-01" }];
+  env.window.OfflineSync.configure({
+    api: () => Promise.resolve({ today: "2026-10-05", items }), idb: env.idb,
+    getUser: () => env.session.user, getEpoch: () => env.session.epoch,
+  });
+  assert.equal(await env.window.OfflineSync.prefetch(), true);
+  env.navigator.onLine = false;
+  const fallback = await env.window.OfflineReview.todayFallback();
+  const group = env.window.ProblemCards.group(fallback.items, fallback.today)[0];
+  const card = env.window.ProblemCards.card(group);
+  assert.match(card.querySelector('.problem-card-summary').textContent, /待复习 3 条 · 共 4 条/);
+  await env.window.OfflineReview.grade(11, 4);
+  const second = env.window.OfflineReview.cachedItem(12);
+  assert.deepEqual(Array.from(second.problem_mistakes, m => m.id), [12, 13]);
+  assert.equal(second.problem_position, "这道题 第 2/3 条");
+  assert.equal(env.window.OfflineReview.cachedItem(11), null, "已评分项不再次出现在离线切换器中");
+  assert.equal(env.window.OfflineReview.cachedItem(99), null);
 });
 
 test("ui: 没有预取缓存时 todayFallback 返回 null，不编造题目", async () => {

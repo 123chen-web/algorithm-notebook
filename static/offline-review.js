@@ -52,19 +52,34 @@
     const gen = generation;
     const queue = await sync().readTodayQueue();
     if (gen !== generation || !queue || !Array.isArray(queue.items)) return null;
-    cachedItems = new Map(queue.items.map((item) => [item.id, detailShape(item, queue.today)]));
+    // 只生成展示序号，不改持久化队列；评分后仍读原队列的第 2/3 条。
+    const groups = new Map();
+    for (const item of queue.items) {
+      const key = item.problem_id ?? item.id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    cachedItems = new Map(queue.items.map(item => {
+      const members = groups.get(item.problem_id ?? item.id);
+      return [item.id, { ...detailShape(item, queue.today),
+        problem_position: `这道题 第 ${members.findIndex(m => m.id === item.id) + 1}/${members.length} 条` }];
+    }));
     return { today: queue.today, items: queue.items.map((item) => ({ ...item })) };
   }
 
   function cachedItem(id) {
     const item = cachedItems.get(id);
-    return item ? { ...item } : null;
+    if (!item) return null;
+    // 未缓存/已离线评分的成员没有可用详情，不放进切换器。
+    return { ...item, problem_mistakes: [...cachedItems.values()]
+      .filter(m => (m.problem_id ?? m.id) === (item.problem_id ?? item.id)) };
   }
 
   /* ---------- 离线评分 ---------- */
   async function grade(mistakeId, quality) {
     if (!sync()) throw new Error("OfflineSync 未就绪");
     const op = await sync().enqueueGrade(mistakeId, quality);
+    cachedItems.delete(mistakeId);
     notify("已记下，联网后同步。");
     return op;
   }
