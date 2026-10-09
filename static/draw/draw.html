@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draw</title>
+    <script>
+      // MUST run before the ES module bundle loads Excalidraw's FontFace code.
+      // Excalidraw resolves font files as "<ASSET_PATH>/fonts/<family>/....woff2"
+      // (see its FontFace.createUrls), so the asset path must be the DIRECTORY
+      // CONTAINING fonts/ — i.e. the page's own directory here, since the
+      // build copies node_modules/.../dist/prod/fonts -> dist/fonts/.
+      // Resolved to an absolute same-origin URL so it works no matter which
+      // sub-path draw.html is served from (a bare "./" would be re-rooted at
+      // the origin root by Excalidraw's normalizeBaseUrl).
+      window.EXCALIDRAW_ASSET_PATH = new URL("./", document.baseURI).href;
+    </script>
+    <style>
+      html, body, #root { height: 100%; margin: 0; padding: 0; }
+      body { overflow: hidden; }
+    </style>
+    <script type="module" crossorigin src="./assets/draw-Dtj8o1_j.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/draw-VBmcUmTz.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
