@@ -61,10 +61,25 @@ def _escape_like(value):
 NOTE_LINK_MAX = 50        # 单篇笔记最多识别/存储的链接数，超出截断并给中文 warning
 RENAME_CASCADE_MAX = 200   # 改标题联动改写的笔记上限，超出截断并给中文 warning
 GRAPH_NODE_MAX = 300      # 关系图谱节点上限，按度数截断，中心节点必保留
+NOTE_REF_PER_NOTE_MAX = 20  # 单篇笔记正文引用附件 ![](attachment:ID) 上限，超出 422
 
 # 先抓出所有"代码区间"，链接匹配落在代码区间内的一律忽略。
 _CODE_SPAN_RE = re.compile(r"```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`")
 _LINK_RE = re.compile(r"\[\[([^\[\]\n]+?)\]\]")
+_ATTACHMENT_REF_RE = re.compile(r"attachment:(\d+)")
+
+
+def _count_attachment_refs(content):
+    """统计正文里 attachment:ID 引用个数；代码块/行内代码内的一律不计。"""
+    ranges = [(m.start(), m.end()) for m in _CODE_SPAN_RE.finditer(content or "")]
+
+    def in_code(start, end):
+        return any(not (end <= cs or start >= ce) for cs, ce in ranges)
+
+    return sum(
+        1 for m in _ATTACHMENT_REF_RE.finditer(content or "")
+        if not in_code(m.start(), m.end())
+    )
 
 
 def _iter_link_tokens(content):
@@ -329,7 +344,18 @@ def list_notes(
     with main.connect() as conn:
         total = conn.execute(count_sql, params).fetchone()[0]
         rows = conn.execute(sql, params + [limit, offset]).fetchall()
-    return {"notes": [note_public(dict(row)) for row in rows], "total": total}
+        # N2：回传本人全部附件 id，前端只把这些 id 的 attachment:ID 渲染成 <img>。
+        attachment_ids = [
+            row["id"] for row in conn.execute(
+                "SELECT id FROM note_attachments WHERE user_id = ? ORDER BY id",
+                (user["id"],),
+            ).fetchall()
+        ]
+    return {
+        "notes": [note_public(dict(row)) for row in rows],
+        "total": total,
+        "attachment_ids": attachment_ids,
+    }
 
 
 @router.get("/api/notes/suggest")
@@ -529,6 +555,8 @@ def notes_graph(
 @router.post("/api/notes", status_code=201)
 def create_note(data: NoteCreate, user=Depends(main.current_user)):
     tags = normalize_note_tags(data.tags)
+    if _count_attachment_refs(data.content) > NOTE_REF_PER_NOTE_MAX:
+        raise HTTPException(422, f"每篇笔记最多引用 {NOTE_REF_PER_NOTE_MAX} 张图片附件")
     now = main.utc_now()
     with main.connect(write=True) as conn:
         main.rvb_account(conn, user["id"])
@@ -658,6 +686,8 @@ def update_note(note_id: int, data: NoteUpdate, user=Depends(main.current_user))
         if data.content is not None:
             updates.append("content = ?")
             params.append(data.content)
+        if data.content is not None and _count_attachment_refs(data.content) > NOTE_REF_PER_NOTE_MAX:
+            raise HTTPException(422, f"每篇笔记最多引用 {NOTE_REF_PER_NOTE_MAX} 张图片附件")
         if tags is not None:
             updates.append("tags = ?")
             params.append(",".join(tags))

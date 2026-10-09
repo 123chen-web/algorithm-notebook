@@ -6,6 +6,7 @@ in tests keeps affecting the moved code.
 """
 import main
 
+from routers import note_files
 from anki_export import build_anki_text
 from fastapi import BackgroundTasks
 from fastapi import Depends
@@ -156,6 +157,26 @@ def export_data(user=Depends(main.current_user)):
                 note["target_note_id"] is None and note["target_problem_id"] is None
             )
             note_links.append(note)
+
+        # N2 附件清单：按笔记正文里的 attachment:ID 引用关联本人附件行，
+        # 只列出文件名/类型/大小，不导出二进制内容。
+        attachment_rows = conn.execute(
+            "SELECT id, mime, size_bytes FROM note_attachments WHERE user_id = ?",
+            (user["id"],),
+        ).fetchall()
+        attachment_map = {row["id"]: row for row in attachment_rows}
+        for note in notes:
+            refs = note_files.ATTACHMENT_REF_RE.findall(note["content"] or "")
+            note["attachments"] = [
+                {
+                    "id": int(ref),
+                    "filename": note_files.attachment_export_name(int(ref), attachment_map[int(ref)]["mime"]),
+                    "mime": attachment_map[int(ref)]["mime"],
+                    "size_bytes": attachment_map[int(ref)]["size_bytes"],
+                }
+                for ref in dict.fromkeys(refs)
+                if int(ref) in attachment_map
+            ]
     payload = {
         "exported_at": main.utc_now(),
         "username": user["username"],

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import threading
 import time
@@ -599,6 +600,20 @@ def avatar_path(user_id):
     return avatar_dir() / f"{user_id}.jpg"
 
 
+def note_files_dir():
+    # N2 笔记图片附件：相对路径同样以项目目录为基准，与 DATABASE_PATH 一致；
+    # 不进 static/、不使用用户原始文件名，只按附件 id 落盘。
+    path = Path(os.getenv("NOTE_FILES_DIR", "data/note_files")).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def note_file_path(user_id, attachment_id):
+    return note_files_dir() / str(user_id) / f"{attachment_id}.bin"
+
+
 def sec_has_avatar(user_id):
     with connect() as conn:
         author = conn.execute(
@@ -1123,7 +1138,17 @@ async def request_protection(request, call_next):
             "/api/manual-payment/qr/alipay", "/api/manual-payment/qr/wechat"
         )
     )
-    if request.url.path.startswith("/api/") and not manual_qr_response:
+    # 笔记附件图片是同源 GET、按 id 取不会泄密，允许按路由设定长缓存；
+    # 其余 /api/ 响应一律 no-store。
+    note_attachment_response = (
+        request.method == "GET" and response.status_code == 200
+        and re.fullmatch(r"/api/notes/attachments/\d+", request.url.path) is not None
+    )
+    if (
+        request.url.path.startswith("/api/")
+        and not manual_qr_response
+        and not note_attachment_response
+    ):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -1373,8 +1398,14 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews", "notes", "note_links"):
+                  "problem_recommendations", "import_previews", "notes", "note_links",
+                  "note_attachments"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+    # users 是匿名化 UPDATE 而非 DELETE，FK 级联不会触发；附件文件必须显式删目录。
+    try:
+        shutil.rmtree(note_files_dir() / str(user_id), ignore_errors=True)
+    except OSError:
+        logger.warning("注销账号笔记附件目录删除失败 user_id=%s", user_id, exc_info=True)
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
         "DELETE FROM post_summaries WHERE post_id IN (SELECT id FROM posts WHERE user_id = ?) "
@@ -2431,6 +2462,7 @@ import routers.forum
 import routers.admin
 import routers.recommend
 import routers.notes
+import routers.note_files
 import routers.import_problem
 import routers.similar
 import routers.reminder
@@ -2453,6 +2485,7 @@ app.include_router(routers.forum.router)
 app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
 app.include_router(routers.notes.router)
+app.include_router(routers.note_files.router)
 app.include_router(routers.import_problem.router)
 app.include_router(routers.similar.router)
 app.include_router(routers.reminder.router)

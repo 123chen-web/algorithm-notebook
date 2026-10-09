@@ -877,6 +877,27 @@ def _apply_note_links(conn):
     conn.execute("CREATE INDEX idx_note_links_user ON note_links(user_id)")
 
 
+def _apply_note_attachments(conn):
+    # N2 笔记图片附件：文件落盘在 data/note_files/<user_id>/<id>.bin，这里只存元数据。
+    # note_id 可空（composer 先上传图片后保存笔记）；笔记软删时正文仍在，注销账号时
+    # 由 main.delete_account_data 显式删行并删除该用户 note_files 目录。
+    conn.execute(
+        """
+        CREATE TABLE note_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            sha256 TEXT NOT NULL,
+            mime TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_note_attachments_user ON note_attachments(user_id, created_at)")
+    conn.execute("CREATE INDEX idx_note_attachments_note ON note_attachments(note_id)")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -906,6 +927,7 @@ MIGRATIONS = [
     (24, "复习提醒开关与退订token", _apply_reminder_prefs),
     (28, "插件 API token 与题目来源字段", _apply_plugin_api),
     (70, "笔记双向链接", _apply_note_links),
+    (71, "笔记图片附件", _apply_note_attachments),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
