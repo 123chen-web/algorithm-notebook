@@ -929,6 +929,42 @@ MIGRATIONS = [
     (70, "笔记双向链接", _apply_note_links),
     (71, "笔记图片附件", _apply_note_attachments),
 ]
+
+
+def _apply_note_drawings(conn):
+    """画板（自托管 Excalidraw）：场景 JSON 入库，缩略图 PNG 落数据目录。
+
+    迁移编号固定 72（多分支并行集成约定，不按当前最大号顺延）。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS note_drawings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            title TEXT NOT NULL DEFAULT '',
+            scene_json TEXT NOT NULL DEFAULT '',
+            thumb_path TEXT NULL,
+            version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT NULL
+        )
+        """
+    )
+    # “我的画板”列表主查询：本人记录按删除标记、更新时间倒序分页。
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_note_drawings_user
+        ON note_drawings(user_id, deleted_at, updated_at DESC)
+        """
+    )
+
+
+# 固定编号 72：与其他并行分支预留的迁移号段错开，避免合并冲突。
+MIGRATIONS.append((72, "画板 note_drawings", _apply_note_drawings))
+
+
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

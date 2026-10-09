@@ -1095,6 +1095,49 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
+# 画板静态页 CSP：以全站策略为基线，仅把 frame-ancestors 从 'none' 放宽到 'self'
+# （允许同源笔记页以 iframe 嵌入）；其余逐项放宽均来自浏览器实测，清单与理由见
+# NOTES_DRAW_REPORT.md。该策略只作用于 /static/draw/ 路径，全站脚本指令保持不变。
+def _draw_inline_csp_hashes():
+    """计算 static/draw/draw.html 内联 <script>/<style> 块的 CSP sha256 白名单。
+
+    自托管 Excalidraw 的 draw.html 含两段厂商静态内联内容：一段必须先于 bundle
+    执行的配置脚本（设置 window.EXCALIDRAW_ASSET_PATH 指向本地字体目录，否则字体会
+    回退到外链 esm.sh），一段全屏布局样式。这里按文件内容计算 hash 精确放行这两段
+    静态内容——不使用 unsafe-inline、不放宽任何其它内联脚本，且仅作用于 /static/draw/。
+    dist 升级导致内联块变化时 hash 自动跟随，无需手改。"""
+    import base64 as _b64
+    import hashlib as _hl
+    import re as _re
+
+    result = {"script": [], "style": []}
+    draw_html = ROOT / "static" / "draw" / "draw.html"
+    if not draw_html.exists():
+        return result
+    html = draw_html.read_text(encoding="utf-8")
+
+    def _digest(text):
+        raw = _hl.sha256(text.encode("utf-8")).digest()
+        return "'sha256-" + _b64.b64encode(raw).decode("ascii") + "'"
+
+    for match in _re.finditer(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, _re.S | _re.I):
+        if match.group(1).strip():
+            result["script"].append(_digest(match.group(1)))
+    for match in _re.finditer(r"<style[^>]*>(.*?)</style>", html, _re.S | _re.I):
+        if match.group(1).strip():
+            result["style"].append(_digest(match.group(1)))
+    return result
+
+
+_DRAW_INLINE_HASHES = _draw_inline_csp_hashes()
+DRAW_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' " + " ".join(_DRAW_INLINE_HASHES["script"]) + "; "
+    "style-src 'self' " + " ".join(_DRAW_INLINE_HASHES["style"]) + "; "
+    "connect-src 'self'; img-src 'self' blob:; "
+    "base-uri 'none'; frame-ancestors 'self'; form-action 'self'"
+)
+
 
 @app.middleware("http")
 async def request_protection(request, call_next):
@@ -1127,27 +1170,40 @@ async def request_protection(request, call_next):
 
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "connect-src 'self'; img-src 'self' blob:; "
-        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
-    )
+    if request.url.path.startswith("/static/draw/"):
+        # 画板静态页（自托管 Excalidraw）：全站唯一允许被同源 iframe 嵌入的路径。
+        # 仅对该路径把 frame-ancestors 放宽为 self，并按实测逐项追加画板自身
+        # 必需的指令（放宽清单与理由见 NOTES_DRAW_REPORT.md）；脚本指令不放宽。
+        response.headers["Content-Security-Policy"] = DRAW_CSP
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "connect-src 'self'; img-src 'self' blob:; frame-src 'self'; "
+            "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        )
     manual_qr_response = (
         request.method == "GET" and response.status_code == 200
         and request.url.path in (
             "/api/manual-payment/qr/alipay", "/api/manual-payment/qr/wechat"
         )
     )
-    # 笔记附件图片是同源 GET、按 id 取不会泄密，允许按路由设定长缓存；
-    # 其余 /api/ 响应一律 no-store。
+    # 笔记附件图片、画板缩略图是同源 GET、仅本人可读，路由已给 private 缓存策略，
+    # 这里不再覆盖成 no-store；其余 /api/ 响应一律 no-store。
     note_attachment_response = (
         request.method == "GET" and response.status_code == 200
         and re.fullmatch(r"/api/notes/attachments/\d+", request.url.path) is not None
+    )
+    drawing_thumb_response = (
+        request.method == "GET" and response.status_code == 200
+        and request.url.path.startswith("/api/drawings/")
+        and request.url.path.endswith("/thumb")
     )
     if (
         request.url.path.startswith("/api/")
         and not manual_qr_response
         and not note_attachment_response
+        and not drawing_thumb_response
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -1399,13 +1455,16 @@ def delete_account_data(conn, user_id, deleted_at):
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
                   "problem_recommendations", "import_previews", "notes", "note_links",
-                  "note_attachments"):
+                  "note_attachments", "note_drawings"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # users 是匿名化 UPDATE 而非 DELETE，FK 级联不会触发；附件文件必须显式删目录。
     try:
         shutil.rmtree(note_files_dir() / str(user_id), ignore_errors=True)
     except OSError:
         logger.warning("注销账号笔记附件目录删除失败 user_id=%s", user_id, exc_info=True)
+    # 画板缩略图存放在数据目录（不随数据库行删除），注销时一并清掉。
+    from routers import drawings as _drawings_routes
+    _drawings_routes.purge_user_thumbs(user_id)
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
         "DELETE FROM post_summaries WHERE post_id IN (SELECT id FROM posts WHERE user_id = ?) "
@@ -2463,6 +2522,7 @@ import routers.admin
 import routers.recommend
 import routers.notes
 import routers.note_files
+import routers.drawings
 import routers.import_problem
 import routers.similar
 import routers.reminder
@@ -2486,6 +2546,7 @@ app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
 app.include_router(routers.notes.router)
 app.include_router(routers.note_files.router)
+app.include_router(routers.drawings.router)
 app.include_router(routers.import_problem.router)
 app.include_router(routers.similar.router)
 app.include_router(routers.reminder.router)

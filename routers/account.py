@@ -5,6 +5,7 @@ Names living in main's namespace are referenced as ``main.<name>``
 in tests keeps affecting the moved code.
 """
 import main
+from routers import drawings as drawings_routes
 
 from routers import note_files
 from anki_export import build_anki_text
@@ -177,12 +178,27 @@ def export_data(user=Depends(main.current_user)):
                 for ref in dict.fromkeys(refs)
                 if int(ref) in attachment_map
             ]
+        # 画板随笔记一起导出：标题清单 + 完整 scene_json（缩略图是可再生文件，不导出）。
+        drawings = []
+        for row in conn.execute(
+            "SELECT id, note_id, title, scene_json, version, created_at, updated_at, deleted_at "
+            "FROM note_drawings WHERE user_id = ? ORDER BY id",
+            (user["id"],),
+        ):
+            drawing = dict(row)
+            scene_text = drawing.pop("scene_json") or ""
+            try:
+                drawing["scene"] = json.loads(scene_text) if scene_text else None
+            except ValueError:
+                drawing["scene"] = None
+            drawings.append(drawing)
     payload = {
         "exported_at": main.utc_now(),
         "username": user["username"],
         "problems": list(problems.values()),
         "notes": notes,
         "note_links": note_links,
+        "drawings": drawings,
     }
     filename = f"{PRODUCT_NAME}导出_{user['username']}_{main.today_for(user).isoformat()}.json"
     return Response(
@@ -483,6 +499,11 @@ def delete_account(
         main.avatar_path(user["id"]).unlink(missing_ok=True)
     except OSError:
         main.logger.warning("注销账号头像删除失败 user_id=%s", user["id"], exc_info=True)
+    # 画板行已在 delete_account_data 内删除；缩略图文件在数据目录，单独清理。
+    try:
+        drawings_routes.purge_user_thumbs(user["id"])
+    except OSError:
+        main.logger.warning("注销账号画板缩略图删除失败 user_id=%s", user["id"], exc_info=True)
     return {"ok": True}
 
 

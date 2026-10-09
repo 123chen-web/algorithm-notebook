@@ -78,7 +78,7 @@ def test_assets_are_served_once_and_before_app():
 def test_changed_assets_bump_their_cache_busting_version():
     assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
     assert re.search(r'<script defer src="/static/rank\.js\?v=2"></script>', INDEX)
-    assert re.search(r'<script defer src="/static/app\.js\?v=88"></script>', INDEX)
+    assert re.search(r'<script defer src="/static/app\.js\?v=93"></script>', INDEX)
 
 
 def test_two_keyboard_operable_toggles_are_buttons_with_aria_pressed():

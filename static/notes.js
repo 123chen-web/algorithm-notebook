@@ -83,7 +83,9 @@
   }
 
   // Markdown 子集直接构建 DOM。文本不经过 HTML 解析，也不使用占位符。
-  function renderNoteMarkdown(source) {
+  // options.drawingIds：当前用户拥有的画板 id 集合；![标题](drawing:ID) 仅在
+  // ID 属于本人时渲染成缩略图按钮，其余一律按纯文本显示（由 draw-host.js 委托打开）。
+  function renderNoteMarkdown(source, options = {}) {
     source = String(source ?? "");
     // N2：把 mermaid 围栏 / 块级公式 / 行内公式先换成私有区占位符，再走行解析；
     // 代码围栏与行内代码里的 $ / [[ ]] 由 NotesLinks.codeRanges 保护，不被替换。
@@ -91,6 +93,28 @@
       source = window.NotesRich.prepareSource(source);
     }
     const root = document.createDocumentFragment();
+    function drawingRefNode(alt, target) {
+      const idMatch = /^drawing:(\d+)$/.exec(String(target));
+      const id = idMatch ? Number(idMatch[1]) : NaN;
+      const owned = idMatch && Number.isInteger(id) && id > 0
+        && options.drawingIds instanceof Set && options.drawingIds.has(id);
+      if (!owned) return document.createTextNode(`![${alt}](${target})`);
+      const caption = alt || "画板";
+      const ref = document.createElement("button");
+      ref.type = "button";
+      ref.className = "notes-drawing-ref";
+      ref.setAttribute("data-drawing-id", String(id));
+      const img = document.createElement("img");
+      img.className = "notes-drawing-thumb";
+      img.setAttribute("src", `/api/drawings/${id}/thumb`);
+      img.alt = caption;
+      img.loading = "lazy";
+      const title = document.createElement("span");
+      title.className = "notes-drawing-ref-title";
+      title.textContent = caption;
+      ref.append(img, title);
+      return ref;
+    }
     function inline(parent, text) {
       // 图片语法 !\[alt\]\(url\) 必须排在普通链接前面，否则 ! 后面的 [alt] 会被当成链接文本。
       const pattern = /`([^`\n]+)`|!\[([^\]]*)\]\(([^)\s]*)\)|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
@@ -100,12 +124,16 @@
         let node;
         if (match[1] !== undefined) node = h("code", match[1]);
         else if (match[2] !== undefined) {
-          // N2：图片先落成 data-* 占位 span，是否真的渲染成 <img> 由 NotesRich 决定
-          // （仅本人 attachment:ID 渲染；外链一律回退为纯文本，不发请求）。
-          node = document.createElement("span");
-          node.setAttribute("data-nr-img", "1");
-          node.setAttribute("data-alt", match[2]);
-          node.setAttribute("data-src", match[3]);
+          if (/^drawing:\d+$/.test(String(match[3]))) {
+            node = drawingRefNode(match[2], match[3]);
+          } else {
+            // N2：图片先落成 data-* 占位 span，是否真的渲染成 <img> 由 NotesRich 决定
+            // （仅本人 attachment:ID 渲染；外链一律回退为纯文本，不发请求）。
+            node = document.createElement("span");
+            node.setAttribute("data-nr-img", "1");
+            node.setAttribute("data-alt", match[2]);
+            node.setAttribute("data-src", match[3]);
+          }
         } else if (match[4] !== undefined) {
           let safe = false;
           try { safe = /^https?:\/\//i.test(match[5]) && ["http:", "https:"].includes(new URL(match[5]).protocol); } catch {}
@@ -271,7 +299,8 @@
     card.append(head);
 
     const body = h("div", null, "notes-body");
-    body.replaceChildren(renderNoteMarkdown(note.content));
+    const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
+    body.replaceChildren(renderNoteMarkdown(note.content, { drawingIds }));
     card.append(body);
 
     // N1：关联区（出链 + 反向链接）占位，由 window.NotesLinks 异步填充。

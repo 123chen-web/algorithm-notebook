@@ -132,7 +132,7 @@ def seed_notebook(user_id, marker):
 
 
 def assert_export_keys(payload):
-    assert set(payload) == {"exported_at", "username", "problems", "notes", "note_links"}
+    assert set(payload) == {"exported_at", "username", "problems", "notes", "note_links", "drawings"}
     # N1：note_links 只含本人链接关系（种类/原文目标文字/别名/是否悬空），不含账号或交易数据。
     assert isinstance(payload["note_links"], list)
     for link in payload["note_links"]:
@@ -142,6 +142,9 @@ def assert_export_keys(payload):
         assert set(note) == {"id", "title", "content", "tags", "problem_id", "problem_title", "pinned", "created_at", "updated_at", "deleted_at", "attachments"}
         for attachment in note["attachments"]:
             assert set(attachment) == {"id", "filename", "mime", "size_bytes"}
+    # N3：画板随笔记一起导出（标题清单 + 完整场景），缩略图可再生，不导出。
+    for drawing in payload["drawings"]:
+        assert set(drawing) == {"id", "note_id", "title", "scene", "version", "created_at", "updated_at", "deleted_at"}
     for problem in payload["problems"]:
         assert set(problem) == PROBLEM_KEYS
         for mistake in problem["mistakes"]:
@@ -343,6 +346,7 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
     assert response.json() == {
         "exported_at": now.isoformat(), "username": "小明", "problems": [], "notes": [],
         "note_links": [],
+        "drawings": [],
     }
     disposition = response.headers["content-disposition"]
     assert disposition.startswith("attachment; filename*=UTF-8''")
