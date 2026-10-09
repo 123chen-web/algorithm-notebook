@@ -80,7 +80,34 @@ def _prune_archives(output_dir, created, keep):
     return removed
 
 
-def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=None):
+EXTRA_DIRS = ("note_files", "drawings")  # 笔记图片附件、画板缩略图：与头像一起进入备份
+
+
+def _extra_directory(name, override=None):
+    if override is not None:
+        return _resolve_path(override)
+    if name == "note_files":
+        return _resolve_path(os.getenv("NOTE_FILES_DIR", "data/note_files"))
+    return _resolve_path(os.getenv("DRAWING_DIR", "data/drawings"))
+
+
+def _collect_files(directory, label):
+    paths = []
+    if directory.exists():
+        if not directory.is_dir():
+            raise BackupError(f"{label}路径不是目录")
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                raise BackupError(f"{label}目录含符号链接，请先改为普通文件")
+            if path.is_file():
+                paths.append(path)
+            elif not path.is_dir():
+                raise BackupError(f"{label}目录含不支持的特殊文件")
+    return paths
+
+
+def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=None,
+                  note_files_dir=None, drawings_dir=None):
     database = _resolve_path(database_path if database_path is not None else os.getenv("DATABASE_PATH", "data/notebook.db"))
     avatars = _resolve_path(avatar_dir if avatar_dir is not None else os.getenv("AVATAR_DIR", "data/avatars"))
     output = _resolve_path(output_dir if output_dir is not None else os.getenv("BACKUP_DIR", "data/backups"))
@@ -90,8 +117,15 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
         raise BackupError("保留份数（BACKUP_KEEP/--keep）必须是大于或等于 0 的整数") from None
     if keep < 0:
         raise BackupError("保留份数（BACKUP_KEEP/--keep）必须是大于或等于 0 的整数")
+    extra_dirs = {
+        "note_files": _extra_directory("note_files", note_files_dir),
+        "drawings": _extra_directory("drawings", drawings_dir),
+    }
     if output == avatars or avatars in output.parents:
         raise BackupError("备份输出目录不能在头像目录内")
+    for extra in extra_dirs.values():
+        if output == extra or extra in output.parents:
+            raise BackupError("备份输出目录不能在笔记图片或画板目录内")
     if not database.is_file():
         raise BackupError(f"数据库文件不存在：{database}")
     if avatars.exists() and not avatars.is_dir():
@@ -118,6 +152,10 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
                     avatar_paths.append(path)
                 elif not path.is_dir():
                     raise BackupError("头像目录含不支持的特殊文件")
+        extra_paths = {
+            name: _collect_files(directory, "笔记图片" if name == "note_files" else "画板缩略图")
+            for name, directory in extra_dirs.items()
+        }
         now = _utc_now()
         manifest = {
             "format": 1,
@@ -127,6 +165,7 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
             "schema_version": version,
             "tables": tables,
             "avatar_files": len(avatar_paths),
+            "extra_files": {name: len(paths) for name, paths in extra_paths.items()},
         }
         descriptor, name = tempfile.mkstemp(prefix=".backup-tmp-", suffix=".tar.gz", dir=output)
         os.close(descriptor)
@@ -140,6 +179,13 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
             archive.addfile(directory)
             for path in avatar_paths:
                 archive.add(path, arcname="avatars/" + path.relative_to(avatars).as_posix(), recursive=False)
+            for name, paths in extra_paths.items():
+                folder = tarfile.TarInfo(name)
+                folder.type = tarfile.DIRTYPE
+                folder.mode = 0o700
+                archive.addfile(folder)
+                for path in paths:
+                    archive.add(path, arcname=name + "/" + path.relative_to(extra_dirs[name]).as_posix(), recursive=False)
             content = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
             entry = tarfile.TarInfo("MANIFEST.json")
             entry.size = len(content)
@@ -160,7 +206,7 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
         os.replace(temporary_archive, created)
         removed = _prune_archives(output, created, keep)
         policy = "全部保留" if keep == 0 else f"保留最近 {keep} 份"
-        print(f"备份完成：{created}；{created.stat().st_size} 字节；schema {version}；头像 {len(avatar_paths)} 个；{policy}，删除旧归档 {removed} 份。")
+        print(f"备份完成：{created}；{created.stat().st_size} 字节；schema {version}；头像 {len(avatar_paths)} 个；笔记图片 {len(extra_paths["note_files"])} 个；画板缩略图 {len(extra_paths["drawings"])} 个；{policy}，删除旧归档 {removed} 份。")
         return created
     finally:
         for path in temporary_paths:
@@ -189,7 +235,7 @@ def _validate_member(member):
         raise BackupError("归档含不安全的成员路径")
     if not (member.isfile() or member.isdir()):
         raise BackupError("归档含符号链接、硬链接或不支持的特殊成员")
-    if path not in (PurePosixPath("notebook.db"), PurePosixPath("MANIFEST.json")) and path.parts[0] != "avatars":
+    if path not in (PurePosixPath("notebook.db"), PurePosixPath("MANIFEST.json")) and path.parts[0] not in ("avatars", *EXTRA_DIRS):
         raise BackupError("归档含不支持的成员路径")
     return path
 
@@ -226,6 +272,15 @@ def _read_manifest(archive, members):
     count = sum(member.isfile() for name, member in members.items() if name.startswith("avatars/"))
     if manifest["avatar_files"] != count:
         raise BackupError("头像文件数量与 MANIFEST.json 不一致")
+    extra = manifest.get("extra_files", {})
+    if not isinstance(extra, dict) or set(extra) - set(EXTRA_DIRS) or any(
+        type(value) is not int or value < 0 for value in extra.values()
+    ):
+        raise BackupError("MANIFEST.json 的 extra_files 无效")
+    for name in EXTRA_DIRS:
+        actual = sum(member.isfile() for member_name, member in members.items() if member_name.startswith(name + "/"))
+        if extra.get(name, 0) != actual:
+            raise BackupError("笔记图片或画板缩略图数量与 MANIFEST.json 不一致")
     return manifest
 
 
@@ -245,8 +300,9 @@ def _verified_archive(archive_path):
             for parent in PurePosixPath(name).parents:
                 if parent.as_posix() in members and not members[parent.as_posix()].isdir():
                     raise BackupError("归档成员的父路径不是目录")
-        if "avatars" in members and not members["avatars"].isdir():
-            raise BackupError("归档中的 avatars 不是目录")
+        for folder in ("avatars", *EXTRA_DIRS):
+            if folder in members and not members[folder].isdir():
+                raise BackupError(f"归档中的 {folder} 不是目录")
         manifest = _read_manifest(archive, members)
         if members["notebook.db"].size != manifest["database_bytes"]:
             raise BackupError("数据库大小与 MANIFEST.json 的 database_bytes 不一致")
@@ -273,19 +329,22 @@ def restore_archive(archive_path, into, force=False):
     target = _resolve_path(into)
     database_target = target / "notebook.db"
     avatars_target = target / "avatars"
+    extra_targets = {name: target / name for name in EXTRA_DIRS}
     database = _resolve_path(os.getenv("DATABASE_PATH", "data/notebook.db"))
     avatars = _resolve_path(os.getenv("AVATAR_DIR", "data/avatars"))
-    destinations = (database_target.resolve(), avatars_target.resolve())
+    live_dirs = (database, avatars, _extra_directory("note_files"), _extra_directory("drawings"))
+    destinations = (database_target.resolve(), avatars_target.resolve(),
+                    *(path.resolve() for path in extra_targets.values()))
     if any(
         destination == live or destination in live.parents or live in destination.parents
-        for destination in destinations for live in (database, avatars)
+        for destination in destinations for live in live_dirs
     ):
         raise BackupError("恢复目录与应用数据路径重合，请使用独立目录，再停服务手动替换")
     with _verified_archive(archive_path) as (archive, members, _, snapshot):
-        if not force and (os.path.lexists(database_target) or os.path.lexists(avatars_target)):
-            raise BackupError("恢复目录已有 notebook.db 或 avatars，请换目录或使用 --force")
+        if not force and any(os.path.lexists(path) for path in (database_target, avatars_target, *extra_targets.values())):
+            raise BackupError("恢复目录已有 notebook.db、avatars、note_files 或 drawings，请换目录或使用 --force")
         if force:
-            for path in (database_target, avatars_target):
+            for path in (database_target, avatars_target, *extra_targets.values()):
                 if path.is_symlink() or path.is_file():
                     path.unlink()
                 elif path.is_dir():
@@ -298,10 +357,12 @@ def restore_archive(archive_path, into, force=False):
             raise BackupError("恢复目录已有 SQLite 日志文件，请换目录或使用 --force")
         target.mkdir(parents=True, exist_ok=True)
         avatars_target.mkdir()
+        for folder in extra_targets.values():
+            folder.mkdir()
         shutil.copyfile(snapshot, database_target)
         database_target.chmod(0o600)
         for name, member in members.items():
-            if not name.startswith("avatars/"):
+            if not name.startswith(("avatars/", "note_files/", "drawings/")):
                 continue
             destination = target.joinpath(*PurePosixPath(name).parts)
             if member.isdir():

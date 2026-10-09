@@ -24,6 +24,8 @@ def backup_data(tmp_path, monkeypatch):
     output = tmp_path / "backups"
     monkeypatch.setenv("DATABASE_PATH", str(database))
     monkeypatch.setenv("AVATAR_DIR", str(avatars))
+    monkeypatch.setenv("NOTE_FILES_DIR", str(source / "note_files"))
+    monkeypatch.setenv("DRAWING_DIR", str(source / "drawings"))
     monkeypatch.setenv("BACKUP_DIR", str(output))
     monkeypatch.setenv("BACKUP_KEEP", "0")
     monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
@@ -751,3 +753,66 @@ def test_archive_preflight_rejects_all_members_before_extracting_without_temp(
     else:
         with pytest.raises(backup.BackupError):
             backup.restore_archive("not-opened-on-disk.tar.gz", backup.ROOT / "unused-preflight-target")
+
+
+def test_note_images_and_drawing_thumbnails_are_backed_up_and_restored(backup_data, tmp_path):
+    source = backup_data["database"].parent
+    files = {
+        "note_files/1/7.bin": b"note-image-bytes",
+        "drawings/1/3.png": b"\x89PNG\r\n\x1a\nthumb",
+    }
+    for name, content in files.items():
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    created = backup.create_backup()
+    manifest = backup.verify_archive(created)
+    assert manifest["extra_files"] == {"note_files": 1, "drawings": 1}
+    restored = tmp_path / "restored"
+    backup.restore_archive(created, restored)
+    for name, content in files.items():
+        assert (restored / name).read_bytes() == content
+
+
+def test_archive_without_extra_files_field_still_verifies_and_restores(backup_data, tmp_path):
+    created = backup.create_backup()
+    legacy = tmp_path / "legacy.tar.gz"
+    with tarfile.open(created, "r:gz") as source, tarfile.open(legacy, "w:gz") as target:
+        for member in source.getmembers():
+            if member.name.split("/")[0] in ("note_files", "drawings"):
+                continue
+            if member.name == "MANIFEST.json":
+                manifest = json.load(source.extractfile(member))
+                manifest.pop("extra_files")
+                content = json.dumps(manifest).encode("utf-8")
+                member.size = len(content)
+                target.addfile(member, io.BytesIO(content))
+            elif member.isfile():
+                target.addfile(member, source.extractfile(member))
+            else:
+                target.addfile(member)
+    assert "extra_files" not in backup.verify_archive(legacy)
+    backup.restore_archive(legacy, tmp_path / "legacy-restored")
+    assert (tmp_path / "legacy-restored" / "notebook.db").is_file()
+
+
+def test_manifest_count_must_match_extra_files(backup_data, tmp_path):
+    source = backup_data["database"].parent
+    (source / "note_files").mkdir(exist_ok=True)
+    (source / "note_files" / "x.bin").write_bytes(b"x")
+    created = backup.create_backup()
+    tampered = tmp_path / "tampered.tar.gz"
+    with tarfile.open(created, "r:gz") as src, tarfile.open(tampered, "w:gz") as dst:
+        for member in src.getmembers():
+            if member.name == "MANIFEST.json":
+                manifest = json.load(src.extractfile(member))
+                manifest["extra_files"]["note_files"] = 5
+                content = json.dumps(manifest).encode("utf-8")
+                member.size = len(content)
+                dst.addfile(member, io.BytesIO(content))
+            elif member.isfile():
+                dst.addfile(member, src.extractfile(member))
+            else:
+                dst.addfile(member)
+    with pytest.raises(backup.BackupError):
+        backup.verify_archive(tampered)
