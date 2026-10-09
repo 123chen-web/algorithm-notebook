@@ -298,6 +298,8 @@
   let hooks = null;
   let mounted = false;
   let generation = 0;
+  let rowPressed = false;
+  let pendingRowRender = null;
   let selection = loadPrefs();
   let query = "";
   let data = emptyData();
@@ -349,6 +351,19 @@
   function announce(text) {
     const target = $("#forum-list-status");
     if (target) target.textContent = text;
+  }
+
+  function showExpiredSession(error, t) {
+    // api() 在抛出 401 前清除会话，普通 current 守卫此时必然失败。
+    if (error?.status === 401 && !user() && hooks.getEpoch() === t.epoch + 1) {
+      hooks.onLoginExpired?.();
+      return true;
+    }
+    return false;
+  }
+
+  function failureMessage(error, fallback) {
+    return /\p{Script=Han}/u.test(error?.message || "") ? error.message : fallback;
   }
 
   function timeZone() {
@@ -500,10 +515,14 @@
     const title = node("h3", "board-title");
     const open = node("button", "board-open", model.title);
     open.type = "button";
-    open.addEventListener("click", () => hooks.openPost(model.id));
+    const openPost = () => {
+      window.clearTimeout(searchTimer);
+      hooks.openPost(model.id);
+    };
+    open.addEventListener("click", openPost);
     row.addEventListener("click", (event) => {
       if (event.target.closest("button, a, input, textarea, select")) return;
-      hooks.openPost(model.id);
+      openPost();
     });
     title.append(open);
     body.append(title);
@@ -647,18 +666,29 @@
 
   /** keep=true：从详情返回时的刷新——先保留已显示的内容，数据回来再替换；已加载的条数最多取回 50 条。 */
   async function load({ keep = false } = {}) {
+    pendingRowRender = null;
     hooks.cancelOpening?.();
     const mine = ++generation;
     const t = { generation: mine, epoch: hooks.getEpoch(), userId: user()?.id };
+    // 骨架屏、失败提示和成功结果都不能拆掉正在按下的帖子。
+    let renderStage = 0;
+    const renderWhenReleased = (callback) => {
+      const stage = ++renderStage;
+      const render = () => { if (stage === renderStage && current(t)) callback(); };
+      if (rowPressed) pendingRowRender = render;
+      else render();
+    };
     const hadContent = keep && data.loaded && data.posts.length > 0;
     loading = true;
     moreLoading = false;
     $("#forum-list-title").textContent = query ? "搜索结果" : "全部帖子";
     if (!hadContent) {
-      $("#forum-posts").replaceChildren(...skeletonRows());
-      $("#board-foot").hidden = true;
-      hideNotice();
-      announce("正在加载帖子列表…");
+      renderWhenReleased(() => {
+        $("#forum-posts").replaceChildren(...skeletonRows());
+        $("#board-foot").hidden = true;
+        hideNotice();
+        announce("正在加载帖子列表…");
+      });
     }
     const limit = hadContent ? Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, data.posts.length)) : PAGE_SIZE;
     let response;
@@ -666,19 +696,24 @@
       response = await hooks.api(buildQuery({ ...selection, q: query }, { limit }));
     } catch (error) {
       if (t.generation === generation) loading = false;
+      if (showExpiredSession(error, t)) return;
       if (!current(t)) return;
-      const message = error?.message || "帖子列表加载失败，请稍后重试。";
-      if (!hadContent) $("#forum-posts").replaceChildren();
-      showNotice({ text: message, button: "重试", error: true, onClick: () => { void load({ keep: hadContent }); } });
-      announce(message);
+      const message = failureMessage(error, "帖子列表加载失败，请检查网络后重试。");
+      renderWhenReleased(() => {
+        if (!hadContent) $("#forum-posts").replaceChildren();
+        showNotice({ text: message, button: "重试", error: true, onClick: () => { void load({ keep: hadContent }); } });
+        announce(message);
+      });
       return;
     }
     if (t.generation === generation) loading = false;
     if (!current(t)) return;
     data = normalizeResponse(response);
     if (selectedId !== null && !data.posts.some((post) => post.id === selectedId)) selectedId = null;
-    renderAll();
-    if (data.posts.length) announce(`当前显示 ${data.posts.length} 个帖子`);
+    renderWhenReleased(() => {
+      renderAll();
+      if (data.posts.length) announce(`当前显示 ${data.posts.length} 个帖子`);
+    });
   }
 
   async function loadMore() {
@@ -692,9 +727,10 @@
       response = await hooks.api(buildQuery({ ...selection, q: query }, { offset: data.posts.length }));
     } catch (error) {
       if (t.generation === generation) moreLoading = false;
+      if (showExpiredSession(error, t)) return;
       if (!current(t)) return;
       renderFoot();
-      announce(error?.message || "加载更多失败，请稍后重试。");
+      announce(failureMessage(error, "加载更多失败，请检查网络后重试。"));
       return;
     }
     if (t.generation === generation) moreLoading = false;
@@ -999,6 +1035,22 @@
   /* ───────────── 挂载 / 重置 ───────────── */
 
   function bind() {
+    $("#forum-posts").addEventListener("pointerdown", (event) => {
+      if (event.target.closest?.(".board-row")) {
+        rowPressed = true;
+        window.clearTimeout(searchTimer);
+      }
+    });
+    const releaseRowPress = () => {
+      rowPressed = false;
+      const render = pendingRowRender;
+      pendingRowRender = null;
+      // pointerup 后仍有 mouseup/click，不能在 pointerup 监听器里拆掉目标。
+      if (render) window.setTimeout(render, 0);
+    };
+    document.addEventListener("pointerup", releaseRowPress);
+    document.addEventListener("pointercancel", releaseRowPress);
+    window.addEventListener("blur", releaseRowPress);
     $("#forum-search-form").addEventListener("submit", (event) => {
       event.preventDefault();
       applySearch();
@@ -1103,6 +1155,8 @@
 
   /** 登出 / 换账号：丢掉所有数据、作废在途请求，草稿只存在 localStorage（键里带用户 id）。 */
   function reset() {
+    rowPressed = false;
+    pendingRowRender = null;
     if (mounted && composeOwner !== null && ($("#forum-compose-title-input").value || $("#forum-compose-body").value)) saveDraftNow();
     generation += 1;
     window.clearTimeout(searchTimer);

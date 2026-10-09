@@ -39,7 +39,7 @@ docker run -d --name algorithm-notebook -p 127.0.0.1:8000:8000 --env-file .env -
 3. 执行 `docker compose up -d --build`。启动时 `init_db()` 自动按 `PRAGMA user_version` 顺序执行未完成的迁移。
 4. 执行 `curl -fsS http://127.0.0.1:8000/healthz`，确认 `status` 为 `ok` 且 `schema_version` 为新程序支持的版本；必要时查看 `docker compose logs app`。
 
-数据库目前的最新版本以 `db.py` 的 `SCHEMA_VERSION` 为准（当前为 15，各版本含义见
+数据库目前的最新版本以 `db.py` 的 `SCHEMA_VERSION` 为准（本次为 52，50 为榜单显示名与公开设置，51 为小黄鸭额度，52 为手填实付金额；各版本含义见
 [README 的数据结构](../../README.md#数据结构)）。版本 1 是兼容所有历史 `user_version=0`
 数据库的幂等基线。包括基线在内，每个迁移均在独立事务内执行，失败时该迁移的变更和版本号一起回滚；已提交的早期迁移保留。正常完整的数据库不重复执行已完成的迁移；为保留旧版本的幂等初始化行为，版本号已为 1 或更高但缺少冻结基线的表、迁移列或索引时，会在独立事务内补齐基线，并保留原版本号。
 
@@ -147,6 +147,9 @@ docker rm -f nb
 镜像及 GitHub Actions 需在具备 Linux/Docker 的环境实测，本地静态检查不能替代真实构建、容器启动和 CI 结果。
 
 ## 定时任务
+
+Docker 部署的每日推荐抓取使用 [recommend-cron.md](recommend-cron.md) 中的幂等安装脚本，
+默认 dry-run；显式 `--apply` 后每天服务器时间 03:20 在容器内执行刷新，失败保留旧缓存。
 
 应用不在 Web 进程内自行调度提醒、体验账号清理或备份。由宿主机 cron/任务计划程序触发，Docker 部署可使用：
 

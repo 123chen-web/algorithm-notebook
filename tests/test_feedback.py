@@ -1,7 +1,13 @@
 """Friend feedback contracts; all services remain local/fake."""
 import pytest
 import main
+import db
 from test_app import client, register, new_problem
+
+
+def test_index_html_bypasses_stale_browser_http_cache(client):
+    assert client.get('/').headers['cache-control'] == 'no-store'
+    assert client.get('/static/index.html').headers['cache-control'] == 'no-store'
 
 
 @pytest.mark.parametrize('name', ['张三', '欧叶同学', '', 'Abc123'])
@@ -70,3 +76,22 @@ def test_actual_payment_amount_required_and_mismatch_stays_pending(client):
     assert claim['status'] == 'pending'
     with main.connect() as conn:
         assert conn.execute('SELECT plan_id FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] is None
+
+
+def test_version_22_users_keep_identity_and_counts_after_feedback_upgrade(tmp_path, monkeypatch):
+    monkeypatch.setenv('DATABASE_PATH', str(tmp_path / 'old-user.db'))
+    with monkeypatch.context() as patch:
+        patch.setattr(db, 'MIGRATIONS', [entry for entry in db.MIGRATIONS if entry[0] <= 22])
+        patch.setattr(db, 'SCHEMA_VERSION', 22)
+        db.init_db()
+    with db.connect(write=True) as conn:
+        conn.execute("INSERT INTO users(username,password_hash,timezone,created_at,bio,lifetime_problem_count,public_rank_opt_out) VALUES ('旧昵称','unchanged','Asia/Shanghai','2026-01-01','原简介',7,1)")
+        before = dict(conn.execute('SELECT * FROM users').fetchone())
+    db.init_db()
+    db.init_db()
+    with db.connect() as conn:
+        after = dict(conn.execute('SELECT * FROM users').fetchone())
+        assert {key: after[key] for key in before} == before
+        assert after['rank_display_name'] == ''
+        assert all(after[f'profile_public_{field}'] == 1 for field in ('bio', 'count', 'joined'))
+        assert db.schema_version(conn) == 52

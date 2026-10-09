@@ -386,6 +386,32 @@ async function answer(env, index, body, status = 200) {
 const rows = (env) => qa(env, "#forum-posts .board-row");
 const rowTitles = (env) => rows(env).map((row) => row.querySelector(".board-open").textContent);
 
+for (const action of ["unanswered", "more"]) {
+  test(`feedback: ${action} list 401 after session reset exposes login expiry`, async () => {
+    let expired = 0;
+    const { env, Board, state } = setup({ extraHooks: { onLoginExpired: () => expired++ } });
+    const loading = Board.show();
+    await answer(env, 0, page([post(71)], { has_more: true, total: 30 })); await loading;
+    if (action === "unanswered") click(q(env, "#board-r-open-btn"));
+    else void Board.loadMore();
+    await tick();
+    // Production api() clears the session and resets Board before rejecting.
+    state.user = null; state.epoch++; state.view = "home"; Board.reset();
+    await answer(env, 1, { detail: "请先登录" }, 401);
+    assert.equal(expired, 1, "the lost session must give an actionable expiry prompt");
+    assert.equal(Board.snapshot().loading, false);
+  });
+}
+
+test("feedback: an old list 401 cannot interrupt a different signed-in account", async () => {
+  let expired = 0;
+  const { env, Board, state } = setup({ extraHooks: { onLoginExpired: () => expired++ } });
+  const loading = Board.show(); await tick();
+  state.user = { ...state.user, id: 99 }; state.epoch++; Board.reset();
+  await answer(env, 0, { detail: "请先登录" }, 401); await loading;
+  assert.equal(expired, 0);
+});
+
 // Feedback regression: users tap the row/status, and browsers focus a button before clicking it.
 test("feedback: focusin keeps a zero-reply post title connected and clickable", async () => {
   const { env, Board, state } = setup();
@@ -400,6 +426,75 @@ test("feedback: focusin keeps a zero-reply post title connected and clickable", 
   click(title);
   assert.deepEqual(state.opened, [71]);
 });
+
+test("feedback: refreshing the list between pointer down and click keeps the clicked title connected", async () => {
+  const { env, Board, state } = setup();
+  const loading = Board.show();
+  await answer(env, 0, page([post(71, { comment_count: 0 })])); await loading;
+  const title = q(env, ".board-open");
+  title.dispatchEvent(new FakeEvent("pointerdown", { bubbles: true }));
+  const refresh = Board.load({ keep: true });
+  await answer(env, 1, page([post(71, { title: "刷新后的标题", comment_count: 0 })])); await refresh;
+  assert.equal(title.isConnected, true, "a refresh must not detach a pressed click target");
+  env.document.dispatchEvent(new FakeEvent("pointerup", { props: { target: title } }));
+  click(title);
+  assert.deepEqual(state.opened, [71]);
+  await tick();
+  assert.equal(q(env, ".board-open").textContent, "刷新后的标题");
+});
+
+for (const phase of ["pointerdown", "click"]) {
+  test(`feedback: ${phase} on a post cancels delayed search before it can cancel navigation`, async () => {
+    const { env, Board, state } = setup();
+    const loading = Board.show();
+    await answer(env, 0, page([post(71)])); await loading;
+    const timers = fakeTimers(env);
+    const input = q(env, "#forum-search"); input.value = "二分";
+    input.dispatchEvent(new FakeEvent("input"));
+    assert.equal(timers.queue.length, 1);
+    const title = q(env, ".board-open");
+    title.dispatchEvent(new FakeEvent(phase, { bubbles: true }));
+    assert.equal(timers.queue.length, 0, "the selected post takes precedence over delayed search");
+    assert.equal(title.isConnected, true);
+    if (phase === "pointerdown") {
+      env.document.dispatchEvent(new FakeEvent("pointerup")); click(title);
+    }
+    assert.deepEqual(state.opened, [71]);
+    assert.equal(env.calls.length, 1, "no delayed list request cancels the detail request");
+  });
+}
+
+test("feedback: a new list request cannot replace a pressed post with skeletons", async () => {
+  const { env, Board, state } = setup();
+  const loading = Board.show();
+  await answer(env, 0, page([post(71)])); await loading;
+  const title = q(env, ".board-open");
+  title.dispatchEvent(new FakeEvent("pointerdown", { bubbles: true }));
+  const refresh = Board.load(); await tick();
+  assert.equal(title.isConnected, true, "even the loading skeleton must wait for the click");
+  env.document.dispatchEvent(new FakeEvent("pointerup")); click(title);
+  assert.deepEqual(state.opened, [71]);
+  await answer(env, 1, page([post(71)])); await refresh;
+});
+
+for (const status of [200, 503]) {
+  test(`feedback: a released loading skeleton cannot overwrite the ${status} response`, async () => {
+    const { env, Board } = setup();
+    const loading = Board.show();
+    await answer(env, 0, page([post(71)])); await loading;
+    const timers = fakeTimers(env);
+    q(env, ".board-open").dispatchEvent(new FakeEvent("pointerdown", { bubbles: true }));
+    const refresh = Board.load();
+    env.document.dispatchEvent(new FakeEvent("pointerup"));
+    assert.equal(timers.queue.length, 1);
+    await answer(env, 1, status === 200 ? page([post(72)]) : { detail: "列表暂时不可用" }, status);
+    await refresh;
+    timers.fire();
+    assert.equal(qa(env, "#forum-posts .board-skeleton").length, 0);
+    if (status === 200) assert.deepEqual(rowTitles(env), ["帖子 72"]);
+    else assert.match(text(env, "#board-notice"), /列表暂时不可用/);
+  });
+}
 
 for (const [target, selector] of [["post row", ".board-row"], ["待回复 status", ".board-stat"], ["等你来回 pill", ".board-pill.is-open"]]) {
   test(`feedback: tapping ${target} opens a zero-reply post exactly once`, async () => {
@@ -926,6 +1021,19 @@ test("error: the message is shown with a retry button that asks again", async ()
   await answer(env, 1, page([post(1)]));
   assert.equal(q(env, "#board-notice").hidden, true);
   assert.equal(rows(env).length, 1);
+});
+
+test("feedback: list network failure explains the problem in Chinese and retry restores clickable posts", async () => {
+  const { env, Board, state } = setup();
+  const loading = Board.show();
+  env.calls[0].reject(new TypeError("Failed to fetch"));
+  await loading;
+  assert.match(text(env, "#forum-list-status"), /网络.*重试/);
+  click(q(env, "#board-notice button"));
+  await tick();
+  await answer(env, 1, page([post(72, { comment_count: 0 })]));
+  click(q(env, ".board-open"));
+  assert.deepEqual(state.opened, [72]);
 });
 
 test("returning from a post keeps the loaded rows, selection and filters, and refreshes in place", async () => {

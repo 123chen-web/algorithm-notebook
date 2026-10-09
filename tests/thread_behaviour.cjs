@@ -404,9 +404,12 @@ function appEnv() {
   mountForumMarkup(env.document);
   const $ = (selector) => env.document.documentElement.querySelector(selector);
   const calls = [], messages = [];
+  const location = { pathname: "/", search: "", hash: "#/app" };
   let pending = Promise.resolve();
   Object.assign(env.context, {
     $, user: { id: 1, username: "我", avatar_version: 0, has_avatar: false, is_trial: false, ai_enabled: true },
+    location, history: { replaceState(_state, _title, url) { location.hash = url.slice(url.indexOf('#')); } },
+    renderPageRoute() { env.window.loginShown = location.hash === "#/auth"; },
     sessionEpoch: 1, view: "forum", busy: false,
     forumPost: post(), forumCommentOrder: "earliest", forumOnlyOp: false, forumCodeOnly: false,
     forumMentionOnly: false, forumPreview: false, forumDetailGeneration: 0, forumCurrentComment: null,
@@ -826,6 +829,8 @@ test("feedback: reply 401 explains login expiry even after api invalidates the s
   env.context.view = "home";
   env.calls[0].reject(Object.assign(new Error("请先登录"), { status: 401 })); await env.pending();
   assert.match(env.messages.join(" "), /登录.*过期|重新登录|请先登录/);
+  assert.equal(env.context.location.hash, "#/auth", "expiry brings the user straight to login");
+  assert.equal(env.window.loginShown, true);
 });
 
 test("app submit: a late failure cannot display errors after leaving the discussion", async () => {
@@ -949,4 +954,26 @@ test("feedback: a stale 401 reply failure does not interrupt a newly signed-in a
   env.context.user = { ...env.context.user, id: 99 };
   env.calls[0].reject(Object.assign(new Error("请先登录"), { status: 401 })); await env.pending();
   assert.equal(env.messages.length, 0);
+});
+
+test("feedback: keyboard viewport shrinking keeps the focused reply field visible", () => {
+  const env = appEnv(); env.render();
+  const field = env.$("#forum-comment-body");
+  field.focus();
+  field.getBoundingClientRect = () => ({ top: 450, bottom: 600 });
+  const viewport = { offsetTop: 0, height: 400 };
+  env.window.visualViewport = viewport;
+  field.scrollIntoView = (options) => { field.lastKeyboardScroll = options; };
+  assert.equal(typeof env.context.keepForumReplyVisible, "function");
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll.block, "center");
+  assert.equal(field.lastKeyboardScroll.behavior, "auto");
+  field.lastKeyboardScroll = null;
+  field.getBoundingClientRect = () => ({ top: 100, bottom: 250 });
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll, null, "visible fields do not jump while typing");
+  env.context.view = "home";
+  field.getBoundingClientRect = () => ({ top: 450, bottom: 600 });
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll, null, "other views are untouched");
 });

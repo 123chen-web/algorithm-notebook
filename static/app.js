@@ -4017,6 +4017,14 @@ function showForumCompose(options = {}) {
   window.Board.openCompose(options);
 }
 
+function showForumLoginExpired() {
+  // signedOut() 可能回到长介绍页；将错误和重新登录入口放在同一屏。
+  history.replaceState(null, "", `${location.pathname}${location.search}#/auth`);
+  renderPageRoute();
+  message("登录已过期，请重新登录后回复。", true);
+  $("#notice")?.scrollIntoView({ block: "start", behavior: "auto" });
+}
+
 async function openForumPost(postId) {
   const generation = ++forumDetailGeneration;
   const epoch = sessionEpoch;
@@ -4035,7 +4043,7 @@ async function openForumPost(postId) {
     post = await api(`/api/posts/${postId}`);
   } catch (error) {
     if (error.status === 401 && !user && sessionEpoch === epoch + 1) {
-      message("登录已过期，请重新登录后回复。", true);
+      showForumLoginExpired();
       return;
     }
     if (!current()) return;
@@ -4118,6 +4126,17 @@ function selectForumReply(comment) {
   setForumPreview(false);
   form.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
   $("#forum-comment-body").focus({ preventScroll: true });
+}
+
+// 手机软键盘会在 focus 之后缩小可视区域，只在回复框越界时重新定位。
+function keepForumReplyVisible() {
+  const viewport = window.visualViewport;
+  const field = $("#forum-comment-body");
+  if (!viewport || !forumDetailVisible() || field.hidden || document.activeElement !== field) return;
+  const rect = field.getBoundingClientRect();
+  if (rect.top < viewport.offsetTop || rect.bottom > viewport.offsetTop + viewport.height) {
+    field.scrollIntoView({ block: "center", behavior: "auto" });
+  }
 }
 
 function scrollToForumComment(commentId, { clearFilters = false } = {}) {
@@ -5391,6 +5410,7 @@ $("#forum-map-track").addEventListener("pointerup", endForumMapDrag);
 $("#forum-map-track").addEventListener("pointercancel", () => { forumMapDrag = null; });
 window.addEventListener("scroll", scheduleForumMap, { passive: true });
 window.addEventListener("resize", scheduleForumMap);
+window.visualViewport?.addEventListener("resize", keepForumReplyVisible);
 if (typeof ResizeObserver !== "undefined") {
   const observer = new ResizeObserver(scheduleForumMap);
   observer.observe($(".header"));
@@ -5455,7 +5475,7 @@ function submitForumComment() {
       });
     } catch (error) {
       if (error.status === 401 && !user && sessionEpoch === epoch + 1) {
-        message("登录已过期，请重新登录后回复。", true);
+        showForumLoginExpired();
         return;
       }
       if (!current()) return;
@@ -5492,6 +5512,7 @@ window.Board?.mount({
   getView: () => view,
   isListVisible: () => !$("#forum-page").hidden && !$("#forum-list").hidden,
   isDetailVisible: forumDetailVisible,
+  onLoginExpired: showForumLoginExpired,
   openPost: (id) => { void openForumPost(id); },
   cancelOpening: () => {
     forumDetailGeneration += 1;

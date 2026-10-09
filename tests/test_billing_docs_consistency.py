@@ -24,3 +24,4 @@ def test_duck_billing_documentation_consistent():
     ui = (ROOT / 'static/duck-panel.js').read_text(encoding='utf-8')
     assert '独立每日额度（默认 10 次' in ui and '不占其他 AI 额度' in ui
     assert '服务端失败退还，并发繁忙不扣' in ui
+    assert '每日额度沿用当前套餐' not in (ROOT / 'README.md').read_text(encoding='utf-8')

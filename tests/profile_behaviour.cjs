@@ -161,7 +161,8 @@ test("feedback: owner saves rank name and three public preferences with CSRF api
   const ctx = setup(); await open(ctx);
   const input = ctx.content.querySelector('.profile-rank-name');
   const form = input.closest('form'); input.value = '张三';
-  form.querySelectorAll('input[type="checkbox"]')[0].checked = false;
+  // The minimal DOM harness does not reflect the type property into attributes.
+  form.querySelectorAll('input').find((field) => field.type === 'checkbox').checked = false;
   form.dispatchEvent(new FakeEvent('submit')); form.dispatchEvent(new FakeEvent('submit'));
   const call = ctx.env.calls[1];
   assert.equal(call.url, '/api/me/profile-settings');

@@ -135,6 +135,26 @@ def test_duck_busy_429_does_not_charge_or_lock_daily_quota(client, monkeypatch):
     assert duck(client, mistake_id, [USER]).status_code == 200
 
 
+def test_duck_concurrent_requests_atomically_reserve_last_attempt(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    provider = fake_ai(monkeypatch, GOOD)
+    register(client)
+    mistake_id = new_mistake(client)
+    monkeypatch.setenv('DUCK_DAILY_LIMIT', '1')
+    barrier = Barrier(2)
+    def request():
+        barrier.wait(timeout=10)
+        return duck(client, mistake_id, [USER]).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: request(), range(2)))
+    assert sorted(results) == [200, 429]
+    assert attempts() == 1
+    assert len(provider.requests) == 1
+    with connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM ai_usage').fetchone()[0] == 0
+
+
 # ---------------- 成功路径与契约 ----------------
 
 def test_chat_success_returns_reply_and_counts(client, monkeypatch):
