@@ -39,7 +39,7 @@ def upload(client, data, name="x.png", mime="image/png"):
 def test_migration_71_fresh_database(client):
     register(client)
     with connect() as conn:
-        assert db.schema_version(conn) == 71
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         tables = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert "note_attachments" in tables
@@ -68,7 +68,7 @@ def test_migration_upgrade_from_70_preserves_data(monkeypatch, tmp_path):
     db.init_db()
     db.init_db()  # 重复启动幂等
     with connect() as conn:
-        assert db.schema_version(conn) == db.SCHEMA_VERSION == 71
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] == 1
         assert conn.execute("SELECT title FROM notes").fetchone()[0] == "旧笔记"
 

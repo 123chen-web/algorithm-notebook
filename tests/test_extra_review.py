@@ -103,7 +103,7 @@ def test_failure_resets_repetitions_and_lowers_ease_floor(client):
             "WHERE id = ?", (mistake_id,)
         )
     fail = review(client, mistake_id, quality=0, version=0).json()
-    assert fail["repetitions"] == 0
+    assert fail["repetitions"] == 2  # 加固后答错只折半（5 // 2），不再清零
     assert fail["interval_days"] == 1
     assert fail["ease_factor"] == 2.3
 
