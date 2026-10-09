@@ -1,0 +1,300 @@
+/* 新手指南独立页（static/help.html）。
+   只使用 style.css 里的主题令牌与字体，跟随 themes.js 的水墨/栖间两套配色；
+   系统暗色模式下与 legal.css 同一套暗色处理。无外部资源。 */
+
+.help-page {
+  background: var(--paper);
+  color: var(--ink);
+  line-height: var(--lh-prose);
+}
+
+.help-wrap {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--space-6) max(16px, var(--space-5)) var(--space-8);
+  overflow-wrap: anywhere;
+}
+
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: var(--space-4);
+  z-index: 10;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+}
+.skip-link:focus { top: var(--space-3); color: var(--on-accent); }
+
+.help-header { padding-bottom: var(--space-5); }
+.help-header h1 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-family: var(--serif);
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  line-height: var(--lh-heading);
+}
+.help-lead { margin: var(--space-2) 0; color: var(--ink-2); }
+.help-back { margin: var(--space-3) 0 0; font-size: var(--text-sm); }
+
+/* 搜索 + 目录固定在顶部，手机上也能随时跳转。 */
+.help-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-top: var(--space-4);
+  padding: var(--space-3) 0;
+  background: var(--paper);
+}
+.help-search { display: block; }
+.help-search-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.help-search input {
+  width: 100%;
+  min-height: 46px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--field-surface);
+  color: var(--ink);
+  font-size: 16px;
+}
+.help-search input:focus-visible {
+  border-color: var(--accent);
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+.help-search-empty {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.help-toc {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.help-toc-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--serif);
+  font-size: var(--text-lg);
+}
+.help-toc ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.help-toc a {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+.help-toc a:hover { border-color: var(--accent); color: var(--accent-hover); }
+
+.help-section {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  scroll-margin-top: 140px;
+}
+.help-section h2 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--serif);
+  font-size: var(--text-xl);
+}
+.help-section h3 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+.help-section h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md);
+}
+.help-section p { margin: var(--space-2) 0; }
+
+.help-steps, .help-bullets { margin: var(--space-2) 0; padding-left: 1.4em; }
+.help-steps li, .help-bullets li { margin-top: var(--space-2); }
+.help-steps { padding-left: 1.6em; }
+
+.help-ways {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+.help-ways li {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+.help-ways p { margin-bottom: 0; font-size: var(--text-base); }
+
+.help-note {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--notice-surface);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.help-table-wrap { overflow-x: auto; margin: var(--space-3) 0; }
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+.help-table th, .help-table td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.help-table thead th { background: var(--paper-2); font-weight: 650; }
+.help-table tbody td:nth-child(2) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.help-placeholder {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed var(--ink-2);
+  border-radius: var(--radius-sm);
+  background: var(--quiet-surface);
+}
+.help-placeholder p { margin: var(--space-1) 0; }
+
+.help-faq {
+  margin-top: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+.help-faq summary {
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  font-weight: 650;
+}
+.help-faq summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.help-faq-body { padding: 0 var(--space-4) var(--space-4); }
+.help-faq-body p:first-child { margin-top: 0; }
+.help-faq kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-compact);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.help-template {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--azurite);
+  border-radius: var(--radius-sm);
+  background: var(--group-soft);
+  color: var(--group-ink);
+}
+.help-template p { margin: 0; }
+
+.help-footer {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+.help-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-5);
+}
+.help-footer .field-hint { margin-top: var(--space-4); }
+
+.help-section[hidden] { display: none; }
+
+@media (max-width: 600px) {
+  .help-wrap { padding-right: 16px; padding-left: 16px; }
+  .help-section { padding: var(--space-4); border-radius: var(--radius-sm); }
+  .help-toolbar { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+  .help-toc { padding: var(--space-3); }
+  .help-toc ol { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); -webkit-overflow-scrolling: touch; }
+  .help-toc li { flex: 0 0 auto; }
+}
+
+/* 系统暗色：与 legal.css 一致，改用代码块的深底浅字令牌，不新造颜色。 */
+@media (prefers-color-scheme: dark) {
+  .help-page {
+    color-scheme: dark;
+    background: var(--code-surface);
+    color: var(--code-ink);
+  }
+  .help-page .help-lead,
+  .help-page .help-search-label,
+  .help-page .field-hint {
+    color: color-mix(in srgb, var(--code-ink) 80%, var(--code-surface));
+  }
+  .help-page a { color: var(--code-ink); }
+  .help-page a:hover { color: color-mix(in srgb, var(--code-ink) 75%, var(--code-surface)); }
+  .help-page .help-toolbar { background: var(--code-surface); }
+  .help-page .help-toc,
+  .help-page .help-section,
+  .help-page .help-faq kbd {
+    background: color-mix(in srgb, var(--code-ink) 7%, var(--code-surface));
+  }
+  .help-page .help-toc a,
+  .help-page .help-ways li,
+  .help-page .help-faq,
+  .help-page .help-table thead th {
+    background: color-mix(in srgb, var(--code-ink) 10%, var(--code-surface));
+    color: var(--code-ink);
+  }
+  .help-page .help-search input {
+    border-color: color-mix(in srgb, var(--code-ink) 25%, var(--code-surface));
+    background: color-mix(in srgb, var(--code-ink) 7%, var(--code-surface));
+    color: var(--code-ink);
+  }
+  .help-page .help-note {
+    background: color-mix(in srgb, var(--code-ink) 10%, var(--code-surface));
+    color: color-mix(in srgb, var(--code-ink) 82%, var(--code-surface));
+  }
+  .help-page .help-placeholder {
+    background: color-mix(in srgb, var(--code-ink) 6%, var(--code-surface));
+  }
+  .help-page .help-template {
+    background: color-mix(in srgb, var(--code-ink) 12%, var(--code-surface));
+    color: var(--code-ink);
+  }
+  .help-page :is(.help-toc, .help-section, .help-faq, .help-ways li, .help-table th, .help-table td, .help-placeholder, .help-footer) {
+    border-color: color-mix(in srgb, var(--code-ink) 22%, var(--code-surface));
+  }
+  .help-page .help-search-empty {
+    border-color: color-mix(in srgb, var(--code-ink) 30%, var(--code-surface));
+    background: color-mix(in srgb, var(--code-ink) 12%, var(--code-surface));
+    color: var(--code-ink);
+  }
+  .help-page .skip-link:focus { color: var(--on-accent); }
+}
