@@ -137,8 +137,11 @@ def assert_export_keys(payload):
     assert isinstance(payload["note_links"], list)
     for link in payload["note_links"]:
         assert "link_kind" in link and "target_text" in link and "dangling" in link
+    # N2：每篇笔记附附件文件名清单（id/派生文件名/mime/大小），不含二进制内容。
     for note in payload["notes"]:
-        assert set(note) == {"id", "title", "content", "tags", "problem_id", "problem_title", "pinned", "created_at", "updated_at", "deleted_at"}
+        assert set(note) == {"id", "title", "content", "tags", "problem_id", "problem_title", "pinned", "created_at", "updated_at", "deleted_at", "attachments"}
+        for attachment in note["attachments"]:
+            assert set(attachment) == {"id", "filename", "mime", "size_bytes"}
     for problem in payload["problems"]:
         assert set(problem) == PROBLEM_KEYS
         for mistake in problem["mistakes"]:

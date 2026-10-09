@@ -1,33 +1,27 @@
-"""N1 笔记双向链接的静态契约：关键 id、版本号与加载顺序、CSP、令牌与动效、手机宽度。
-仿照 tests/test_rank_assets.py，扫描真实文件做断言。"""
+"""N2 笔记富渲染（公式/流程图/图片附件）静态契约：
+版本号与加载顺序、CSP 不放宽、懒加载契约、CSS 令牌与动效/手机断点。
+仿照 tests/test_notes_links_assets.py，扫描真实文件断言。"""
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
-CSS = (STATIC / "notes-links.css").read_text(encoding="utf-8")
-NL_JS = (STATIC / "notes-links.js").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+CSS = (STATIC / "notes-rich.css").read_text(encoding="utf-8")
+NR_JS = (STATIC / "notes-rich.js").read_text(encoding="utf-8")
 MAIN = (ROOT / "main.py").read_text(encoding="utf-8")
 
-IDS = ("notes-graph", "notes-solution-template")
 
-
-def test_markup_has_each_required_id_exactly_once():
-    for name in IDS:
-        assert len(re.findall(rf'\bid="{name}"', HTML)) == 1, name
-
-
-def test_assets_versioned_and_loaded_before_app_js():
-    assert '<link rel="stylesheet" href="/static/notes-links.css?v=3">' in HTML
+def test_assets_versioned_and_loaded_in_order():
+    assert '<link rel="stylesheet" href="/static/notes-rich.css?v=3">' in HTML
     scripts = re.findall(r'<script defer src="/static/([\w.-]+\.js)\?v=(\d+)"></script>', HTML)
     names = [name for name, _ in scripts]
-    assert names.count("notes-links.js") == 1
-    assert names.index("notes-links.js") < names.index("app.js"), "图谱脚本必须在 app.js 之前"
+    assert names.count("notes-rich.js") == 1
+    assert names.index("notes.js") < names.index("notes-links.js") < names.index("notes-rich.js") < names.index("app.js")
     versions = dict(scripts)
-    assert versions["notes-links.js"] == "3"
+    assert versions["notes-rich.js"] == "3"
     assert versions["notes.js"] == "3"
+    assert versions["notes-links.js"] == "3"
     assert versions["app.js"] == "92"
 
 
@@ -36,25 +30,42 @@ def test_no_inline_style_or_inline_script_in_markup():
     assert not re.search(r'<script\b(?![^>]*\bsrc=)[^>]*>', HTML), "不得写内联脚本"
 
 
-def test_notes_links_js_safe_by_contract():
+def test_notes_rich_js_safe_by_contract():
     for forbidden in ("innerHTML", "insertAdjacentHTML", "outerHTML", "document.write",
                       "localStorage", "sessionStorage", "eval(", "javascript:"):
-        assert forbidden not in NL_JS, f"notes-links.js 不得出现 {forbidden}"
-    assert not re.search(r"\.style\.\w+\s*=", NL_JS), "不得写行内样式"
-    assert 'setAttribute("style"' not in NL_JS
-    assert "fetch(" not in NL_JS, "图谱/脚本不得自行发起外部请求，统一走 hooks.api"
+        assert forbidden not in NR_JS, f"notes-rich.js 不得出现 {forbidden}"
+    assert not re.search(r"\.style\.\w+\s*=", NR_JS), "不得写行内样式"
+    assert 'setAttribute("style"' not in NR_JS
+    assert "fetch(" not in NR_JS, "上传走 XHR；其它请求统一走 hooks.api"
+
+
+def test_vendor_lazy_loaded_only_at_runtime():
+    # index.html 不得静态引入 vendor；只有 notes-rich.js 内动态注入。
+    assert "vendor/katex" not in HTML
+    assert "vendor/mermaid" not in HTML
+    assert "/static/vendor/katex/katex.min.js" in NR_JS
+    assert "/static/vendor/katex/katex.min.css" in NR_JS
+    assert "/static/vendor/mermaid/mermaid.min.js" in NR_JS
+    # 懒加载地址带 ?v=，才能被 sw.js 运行时缓存（断网可用）。
+    assert "katex.min.js?v=1" in NR_JS
+    assert "katex.min.css?v=1" in NR_JS
+    assert "mermaid.min.js?v=1" in NR_JS
+    # mermaid 必须 strict、不自动跑。
+    assert "securityLevel" in NR_JS
+    assert "startOnLoad" in NR_JS
 
 
 def test_csp_header_unchanged_and_strict():
     assert "script-src 'self'" in MAIN
+    assert "style-src 'self'" in MAIN
     assert "connect-src 'self'" in MAIN
     assert "unsafe-inline" not in MAIN.split("script-src")[1].split(";")[0]
     assert "unsafe-eval" not in MAIN
 
 
-def test_app_js_only_wires_configure():
-    assert "window.NotesLinks?.configure(" in APP
-    assert "window.NotesLinks?.reset()" in APP
+def test_no_external_origin_reference():
+    assert "https://" not in NR_JS
+    assert "http://" not in NR_JS
 
 
 def test_css_uses_theme_tokens_only():

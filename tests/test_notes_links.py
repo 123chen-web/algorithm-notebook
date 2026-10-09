@@ -41,7 +41,7 @@ def make_problem(client, title="两数之和"):
 def test_migration_70_fresh_database(client):
     register(client)
     with db.connect() as conn:
-        assert db.schema_version(conn) == 70
+        assert db.schema_version(conn) == 71
         tables = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert "note_links" in tables
@@ -75,7 +75,7 @@ def test_migration_70_upgrades_from_frozen_schema_28_and_preserves_data(database
     db.init_db()
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == 70
+        assert db.schema_version(conn) == 71
         rows = conn.execute("SELECT title, content FROM notes WHERE user_id=7").fetchall()
         assert len(rows) == 1
         assert rows[0]["title"] == "旧笔记"
