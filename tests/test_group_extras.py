@@ -304,7 +304,9 @@ def test_migrations_40_to_41_upgrade(tmp_path, monkeypatch):
             (now,),
         )
     # 恢复完整迁移并升级。
-    monkeypatch.setattr(db_module, "MIGRATIONS", full)
+    # 只升到小组迁移 41：合并后的完整列表里还有 50+/70+ 的迁移，不属于本用例范围。
+    through_41 = [m for m in full if m[0] <= 41]
+    monkeypatch.setattr(db_module, "MIGRATIONS", through_41)
     monkeypatch.setattr(db_module, "SCHEMA_VERSION", 41)
     init_db()
     with connect() as conn:

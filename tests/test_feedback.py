@@ -94,4 +94,4 @@ def test_version_22_users_keep_identity_and_counts_after_feedback_upgrade(tmp_pa
         assert {key: after[key] for key in before} == before
         assert after['rank_display_name'] == ''
         assert all(after[f'profile_public_{field}'] == 1 for field in ('bio', 'count', 'joined'))
-        assert db.schema_version(conn) == 52
+        assert db.schema_version(conn) == db.SCHEMA_VERSION

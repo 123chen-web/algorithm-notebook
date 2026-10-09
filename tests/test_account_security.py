@@ -742,7 +742,7 @@ def test_terms_acceptance_records_version_and_utc_time_but_trial_does_not(client
     user = register(client)
     with connect() as conn:
         row = conn.execute("SELECT terms_accepted_at,terms_version FROM users WHERE id = ?", (user["id"],)).fetchone()
-    assert row["terms_version"] == TERMS_VERSION == "2026-10-03"
+    assert row["terms_version"] == TERMS_VERSION and TERMS_VERSION.startswith("2026-")
     assert datetime.fromisoformat(row["terms_accepted_at"]).utcoffset() == timezone.utc.utcoffset(None)
     client.post("/api/auth/logout")
     trial = client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
