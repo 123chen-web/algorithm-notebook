@@ -291,6 +291,7 @@ def test_due_preview_lists_the_five_most_overdue_with_overdue_days(client):
     assert set(first) == {
         "id", "problem_id", "title", "zone", "description",
         "due_date", "overdue_days", "repetitions", "pending_reason",
+        "progress", "problem_tags", "problem_due_count", "problem_mistakes",
     }
     assert first["due_date"] == "2026-09-10"
     assert first["title"] == "二分边界"

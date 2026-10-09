@@ -23,6 +23,7 @@ class Node {
     };
     this.classList = {
       contains: (name) => this.className.split(/\s+/).includes(name),
+      toggle: (name, on) => { if (on) this.classList.add(name); else this.classList.remove(name); },
       add: (...names) => { this.className = [...new Set([...this.className.split(/\s+/).filter(Boolean), ...names])].join(" "); },
       remove: (...names) => { this.className = this.className.split(/\s+/).filter((name) => !names.includes(name)).join(" "); },
     };
@@ -96,6 +97,7 @@ function harness(state = {}) {
     ...state,
   };
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(require("node:path").join(__dirname, "../static/problem-cards.js"), "utf8"), context, { timeout: 1000 });
   vm.runInContext(payload.practice, context, { timeout: 1000 });
   vm.runInContext(payload.source, context, { timeout: 1000 });
   return { context, get, events, practices, practice: context.window.PracticeNow };
@@ -298,8 +300,8 @@ function analysis() {
     const evidence = oneClass(card, "weakness-evidence");
     assert.equal(evidence.getAttribute("role"), "list");
     assert.equal(byTag(evidence, "li").length, 1);
-    assert.equal(oneClass(evidence, "weakness-evidence-zone").textContent, pattern.evidence[0].zone);
-    assert.equal(byTag(evidence, "strong")[0].textContent, pattern.evidence[0].title);
+    assert.equal(oneClass(evidence, "problem-card-zone").textContent, pattern.evidence[0].zone);
+    assert.equal(byTag(evidence, "h3")[0].textContent, pattern.evidence[0].title);
     assert.equal(byTag(evidence, "p")[0].textContent, pattern.evidence[0].observation);
     assert.equal(byTag(oneClass(card, "weakness-action"), "p")[0].textContent, pattern.action);
   }

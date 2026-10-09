@@ -137,38 +137,15 @@
   }
 
   /* ---------- 待复习预览 ---------- */
-  function masteryDots(repetitions) {
-    const wrap = node("span", "ov-dots");
-    wrap.setAttribute("aria-hidden", "true");
-    for (let index = 0; index < 5; index += 1) wrap.append(node("span", `ov-dot${index < repetitions ? " is-on" : ""}`));
-    return wrap;
-  }
   function renderDue(data, context) {
     const list = $("#ov-due-list");
     const all = $("#ov-due-all");
     all.hidden = data.due_count === 0;
     all.textContent = `查看全部 ${data.due_count} 条 →`;
     $("#ov-due-empty").hidden = data.due_preview.length > 0;
-    list.replaceChildren(...data.due_preview.map((item) => {
+    list.replaceChildren(...window.ProblemCards.group(data.due_preview, data.today).map((group) => {
       const entry = node("li");
-      const button = node("button", "ov-due-item");
-      button.type = "button";
-      const head = node("span", "ov-due-head");
-      head.append(node("span", "ov-zone-tag", item.zone), node("span", "ov-due-title", item.title));
-      const main = node("span", "ov-due-main");
-      main.append(head, node("span", "ov-due-desc", item.description || "错因待 AI 诊断"));
-      const side = node("span", "ov-due-side");
-      side.append(
-        item.overdue_days > 0
-          ? node("span", "ov-chip ov-chip-late", `逾期 ${item.overdue_days} 天`)
-          : node("span", "ov-chip ov-chip-today", "今天"),
-        masteryDots(Math.min(5, item.repetitions)),
-        node("span", "", `复习 ${item.repetitions} 次`),
-      );
-      button.append(main, side);
-      button.setAttribute("aria-label", `${item.zone}：${item.title}，${item.overdue_days > 0 ? `逾期 ${item.overdue_days} 天` : "今天到期"}，已复习 ${item.repetitions} 次`);
-      button.addEventListener("click", () => context.onOpenRecord?.(item.id));
-      entry.append(button);
+      entry.append(window.ProblemCards.card(group, { onOpen: item => context.onOpenRecord?.(item.id) }));
       return entry;
     }));
   }

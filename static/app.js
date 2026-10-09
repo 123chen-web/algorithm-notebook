@@ -1852,14 +1852,18 @@ function renderWeaknessAnalysis() {
     card.append(number, heading, element("p", pattern.explanation, "multiline weakness-explanation"));
     const evidence = element("ul", "", "weakness-evidence");
     evidence.setAttribute("role", "list");
-    for (const item of pattern.evidence) {
+    const metadata = new Map((weaknessAnalysis.problem_cards || []).map(item => [item.problem_id, item]));
+    for (const group of window.ProblemCards.group(pattern.evidence.map(item => ({ ...item, ...metadata.get(item.problem_id) })), user.today)) {
       const entry = element("li");
-      const copy = element("div", "", "weakness-evidence-copy");
-      copy.append(element("strong", item.title), element("p", item.observation, "multiline"));
-      entry.append(
-        element("span", item.zone, "weakness-evidence-zone"),
-        copy
-      );
+      entry.append(window.ProblemCards.card(group, { onOpen: item => run(async () => {
+        await showView("all");
+        await openMistake(item.mistake_id);
+      }) }));
+      // 同题证据保留所有观察，折叠在题卡之下，不重复题名。
+      const observations = element("details", "", "problem-evidence-observations");
+      observations.append(element("summary", `${group.members.length} 条分析依据`));
+      for (const member of group.members) observations.append(element("p", member.observation, "multiline"));
+      entry.append(observations);
       evidence.append(entry);
     }
     card.append(element("h4", "哪些记录支持这个判断"), evidence);
@@ -2325,54 +2329,44 @@ function rvfClearDetail() {
   rvfDetailState = null;
 }
 
-function rvfRecordButton(item, today, index = 1) {
-  const button = element("button", "", "record-button");
-  button.type = "button";
-  button.dataset.id = String(item.id);
-  button.setAttribute("aria-pressed", "false");
-  button.append(element("strong", `易错点 ${index}${item.pending_reason ? " · 待补" : ""}`));
-  // 今日队列也先保留问题，避免左栏直接透露待回忆的错因。
-  if (view !== "today" || window.ReviewExtras?.hideReason() === false) {
-    button.append(element("span", item.description || "错因待 AI 诊断", "record-description"));
-  }
-  button.append(element("small", `${item.zone} · ${item.due_date <= today ? "待复习" : "下次复习"} · ${item.due_date}`, "muted"));
-  if (item.suspended_at) button.append(element("span", "已暂停", "review-suspended"));
-  if (item.tags?.length && window.TagEditor) button.append(window.TagEditor.chips(item.tags));
-  button.addEventListener("click", () => run(async () => {
-    await openMistake(item.id);
-    if (rvfDetailState?.isCurrent() && rvfDetailState.item.id === item.id) {
-      $("#detail").scrollIntoView({ block: "start", behavior: "auto" });
-    }
-  }));
-  return button;
-}
-
-// 只归并展示；每个按钮仍指向自己独立的 mistake 和复习安排。
+// 列表一题一卡；详情里的切换器保留每条易错点的独立操作。
 function rvfRenderCards(today, selectedId = null) {
-  const groups = new Map();
-  for (const item of rvfListItems.values()) {
-    const problemId = item.problem_id ?? item.id;
-    if (!groups.has(problemId)) groups.set(problemId, []);
-    groups.get(problemId).push(item);
-  }
   const root = $("#cards");
   root.replaceChildren();
-  for (const [problemId, items] of groups) {
-    const card = element("section", "", "problem-record-card");
-    card.dataset.problemId = String(problemId);
-    card.append(element("h3", items[0].title));
-    card.append(element("p", `${items[0].zone} · ${items.length} 条易错点 · 逐条回忆、独立评分`, "problem-record-meta"));
-    const causes = element("div", "", "problem-record-causes");
-    items.forEach((item, index) => {
-      const button = rvfRecordButton(item, today, index + 1);
-      const selected = selectedId === item.id;
-      button.classList.toggle("selected", selected);
-      button.setAttribute("aria-pressed", String(selected));
-      causes.append(button);
-    });
-    card.append(causes);
-    root.append(card);
+  for (const group of window.ProblemCards.group([...rvfListItems.values()], today)) {
+    root.append(window.ProblemCards.card(group, {
+      selected: group.members.some(item => item.id === selectedId),
+      onOpen: item => run(async () => {
+        await openMistake(item.id);
+        if (rvfDetailState?.isCurrent() && rvfDetailState.item.id === item.id) {
+          $("#detail").scrollIntoView({ block: "start", behavior: "auto" });
+        }
+      }),
+    }));
   }
+}
+
+// 评分/暂停/推迟/撤销之后重新读服务端整题元数据，避免兄弟卡片显示旧完成度。
+async function rvfRefreshProblem(item) {
+  if (!Object.hasOwn(item, "progress")) return; // 老后端/缓存无题级元数据。
+  const valid = rvfPageGuard();
+  const generation = rvfListGeneration;
+  try {
+    const fresh = await api(`/api/mistakes/${item.id}`);
+    if (!valid() || generation !== rvfListGeneration) return;
+    for (const sibling of rvfListItems.values()) {
+      if (sibling.problem_id !== fresh.problem_id) continue;
+      for (const key of ["progress", "problem_tags", "problem_due_count", "problem_mistakes"]) sibling[key] = fresh[key];
+    }
+    rvfRenderCards(user.today, rvfDetailState?.item.id);
+  } catch (_) { /* 离线仍保留最后一次服务端快照；不推算完成度。 */ }
+}
+
+function rvfListSummary(today, offline = false) {
+  const count = window.ProblemCards.group([...rvfListItems.values()], today).length;
+  return view === "today"
+    ? `${today} · ${count} 道题待复习 · ${rvfListItems.size} 条易错点（含逾期）${offline ? " · 离线模式，评分先存本机" : ""}`
+    : `共 ${count} 道题 · ${rvfListItems.size} 条易错点`;
 }
 
 function rvfRenderQueueHeader(queue) {
@@ -2450,13 +2444,14 @@ function rvfRemoveItem(item, { offline = false } = {}) {
   rvfListGeneration += 1; // 已发出的旧列表不得把刚移除的卡片放回来。
   if (view === "today") {
     rvfListItems.delete(item.id);
-    $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）${offline ? " · 离线模式，评分先存本机" : ""}`;
   } else {
     rvfListItems.set(item.id, item);
   }
   rvfRenderCards(user.today);
+  $("#list-summary").textContent = rvfListSummary(user.today, offline);
   clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : item.leech_suspended ? "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。" : "可以选择下一条继续复习。");
   if (offline) return; // 离线不触发会打网络的头部刷新与跨视图联动。
+  void rvfRefreshProblem(item);
   notifyDataChanged("review");
   void rvfLoadQueueHeader(rvfPageGuard());
 }
@@ -2469,10 +2464,11 @@ async function rvfRestoreItem(item, data) {
     rvfListItems = new Map([[item.id, restored], ...rvfListItems]);
   }
   rvfRenderCards(user.today);
-  if (view === "today") $("#list-summary").textContent = `${user.today} · 今天有 ${rvfListItems.size} 条易错点待复习（含逾期）`;
+  $("#list-summary").textContent = rvfListSummary(user.today);
   notifyDataChanged("review");
   void rvfLoadQueueHeader(rvfPageGuard());
   await openMistake(item.id);
+  void rvfRefreshProblem(restored);
 }
 
 async function loadList() {
@@ -2536,9 +2532,7 @@ async function loadList() {
 
   $("#list-title").textContent =
     view === "today" ? "今日复习" : "全部记录";
-  $("#list-summary").textContent = view === "today"
-    ? `${data.today} · 今天有 ${data.items.length} 条易错点待复习（含逾期）${offlineToday ? " · 离线模式，评分先存本机" : ""}`
-    : `共 ${data.items.length} 条易错点 · 每一条，都有自己的复习节奏`;
+  $("#list-summary").textContent = rvfListSummary(data.today, offlineToday);
 
   $("#cards").replaceChildren();
   // 请求期间用户另选了题：列表可更新，但不能清掉其已显示或仍在加载的详情。
@@ -2595,12 +2589,19 @@ async function openMistake(id) {
     // 列表与详情都保留同一条记录的较新版本，详情独有的历史仍可展示。
     if (current.version > item.version) item = { ...item, ...current };
     rvfListItems.set(item.id, { ...current, ...item });
+    for (const sibling of rvfListItems.values()) {
+      if (sibling.problem_id !== item.problem_id) continue;
+      for (const key of ["progress", "problem_tags", "problem_due_count", "problem_mistakes"]) {
+        if (Object.hasOwn(item, key)) sibling[key] = item[key];
+      }
+    }
     rvfRenderCards(item.today, item.id);
   }
 
   document.querySelectorAll(".record-button").forEach((button) => {
-    button.classList.toggle("selected", Number(button.dataset.id) === id);
-    button.setAttribute("aria-pressed", String(Number(button.dataset.id) === id));
+    const selected = Number(button.closest(".problem-record-card")?.dataset.problemId) === item.problem_id;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
   });
 
   renderDetail(item, { offline: offlineDetail });
@@ -2967,6 +2968,9 @@ function renderDetail(item, options = {}) {
   state.status = status;
 
   const heading = element("div", "", "detail-heading");
+  const navigationItem = { ...item, problem_mistakes: item.problem_mistakes
+    || [...rvfListItems.values()].filter(member => member.problem_id === item.problem_id) };
+  root.append(window.ProblemCards.navigation(navigationItem, id => run(() => openMistake(id))));
   heading.append(
     element("h2", item.title),
     element("p", item.language ? `${item.zone} · ${item.language}` : item.zone, "language-badge")
@@ -3547,10 +3551,9 @@ document.addEventListener("mistake:tags-changed", (event) => {
   const { id, tags } = event.detail || {};
   const item = rvfListItems.get(Number(id));
   if (item) item.tags = tags;
-  const card = document.querySelector(`#cards .record-button[data-id="${id}"]`);
-  if (!card) return;
-  card.querySelector(".record-tags")?.remove();
-  if (tags.length && window.TagEditor) card.append(window.TagEditor.chips(tags));
+  if (!item) return;
+  rvfRenderCards(user.today, rvfDetailState?.item.id);
+  void rvfRefreshProblem(item);
 });
 
 window.Onboarding?.configure({ api });

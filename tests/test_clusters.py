@@ -109,7 +109,7 @@ def test_api_insufficient_data_does_not_check_key_or_quota(client, monkeypatch, 
         assert body == {
             "status": "insufficient_data", "message": body["message"],
             "minimum_mistakes": 6, "mistake_count": count, "today": DAY,
-            "insight": None, "new_since": 0,
+            "insight": None, "new_since": 0, "problem_cards": [],
         }
         assert f"还差 {6 - count} 条" in body["message"]
         assert "本次不会调用 AI，也不消耗额度" in body["message"]

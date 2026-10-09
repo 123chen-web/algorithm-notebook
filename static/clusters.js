@@ -61,18 +61,6 @@
     $("#clusters-new").textContent = newCount > 0 ? `有 ${newCount} 条新错题还没归并` : "";
   }
 
-  function isDue(member) {
-    return typeof member.due_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(member.due_date)
-      && typeof report?.today === "string" && member.due_date <= report.today;
-  }
-
-  function dueText(member) {
-    if (!member.due_date) return "待安排复习";
-    if (member.due_date === report.today) return "今天到期";
-    if (isDue(member)) return "已逾期";
-    return `${member.due_date} 到期`;
-  }
-
   /* ---------- 专题徽标：已改善 / 仍在反复 / 样本不足 ---------- */
   function utcDay(text) {
     if (typeof text !== "string") return NaN;
@@ -160,21 +148,6 @@
     }
   }
 
-  function memberRow(member, ticket, userId) {
-    const row = node("li", "clusters-member");
-    const open = node("button", "clusters-member-open");
-    open.type = "button";
-    const copy = node("span", "clusters-member-copy");
-    copy.append(node("strong", "clusters-member-title", member.title), node("span", "clusters-member-description", member.description || "尚未记录具体错因"));
-    open.append(node("span", "clusters-zone", member.zone), copy, node("span", `clusters-due${isDue(member) ? " is-due" : ""}`, dueText(member)));
-    open.addEventListener("click", () => {
-      if (!current(ticket, userId)) return;
-      document.dispatchEvent(new CustomEvent("app:navigate", { detail: { view: "all", recordId: member.mistake_id } }));
-    });
-    row.append(open);
-    return row;
-  }
-
   function clusterCard(cluster, index, ticket, userId) {
     const card = node("article", "panel clusters-card clusters-reveal");
     card.style.setProperty("--clusters-order", String(index + 1));
@@ -188,7 +161,15 @@
     const members = node("ul", "clusters-members");
     members.setAttribute("role", "list");
     members.setAttribute("aria-label", `${cluster.title}的易错点`);
-    members.append(...cluster.members.map((member) => memberRow(member, ticket, userId)));
+    const metadata = new Map((report.problem_cards || []).map(item => [item.problem_id, item]));
+    members.append(...window.ProblemCards.group(cluster.members.map(member => ({ ...member, ...metadata.get(member.problem_id) })), report.today).map(group => {
+      const row = node("li", "clusters-member");
+      row.append(window.ProblemCards.card(group, { onOpen: member => {
+        if (!current(ticket, userId)) return;
+        document.dispatchEvent(new CustomEvent("app:navigate", { detail: { view: "all", recordId: member.mistake_id } }));
+      } }));
+      return row;
+    }));
     head.append(trendSlot(cluster));
     card.append(head, explanation, tip, members);
     if (window.PracticeNow) {

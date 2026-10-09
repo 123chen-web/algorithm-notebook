@@ -72,13 +72,13 @@ def test_assets_are_served_once_and_before_app():
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
     assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=91")
+    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=92")
 
 
 def test_changed_assets_bump_their_cache_busting_version():
     assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
     assert re.search(r'<script defer src="/static/rank\.js\?v=2"></script>', INDEX)
-    assert re.search(r'<script defer src="/static/app\.js\?v=91"></script>', INDEX)
+    assert re.search(r'<script defer src="/static/app\.js\?v=92"></script>', INDEX)
 
 
 def test_two_keyboard_operable_toggles_are_buttons_with_aria_pressed():

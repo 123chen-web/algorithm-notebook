@@ -49,7 +49,7 @@ async function supportUndo(env) {
 
 function environment(source = SOURCE) {
   const extrasPath = path.join(__dirname, "../static/review-extras.js");
-  const env = load(fs.existsSync(extrasPath) ? ["review-extras.js"] : []);
+  const env = load(fs.existsSync(extrasPath) ? ["problem-cards.js", "review-extras.js"] : []);
   const { document, context } = env;
   const calls = [], messages = [], notifications = [];
   const $ = (selector) => document.querySelector(selector);
@@ -465,9 +465,10 @@ test("list: one problem card groups separated causes without merging equal title
   const cards = env.$("#cards").querySelectorAll(".problem-record-card");
   assert.deepEqual(cards.map((card) => card.dataset.problemId), ["8", "9"]);
   assert.equal(cards[0].querySelectorAll("h3").length, 1);
-  assert.deepEqual(cards[0].querySelectorAll(".record-button").map((button) => button.dataset.id), ["11", "13"]);
-  assert.equal(cards[0].querySelectorAll(".record-button").some((button) => button.textContent.includes("共同题名")), false);
-  assert.match(cards[0].textContent, /错因一/); assert.match(cards[0].textContent, /错因二/);
+  assert.deepEqual(cards[0].querySelectorAll(".record-button").map((button) => button.dataset.id), ["11"]);
+  assert.match(cards[0].textContent, /共同题名/);
+  assert.doesNotMatch(cards[0].textContent, /错因一|错因二/);
+  assert.match(cards[0].textContent, /待复习 2 条/);
 });
 
 test("list: grouped due causes remain concealed and open only the chosen independent detail", async () => {
@@ -479,11 +480,15 @@ test("list: grouped due causes remain concealed and open only the chosen indepen
   ] }); await pending;
   assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
   assert.doesNotMatch(env.$("#cards").textContent, /边界容易漏掉/);
-  env.$('.record-button[data-id="13"]').click(); await tick();
-  const opening = env.calls.find((call) => call.url === "/api/mistakes/13");
-  assert.ok(opening); env.answer(opening, CARD(13, { problem_id: 8, title: "同一道题" })); await tick();
-  assert.equal(env.$('.record-button[data-id="11"]').getAttribute("aria-pressed"), "false");
-  assert.equal(env.$('.record-button[data-id="13"]').getAttribute("aria-pressed"), "true");
+  env.$('.record-button[data-id="11"]').click(); await tick();
+  const opening = env.calls.find((call) => call.url === "/api/mistakes/11");
+  assert.ok(opening); env.answer(opening, CARD(11, { problem_id: 8, title: "同一道题",
+    problem_mistakes: [{id: 11}, {id: 13}] })); await tick();
+  assert.equal(env.$('.record-button[data-id="11"]').getAttribute("aria-pressed"), "true");
+  const select = env.$(".problem-mistake-navigation select");
+  select.value = "13"; select.dispatchEvent(new FakeEvent("change")); await tick();
+  const next = env.calls.find(call => call.url === "/api/mistakes/13");
+  env.answer(next, CARD(13, { problem_id: 8, problem_mistakes: [{id: 11}, {id: 13}] })); await tick();
   assert.equal(env.context.rvfDetailState.item.id, 13);
   assert.equal(env.context.rvfDetailState.revealed, false);
   assert.deepEqual(scrolls, ["start"], "choosing a card brings its detail below the grid into view");
@@ -502,7 +507,8 @@ test("list: removing and restoring a cause preserves its sibling and removes emp
   const opening = env.calls.find((call) => call.url === "/api/mistakes/11");
   env.answer(opening, { ...first, version: 4 }); await restore;
   assert.equal(env.$("#cards").querySelectorAll('[data-problem-id="8"]').length, 1);
-  assert.deepEqual(env.$('[data-problem-id="8"]').querySelectorAll(".record-button").map((button) => button.dataset.id), ["11", "13"]);
+  assert.deepEqual(env.$('[data-problem-id="8"]').querySelectorAll(".record-button").map((button) => button.dataset.id), ["11"]);
+  assert.equal(env.context.rvfListItems.size, 3);
   env.context.rvfRemoveItem(first, { offline: true }); env.context.rvfRemoveItem(second, { offline: true });
   assert.equal(env.$('[data-problem-id="8"]'), null);
   assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
@@ -516,8 +522,8 @@ test("list: edited cause tags survive regrouping after its sibling is reviewed",
   seedList(env, [first, sibling]);
   env.document.dispatchEvent(new FakeEvent("mistake:tags-changed", { props: { detail: { id: 13, tags: ["复杂度"] } } }));
   env.context.rvfRemoveItem(first, { offline: true });
-  assert.match(env.$('.record-button[data-id="13"]').textContent, /复杂度/);
-  assert.doesNotMatch(env.$('.record-button[data-id="13"]').textContent, /边界$/);
+  assert.match(env.$('[data-problem-id="8"]').textContent, /复杂度/);
+  assert.doesNotMatch(env.$('[data-problem-id="8"]').textContent, /边界$/);
 });
 
 test("list: today's left pane keeps every due record while queue metadata reports a smaller cap", async () => {
@@ -530,7 +536,7 @@ test("list: today's left pane keeps every due record while queue metadata report
   env.answer(queue, { cap: 10, done_today: 9, remaining_today: 1, total_due: 3, capped: true, items: [CARD()] });
   await tick();
   assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 3);
-  assert.match(env.$("#list-summary").textContent, /有 3 条/);
+  assert.match(env.$("#list-summary").textContent, /3 条易错点/);
   assert.match(env.$("#review-cap-note").textContent, /今日队列上限 10 条，其余明天再说/);
   assert.doesNotMatch(env.$("#cards").textContent, /边界容易漏掉/, "recall-first due cards do not reveal their cause in the left pane");
 });
@@ -585,7 +591,8 @@ test("detail opening: a saved reason refreshes its existing grouped card and tag
   await refreshing;
   const card = env.$('.record-button[data-id="1"]');
   assert.doesNotMatch(card.textContent, /待补/);
-  assert.match(card.textContent, /入队时漏标记.*边界.*复杂度/);
+  assert.equal(env.context.rvfListItems.get(1).description, saved.description);
+  assert.match(env.$('[data-problem-id="1"]').textContent, /边界.*复杂度/);
   assert.equal(card.getAttribute("aria-pressed"), "true");
   assert.equal(env.$("#cards").querySelectorAll(".problem-record-card").length, 1);
   assert.equal(env.context.rvfListItems.get(1).version, 4);
@@ -618,7 +625,7 @@ test("detail opening: an older list cannot restore pending data after a fresh de
   assert.equal(env.context.rvfListItems.get(1).pending_reason, false);
   assert.equal(env.context.rvfListItems.get(1).version, 4);
   assert.doesNotMatch(env.$('.record-button[data-id="1"]').textContent, /待补/);
-  assert.match(env.$('.record-button[data-id="1"]').textContent, /检查空数组的边界/);
+  assert.equal(env.context.rvfListItems.get(1).description, "检查空数组的边界。");
 });
 
 for (const responseOrder of ["detail-first", "list-first"]) {
@@ -642,7 +649,7 @@ for (const responseOrder of ["detail-first", "list-first"]) {
     assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
     assert.match(env.$("#cards").textContent, /后端.*题目2|题目2.*后端/);
     assert.doesNotMatch(env.$("#cards").textContent, /题目1|待补/);
-    assert.match(env.$("#list-summary").textContent, /共 1 条/);
+    assert.match(env.$("#list-summary").textContent, /共 1 道题/);
   });
 }
 
@@ -661,8 +668,8 @@ test("list: a later filter keeps the higher-version saved reason in a returned r
   assert.deepEqual([...env.context.rvfListItems.keys()], [1, 2]);
   assert.equal(env.context.rvfListItems.get(1).version, 4);
   assert.doesNotMatch(env.$('.record-button[data-id="1"]').textContent, /待补/);
-  assert.match(env.$('.record-button[data-id="1"]').textContent, /先检查空数组/);
-  assert.match(env.$("#list-summary").textContent, /共 2 条/);
+  assert.equal(env.context.rvfListItems.get(1).description, "先检查空数组。");
+  assert.match(env.$("#list-summary").textContent, /共 2 道题/);
 });
 
 test("list: retained newer tags are filtered using SQLite ASCII case matching", async () => {
@@ -679,7 +686,7 @@ test("list: retained newer tags are filtered using SQLite ASCII case matching", 
     })); await opening;
     env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2, { tags: [filter] })] }); await loading;
     assert.deepEqual([...env.context.rvfListItems.keys()], expected);
-    assert.match(env.$("#list-summary").textContent, new RegExp(`共 ${expected.length} 条`));
+    assert.match(env.$("#list-summary").textContent, new RegExp(`共 ${expected.length} 道题`));
   }
 });
 
@@ -693,7 +700,7 @@ test("list: retained newer scheduling still excludes future or suspended today r
     env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, { ...changed, version: 4 })); await opening;
     env.answer(listing, { today: "2026-10-04", items: [stale, CARD(2)] }); await loading;
     assert.deepEqual([...env.context.rvfListItems.keys()], [2]);
-    assert.match(env.$("#list-summary").textContent, /有 1 条/);
+    assert.match(env.$("#list-summary").textContent, /1 条易错点/);
     assert.equal(env.$("#list-focus").hidden, false);
   }
 });
