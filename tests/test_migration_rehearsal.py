@@ -112,6 +112,7 @@ def make_fake_backup(db_path, backup_path):
 def run_rehearsal(backup_path, workdir, report_path, env_extra=None):
     env = dict(os.environ)
     env.pop("DATABASE_PATH", None)  # 不能把测试的补丁环境漏进子进程
+    env["PYTHONUTF8"] = "1"  # Windows 控制台默认 GBK，脚本输出中文时统一用 UTF-8
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
@@ -121,6 +122,8 @@ def run_rehearsal(backup_path, workdir, report_path, env_extra=None):
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
 
