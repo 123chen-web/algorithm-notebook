@@ -195,7 +195,7 @@ def test_import_requires_csrf_header(client):
 def test_migration_28_applies_on_fresh_database(client):
     # client fixture 已在新库上跑完 init_db。
     with connect() as conn:
-        assert schema_version(conn) == 28
+        assert schema_version(conn) == 70
         user_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(users)")
         }

@@ -440,6 +440,8 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS problem_recommendations")
         conn.execute("DROP TABLE IF EXISTS import_previews")
         conn.execute("DROP TABLE IF EXISTS notes")
+        # migration 70 新增 note_links（双向链接），真实 v10 库同样没有它。
+        conn.execute("DROP TABLE IF EXISTS note_links")
         conn.execute("ALTER TABLE users DROP COLUMN reminder_opt_in")
         conn.execute("ALTER TABLE users DROP COLUMN reminder_token")
         conn.execute("DROP INDEX idx_users_api_token_hash")
