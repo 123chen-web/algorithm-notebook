@@ -129,6 +129,11 @@
       const block = h(heading ? `h${heading[1].length}` : "p");
       inline(block, heading ? heading[2] : line); root.append(block);
     }
+    // N1：代码块/行内代码已落成 <pre><code>/<code>，再对剩余文本节点做 [[ ]] 链接落位。
+    // 注：仅在 notes-links.js 已加载时生效；Node 测试只加载 notes.js 时为 no-op。
+    if (window.NotesLinks && typeof window.NotesLinks.attachInlineLinks === "function") {
+      window.NotesLinks.attachInlineLinks(root);
+    }
     return root;
   }
 
@@ -232,6 +237,7 @@
 
   function renderNoteCard(note) {
     const card = h("article", null, "notes-card");
+    card.setAttribute("data-note-id", String(note.id));
     if (note.pinned) card.classList.add("is-pinned");
 
     const head = h("div", null, "notes-card-head");
@@ -249,6 +255,11 @@
     const body = h("div", null, "notes-body");
     body.replaceChildren(renderNoteMarkdown(note.content));
     card.append(body);
+
+    // N1：关联区（出链 + 反向链接）占位，由 window.NotesLinks 异步填充。
+    const related = h("div", null, "nl-related");
+    related.setAttribute("data-nl-related", "");
+    card.append(related);
 
     const meta = h("div", null, "notes-meta");
     for (const tag of note.tags || []) {
@@ -399,6 +410,10 @@
     const select = $("#notes-problem");
     if (select) select.value = String(pendingPrefill.id);
     const content = $("#notes-content");
+    // N1：新建笔记正文预填 [[题:题目标题]]，直接建立题目双向链接。
+    if (content && pendingPrefill.title && !content.value) {
+      content.value = `[[题:${pendingPrefill.title}]]`;
+    }
     if (content && hooks?.getView?.() === "notes") content.focus();
     pendingPrefill = null;
   }

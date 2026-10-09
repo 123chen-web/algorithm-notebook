@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="/static/groups.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=6">
   <link rel="stylesheet" href="/static/notes.css?v=1">
+  <link rel="stylesheet" href="/static/notes-links.css?v=3">
   <link rel="stylesheet" href="/static/shell.css?v=3">
   <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
@@ -104,8 +105,9 @@
   <script defer src="/static/similar.js?v=3"></script>
   <script defer src="/static/heatmap.js?v=1"></script>
   <script defer src="/static/reminder.js?v=1"></script>
-  <script defer src="/static/notes.js?v=1"></script>
-  <script defer src="/static/app.js?v=91"></script>
+  <script defer src="/static/notes.js?v=2"></script>
+  <script defer src="/static/notes-links.js?v=3"></script>
+  <script defer src="/static/app.js?v=92"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -1186,6 +1188,7 @@
                 <span class="notes-sr-only">关联题目</span>
                 <select id="notes-problem" aria-label="关联题目"><option value="">不关联</option></select>
               </label>
+              <button id="notes-solution-template" type="button">解法对比模板</button>
               <button id="notes-save" type="button" class="primary">保存</button>
             </div>
             <p id="notes-composer-notice" class="notes-notice" role="status" hidden></p>
@@ -1199,6 +1202,7 @@
           </div>
           <div id="notes-list" class="notes-list" aria-live="polite"></div>
           <p id="notes-status" class="notes-status" role="status" hidden></p>
+          <section id="notes-graph" class="notes-graph" aria-label="笔记关系图谱"></section>
           <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
         </div>
       </section>

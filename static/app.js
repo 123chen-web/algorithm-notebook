@@ -520,6 +520,7 @@ function signedOut() {
   forumListGeneration += 1;
   window.Board?.reset(); // 列表、搜索词、发帖表单都属于上一位用户（草稿按用户 id 存在 localStorage 里）
   window.Notes?.reset(); // 笔记列表、筛选和题目下拉同样属于上一位用户
+  window.NotesLinks?.reset(); // 关联区与图谱属于上一位用户，登出一并还原
   $("#forum-post").replaceChildren();
   $("#forum-comments").replaceChildren();
   $("#forum-comment-form").reset();
@@ -5541,6 +5542,16 @@ window.Notes?.configure({
   getEpoch: () => sessionEpoch,
   getView: () => view,
   confirm: (text) => window.confirm(text),
+  notify: (text) => message(text),
+});
+
+// N1 笔记双向链接 + 关系图谱（static/notes-links.js）：在 notes.js 之后接线。
+window.NotesLinks?.configure({
+  api,
+  getUser: () => user,
+  getEpoch: () => sessionEpoch,
+  getView: () => view,
+  showView,
   notify: (text) => message(text),
 });
 
