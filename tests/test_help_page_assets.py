@@ -119,6 +119,7 @@ def test_referenced_local_files_exist(markup):
     missing = []
     billing_link_seen = False
     for url in sorted(set(markup.referenced_files)):
+        url = url.split("?", 1)[0].split("#", 1)[0]  # 资源版本号 ?v=N 不属于文件名
         if url.startswith("/static/"):
             path = ROOT / url.lstrip("/")
         elif url.startswith("/"):
@@ -162,12 +163,14 @@ def test_quota_table_matches_backend_numbers(markup):
 def test_quota_numbers_consistent_with_ai_billing_when_present():
     if not AI_BILLING.exists():
         pytest.skip("static/ai-billing.html 尚未提交；上线后本测试会自动开始严格比对额度数字")
-    text = AI_BILLING.read_text(encoding="utf-8")
+    raw = AI_BILLING.read_text(encoding="utf-8")
+    # 计费页用表格列出每档次数：先去掉标签，再按"档位名 + 数字"匹配。
+    text = re.sub(r"<[^>]+>", " ", raw)
     patterns = {
-        "free": r"免费(?:用户|版)?[^。\n]{0,12}?(\d+)\s*次",
-        "trial": r"体验(?:账号)?[^。\n]{0,12}?(\d+)\s*次",
-        "standard": r"标准版[^。\n]{0,12}?(\d+)\s*次",
-        "pro": r"进阶版[^。\n]{0,12}?(\d+)\s*次",
+        "free": r"免费账号\s+(\d+)",
+        "trial": r"体验账号\s+(\d+)",
+        "standard": r"标准版\s+(\d+)",
+        "pro": r"进阶版\s+(\d+)",
     }
     for plan, (_label, expected) in EXPECTED_QUOTA.items():
         match = re.search(patterns[plan], text)

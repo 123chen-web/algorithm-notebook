@@ -1483,7 +1483,7 @@ def delete_account_data(conn, user_id, deleted_at):
                   "ai_usage", "duck_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
                   "problem_recommendations", "import_previews", "notes", "note_links",
-                  "note_attachments", "note_drawings"):
+                  "note_attachments", "note_drawings", "email_changes"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # users 是匿名化 UPDATE 而非 DELETE，FK 级联不会触发；附件文件必须显式删目录。
     try:
