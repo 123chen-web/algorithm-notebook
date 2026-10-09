@@ -83,25 +83,50 @@
   }
 
   // Markdown 子集直接构建 DOM。文本不经过 HTML 解析，也不使用占位符。
-  function renderNoteMarkdown(source) {
+  // options.drawingIds：当前用户拥有的画板 id 集合；![标题](drawing:ID) 仅在
+  // ID 属于本人时渲染成缩略图按钮，其余一律按纯文本显示（由 draw-host.js 委托打开）。
+  function renderNoteMarkdown(source, options = {}) {
     const root = document.createDocumentFragment();
+    function drawingRefNode(alt, target) {
+      const idMatch = /^drawing:(\d+)$/.exec(String(target));
+      const id = idMatch ? Number(idMatch[1]) : NaN;
+      const owned = idMatch && Number.isInteger(id) && id > 0
+        && options.drawingIds instanceof Set && options.drawingIds.has(id);
+      if (!owned) return document.createTextNode(`![${alt}](${target})`);
+      const caption = alt || "画板";
+      const ref = document.createElement("button");
+      ref.type = "button";
+      ref.className = "notes-drawing-ref";
+      ref.setAttribute("data-drawing-id", String(id));
+      const img = document.createElement("img");
+      img.className = "notes-drawing-thumb";
+      img.setAttribute("src", `/api/drawings/${id}/thumb`);
+      img.alt = caption;
+      img.loading = "lazy";
+      const title = document.createElement("span");
+      title.className = "notes-drawing-ref-title";
+      title.textContent = caption;
+      ref.append(img, title);
+      return ref;
+    }
     function inline(parent, text) {
-      const pattern = /`([^`\n]+)`|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+      const pattern = /`([^`\n]+)`|!\[([^\]]*)\]\(([^)\s]*)\)|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
       let from = 0;
       for (const match of text.matchAll(pattern)) {
         parent.append(document.createTextNode(text.slice(from, match.index)));
         let node;
         if (match[1] !== undefined) node = h("code", match[1]);
-        else if (match[2] !== undefined) {
+        else if (match[2] !== undefined) node = drawingRefNode(match[2], match[3]);
+        else if (match[4] !== undefined) {
           let safe = false;
-          try { safe = /^https?:\/\//i.test(match[3]) && ["http:", "https:"].includes(new URL(match[3]).protocol); } catch {}
+          try { safe = /^https?:\/\//i.test(match[5]) && ["http:", "https:"].includes(new URL(match[5]).protocol); } catch {}
           if (safe) {
-            node = h("a", match[2]);
-            node.setAttribute("href", match[3]);
+            node = h("a", match[4]);
+            node.setAttribute("href", match[5]);
             node.setAttribute("target", "_blank");
             node.setAttribute("rel", "noopener");
           } else node = document.createTextNode(match[0]);
-        } else node = h(match[4] !== undefined ? "strong" : "em", match[4] ?? match[5]);
+        } else node = h(match[6] !== undefined ? "strong" : "em", match[6] ?? match[7]);
         parent.append(node);
         from = match.index + match[0].length;
       }
@@ -247,7 +272,8 @@
     card.append(head);
 
     const body = h("div", null, "notes-body");
-    body.replaceChildren(renderNoteMarkdown(note.content));
+    const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
+    body.replaceChildren(renderNoteMarkdown(note.content, { drawingIds }));
     card.append(body);
 
     const meta = h("div", null, "notes-meta");

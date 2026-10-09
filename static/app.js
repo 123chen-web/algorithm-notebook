@@ -520,6 +520,7 @@ function signedOut() {
   forumListGeneration += 1;
   window.Board?.reset(); // 列表、搜索词、发帖表单都属于上一位用户（草稿按用户 id 存在 localStorage 里）
   window.Notes?.reset(); // 笔记列表、筛选和题目下拉同样属于上一位用户
+  window.DrawHost?.reset(); // 画板列表与打开中的面板也属于上一位用户
   $("#forum-post").replaceChildren();
   $("#forum-comments").replaceChildren();
   $("#forum-comment-form").reset();
@@ -942,7 +943,11 @@ async function showView(nextView, { refreshUser = true } = {}) {
   if (view === "home") await loadHome({ refreshUser });
   else if (view === "admin") await loadAdminPage();
   else if (view === "forum") await showForumList();
-  else if (view === "notes") await window.Notes.load();
+  else if (view === "notes") {
+    await window.Notes.load();
+    // 首次进入静默加载画板列表，避免反过来再触发一次笔记列表刷新。
+    await window.DrawHost?.load({ notify: false });
+  }
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
@@ -5542,6 +5547,25 @@ window.Notes?.configure({
   getView: () => view,
   confirm: (text) => window.confirm(text),
   notify: (text) => message(text),
+  // 画板引用只渲染当前用户自己的画板；集合由 draw-host.js 维护。
+  getDrawingIds: () => window.DrawHost?.ownedIds?.() ?? new Set(),
+});
+
+// 画板宿主（static/draw-host.js）：画板列表、iframe 面板与自动保存。
+window.DrawHost?.configure({
+  api,
+  getUser: () => user,
+  getEpoch: () => sessionEpoch,
+  getView: () => view,
+  confirm: (text) => window.confirm(text),
+  notify: (text, isError) => message(text, isError),
+  // 画板增删改后刷新笔记正文里的引用缩略图（仅在笔记视图）；
+  // 但笔记正在卡片内编辑时不能重渲染，否则会冲掉未保存正文（含刚插入的画板引用）。
+  onDrawingsChanged: () => {
+    if (view === "notes" && !document.querySelector(".notes-edit-content")) {
+      window.Notes?.load();
+    }
+  },
 });
 
 $("#timezone").value =

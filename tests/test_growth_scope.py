@@ -11,7 +11,8 @@ def test_reduced_growth_schema_and_routes(tmp_path, monkeypatch):
     with db.connect() as conn:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert not {"explanations", "boss_sessions", "boss_rounds", "boss_graduations", "import_screenshot_daily"} & tables
-    assert [version for version, _, _ in db.MIGRATIONS if version >= 23] == [23, 24, 28]
+    # 迁移 72 为笔记画板（note_drawings），与成长/boss 范围无关，按实际迁移序列列出。
+    assert [version for version, _, _ in db.MIGRATIONS if version >= 23] == [23, 24, 28, 72]
     paths = set(main.app.openapi()["paths"])
     assert "/api/problems/photo" in paths
     assert "/api/problems/fetch-from-url" in paths
