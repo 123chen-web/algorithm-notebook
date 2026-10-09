@@ -884,6 +884,81 @@ def _apply_group_today_visibility(conn):
     )
 
 
+def _apply_note_links(conn):
+    # N1 笔记双向链接：保存笔记时同事务重解析 [[标题]] / [[题:标题]] 落库。
+    # target_note_id / target_problem_id 可空（悬空：目标不存在、已删除或属于他人）；
+    # 软删除笔记时入链 target 置空，账号注销时由 main.delete_account_data 显式清理。
+    conn.execute(
+        """
+        CREATE TABLE note_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source_note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            link_kind TEXT NOT NULL CHECK(link_kind IN ('note', 'problem')),
+            target_note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            target_problem_id INTEGER NULL REFERENCES problems(id) ON DELETE SET NULL,
+            target_text TEXT NOT NULL DEFAULT '',
+            alias_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_note_links_source ON note_links(source_note_id, id)")
+    conn.execute("CREATE INDEX idx_note_links_target_note ON note_links(target_note_id)")
+    conn.execute("CREATE INDEX idx_note_links_user ON note_links(user_id)")
+
+
+def _apply_note_attachments(conn):
+    # N2 笔记图片附件：文件落盘在 data/note_files/<user_id>/<id>.bin，这里只存元数据。
+    # note_id 可空（composer 先上传图片后保存笔记）；笔记软删时正文仍在，注销账号时
+    # 由 main.delete_account_data 显式删行并删除该用户 note_files 目录。
+    conn.execute(
+        """
+        CREATE TABLE note_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            sha256 TEXT NOT NULL,
+            mime TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_note_attachments_user ON note_attachments(user_id, created_at)")
+    conn.execute("CREATE INDEX idx_note_attachments_note ON note_attachments(note_id)")
+
+
+def _apply_note_drawings(conn):
+    """画板（自托管 Excalidraw）：场景 JSON 入库，缩略图 PNG 落数据目录。
+
+    迁移编号固定 72（多分支并行集成约定，不按当前最大号顺延）。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS note_drawings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            title TEXT NOT NULL DEFAULT '',
+            scene_json TEXT NOT NULL DEFAULT '',
+            thumb_path TEXT NULL,
+            version INTEGER NOT NULL DEFAULT 1 CHECK(version >= 1),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT NULL
+        )
+        """
+    )
+    # “我的画板”列表主查询：本人记录按删除标记、更新时间倒序分页。
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_note_drawings_user
+        ON note_drawings(user_id, deleted_at, updated_at DESC)
+        """
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 def _apply_feedback_profiles(conn):
@@ -933,7 +1008,10 @@ MIGRATIONS = [
     (50, "榜单显示名与资料公开设置", _apply_feedback_profiles),
     (51, "小黄鸭独立每日额度", _apply_duck_usage),
     (52, "用户手填实付金额与凭证", _apply_claim_actual_amount),
+    (70, "笔记双向链接", _apply_note_links),
+    (71, "笔记图片附件", _apply_note_attachments),
 ]
+MIGRATIONS.append((72, "画板 note_drawings", _apply_note_drawings))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

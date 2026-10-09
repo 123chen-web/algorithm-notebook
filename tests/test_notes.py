@@ -1,4 +1,4 @@
-"""记笔记 API 测试：CRUD、归属隔离、校验、筛选排序、软删除。"""
+﻿"""记笔记 API 测试：CRUD、归属隔离、校验、筛选排序、软删除。"""
 import pytest
 
 from test_app import client, new_problem, register  # noqa: F401
@@ -79,7 +79,7 @@ def test_other_user_notes_are_404(client):
     assert client.get(f"/api/notes/{note_id}").status_code == 404
     assert client.put(f"/api/notes/{note_id}", json={"title": "hack"}).status_code == 404
     assert client.delete(f"/api/notes/{note_id}").status_code == 404
-    assert client.get("/api/notes").json() == {"notes": [], "total": 0}
+    assert client.get("/api/notes").json() == {"notes": [], "total": 0, "attachment_ids": []}
 
 
 def test_problem_id_must_belong_to_me(client):
@@ -142,7 +142,7 @@ def test_delete_note_is_soft(client):
     note = make_note(client)
     assert client.delete(f"/api/notes/{note['id']}").status_code == 200
     assert client.get(f"/api/notes/{note['id']}").status_code == 404
-    assert client.get("/api/notes").json() == {"notes": [], "total": 0}
+    assert client.get("/api/notes").json() == {"notes": [], "total": 0, "attachment_ids": []}
 
 
 def test_list_pinned_first_and_search_and_tag_filter(client):
@@ -172,7 +172,7 @@ def test_list_pinned_first_and_search_and_tag_filter(client):
     assert len(page2["notes"]) == 1
 
     by_problem = client.get("/api/notes", params={"problem_id": 123456}).json()
-    assert by_problem == {"notes": [], "total": 0}
+    assert by_problem == {"notes": [], "total": 0, "attachment_ids": []}
 
 
 def test_list_problems_recent(client):

@@ -1,0 +1,154 @@
+/* N1 笔记双向链接 + 关系图谱。
+   只用 style.css / themes.css 的 CSS 变量令牌；不写颜色字面量、不用高优先级声明；
+   动效与指针悬浮反馈都包在对应媒体查询里；手机断点另写。 */
+
+.nl-link {
+  color: var(--azurite);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.nl-link.nl-dangling {
+  color: var(--muted);
+  text-decoration: dashed underline;
+  text-underline-offset: 2px;
+}
+
+/* ── 联想弹层（listbox）── */
+.nl-popup {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-width: 100%;
+  padding: 4px;
+  margin-top: 4px;
+  z-index: 30;
+}
+
+.nl-popup > div[role="option"] {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.nl-popup > div[role="option"][aria-selected="true"] {
+  background: var(--soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nl-popup > div[role="option"]:hover {
+    background: var(--soft);
+  }
+}
+
+/* ── 关联区 ── */
+.nl-related {
+  margin-top: 8px;
+}
+
+.nl-related-title {
+  margin: 8px 0 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.nl-related-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  color: var(--ink);
+}
+
+.nl-related-name {
+  color: var(--azurite);
+  font-weight: 600;
+}
+
+.nl-related-name.nl-dangling {
+  color: var(--muted);
+  text-decoration: dashed underline;
+}
+
+.nl-related-snippet {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.nl-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 6px 0;
+}
+
+/* ── 关系图谱（手写 SVG）── */
+.nl-graph-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.nl-graph-head button {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 10px;
+  color: var(--ink);
+}
+
+.nl-graph-canvas {
+  width: 100%;
+  height: auto;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.nl-edge {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.nl-node-shape {
+  fill: var(--paper-2);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.nl-node-label {
+  fill: var(--ink);
+  font-size: 11px;
+}
+
+.nl-graph-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.nl-graph-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nl-node-shape {
+    transition: fill 120ms ease;
+  }
+}
+
+@media (max-width: 520px) {
+  .nl-graph-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

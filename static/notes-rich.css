@@ -1,0 +1,161 @@
+/* N2 笔记富渲染：行内/块级公式、mermaid 流程图、图片附件、工具栏、实时预览、灯箱。
+   只用 style.css / themes.css 的 CSS 变量令牌；不写颜色字面量、不用高优先级声明；
+   动效与指针悬浮反馈都包在对应媒体查询里；手机断点另写。 */
+
+/* ── 编辑器：桌面 textarea 与预览并排，手机折叠到下方 ── */
+.nr-editor {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.nr-editor > textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.nr-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+
+.nr-preview:empty::before {
+  content: "预览";
+  color: var(--muted);
+}
+
+/* ── 工具栏 ── */
+.nr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.nr-toolbar button {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nr-toolbar button:hover {
+    background: var(--soft);
+  }
+}
+
+.nr-toolbar button:focus-visible {
+  outline: 2px solid var(--azurite);
+  outline-offset: 1px;
+}
+
+/* ── 附件图片 ── */
+.nr-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  cursor: zoom-in;
+}
+
+/* ── 公式块：窄屏可横向滚动 ── */
+.nr-block-math {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 8px 0;
+  padding: 4px 0;
+}
+
+/* ── mermaid 容器 ── */
+.nr-mermaid {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.nr-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── 渲染失败回退：该处显示原文 + 中文提示，不影响其余内容 ── */
+.nr-fallback {
+  display: block;
+  margin: 8px 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--paper-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.nr-fallback code {
+  display: block;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
+/* ── 上传进度条 ── */
+.nr-uploading {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 4px 0;
+}
+
+/* ── 灯箱 ── */
+.nr-lightbox {
+  position: fixed;
+  inset: 0;
+  background: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 24px;
+}
+
+.nr-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+}
+
+.nr-lightbox button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nr-lightbox {
+    animation: nr-fade-in 120ms ease;
+  }
+
+  @keyframes nr-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+@media (max-width: 520px) {
+  .nr-editor {
+    flex-direction: column;
+  }
+
+  .nr-editor > textarea {
+    min-height: 120px;
+  }
+}

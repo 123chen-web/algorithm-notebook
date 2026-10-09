@@ -296,7 +296,12 @@ test("openWithProblem: load 之前调用不丢预填，load 后消费并选中�
 
 test("置顶：PUT pinned 并按置顶排序；删除：confirm 后调 DELETE 并从列表移除", async () => {
   const { env, document, state, Notes } = setup();
-  await loadWith(env, [], { notes: [note(1, { pinned: false }), note(2, { pinned: false })], total: 2 });
+  // 显式固定 updated_at：note() 默认用 Date.now() 生成秒内毫秒时间戳，高并发跑全套件时
+  // 两次构造可能跨毫秒，导致按 updated_at 降序排序后卡片顺序非确定、置顶请求落到 note 2。
+  await loadWith(env, [], { notes: [
+    note(1, { pinned: false, updated_at: iso(30 * 1000) }),
+    note(2, { pinned: false, updated_at: iso(60 * 1000) }),
+  ], total: 2 });
 
   const cards = document.querySelector("#notes-list").querySelectorAll(".notes-card");
   const pinButton = [...cards[0].querySelectorAll(".notes-action")].find((button) => button.textContent === "置顶");

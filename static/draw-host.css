@@ -1,0 +1,76 @@
+/* 画板宿主：“我的画板”列表 + 全屏 iframe 面板。全部挂在 #notes-page 下，
+   颜色只用站内主题令牌，跟随两套主题；不写死色值。 */
+
+/* ── 我的画板 ── */
+#notes-page .draw-host { margin-top: var(--space-5); padding: var(--space-4) var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); display: grid; gap: var(--space-3); }
+#notes-page .draw-host-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+#notes-page .draw-host-head h3 { margin: 0; font: 500 var(--text-md)/var(--lh-heading) var(--serif); }
+#notes-page #draw-new { min-height: 40px; padding: 0 var(--space-4); }
+#notes-page .draw-host-status { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+#notes-page .draw-host-status[hidden] { display: none; }
+#notes-page .draw-empty { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+#notes-page .draw-list { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+#notes-page .draw-card { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
+#notes-page .draw-card-open { display: flex; align-items: center; gap: var(--space-3); flex: 1 1 auto; min-width: 0; padding: var(--space-1); border: 0; background: transparent; text-align: left; cursor: pointer; }
+#notes-page .draw-card-open:hover .draw-card-title { color: var(--azurite); }
+#notes-page .draw-thumb { flex: none; width: 72px; height: 48px; border: 1px solid var(--line); border-radius: var(--radius-xs, 6px); overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--paper-2); }
+#notes-page .draw-thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#notes-page .draw-thumb-placeholder { color: var(--ink-2); font-size: var(--text-xs); }
+#notes-page .draw-card-meta { display: grid; gap: 2px; min-width: 0; }
+#notes-page .draw-card-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#notes-page .draw-card-time { color: var(--ink-2); font-size: var(--text-xs); }
+#notes-page .draw-card-actions { flex: none; display: flex; gap: var(--space-1); }
+#notes-page .draw-card-btn { min-height: 32px; padding: 0 var(--space-2); font-size: var(--text-xs); border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); cursor: pointer; }
+#notes-page .draw-card-btn:hover { border-color: var(--azurite); color: var(--ink); }
+#notes-page .draw-delete:hover { border-color: var(--danger); color: var(--danger); }
+#notes-page .draw-rename-row { display: flex; gap: var(--space-1); align-items: center; min-width: 0; }
+#notes-page .draw-rename-input { min-height: 32px; padding: 0 var(--space-2); font-size: var(--text-sm); }
+
+/* ── 笔记正文里的画板引用缩略图 ── */
+#notes-page .notes-body .notes-drawing-ref { display: inline-flex; flex-direction: column; align-items: center; gap: var(--space-1); margin: var(--space-2) 0; padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); cursor: zoom-in; max-width: 100%; }
+#notes-page .notes-body .notes-drawing-ref:hover { border-color: var(--azurite); }
+#notes-page .notes-drawing-thumb { display: block; max-width: min(100%, 480px); max-height: 320px; border-radius: var(--radius-xs, 6px); }
+#notes-page .notes-drawing-ref-title { color: var(--ink-2); font-size: var(--text-xs); }
+#notes-page .notes-drawing-ref.is-missing .notes-drawing-thumb { display: none; }
+#notes-page .notes-drawing-ref.is-missing::before { content: "画板缩略图暂不可用，点击打开画板"; color: var(--ink-2); font-size: var(--text-sm); }
+
+/* ── 全屏画板面板 ── */
+#notes-page .draw-panel { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-rows: auto 1fr auto; background: var(--surface); border: 0; }
+#notes-page .draw-panel[hidden] { display: none; }
+#notes-page .draw-panel-bar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); background: var(--surface); }
+#notes-page .draw-panel-title { flex: none; font-weight: 600; font-size: var(--text-md); max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#notes-page .draw-save-status { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#notes-page .draw-save-status[data-state="saving"] { color: var(--azurite); }
+#notes-page .draw-save-status[data-state="saved"] { color: var(--success-ink); }
+#notes-page .draw-save-status[data-state="error"],
+#notes-page .draw-save-status[data-state="conflict"],
+#notes-page .draw-save-status[data-state="unauthorized"] { color: var(--danger); }
+#notes-page .draw-panel-bar button { flex: none; min-height: 40px; padding: 0 var(--space-3); }
+#notes-page .draw-panel-stage { position: relative; min-height: 0; }
+#notes-page .draw-panel-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--paper); }
+#notes-page .draw-panel-stage iframe.is-loading { visibility: hidden; }
+#notes-page .draw-loading { position: absolute; inset: 0; z-index: 2; display: grid; place-content: center; justify-items: center; gap: var(--space-2); background: var(--surface); color: var(--ink-2); font-size: var(--text-md); }
+#notes-page .draw-loading[hidden] { display: none; }
+#notes-page #draw-reload { min-height: 40px; }
+#notes-page .draw-panel-error { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--line); background: var(--surface); color: var(--danger); font-size: var(--text-sm); }
+#notes-page .draw-panel-error[hidden] { display: none; }
+#notes-page .draw-panel-error button { min-height: 36px; padding: 0 var(--space-3); }
+
+/* 手机宽度：面板全屏，顶栏按钮不小于 44px，标题换行不挤压操作。 */
+@media (max-width: 640px) {
+  #notes-page .draw-panel-bar { flex-wrap: wrap; padding: var(--space-2); }
+  #notes-page .draw-panel-title { max-width: 100%; flex-basis: 100%; }
+  #notes-page .draw-save-status { flex-basis: 100%; order: 3; }
+  #notes-page .draw-panel-bar button { min-height: 44px; min-width: 44px; }
+  #notes-page #draw-new { min-height: 44px; }
+  #notes-page .draw-list { grid-template-columns: 1fr; }
+}
+
+/* 动效只在用户未要求“减少动态”时出现。 */
+@media (prefers-reduced-motion: no-preference) {
+  #notes-page .draw-panel { animation: draw-panel-in 160ms ease-out; }
+  @keyframes draw-panel-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

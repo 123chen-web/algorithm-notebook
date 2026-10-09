@@ -30,6 +30,9 @@ def test_fresh_database_and_repeated_startup(database_path, monkeypatch):
             "comment_votes", "post_summaries",
             "redeem_codes", "app_settings", "manual_payment_claims", "goals", "review_ops",
             "mistake_scratch", "user_push", "email_changes", "problem_recommendations", "import_previews", "notes",
+            "note_links",
+            "note_attachments",
+            "note_drawings",
         } <= tables
         assert db.schema_version(conn) == db.SCHEMA_VERSION
         accepted = next(

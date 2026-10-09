@@ -83,25 +83,67 @@
   }
 
   // Markdown 子集直接构建 DOM。文本不经过 HTML 解析，也不使用占位符。
-  function renderNoteMarkdown(source) {
+  // options.drawingIds：当前用户拥有的画板 id 集合；![标题](drawing:ID) 仅在
+  // ID 属于本人时渲染成缩略图按钮，其余一律按纯文本显示（由 draw-host.js 委托打开）。
+  function renderNoteMarkdown(source, options = {}) {
+    source = String(source ?? "");
+    // N2：把 mermaid 围栏 / 块级公式 / 行内公式先换成私有区占位符，再走行解析；
+    // 代码围栏与行内代码里的 $ / [[ ]] 由 NotesLinks.codeRanges 保护，不被替换。
+    if (window.NotesRich && typeof window.NotesRich.prepareSource === "function") {
+      source = window.NotesRich.prepareSource(source);
+    }
     const root = document.createDocumentFragment();
+    function drawingRefNode(alt, target) {
+      const idMatch = /^drawing:(\d+)$/.exec(String(target));
+      const id = idMatch ? Number(idMatch[1]) : NaN;
+      const owned = idMatch && Number.isInteger(id) && id > 0
+        && options.drawingIds instanceof Set && options.drawingIds.has(id);
+      if (!owned) return document.createTextNode(`![${alt}](${target})`);
+      const caption = alt || "画板";
+      const ref = document.createElement("button");
+      ref.type = "button";
+      ref.className = "notes-drawing-ref";
+      ref.setAttribute("data-drawing-id", String(id));
+      const img = document.createElement("img");
+      img.className = "notes-drawing-thumb";
+      img.setAttribute("src", `/api/drawings/${id}/thumb`);
+      img.alt = caption;
+      img.loading = "lazy";
+      const title = document.createElement("span");
+      title.className = "notes-drawing-ref-title";
+      title.textContent = caption;
+      ref.append(img, title);
+      return ref;
+    }
     function inline(parent, text) {
-      const pattern = /`([^`\n]+)`|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+      // 图片语法 !\[alt\]\(url\) 必须排在普通链接前面，否则 ! 后面的 [alt] 会被当成链接文本。
+      const pattern = /`([^`\n]+)`|!\[([^\]]*)\]\(([^)\s]*)\)|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
       let from = 0;
       for (const match of text.matchAll(pattern)) {
         parent.append(document.createTextNode(text.slice(from, match.index)));
         let node;
         if (match[1] !== undefined) node = h("code", match[1]);
         else if (match[2] !== undefined) {
+          if (/^drawing:\d+$/.test(String(match[3]))) {
+            node = drawingRefNode(match[2], match[3]);
+          } else {
+            // N2：图片先落成 data-* 占位 span，是否真的渲染成 <img> 由 NotesRich 决定
+            // （仅本人 attachment:ID 渲染；外链一律回退为纯文本，不发请求）。
+            node = document.createElement("span");
+            node.setAttribute("data-nr-img", "1");
+            node.setAttribute("data-alt", match[2]);
+            node.setAttribute("data-src", match[3]);
+          }
+        } else if (match[4] !== undefined) {
           let safe = false;
-          try { safe = /^https?:\/\//i.test(match[3]) && ["http:", "https:"].includes(new URL(match[3]).protocol); } catch {}
+          try { safe = /^https?:\/\//i.test(match[5]) && ["http:", "https:"].includes(new URL(match[5]).protocol); } catch {}
           if (safe) {
-            node = h("a", match[2]);
-            node.setAttribute("href", match[3]);
+            node = h("a", match[4]);
+            node.setAttribute("href", match[5]);
             node.setAttribute("target", "_blank");
             node.setAttribute("rel", "noopener");
           } else node = document.createTextNode(match[0]);
-        } else node = h(match[4] !== undefined ? "strong" : "em", match[4] ?? match[5]);
+        } else node = h(match[6] !== undefined ? "strong" : "em", match[6] ?? match[7]);
         parent.append(node);
         from = match.index + match[0].length;
       }
@@ -128,6 +170,15 @@
       if (!line.trim()) continue;
       const block = h(heading ? `h${heading[1].length}` : "p");
       inline(block, heading ? heading[2] : line); root.append(block);
+    }
+    // N1：代码块/行内代码已落成 <pre><code>/<code>，再对剩余文本节点做 [[ ]] 链接落位。
+    // 注：仅在 notes-links.js 已加载时生效；Node 测试只加载 notes.js 时为 no-op。
+    if (window.NotesLinks && typeof window.NotesLinks.attachInlineLinks === "function") {
+      window.NotesLinks.attachInlineLinks(root);
+    }
+    // N2：attachment 图片落位 + 公式 / mermaid 占位渲染（按需懒加载 vendor）。
+    if (window.NotesRich && typeof window.NotesRich.attachRich === "function") {
+      window.NotesRich.attachRich(root);
     }
     return root;
   }
@@ -232,6 +283,7 @@
 
   function renderNoteCard(note) {
     const card = h("article", null, "notes-card");
+    card.setAttribute("data-note-id", String(note.id));
     if (note.pinned) card.classList.add("is-pinned");
 
     const head = h("div", null, "notes-card-head");
@@ -247,8 +299,14 @@
     card.append(head);
 
     const body = h("div", null, "notes-body");
-    body.replaceChildren(renderNoteMarkdown(note.content));
+    const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
+    body.replaceChildren(renderNoteMarkdown(note.content, { drawingIds }));
     card.append(body);
+
+    // N1：关联区（出链 + 反向链接）占位，由 window.NotesLinks 异步填充。
+    const related = h("div", null, "nl-related");
+    related.setAttribute("data-nl-related", "");
+    card.append(related);
 
     const meta = h("div", null, "notes-meta");
     for (const tag of note.tags || []) {
@@ -321,6 +379,10 @@
       notes.push(...(data?.notes || []));
       total = Number(data?.total) || 0;
       hasMore = notes.length < total;
+      if (window.NotesRich && typeof window.NotesRich.configure === "function"
+          && Array.isArray(data?.attachment_ids)) {
+        window.NotesRich.configure({ ownedAttachmentIds: data.attachment_ids });
+      }
       sortNotes();
       renderList();
     } catch (error) {
@@ -345,6 +407,10 @@
       notes.push(...(data?.notes || []));
       total = Number(data?.total) || 0;
       hasMore = notes.length < total;
+      if (window.NotesRich && typeof window.NotesRich.configure === "function"
+          && Array.isArray(data?.attachment_ids)) {
+        window.NotesRich.configure({ ownedAttachmentIds: data.attachment_ids });
+      }
       sortNotes();
       renderList();
     } catch (error) {
@@ -399,6 +465,10 @@
     const select = $("#notes-problem");
     if (select) select.value = String(pendingPrefill.id);
     const content = $("#notes-content");
+    // N1：新建笔记正文预填 [[题:题目标题]]，直接建立题目双向链接。
+    if (content && pendingPrefill.title && !content.value) {
+      content.value = `[[题:${pendingPrefill.title}]]`;
+    }
     if (content && hooks?.getView?.() === "notes") content.focus();
     pendingPrefill = null;
   }
