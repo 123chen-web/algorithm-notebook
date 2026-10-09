@@ -158,10 +158,9 @@ def test_quick_add_end_to_end(app_client, monkeypatch):
     assert len(items) == 1
     assert items[0]["source"] == "站内"
 
-    # 前端 quickAdd：剥掉 NewProblem 不认的字段（extra="forbid"），language 按偏好补齐。
+    # 前端 quickAdd 只剥掉不支持的字段；响应必须已经提供合法的语言。
     payload = items[0]["add_payload"]
     body = {key: payload[key] for key in PROBLEM_FIELDS if key in payload}
-    body["language"] = "Python"
     response = client.post("/api/problems", json=body)
     assert response.status_code == 201
     new_mid = response.json()["mistake_ids"][0]
@@ -170,6 +169,23 @@ def test_quick_add_end_to_end(app_client, monkeypatch):
     response = client.put(f"/api/mistakes/{new_mid}/tags", json={"tags": ["举一反三"]})
     assert response.status_code == 200
     assert response.json()["tags"] == ["举一反三"]
+
+
+@pytest.mark.parametrize("language,expected", [("C++", "C++"), ("", "Python")])
+def test_codeforces_add_payload_is_usable_without_test_only_language_repair(app_client, monkeypatch, language, expected):
+    client, state = app_client
+    monkeypatch.setattr(similar.recommend_logic, "recommend_for_today",
+                        lambda conn, user, today: ([_cf_item("CF DP", ["dp"])], ""))
+    with main.connect() as conn:
+        state["current"] = _make_user(conn, 1, "alice")
+        problem, mid = _make_problem(conn, 1, "我的题", tags=("动态规划",))
+        conn.execute("UPDATE problems SET language=? WHERE id=?", (language, problem))
+        conn.commit()
+    payload = client.get(f"/api/review/similar?mistake_id={mid}").json()["items"][0]["add_payload"]
+    assert payload["language"] == expected
+    body = {key: value for key, value in payload.items() if key in PROBLEM_FIELDS}
+    response = client.post("/api/problems", json=body)
+    assert response.status_code == 201, response.text
 
 
 def test_no_tags_no_fillers(app_client, monkeypatch):

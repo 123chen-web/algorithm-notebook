@@ -6,7 +6,7 @@
 与老脚本 send_reminders.py 的区别：
 - 按用户自己的时区算"今天"（老脚本也按时区，但这里是新流程的独立入口）；
 - 内容极简：今日待复习 N 道（预计 M 分钟，按每道 2 分钟估）+ 最紧急的 3 道
-  直达链接 + 连续打卡 at-risk 时加一句提醒；
+  网站首页链接 + 连续打卡 at-risk 时加一句提醒；
 - 页脚带一键退订链接（含 reminder_token，免登录），走
   routers/reminder.py 的 GET /api/reminder/unsubscribe；
 - 发信渠道抽象成 mailer 参数注入，方便测试 fake；CLI 真实发送时走
@@ -115,12 +115,12 @@ def reminder_subject(count):
     return f"{PRODUCT_NAME}：今日有 {count} 道易错点待复习"
 
 
-def review_url():
-    # 前端是单页应用，#/today 是"今日复习"视图；登录态由浏览器 cookie 携带。
-    return f"{app_base_url()}/#/today"
+def review_url(base_url=None):
+    # 单页应用只支持欢迎/登录/应用路由；进入首页后由用户选择今日复习。
+    return (base_url if base_url is not None else app_base_url()).rstrip("/")
 
 
-def reminder_body(username, count, top_items, streak_days, unsubscribe_url):
+def reminder_body(username, count, top_items, streak_days, unsubscribe_url, base_url=None):
     lines = [
         f"你好 {username}，",
         "",
@@ -132,7 +132,8 @@ def reminder_body(username, count, top_items, streak_days, unsubscribe_url):
         title = " ".join(item["title"].split())
         due = item["due_date"]
         lines.append(f"{index}. {title}（到期：{due}）")
-        lines.append(f"   {review_url()}")
+        lines.append(f"   {review_url(base_url)}")
+    lines.append("打开网站首页，登录后进入“今日复习”。")
     remaining = count - len(top_items)
     if remaining > 0:
         lines.extend(["", f"还有 {remaining} 道待复习，可在网站查看。"])
@@ -203,7 +204,7 @@ def send_daily_reminders(mailer, now=None, base_url=None, *, record_sent=True):
             )
             subject = reminder_subject(count)
             body = reminder_body(
-                user["username"], count, items, streak_days, unsubscribe_url,
+                user["username"], count, items, streak_days, unsubscribe_url, base_url,
             )
             try:
                 mailer.send_email(user["email"], subject, body)

@@ -68,7 +68,7 @@ def test_eighth_consecutive_failure_suspends_with_flag(client):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["leech_suspended"] is True
-    # 评分 version+1，暂停 version+1，共 +2。
+    # 评分与自动暂停共用一次 version+1。
     assert body["version"] == 1
 
     row = stored(mistake)
@@ -125,7 +125,7 @@ def test_unsuspend_then_review_works_again(client):
     mistake = seed(owner_id(client))
     seed_failures(mistake, 7)
     assert rate(client, mistake, quality=0, version=0).status_code == 200
-    # 恢复（version=2 是暂停后的版本）。
+    # 恢复（version=1 是评分及自动暂停后的版本）。
     unsuspend = client.post(f"/api/mistakes/{mistake}/unsuspend", json={"version": 1})
     assert unsuspend.status_code == 200, unsuspend.text
     assert stored(mistake)["suspended_at"] is None

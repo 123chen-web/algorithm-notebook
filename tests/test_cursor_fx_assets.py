@@ -265,7 +265,7 @@ def test_cursor_effect_has_no_external_images_or_requests(cursor_source, forbidd
 
 
 def test_cursor_documentation_describes_completed_ripple():
-    source = (STATIC.parent / "README.md").read_text(encoding="utf-8")
+    source = (STATIC.parent / "docs/features/ui-style.md").read_text(encoding="utf-8")
     section = source.split("## 鼠标特效", 1)[1].split("\n## ", 1)[0]
     assert "留待第二步" not in section
     assert "尚未实现" not in section

@@ -531,9 +531,7 @@ function signedOut() {
   window.GoalCard?.reset();
   window.RecommendCard?.reset();
   window.DuckPanel?.reset();
-  window.Explain?.reset();
   window.Reminder?.reset();
-  window.Boss?.reset();
   window.Heatmap?.reset();
   window.Similar?.reset();
   window.ImportProblem?.reset();
@@ -928,7 +926,6 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
   $("#mastery-page").hidden = view !== "mastery";
   $("#heatmap-page").hidden = view !== "heatmap";
-  $("#boss-page").hidden = view !== "boss";
   $("#clusters-page").hidden = view !== "clusters";
   $("#print-page").hidden = view !== "print";
   $("#groups-page").hidden = view !== "groups";
@@ -952,7 +949,6 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "mastery") await window.Mastery.load();
   else if (view === "heatmap") await window.Heatmap.loadHeatmap($("#heatmap-grid"), 8);
-  else if (view === "boss") await window.Boss.load();
   else if (view === "clusters") {
     await window.Clusters.load();
     window.Typical?.mount($("#typical-card")); // 我的三大典型失误：自带登录代次与视图守卫
@@ -1029,9 +1025,8 @@ async function loadHome({ refreshUser = true } = {}) {
     window.RecommendCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.RecommendCard?.mount(document.querySelector("#recommend-card"));
     // GROWTH F3 下周主攻卡片：空数据/失败时模块自带兜底文案
+    $("#ov-focus-card").hidden = false;
     window.Heatmap?.mountFocusCard($("#ov-focus"));
-    // GROWTH F5 Boss 战首页入口
-    window.Boss?.mountEntrance($("#boss-entrance-card"));
   } else {
     window.Overview.renderError();
   }
@@ -3015,10 +3010,6 @@ function renderDetail(item, options = {}) {
   window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.DuckPanel?.mount(duckHost, item);
 
-  const explainHost = element("div", "", "explain-host");
-  root.append(explainHost);
-  window.Explain?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
-  window.Explain?.mount(explainHost, item);
 
   const scratchHost = element("div", "", "scratch-host");
   root.append(scratchHost);
@@ -3128,7 +3119,7 @@ function renderDetail(item, options = {}) {
             onUndo: (restored) => rvfRestoreItem(item, restored) });
           // F6 趁热打铁：复习完成后推荐 3 道同类题
           const similarHost = element("div", "", "similar-host");
-          reviewSection.append(similarHost);
+          $("#detail").append(similarHost);
           window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
           window.Similar?.mount(similarHost, item.id);
         } else {
@@ -3836,47 +3827,26 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
   });
 });
 
-/* ---- GROWTH F1：从链接/截图导入题目预填 ----
+/* ---- GROWTH F1：从链接导入题目预填 ----
    只预填表单不直接建题，用户核对后走现有保存流程。 */
 $("#import-from-url-btn")?.addEventListener("click", () => run(async () => {
   const url = prompt("粘贴 LeetCode / Codeforces 题目链接：");
   if (!url || !url.trim()) return;
-  const guard = sessionGuard();
-  $("#import-status").textContent = "正在解析链接…";
+  const epoch = sessionEpoch;
+  const owner = user?.id;
+  const guard = () => Boolean(user) && user.id === owner && sessionEpoch === epoch;
+  $("#problem-import-status").textContent = "正在解析链接…";
   try {
     const prefill = await window.ImportProblem.fetchPrefill(url.trim());
     if (!prefill || !guard()) return;
     window.ImportProblem.fillProblemForm(prefill);
-    $("#import-status").textContent = "已预填，请核对后保存。";
+    $("#problem-import-status").textContent = "已预填，请核对后保存。";
   } catch (error) {
     if (!guard()) return;
-    $("#import-status").textContent = error.message || "抓取失败，请检查链接后重试。";
+    $("#problem-import-status").textContent = error.message || "抓取失败，请检查链接后重试。";
     throw error;
   }
 }));
-$("#import-screenshot-btn")?.addEventListener("click", () => {
-  $("#import-screenshot-file")?.click();
-});
-$("#import-screenshot-file")?.addEventListener("change", (event) => run(async () => {
-  const file = event.currentTarget.files[0];
-  event.currentTarget.value = "";
-  if (!file) return;
-  const guard = sessionGuard();
-  $("#import-status").textContent = "正在识别截图，可能需要几十秒…";
-  try {
-    const prefill = await window.ImportProblem.parseScreenshot(file);
-    if (!prefill || !guard()) return;
-    window.ImportProblem.fillProblemForm(prefill);
-    const left = prefill.screenshot_remaining;
-    $("#import-status").textContent = "已预填，请核对后保存。"
-      + (typeof left === "number" ? `（今日截图识别剩余 ${left} 次）` : "");
-  } catch (error) {
-    if (!guard()) return;
-    $("#import-status").textContent = error.message || "识别未成功，可以换一张更清晰的截图重试。";
-    throw error;
-  }
-}));
-
 /* ---- 速记模式（E2 事项一）----
    默认完整记录，保持原校验；速记只填题名和分区，一句话再补一条真正的错因。
    两种简写模式都隐藏代码和思路，保留切换前写下的草稿。 */const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
@@ -5562,7 +5532,7 @@ window.Board?.mount({
   timestamp,
 });
 
-for (const module of [window.ImportProblem, window.Heatmap, window.Boss]) module?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+for (const module of [window.ImportProblem, window.Heatmap]) module?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
 
 // 记笔记页（static/notes.js）：请求带登录代次由内部 generation 守卫，登出时 reset 清掉数据。
 window.Notes?.configure({

@@ -845,67 +845,12 @@ def _apply_reminder_prefs(conn):
         )
 
 
-def _apply_explanations(conn):
-    # F4 费曼模式：用户讲解记录；score>=80 视为"讲清楚了"。
-    conn.execute(
-        """
-        CREATE TABLE explanations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
-            explanation TEXT NOT NULL,
-            score INTEGER NOT NULL CHECK(score >= 0 AND score <= 100),
-            missing_points TEXT NOT NULL DEFAULT '[]',
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX idx_explanations_user_mistake "
-        "ON explanations(user_id, mistake_id, created_at)"
-    )
-
-
-def _apply_boss_battle(conn):
-    # F5 Boss 战：毕业记录 / 对战场次 / 回合明细。
-    conn.execute(
-        """
-        CREATE TABLE boss_graduations (
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
-            graduated_at TEXT NOT NULL,
-            PRIMARY KEY(user_id, mistake_id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE boss_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            started_at TEXT NOT NULL,
-            finished_at TEXT,
-            wins INTEGER NOT NULL DEFAULT 0,
-            losses INTEGER NOT NULL DEFAULT 0,
-            selected_mistake_ids TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE boss_rounds (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL REFERENCES boss_sessions(id) ON DELETE CASCADE,
-            mistake_id INTEGER NOT NULL REFERENCES mistakes(id) ON DELETE CASCADE,
-            result TEXT NOT NULL CHECK(result IN ('win','loss')),
-            seconds INTEGER NOT NULL DEFAULT 0 CHECK(seconds >= 0)
-        )
-        """
-    )
-
-
-def _apply_screenshot_daily(conn):
-    conn.execute("CREATE TABLE import_screenshot_daily (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0), PRIMARY KEY(user_id, day))")
+def _apply_plugin_api(conn):
+    # Only token digests are stored; source fields are private problem data.
+    conn.execute("ALTER TABLE users ADD COLUMN api_token_hash TEXT")
+    conn.execute("CREATE UNIQUE INDEX idx_users_api_token_hash ON users(api_token_hash)")
+    for column in ("source", "source_url", "statement", "difficulty"):
+        conn.execute(f"ALTER TABLE problems ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
 
 
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
@@ -935,9 +880,7 @@ MIGRATIONS = [
     (22, "手动付款快照与核账凭证", _apply_manual_claim_receipts),
     (23, "私人笔记", _apply_notes),
     (24, "复习提醒开关与退订token", _apply_reminder_prefs),
-    (25, "费曼讲解记录", _apply_explanations),
-    (26, "Boss战表", _apply_boss_battle),
-    (27, "截图识别每日计数", _apply_screenshot_daily),
+    (28, "插件 API token 与题目来源字段", _apply_plugin_api),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

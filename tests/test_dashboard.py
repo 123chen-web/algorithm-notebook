@@ -98,7 +98,7 @@ def test_sidebar_navigation_preserves_destinations_as_named_native_buttons(index
     ]
     expected = {
         "home", "today", "all", "print", "new", "insights", "mastery", "clusters", "achievements", "weekly-recap",
-        "groups", "forum", "notes", "heatmap", "boss", "leaderboard", "plan", "admin",
+        "groups", "forum", "notes", "heatmap", "leaderboard", "plan", "admin",
     }
     assert Counter(entry["attrs"]["data-view"] for entry in entries) == Counter(expected)
     for entry in entries:

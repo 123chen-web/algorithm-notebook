@@ -401,7 +401,7 @@ def test_scene_autoplay_requires_desktop_visible_welcome_without_reduced_motion(
 
 
 def test_scene_assets_have_an_original_artwork_declaration():
-    readme = (STATIC.parent / "README.md").read_text(encoding="utf-8")
+    readme = (STATIC.parent / "docs/features/ui-style.md").read_text(encoding="utf-8")
     assert re.search(r"原创[^\n]*SVG|SVG[^\n]*原创", readme)
     assert "static/scenes/" in readme
 

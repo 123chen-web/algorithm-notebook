@@ -25,7 +25,7 @@ def _owned_mistake(conn, mistake_id, user_id):
     # 错题归属校验：别人的错题和不存在的错题都 404，避免信息泄露。
     row = conn.execute(
         """
-        SELECT m.id, m.problem_id, p.user_id
+        SELECT m.id, m.problem_id, p.user_id, p.language
         FROM mistakes m
         JOIN problems p ON p.id = m.problem_id
         WHERE m.id = ?
@@ -65,7 +65,7 @@ def _cf_items_for_tags(conn, user, today, cn_tags):
     return matched + [item for item in items if id(item) not in matched_ids]
 
 
-def _cf_similar_item(cf_item):
+def _cf_similar_item(cf_item, language):
     title = cf_item.get("name") or f"{cf_item['contest_id']}{cf_item['idx']}"
     return {
         "title": title,
@@ -76,10 +76,10 @@ def _cf_similar_item(cf_item):
         "reason": cf_item.get("reason") or "",
         "add_payload": {
             # quick 模式：前端剥掉下面 NewProblem 没有的字段后，
-            # 直接 POST /api/problems 建题；language 由前端按用户偏好补齐。
+            # 直接 POST /api/problems 建题；沿用当前题目语言，空时默认 Python。
             "title": title,
             "zone": "算法",
-            "language": "",
+            "language": language or "Python",
             "quick": True,
             "source_tag": "举一反三",
             "source_url": cf_item.get("url"),
@@ -143,7 +143,7 @@ def get_review_similar(mistake_id: int, user=Depends(main.current_user)):
         mistake = _owned_mistake(conn, mistake_id, user["id"])
         cn_tags = _mistake_tags(conn, mistake_id, user["id"])
         cf_items = _cf_items_for_tags(conn, user, today, cn_tags)
-        items = [_cf_similar_item(item) for item in cf_items[:SIMILAR_COUNT]]
+        items = [_cf_similar_item(item, mistake["language"]) for item in cf_items[:SIMILAR_COUNT]]
         need = SIMILAR_COUNT - len(items)
         items.extend(_site_fillers(conn, user["id"], mistake["problem_id"], cn_tags, need))
     return {"mistake_id": mistake_id, "tags": cn_tags, "items": items}

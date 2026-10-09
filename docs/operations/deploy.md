@@ -164,3 +164,44 @@ docker compose exec -T app python backup.py --output-dir data/backups --keep 14
 ```
 
 提醒和备份使用相同方式设置合适的周期；备份输出放在持久化挂载目录中，并定期复制到另一台机器或独立存储。
+
+## 部署说明
+
+这是面向少量邀请用户的 V1。
+
+部署使用持久化磁盘保存 SQLite 文件，先采用单实例服务。
+对外访问配置 HTTPS，并设置 `COOKIE_SECURE=1`，启动时去掉 `--reload`。
+前端和 API 保持同源；不要为当前 Cookie 认证随意开放跨域。
+
+登录、注册中的 PBKDF2 密码计算以及 AI 生成目前都在同步 `def` 端点中
+执行，会占用 Starlette / AnyIO 的线程池令牌。默认容量是 40 个令牌，
+同步依赖等操作也共享这份容量；AI 等待网络返回时仍占用令牌，饱和后
+新的同步任务会排队，因此高并发下登录和生成请求可能相互影响。
+这一限制见 [Starlette 官方线程池说明](https://www.starlette.io/threadpool/)。
+AI 并发、计次和重试规则统一见[AI 额度与计费](../../static/ai-billing.html)，调用成本汇总方法见 [部署与升级](../../docs/operations/deploy.md)。
+当前仍按 SQLite 单实例、单 worker 部署。负载增长后可评估多 worker
+或把密码计算、AI 生成隔离执行；届时需同时处理 SQLite 写入竞争及
+下述内存限流的共享问题，不能只增加 worker 数量。
+
+### 备份与恢复
+
+使用 `python backup.py` 在线备份 SQLite 数据库与头像（服务不用停），默认保存在 `data/backups/`，保留最近 14 份，可用 `--output-dir`、`--keep` 调整；`python backup.py verify 归档.tar.gz` 校验。恢复时先停止服务，再用 `python backup.py restore 归档.tar.gz --into 独立目录` 还原并校验，手动替换数据库与头像后启动服务、访问 `/healthz`。归档含密码哈希和个人数据，不含 `.env` 里的密钥，请安全保存并另存异地副本。定时任务示例和季度恢复演练见 [备份与恢复](../../docs/operations/backup-and-restore.md)。
+
+### Docker、健康检查、升级与 CI
+
+仓库带有 `Dockerfile` 和 `docker-compose.yml`（容器内用非 root 用户，数据放在挂载的 `./data`）；`GET /healthz` 无需登录，检查数据库可读写并返回 `schema_version`，失败返回 503。数据库用 `PRAGMA user_version` 记录版本，启动时按顺序自动执行未完成的迁移，每个迁移独立提交、失败回滚；数据库版本比程序新时程序会拒绝启动。GitHub Actions（`.github/workflows/ci.yml`）在每次推送到 `main` 和每个 pull request 时跑语法检查、全部测试，并构建镜像检查 `/healthz`，另有一个只作提示的依赖安全审计。详细步骤见 [部署与升级](../../docs/operations/deploy.md)。
+
+不要提交 `.env` 或用户数据库到 GitHub。
+
+题目和易错点支持编辑、删除。删除题目会级联删除它名下的
+全部易错点、复习记录和变体题，不可恢复；删除单条易错点
+不影响同一道题的其他记录。
+
+注册、登录、忘记密码、重置密码、体验账号创建接口都按客户端 IP 做了
+基础防刷：默认 15 分钟内最多 5 次注册尝试、10 次登录尝试、5 次忘记
+密码请求、10 次重置密码尝试、每小时 3 次体验账号创建，超过返回 429。
+计数只存在单进程内存里，重启即清零；部署多实例或反向代理之后需要
+改成共享存储，并确认拿到的是真实客户端 IP。
+
+支付宝接口尚需商户账号开通后完成沙箱/实网联调；微信支付没有沙箱，
+只能用真实商户号完成小额联调。V1 不包含多实例部署。

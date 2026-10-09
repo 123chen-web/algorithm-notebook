@@ -151,6 +151,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "reminder_opt_in": 1,
             "bio": "",
             "lifetime_problem_count": 0,
+            "api_token_hash": None,
         }
         plan_id = insert_plan(conn)
         conn.execute(

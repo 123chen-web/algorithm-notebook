@@ -14,10 +14,6 @@ from reminders import send_daily_reminders
 from routers import reminder as reminder_router
 from test_app import client, new_problem, register  # noqa: F401  (client 是 fixture)
 
-# main.py 的 include_router 由协调人统一加（见报告）；测试在这里临时挂载，
-# 仅影响本测试模块，不改动任何已有文件。
-if not any(getattr(route, "path", "") == "/api/me/reminder" for route in main.app.routes):
-    main.app.include_router(reminder_router.router)
 
 
 class FakeMailer:
@@ -136,8 +132,20 @@ def test_opt_in_user_gets_mail_with_unsubscribe_link(client):
     assert mail["to"] == "inz@example.com"
     assert "今日有 2 道易错点待复习" in mail["subject"]
     assert "今日待复习 2 道（预计 4 分钟" in mail["body"]
-    assert "http://localhost:8000/#/today" in mail["body"]
+    assert "   http://localhost:8000\n" in mail["body"]
     assert f"/api/reminder/unsubscribe?token={token}" in mail["body"]
+
+
+def test_reminder_links_use_configured_homepage_without_an_unsupported_route(client):
+    register(client, username="links", email="links@example.com")
+    make_due(client, "links", "2026-09-20")
+    fake = FakeMailer()
+    send_daily_reminders(fake, now=datetime(2026, 9, 20, 1, tzinfo=timezone.utc),
+                         base_url="https://example.com/notebook/")
+    body = fake.sent[0]["body"]
+    assert "   https://example.com/notebook\n" in body
+    assert "localhost" not in body
+    assert "#/today" not in body
 
 
 def test_timezone_boundary(client):
@@ -222,5 +230,58 @@ def test_streak_at_risk_line(client):
         )
     fake = FakeMailer()
     stats = send_daily_reminders(fake, now=now)
-    assert stats["sent"] == 1
-    assert "连续打卡" not in fake.sent[0]["body"]
+    assert stats == {"sent": 0, "skipped": 1, "failed": 0}
+    assert fake.sent == []
+    # Keep the original streak assertion independently of the new daily send
+    # deduplication: reviewing today eliminates the at-risk signal.
+    from reminders import streak_at_risk
+    stamps = [datetime.fromisoformat(f"{day}T01:00:00+00:00")
+              for day in ("2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21")]
+    assert streak_at_risk("Asia/Shanghai", now.date(), stamps) is None
+
+
+def test_success_is_idempotent_and_failure_can_retry(client):
+    register(client, username="daily", email="daily@example.com")
+    uid = make_due(client, "daily", "2026-09-20")
+    now = datetime(2026, 9, 20, 1, tzinfo=timezone.utc)
+    class FailingMailer:
+        def send_email(self, *args):
+            raise RuntimeError("inert mail failure")
+    assert send_daily_reminders(FailingMailer(), now=now) == {"sent": 0, "skipped": 0, "failed": 1}
+    with connect() as conn:
+        assert conn.execute("SELECT last_reminder_sent FROM users WHERE id=?", (uid,)).fetchone()[0] is None
+    fake = FakeMailer()
+    assert send_daily_reminders(fake, now=now)["sent"] == 1
+    assert send_daily_reminders(fake, now=now) == {"sent": 0, "skipped": 1, "failed": 0}
+    assert len(fake.sent) == 1
+    tomorrow = datetime(2026, 9, 21, 1, tzinfo=timezone.utc)
+    assert send_daily_reminders(fake, now=tomorrow)["sent"] == 1
+
+
+def test_parallel_daily_reminders_send_once(client):
+    from concurrent.futures import ThreadPoolExecutor
+    register(client, username="parallel", email="parallel@example.com")
+    make_due(client, "parallel", "2026-09-20")
+    fake = FakeMailer()
+    now = datetime(2026, 9, 20, 1, tzinfo=timezone.utc)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: send_daily_reminders(fake, now=now), range(2)))
+    assert sum(result["sent"] for result in results) == 1
+    assert len(fake.sent) == 1
+
+
+def test_unsubscribe_constant_time_and_unenumerable_response(client, monkeypatch):
+    from routers import reminder
+    register(client, username="constant", email="constant@example.com")
+    token = ensure_token("constant")
+    actual = reminder.secrets.compare_digest
+    calls = []
+    def spy(a, b):
+        calls.append((a, b))
+        return actual(a, b)
+    monkeypatch.setattr(reminder.secrets, "compare_digest", spy)
+    responses = [client.get("/api/reminder/unsubscribe", params={"token": value})
+                 for value in ("garbage", token.replace(token.split('.')[1], "bad"), token)]
+    assert len(calls) == 3
+    assert all(isinstance(a, bytes) and isinstance(b, bytes) for a, b in calls)
+    assert all(response.status_code == 200 and response.json() == {"ok": True} for response in responses)

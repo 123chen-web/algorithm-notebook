@@ -23,13 +23,6 @@ from routers.mastery import is_correct, mistake_score, tag_score
 from test_app import client, register
 
 
-# main.py 里加上 include_router 之前，测试自己把路由挂到同一个 app 上；
-# 已挂过就不再重复挂，避免重复路由。
-if not any(
-    getattr(route, "path", "") == "/api/mastery/heatmap" for route in main.app.routes
-):
-    main.app.include_router(mastery_router.router)
-
 
 def at(day_iso, hour=10, minute=0):
     """UTC 时刻文本；10:00 UTC = 上海 18:00，稳稳落在同一本地日。"""

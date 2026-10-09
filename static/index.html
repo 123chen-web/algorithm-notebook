@@ -54,8 +54,7 @@
   <link rel="stylesheet" href="/static/pwa.css?v=1">
   <link rel="stylesheet" href="/static/manual-claims.css?v=2">
   <link rel="stylesheet" href="/static/print.css?v=2">
-  <link rel="stylesheet" href="/static/heatmap.css?v=1">
-  <link rel="stylesheet" href="/static/boss.css?v=1">
+  <link rel="stylesheet" href="/static/heatmap.css?v=2">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
@@ -101,14 +100,12 @@
   <script defer src="/static/pwa-register.js?v=1"></script>
   <script defer src="/static/offline-sync.js?v=1"></script>
   <script defer src="/static/offline-review.js?v=1"></script>
-  <script defer src="/static/import-problem.js?v=1"></script>
-  <script defer src="/static/similar.js?v=1"></script>
+  <script defer src="/static/import-problem.js?v=2"></script>
+  <script defer src="/static/similar.js?v=3"></script>
   <script defer src="/static/heatmap.js?v=1"></script>
-  <script defer src="/static/explain.js?v=1"></script>
   <script defer src="/static/reminder.js?v=1"></script>
-  <script defer src="/static/boss.js?v=1"></script>
   <script defer src="/static/notes.js?v=1"></script>
-  <script defer src="/static/app.js?v=88"></script>
+  <script defer src="/static/app.js?v=91"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -129,6 +126,7 @@
           <button type="button" class="nav-item" data-view="all"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 8h4M12 12h4"/></svg><span class="nav-label">全部记录</span><span class="nav-badge" data-badge="all" hidden></span></button>
           <button type="button" class="nav-item" data-view="print"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg><span class="nav-label">考前打印版</span></button>
           <button type="button" class="nav-item" data-view="new"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg><span class="nav-label">新增记录</span></button>
+          <button type="button" class="nav-item" data-view="notes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span class="nav-label">笔记</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-insight">
           <p class="sidebar-heading" id="sidebar-g-insight">洞察</p>
@@ -138,13 +136,11 @@
           <button type="button" class="nav-item" data-view="clusters"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="m8 8 3 7m5-7-3 7M9 6h6"/></svg><span class="nav-label">错因专题</span></button>
           <button type="button" class="nav-item" data-view="achievements"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg><span class="nav-label">成就徽章</span></button>
           <button type="button" class="nav-item" data-view="weekly-recap"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg><span class="nav-label">本周战报</span></button>
-          <button type="button" class="nav-item" data-view="boss"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 3h12l2 7-8 11L4 10l2-7Z"/><path d="M9 10h6M12 7v6"/></svg><span class="nav-label">Boss 战</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-community">
           <p class="sidebar-heading" id="sidebar-g-community">社区</p>
           <button type="button" class="nav-item" data-view="groups"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/></svg><span class="nav-label">学习小组</span><span class="nav-badge" data-badge="groups" hidden></span></button>
           <button type="button" class="nav-item" data-view="forum"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span class="nav-label">讨论区</span></button>
-          <button type="button" class="nav-item" data-view="notes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span class="nav-label">笔记</span></button>
           <button type="button" class="nav-item" data-view="leaderboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span class="nav-label">榜单</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-account">
@@ -586,10 +582,6 @@
               <h3 id="ov-focus-title">下周主攻</h3>
               <div id="ov-focus"></div>
             </section>
-            <section id="boss-entrance-card" class="ov-card" aria-labelledby="boss-entrance-title" hidden>
-              <h3 id="boss-entrance-title">Boss 战</h3>
-              <div id="boss-entrance"></div>
-            </section>
           </aside>
         </div>
       </section>
@@ -683,7 +675,6 @@
         <div id="heatmap-grid"></div>
       </section>
 
-      <section id="boss-page" aria-labelledby="boss-title" aria-busy="false" hidden></section>
 
       <section id="clusters-page" aria-labelledby="clusters-title" aria-busy="false" hidden>
         <div class="page-heading">
@@ -910,9 +901,7 @@
           </form>
           <div class="form-import-row">
             <button type="button" id="import-from-url-btn" class="secondary">从链接导入</button>
-            <button type="button" id="import-screenshot-btn" class="secondary">截图识别</button>
-            <input type="file" id="import-screenshot-file" accept="image/*" hidden>
-            <p id="import-status" class="field-hint" role="status" aria-live="polite"></p>
+            <p id="problem-import-status" class="field-hint" role="status" aria-live="polite"></p>
           </div>
           <form id="problem-form" class="form-stack">
             <section class="form-section form-card" aria-labelledby="problem-basics-title" data-form-section="basics">
@@ -1175,6 +1164,45 @@
         </section>
       </section>
 
+      <section id="notes-page" aria-labelledby="notes-title" hidden>
+        <div class="notes-wrap">
+          <header class="notes-head">
+            <div>
+              <h2 id="notes-title">笔记</h2>
+              <p class="notes-sub">Memos 式随手记：写下想法、打标签、关联题目，支持 Markdown 子集渲染。</p>
+            </div>
+          </header>
+          <div class="notes-composer" id="notes-composer">
+            <label class="notes-field">
+              <span class="notes-sr-only">写笔记</span>
+              <textarea id="notes-content" rows="4" maxlength="8000" placeholder="记下想法…，支持 Markdown"></textarea>
+            </label>
+            <div class="notes-composer-row">
+              <label class="notes-field notes-tags-field">
+                <span class="notes-sr-only">标签</span>
+                <input id="notes-tags-input" type="text" maxlength="200" placeholder="标签，用逗号或空格分隔" autocomplete="off">
+              </label>
+              <label class="notes-field notes-problem-field">
+                <span class="notes-sr-only">关联题目</span>
+                <select id="notes-problem" aria-label="关联题目"><option value="">不关联</option></select>
+              </label>
+              <button id="notes-save" type="button" class="primary">保存</button>
+            </div>
+            <p id="notes-composer-notice" class="notes-notice" role="status" hidden></p>
+          </div>
+          <div class="notes-toolbar">
+            <label class="notes-search">
+              <span class="notes-sr-only">搜索笔记</span>
+              <input id="notes-search" type="search" maxlength="200" placeholder="搜索标题或内容" autocomplete="off">
+            </label>
+            <div id="notes-tag-row" class="notes-tag-row" role="group" aria-label="按标签筛选"></div>
+          </div>
+          <div id="notes-list" class="notes-list" aria-live="polite"></div>
+          <p id="notes-status" class="notes-status" role="status" hidden></p>
+          <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
+        </div>
+      </section>
+
       <section id="forum-page" aria-labelledby="forum-title" hidden>
         <section id="forum-list" aria-labelledby="forum-list-title">
           <svg class="board-sprite" aria-hidden="true" focusable="false">
@@ -1269,44 +1297,7 @@
             </aside>
           </div>
         </section>
-      <section id="notes-page" aria-labelledby="notes-title" hidden>
-        <div class="notes-wrap">
-          <header class="notes-head">
-            <div>
-              <h2 id="notes-title">笔记</h2>
-              <p class="notes-sub">Memos 式随手记：写下想法、打标签、关联题目，支持 Markdown 子集渲染。</p>
-            </div>
-          </header>
-          <div class="notes-composer" id="notes-composer">
-            <label class="notes-field">
-              <span class="notes-sr-only">写笔记</span>
-              <textarea id="notes-content" rows="4" maxlength="8000" placeholder="记下想法…，支持 Markdown"></textarea>
-            </label>
-            <div class="notes-composer-row">
-              <label class="notes-field notes-tags-field">
-                <span class="notes-sr-only">标签</span>
-                <input id="notes-tags-input" type="text" maxlength="200" placeholder="标签，用逗号或空格分隔" autocomplete="off">
-              </label>
-              <label class="notes-field notes-problem-field">
-                <span class="notes-sr-only">关联题目</span>
-                <select id="notes-problem" aria-label="关联题目"><option value="">不关联</option></select>
-              </label>
-              <button id="notes-save" type="button" class="primary">保存</button>
-            </div>
-            <p id="notes-composer-notice" class="notes-notice" role="status" hidden></p>
-          </div>
-          <div class="notes-toolbar">
-            <label class="notes-search">
-              <span class="notes-sr-only">搜索笔记</span>
-              <input id="notes-search" type="search" maxlength="200" placeholder="搜索标题或内容" autocomplete="off">
-            </label>
-            <div id="notes-tag-row" class="notes-tag-row" role="group" aria-label="按标签筛选"></div>
-          </div>
-          <div id="notes-list" class="notes-list" aria-live="polite"></div>
-          <p id="notes-status" class="notes-status" role="status" hidden></p>
-          <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
-        </div>
-      </section>
+
 
         <section id="forum-compose" class="board-compose" aria-labelledby="forum-compose-title" hidden>
           <p id="forum-compose-draft" class="board-draft" role="status" hidden>
@@ -1705,7 +1696,6 @@
         <button type="button" class="more-item" data-view="achievements"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9M10 8l1.5 1.5L14 7"/></svg><span>成就徽章</span></button>
         <button type="button" class="more-item" data-view="weekly-recap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 17h2M12 17h5"/></svg><span>本周战报</span></button>
         <button type="button" class="more-item" data-view="heatmap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="10" y="3" width="5" height="5" rx="1"/><rect x="17" y="3" width="5" height="5" rx="1"/><rect x="3" y="10" width="5" height="5" rx="1"/><rect x="10" y="10" width="5" height="5" rx="1"/><rect x="17" y="10" width="5" height="5" rx="1"/><rect x="3" y="17" width="5" height="5" rx="1"/><rect x="10" y="17" width="5" height="5" rx="1"/><rect x="17" y="17" width="5" height="5" rx="1"/></svg><span class="nav-label">掌握度热力图</span></button>
-        <button type="button" class="more-item" data-view="boss"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 3h12l2 7-8 11L4 10l2-7Z"/><path d="M9 10h6M12 7v6"/></svg><span class="nav-label">Boss 战</span></button>
         <button type="button" class="more-item" data-view="forum"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>讨论区</span></button>
         <button type="button" class="more-item" data-view="notes"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span>笔记</span></button>
         <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>榜单</span></button>

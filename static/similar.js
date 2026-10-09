@@ -5,7 +5,7 @@
    - 请求只走宿主传入的 api()（默认 window.api）：GET /api/review/similar?mistake_id=；
    - 一键加入：取 item.add_payload，剥掉 POST /api/problems 不认的字段（extra="forbid"），
      quick 模式建题；建题成功后给新建的易错点打"举一反三"标签（NewProblem 没有 source 字段，
-     用标签标记来源）。
+     用标签标记来源；推荐载荷提供建题所需的语言）。
    - 渲染只用 textContent；迟到响应按 generation 丢弃；失败显示可重试的错误行。 */
 (() => {
   const SOURCE_TAG = "举一反三";
@@ -84,7 +84,9 @@
       li.append(head);
       if (item.reason) li.append(node("p", "similar-card-reason", item.reason));
       const actions = node("div", "similar-card-actions");
-      if (item.url) {
+      let safeUrl = false;
+      try { safeUrl = /^https?:\/\//i.test(item.url || "") && ["http:", "https:"].includes(new URL(item.url).protocol); } catch {}
+      if (safeUrl) {
         const link = node("a", "similar-card-link", "原题链接");
         link.href = item.url;
         link.target = "_blank";
@@ -94,13 +96,16 @@
       const add = button("一键加入", "similar-card-add");
       const status = node("span", "similar-card-status");
       add.addEventListener("click", async () => {
+        const t = ticket();
         add.disabled = true;
         status.textContent = "加入中…";
         try {
-          await quickAdd(item);
+          const created = await quickAdd(item);
+          if (!created || !alive(t)) return;
           status.textContent = "已加入题库";
           add.textContent = "已加入";
         } catch (error) {
+          if (!alive(t)) return;
           status.textContent = `加入失败：${error.message || "请稍后重试"}`;
           add.disabled = false;
         }
@@ -114,7 +119,7 @@
     return card;
   }
 
-  function renderError(container, gen, message, retry) {
+  function renderError(container, gen, t, message, retry) {
     if (gen !== generation || !alive(t)) return;
     container.replaceChildren();
     const box = node("p", "similar-card-error", message);
@@ -134,14 +139,14 @@
       if (gen !== generation || !alive(t)) return;
       const items = (data && data.items) || [];
       if (!items.length) {
-        renderError(container, gen, "暂时没有找到同类题，稍后再来。", null);
+        renderError(container, gen, t, "暂时没有找到同类题，稍后再来。", null);
         return;
       }
       container.replaceChildren();
       container.append(buildCard(items, mistakeId));
     } catch (error) {
       if (!alive(t)) return;
-      renderError(container, gen, `加载失败：${error.message || "请稍后重试"}`, () =>
+      renderError(container, gen, t, `加载失败：${error.message || "请稍后重试"}`, () =>
         mount(container, mistakeId),
       );
     }

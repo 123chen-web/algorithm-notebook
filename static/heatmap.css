@@ -5,14 +5,15 @@
 .hm-rowhead { text-align: left; padding: var(--space-2) var(--space-3); white-space: nowrap; }
 .hm-colhead { padding: var(--space-2); color: var(--ink-2); font-weight: normal; white-space: nowrap; }
 .hm-cell { padding: 2px; text-align: center; }
-.hm-nodata { color: var(--ink-3, var(--ink-2)); }
+.hm-nodata { color: var(--ink-2); }
+#heatmap-grid { max-width: 100%; overflow-x: auto; }
 
 .hm-taglink {
   background: none; border: none; padding: 0; cursor: pointer;
-  color: var(--accent); font: inherit; text-decoration: underline;
+  color: var(--azurite); font: inherit; text-decoration: underline;
   text-underline-offset: 3px;
 }
-.hm-taglink:hover { color: var(--accent-hover); }
+.hm-taglink:hover { color: var(--azurite); }
 
 .hm-cellbtn {
   width: 100%; min-width: 44px; padding: var(--space-2) var(--space-1);
@@ -51,7 +52,7 @@
 .hm-focus-actions { display: flex; gap: var(--space-2); }
 .hm-focus-go {
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
-  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border: 1px solid var(--azurite); background: var(--azurite); color: var(--on-accent);
   cursor: pointer; font: inherit;
 }
-.hm-focus-go:hover { background: var(--accent-hover); }
+.hm-focus-go:hover { background: var(--azurite); }

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 import main
 import payment_channels
+import payments
 from db import connect
 from payment_channels import payments_configured
 

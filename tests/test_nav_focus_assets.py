@@ -72,7 +72,7 @@ def test_assets_are_served_once_and_before_app():
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
     assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=88")
+    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=91")
 
 
 def test_changed_assets_bump_their_cache_busting_version():
@@ -264,7 +264,8 @@ def test_command_palette_keeps_all_search_aliases():
 
 def test_readme_uses_the_new_visible_name():
     assert "打卡排行榜" not in README
-    assert "“榜单”" in README
+    leaderboard_doc = (STATIC.parent / "docs/features/leaderboard.md").read_text(encoding="utf-8")
+    assert "“榜单”" in leaderboard_doc
 
 
 def test_overview_yesterday_card_markup_sits_below_the_trend_section():

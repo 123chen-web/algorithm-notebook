@@ -1373,7 +1373,7 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews", "notes", "explanations", "boss_sessions", "boss_graduations", "import_screenshot_daily"):
+                  "problem_recommendations", "import_previews", "notes"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
@@ -1405,7 +1405,8 @@ def delete_account_data(conn, user_id, deleted_at):
         """
         UPDATE users SET username = ?, email = NULL, password_hash = ?,
             avatar_version = 0, bio = '', lifetime_problem_count = 0,
-            last_reminder_sent = NULL, reminder_token = NULL, reminder_opt_in = 0, is_admin = 0, deleted_at = ?
+            last_reminder_sent = NULL, reminder_token = NULL, reminder_opt_in = 0,
+            api_token_hash = NULL, is_admin = 0, deleted_at = ?
         WHERE id = ?
         """,
         (sec_anonymous_name, DUMMY_PASSWORD, deleted_at, user_id),
@@ -2432,9 +2433,9 @@ import routers.recommend
 import routers.notes
 import routers.import_problem
 import routers.similar
-import routers.explain
 import routers.reminder
-import routers.boss
+import routers.mastery
+import routers.plugin_api
 import routers.profile
 import routers.import_wizard
 
@@ -2454,9 +2455,9 @@ app.include_router(routers.recommend.router)
 app.include_router(routers.notes.router)
 app.include_router(routers.import_problem.router)
 app.include_router(routers.similar.router)
-app.include_router(routers.explain.router)
 app.include_router(routers.reminder.router)
-app.include_router(routers.boss.router)
+app.include_router(routers.mastery.router)
+app.include_router(routers.plugin_api.router)
 app.include_router(routers.profile.router)
 app.include_router(routers.import_wizard.router)
 

@@ -12,7 +12,6 @@
 (function () {
 "use strict";
 
-var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function form() {
 return document.getElementById("problem-form");
@@ -37,14 +36,6 @@ catch (error) { if (!alive(t)) return null; throw error; }
 async function fetchPrefill(url) {
 return request("/api/problems/fetch-from-url", { method: "POST", body: JSON.stringify({ url }) });
 }
-async function parseScreenshot(file) {
-if (!file) throw new Error("请选择图片文件");
-if (!/^image\//.test(file.type || "")) throw new Error("请上传图片文件");
-if (file.size > MAX_IMAGE_BYTES) throw new Error("图片不能超过 5MB");
-var data = new FormData(); data.append("image", file);
-return request("/api/problems/parse-screenshot", { method: "POST", body: data });
-}
-
 // 把预填写入建题表单（不提交），用户确认后再点「保存这条记录」。
 function fillProblemForm(prefill) {
 prefill = prefill || {};
@@ -75,7 +66,6 @@ else thinkingInput.value = prefix + thinkingInput.value;
 window.ImportProblem = {
 configure, reset,
 fetchPrefill: fetchPrefill,
-parseScreenshot: parseScreenshot,
 fillProblemForm: fillProblemForm,
 };
 })();

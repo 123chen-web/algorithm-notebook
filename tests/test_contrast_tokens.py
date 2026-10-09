@@ -141,7 +141,7 @@ RECOMMEND_TEXT_PAIRS = (
     ("--azurite", "--surface"),
     ("--danger", "--surface"),
 )
-COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {
+COLOR_TOKENS = set(BACKGROUNDS) | MINIMUMS.keys() | {"--growth-soft", "--field-surface"} | {
     token for pair in THREAD_TEXT_PAIRS + ADMIN_METRICS_TEXT_PAIRS + AN_TEXT_PAIRS + CAPTURE_TEXT_PAIRS + ONBOARDING_TEXT_PAIRS + RANK_TEXT_PAIRS + REVIEW_TEXT_PAIRS + PWA_TEXT_PAIRS + PWA_GRAPHIC_PAIRS + TYPICAL_TEXT_PAIRS + RECOMMEND_TEXT_PAIRS for token in pair
 }
 
