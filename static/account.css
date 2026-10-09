@@ -44,7 +44,7 @@
   line-height: var(--lh-ui);
   cursor: pointer;
 }
-.legal-consent input, .account-delete-confirm input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--accent-hover); }
+.legal-consent input, .account-delete-confirm input { flex: 0 0 24px; width: 24px; height: 24px; margin: 0; padding: 0; accent-color: var(--accent-hover); }
 .legal-consent > span, .account-delete-confirm > span { min-width: 0; }
 .legal-consent a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hover); white-space: nowrap; }
 .legal-consent input:focus-visible, .account-delete-confirm input:focus-visible { outline: 3px solid var(--accent-hover); outline-offset: 4px; }

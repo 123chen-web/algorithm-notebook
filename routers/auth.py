@@ -108,6 +108,11 @@ def create_trial_account(data: main.TrialSignup, request: Request, response: Res
 def login(data: main.Credentials, request: Request, response: Response):
     if main.rate_limited(f"login:{main.client_ip(request)}", main.LOGIN_LIMIT, main.LOGIN_WINDOW_SECONDS):
         raise HTTPException(429, "尝试次数过多，请稍后再试")
+    # 按账号再叠一把"失败次数"桶：分散 IP 对同一账号撞库也会被拦住。
+    # 阈值比 IP 桶宽松，且只统计失败；命中时只返回 429，不改变账号状态。
+    account_key = f"login_fail:{sec_username_key(data.username)}"
+    if main.rate_peek(account_key, main.LOGIN_ACCOUNT_LIMIT, main.LOGIN_WINDOW_SECONDS):
+        raise HTTPException(429, "尝试次数过多，请稍后再试")
 
     with main.connect() as conn:
         user = conn.execute(
@@ -128,6 +133,7 @@ def login(data: main.Credentials, request: Request, response: Response):
         user["password_hash"] if user else main.DUMMY_PASSWORD,
     )
     if not user or not valid:
+        main.rate_note(account_key, main.LOGIN_WINDOW_SECONDS)
         raise HTTPException(401, "用户名或密码不正确")
     # 封禁检查放在密码校验通过之后，避免向未认证的调用方泄露
     # "这个用户名存在且被封禁" 这类额外信息。

@@ -1014,6 +1014,8 @@ TRIAL_LIMIT = 3
 TRIAL_WINDOW_SECONDS = 60 * 60
 LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 15 * 60
+# 按账号叠加的失败次数上限：比 IP 上限宽松，只统计失败，防止分散 IP 撞同一个账号。
+LOGIN_ACCOUNT_LIMIT = 30
 FORGOT_PASSWORD_LIMIT = 5
 FORGOT_PASSWORD_WINDOW_SECONDS = 15 * 60
 FORGOT_PASSWORD_EMAIL_LIMIT = 3
@@ -1050,6 +1052,26 @@ def rate_limited(key, limit, window_seconds):
             return True
         bucket.append(now)
         return False
+
+
+def rate_peek(key, limit, window_seconds):
+    """只查看桶是否已满，不记录本次调用。"""
+    now = time.time()
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        while bucket and now - bucket[0] > window_seconds:
+            bucket.popleft()
+        return len(bucket) >= limit
+
+
+def rate_note(key, window_seconds):
+    """记录一次事件（例如一次登录失败），不判断是否超限。"""
+    now = time.time()
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        while bucket and now - bucket[0] > window_seconds:
+            bucket.popleft()
+        bucket.append(now)
 
 
 def reset_rate_limits():
