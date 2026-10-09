@@ -10,3 +10,6 @@ data/
 .mcp.json
 .claude/
 tests/e2e/artifacts/
+# 套路库静态数据需要入库（上面的 data/ 规则只针对运行时数据目录）
+!static/data/
+!static/data/**

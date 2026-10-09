@@ -5,6 +5,10 @@ from urllib.parse import urlencode
 import pytest
 
 
+# 端到端冒烟测试（tests/e2e）需要 playwright 与真实浏览器，默认不收集；
+# 需要时设置环境变量 OY_RUN_E2E=1，并按 tests/e2e/README.md 运行。
+collect_ignore = [] if os.environ.get("OY_RUN_E2E") == "1" else ["e2e"]
+
 @pytest.fixture(autouse=True)
 def isolate_code_runner(monkeypatch):
     import code_runner
