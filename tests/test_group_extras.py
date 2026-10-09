@@ -1,4 +1,4 @@
-"""学习小组新功能：每周小目标 / 今日动态 / 共享题单 / 留言板。"""
+"""学习小组新功能：每周小目标 / 今日动态。"""
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -273,317 +273,14 @@ def test_today_non_member_404(client):
     assert client.get(f"/api/groups/{group['id']}/today").status_code == 404
 
 
-# ---------- 功能 3：小组共享题单 ----------
-
-def recommend(client, group_id, title="二分查找", **kwargs):
-    payload = {"title": title, "zone": "算法", **kwargs}
-    return client.post(f"/api/groups/{group_id}/shared-problems", json=payload)
-
-
-def test_recommend_and_list(client):
-    register(client, "alice")
-    group = create_group(client)
-    response = recommend(client, group["id"], source_url="https://example.com/p1", note="经典")
-    assert response.status_code == 201
-    item = response.json()
-    assert item["title"] == "二分查找"
-    assert item["note"] == "经典"
-    assert item["is_mine"] is True
-    assert item["can_delete"] is True
-    assert item["collected"] is False
-    assert item["recommender"]["username"] == "alice"
-
-    listed = client.get(f"/api/groups/{group['id']}/shared-problems").json()
-    assert listed["total"] == 1
-    assert listed["items"][0]["id"] == item["id"]
-
-
-def test_recommend_duplicate_url_409(client):
-    register(client, "alice")
-    group = create_group(client)
-    assert recommend(client, group["id"], source_url="https://example.com/p1").status_code == 201
-    response = recommend(
-        client, group["id"], title="另一个名字", source_url="https://example.com/p1/"
-    )
-    assert response.status_code == 409
-
-
-def test_recommend_duplicate_title_409(client):
-    register(client, "alice")
-    group = create_group(client)
-    assert recommend(client, group["id"], title="二分查找").status_code == 201
-    response = recommend(client, group["id"], title="  二分查找  ")
-    assert response.status_code == 409
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"title": "", "zone": "算法"},
-        {"title": "x" * 201, "zone": "算法"},
-        {"title": "t", "zone": "不存在的分区"},
-        {"title": "t", "zone": "算法", "note": "y" * 61},
-        {"title": "t", "zone": "算法", "source_url": "ftp://x"},
-    ],
-)
-def test_recommend_validation(client, payload):
-    register(client, "alice")
-    group = create_group(client)
-    assert recommend(client, group["id"], **payload).status_code == 422
-
-
-def test_recommend_daily_limit(client):
-    register(client, "alice")
-    group = create_group(client)
-    for i in range(5):
-        assert recommend(client, group["id"], title=f"题{i}").status_code == 201
-    assert recommend(client, group["id"], title="题5").status_code == 403
-
-
-def test_recommend_group_limit(client, monkeypatch):
-    register(client, "alice")
-    group = create_group(client)
-    monkeypatch.setattr(main, "GROUP_SHARED_MAX_PER_GROUP", 1)
-    assert recommend(client, group["id"], title="题0").status_code == 201
-    assert recommend(client, group["id"], title="题1").status_code == 403
-
-
-def test_recommend_non_member_404(client):
-    register(client, "alice")
-    group = create_group(client)
-    register(client, "mallory")
-    assert recommend(client, group["id"]).status_code == 404
-
-
-def test_collect_creates_problem(client):
-    register(client, "alice")
-    group = create_group(client)
-    shared_id = recommend(client, group["id"], note="必做").json()["id"]
-    register(client, "bob")
-    join_with_code(client, group["invite_code"])
-    response = client.post(
-        f"/api/groups/{group['id']}/shared-problems/{shared_id}/collect", json={}
-    )
-    assert response.status_code == 200
-    problem_id = response.json()["problem_id"]
-    with connect() as conn:
-        problem = conn.execute(
-            "SELECT title, thinking FROM problems WHERE id = ?", (problem_id,)
-        ).fetchone()
-    assert problem["title"] == "二分查找"
-    assert "来自小组" in problem["thinking"] and "一起刷题" in problem["thinking"]
-    # 再次收录：已收录，不重复创建。
-    again = client.post(
-        f"/api/groups/{group['id']}/shared-problems/{shared_id}/collect", json={}
-    )
-    assert again.json() == {"collected": True, "problem_id": problem_id}
-    listed = client.get(f"/api/groups/{group['id']}/shared-problems").json()
-    assert listed["items"][0]["collected"] is True
-
-
-def test_delete_shared_problem_permissions(client):
-    register(client, "alice")
-    group = create_group(client)
-    shared_id = recommend(client, group["id"]).json()["id"]
-    register(client, "bob")
-    join_with_code(client, group["invite_code"])
-    # 普通成员不能删别人的推荐。
-    assert client.delete(
-        f"/api/groups/{group['id']}/shared-problems/{shared_id}"
-    ).status_code == 403
-    # 组长可以删。
-    login(client, "alice")
-    assert client.delete(
-        f"/api/groups/{group['id']}/shared-problems/{shared_id}"
-    ).status_code == 200
-    assert client.get(f"/api/groups/{group['id']}/shared-problems").json()["total"] == 0
-
-
-def test_shared_recommender_left_shows_departed(client):
-    register(client, "alice")
-    group = create_group(client)
-    register(client, "bob")
-    join_with_code(client, group["invite_code"])
-    recommend(client, group["id"])
-    client.post(f"/api/groups/{group['id']}/leave")
-    login(client, "alice")
-    item = client.get(f"/api/groups/{group['id']}/shared-problems").json()["items"][0]
-    assert item["recommender"]["username"] == "已离开的成员"
-
-
-def test_shared_pagination(client):
-    register(client, "alice")
-    group = create_group(client)
-    for i in range(5):
-        assert recommend(client, group["id"], title=f"题{i}").status_code == 201
-    page1 = client.get(
-        f"/api/groups/{group['id']}/shared-problems?limit=2&offset=0"
-    ).json()
-    assert page1["total"] == 5
-    assert len(page1["items"]) == 2
-    page2 = client.get(
-        f"/api/groups/{group['id']}/shared-problems?limit=2&offset=2"
-    ).json()
-    assert len(page2["items"]) == 2
-    assert {i["id"] for i in page1["items"]}.isdisjoint({i["id"] for i in page2["items"]})
-
-
-# ---------- 功能 4：小组留言板 ----------
-
-def post_message(client, group_id, body="你好"):
-    return client.post(f"/api/groups/{group_id}/messages", json={"body": body})
-
-
-def test_post_and_list_messages(client):
-    register(client, "alice")
-    group = create_group(client)
-    response = post_message(client, group["id"], "加油")
-    assert response.status_code == 201
-    msg = response.json()
-    assert msg["body"] == "加油"
-    assert msg["author"]["username"] == "alice"
-    listed = client.get(f"/api/groups/{group['id']}/messages").json()
-    assert len(listed["messages"]) == 1
-    assert listed["messages"][0]["id"] == msg["id"]
-
-
-def test_message_validation(client):
-    register(client, "alice")
-    group = create_group(client)
-    assert post_message(client, group["id"], "x" * 301).status_code == 422
-    assert post_message(client, group["id"], "   ").status_code == 400
-
-
-def test_message_minute_rate_limit(client):
-    register(client, "alice")
-    group = create_group(client)
-    for i in range(6):
-        assert post_message(client, group["id"], f"msg{i}").status_code == 201
-    assert post_message(client, group["id"], "msg6").status_code == 429
-
-
-def test_message_duplicate_rejected(client):
-    register(client, "alice")
-    group = create_group(client)
-    assert post_message(client, group["id"], "重复").status_code == 201
-    assert post_message(client, group["id"], "重复").status_code == 429
-
-
-def test_message_daily_limit(client, monkeypatch):
-    register(client, "alice")
-    group = create_group(client)
-    monkeypatch.setattr(main, "GROUP_MESSAGE_MAX_PER_DAY", 2)
-    assert post_message(client, group["id"], "a").status_code == 201
-    assert post_message(client, group["id"], "b").status_code == 201
-    assert post_message(client, group["id"], "c").status_code == 429
-
-
-def test_delete_message_permissions(client):
-    register(client, "alice")
-    group = create_group(client)
-    msg_id = post_message(client, group["id"], "hello").json()["id"]
-    register(client, "bob")
-    join_with_code(client, group["invite_code"])
-    # 普通成员不能删别人的。
-    assert client.delete(
-        f"/api/groups/{group['id']}/messages/{msg_id}"
-    ).status_code == 403
-    # 组长可以删。
-    login(client, "alice")
-    assert client.delete(
-        f"/api/groups/{group['id']}/messages/{msg_id}"
-    ).status_code == 200
-    assert client.get(f"/api/groups/{group['id']}/messages").json()["messages"] == []
-
-
-def test_author_deletes_own_message(client):
-    register(client, "alice")
-    group = create_group(client)
-    register(client, "bob")
-    join_with_code(client, group["invite_code"])
-    msg_id = post_message(client, group["id"], "mine").json()["id"]
-    assert client.delete(
-        f"/api/groups/{group['id']}/messages/{msg_id}"
-    ).status_code == 200
-
-
-def test_message_pagination_before_id(client):
-    register(client, "alice")
-    group = create_group(client)
-    main.reset_rate_limits()
-    ids = []
-    for i in range(5):
-        main.reset_rate_limits()
-        ids.append(post_message(client, group["id"], f"m{i}").json()["id"])
-    page1 = client.get(f"/api/groups/{group['id']}/messages?limit=2").json()
-    assert [m["id"] for m in page1["messages"]] == ids[::-1][:2]
-    page2 = client.get(
-        f"/api/groups/{group['id']}/messages?limit=2&before_id={ids[-2]}"
-    ).json()
-    assert [m["id"] for m in page2["messages"]] == ids[::-1][2:4]
-
-
-def test_message_500_cap(client, monkeypatch):
-    register(client, "alice")
-    group = create_group(client)
-    monkeypatch.setattr(main, "GROUP_MESSAGE_LIST_MAX", 3)
-    for i in range(5):
-        main.reset_rate_limits()
-        assert post_message(client, group["id"], f"m{i}").status_code == 201
-    listed = client.get(f"/api/groups/{group['id']}/messages?limit=100").json()
-    assert len(listed["messages"]) == 3
-
-
-def test_message_non_member_404(client):
-    register(client, "alice")
-    group = create_group(client)
-    register(client, "mallory")
-    assert post_message(client, group["id"], "hi").status_code == 404
-    assert client.get(f"/api/groups/{group['id']}/messages").status_code == 404
-
-
-# ---------- 账号注销 ----------
-
-def test_account_deletion_cleans_group_extras(client):
-    # bob 建组，alice 加入后推荐并留言；alice 注销后小组仍在，
-    # 其推荐被清理、留言匿名化保留。
-    register(client, "bob")
-    group = create_group(client, "小组")
-    register(client, "alice")
-    join_with_code(client, group["invite_code"])
-    recommend(client, group["id"])
-    post_message(client, group["id"], "再见")
-    response = client.post(
-        "/api/me/delete-account", json={"password": "a-test-password-123"}
-    )
-    assert response.status_code == 200
-    with connect() as conn:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM group_shared_problems"
-        ).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM group_problem_collections"
-        ).fetchone()[0] == 0
-        # 留言保留但匿名化展示。
-        messages = conn.execute("SELECT * FROM group_messages").fetchall()
-        assert len(messages) == 1
-        user = conn.execute(
-            "SELECT username FROM users WHERE id = ?", (messages[0]["user_id"],)
-        ).fetchone()
-        assert user["username"].startswith("已注销用户")
-    # 组长仍能看到留言，作者显示为"已离开的成员"（匿名化，不暴露原身份）。
-    login(client, "bob")
-    listed = client.get(f"/api/groups/{group['id']}/messages").json()
-    assert listed["messages"][0]["author"]["username"] == "已离开的成员"
-
-
 # ---------- 迁移 ----------
 
-def test_migrations_40_to_43_upgrade(tmp_path, monkeypatch):
+def test_migrations_40_to_41_upgrade(tmp_path, monkeypatch):
     import db as db_module
 
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "old.db"))
     full = db_module.MIGRATIONS
+    assert [version for version, _, _ in full if version >= 40] == [40, 41]
     monkeypatch.setattr(db_module, "MIGRATIONS", [m for m in full if m[0] <= 22])
     monkeypatch.setattr(db_module, "SCHEMA_VERSION", 22)
     init_db()
@@ -608,18 +305,17 @@ def test_migrations_40_to_43_upgrade(tmp_path, monkeypatch):
         )
     # 恢复完整迁移并升级。
     monkeypatch.setattr(db_module, "MIGRATIONS", full)
-    monkeypatch.setattr(db_module, "SCHEMA_VERSION", 43)
+    monkeypatch.setattr(db_module, "SCHEMA_VERSION", 41)
     init_db()
     with connect() as conn:
-        assert schema_version(conn) == 43
+        assert schema_version(conn) == 41
         assert conn.execute("SELECT COUNT(*) FROM study_groups").fetchone()[0] == 1
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         assert "show_group_today" in columns
         tables = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert {"group_weekly_goals", "group_shared_problems",
-                "group_problem_collections", "group_messages"} <= tables
+        assert {name for name in tables if name.startswith("group_")} == {"group_weekly_goals"}
     # 重复启动幂等。
     init_db()
     with connect() as conn:
-        assert schema_version(conn) == 43
+        assert schema_version(conn) == 41

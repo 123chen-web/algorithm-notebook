@@ -1,4 +1,4 @@
-/* 学习小组新功能样式：每周目标 / 今日动态 / 共享题单 / 留言板。
+/* 学习小组新功能样式：每周目标 / 今日动态。
  * 进度条不用行内 style：JS 写 data-progress（5% 一档），宽度由下面的属性选择器决定。
  * 动画只在 prefers-reduced-motion: no-preference 下启用。 */
 #groups-page .groups-extras-section { margin-top: var(--space-6); }
@@ -53,34 +53,6 @@
 #groups-page .groups-today-who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 #groups-page .groups-today-met { color: var(--azurite); font-weight: 600; }
 
-#groups-page .groups-shared-item {
-  padding: var(--space-3) 0; border-bottom: 1px solid var(--line);
-}
-#groups-page .groups-shared-head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
-#groups-page .groups-shared-zone { color: var(--ink-2); font-size: var(--text-xs); }
-#groups-page .groups-shared-meta { display: flex; gap: var(--space-3); align-items: center; margin-top: var(--space-1); font-size: var(--text-sm); }
-#groups-page .groups-shared-note { margin: var(--space-1) 0 0; color: var(--ink-2); font-size: var(--text-sm); }
-#groups-page .groups-shared-actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); flex-wrap: wrap; }
-#groups-page .groups-recommend-form {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-#groups-page .groups-recommend-form label { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
-#groups-page .groups-recommend-form input, #groups-page .groups-recommend-form select { min-width: 0; margin-top: var(--space-1); }
-#groups-page .groups-recommend-form button[type="submit"] { grid-column: 1 / -1; justify-self: start; }
-
-#groups-page .groups-message {
-  padding: var(--space-3) 0; border-bottom: 1px solid var(--line);
-}
-#groups-page .groups-message-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-#groups-page .groups-message-body { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-#groups-page .groups-message-delete { margin-left: auto; }
-#groups-page .groups-message-form { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
-#groups-page .groups-message-form textarea { min-height: 3.5em; resize: vertical; }
-#groups-page .groups-message-form button[type="submit"] { justify-self: start; }
-#groups-page .groups-messages-toolbar { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
-
 @media (max-width: 640px) {
   #groups-page .groups-goal-form { grid-template-columns: minmax(0, 1fr); }
-  #groups-page .groups-recommend-form { grid-template-columns: minmax(0, 1fr); }
 }

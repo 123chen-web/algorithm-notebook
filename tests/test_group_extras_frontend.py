@@ -1,8 +1,6 @@
 """Group extras frontend: node behavior checks + static contracts (no temp dirs)."""
 
-import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 
@@ -90,37 +88,53 @@ assert.equal(
   helpers.goalSummary({ goal_type: "review", target: 50 }),
   "全组本周合计复习 50 道"
 );
-assert.equal(helpers.nextBeforeId([]), null);
-assert.equal(helpers.nextBeforeId([{ id: 9 }, { id: 7 }]), 7);
-assert.equal(helpers.isDuplicateSubmit(1000, 2000), true);
-assert.equal(helpers.isDuplicateSubmit(1000, 5000), false);
 
-// 每周目标渲染：data-progress 按 5% 取档，无行内 style。
-studyGroup = {
-  id: 3, name: "小组", is_creator: true,
-  weekly_goal: { goal_type: "review", target: 50, week_start: "2026-10-05", total: 13, progress: 26 },
-};
-window.GroupExtras.renderAll.__is_stubbed !== true;
-$("#groups-goal-section").hidden = true;
-$("#groups-goal-body").replaceChildren();
-$("#groups-goal-form-wrap").replaceChildren();
-$("#groups-today-list").replaceChildren();
-$("#groups-shared-list").replaceChildren();
-$("#groups-recommend-form-wrap").replaceChildren();
-$("#groups-messages-list").replaceChildren();
-$("#groups-message-form-wrap").replaceChildren();
-// 只测纯渲染部分：renderWeeklyGoal 是 renderAll 的第一步，单独触发需 stub 网络；
-// 这里直接验证 data-progress 档位逻辑作用于 DOM。
-const bar = element("div", "", "groups-goal-bar");
-bar.setAttribute("data-progress", String(helpers.progressBucket(26)));
-assert.equal(bar.getAttribute("data-progress"), "25");
-const barFull = element("div", "", "groups-goal-bar");
-barFull.setAttribute("data-progress", String(helpers.progressBucket(100)));
-assert.equal(barFull.getAttribute("data-progress"), "100");
-// 用户文本经 textContent，无 innerHTML 注入面。
-const evil = element("p", "<img src=x onerror=alert(1)>");
-assert.equal(evil.children.length, 0);
-assert.ok(evil.textContent.includes("<img"));
+// 使用真实总装配渲染目标和异步今日动态，验证切组时丢弃旧响应。
+(async () => {
+  const calls = [];
+  let resolveOld;
+  api = async path => {
+    calls.push(path);
+    if (path === "/api/groups/3/today") {
+      return new Promise(resolve => { resolveOld = resolve; });
+    }
+    assert.equal(path, "/api/groups/4/today");
+    return { today: [
+      { id: 7, username: "<img src=x onerror=alert(1)>", visible: true,
+        reviews_today: 2, goal_met: true },
+      { id: 8, username: "成员二", visible: false },
+    ] };
+  };
+  studyGroup = {
+    id: 3, name: "小组", is_creator: true,
+    weekly_goal: { goal_type: "review", target: 50, total: 13, progress: 26 },
+  };
+  window.GroupExtras.renderAll(studyGroup);
+  assert.equal($("#groups-goal-section").hidden, false);
+  const bar = $("#groups-goal-body").children[1];
+  assert.equal(bar.getAttribute("data-progress"), "25");
+  assert.equal(bar.getAttribute("aria-valuenow"), "26");
+  assert.equal($("#groups-goal-form-wrap").children.length, 1);
+
+  studyGroup = { id: 4, name: "另一组", is_creator: false, weekly_goal: null };
+  window.GroupExtras.renderAll(studyGroup);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal($("#groups-goal-body").textContent, "组长还没设本周目标");
+  assert.equal($("#groups-goal-form-wrap").children.length, 0);
+  const list = $("#groups-today-list");
+  assert.equal(list.children.length, 2);
+  assert.ok(list.textContent.includes("今天复习 2 道"));
+  assert.ok(list.textContent.includes("已完成每日目标"));
+  assert.ok(list.textContent.includes("未公开"));
+  const author = list.children[0].children[0].children[1];
+  assert.equal(author.children.length, 0);
+  assert.equal(author.textContent, "<img src=x onerror=alert(1)>");
+  resolveOld({ today: [] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(list.children.length, 2);
+  assert.equal($("#groups-today-status").textContent, "");
+  assert.deepEqual(calls, ["/api/groups/3/today", "/api/groups/4/today"]);
+})().catch(error => { console.error(error); process.exitCode = 1; });
 """
 
 
@@ -159,18 +173,14 @@ def test_group_extras_static_contracts():
     for element_id in (
         "groups-goal-section", "groups-goal-body", "groups-goal-form-wrap",
         "groups-today-section", "groups-today-list", "groups-today-status",
-        "groups-shared-section", "groups-shared-list", "groups-shared-more",
-        "groups-recommend-form-wrap",
-        "groups-messages-section", "groups-messages-list", "groups-messages-more",
-        "groups-messages-refresh", "groups-message-form-wrap",
         "account-group-today", "account-group-today-label",
     ):
         assert f'id="{element_id}"' in html, f"missing #{element_id} in index.html"
-    assert "/static/group-extras.js?v=1" in html
-    assert "/static/group-extras.css?v=1" in html
+    assert "/static/group-extras.js?v=2" in html
+    assert "/static/group-extras.css?v=2" in html
     assert "/static/app.js?v=85" in html
     # group-extras.js 必须在 app.js 之前加载（app.js 调用 window.GroupExtras）。
-    assert html.index("group-extras.js?v=1") < html.index("app.js?v=85")
+    assert html.index("group-extras.js?v=2") < html.index("app.js?v=85")
 
 
 def test_group_extras_wired_in_app_js():

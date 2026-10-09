@@ -799,6 +799,10 @@ def _apply_manual_claim_receipts(conn):
         "CHECK(receipt_reference IS NULL OR "
         "(typeof(receipt_reference) = 'text' AND length(receipt_reference) BETWEEN 1 AND 128))"
     )
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_manual_claim_receipt ON manual_payment_claims(receipt_reference) "
+        "WHERE receipt_reference IS NOT NULL"
+    )
 
 
 def _apply_group_weekly_goals(conn):
@@ -832,68 +836,6 @@ def _apply_group_today_visibility(conn):
     )
 
 
-def _apply_group_shared_problems(conn):
-    # 小组共享题单：只共享题名/分区/来源链接/一句推荐语，不共享错因、笔记、代码、标签。
-    # withdrawn_at：推荐人撤回；deleted_at：组长删除。均为软删除，保留展示位。
-    conn.execute(
-        """
-        CREATE TABLE group_shared_problems (
-            id INTEGER PRIMARY KEY,
-            group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 200),
-            zone TEXT NOT NULL,
-            source_url TEXT NOT NULL DEFAULT '',
-            note TEXT NOT NULL DEFAULT '' CHECK(length(note) <= 60),
-            created_at TEXT NOT NULL,
-            withdrawn_at TEXT,
-            deleted_at TEXT
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX idx_group_shared_problems_group "
-        "ON group_shared_problems(group_id, id)"
-    )
-    # 谁收录了哪条推荐：用于"已收录"展示与去重，账号注销时清理。
-    conn.execute(
-        """
-        CREATE TABLE group_problem_collections (
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            shared_id INTEGER NOT NULL REFERENCES group_shared_problems(id) ON DELETE CASCADE,
-            problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, shared_id)
-        )
-        """
-    )
-
-
-def _apply_group_messages(conn):
-    # 小组留言板：纯文字轻量留言，无实时推送。deleted_at 为软删除标记。
-    # 账号注销时留言保留（匿名化展示），因此 user_id 用 ON DELETE CASCADE 仅防孤儿行，
-    # 实际注销流程走 delete_account_data 的匿名化而非删行。
-    conn.execute(
-        """
-        CREATE TABLE group_messages (
-            id INTEGER PRIMARY KEY,
-            group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 300),
-            created_at TEXT NOT NULL,
-            deleted_at TEXT
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX idx_group_messages_group ON group_messages(group_id, id)"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX idx_manual_claim_receipt ON manual_payment_claims(receipt_reference) "
-        "WHERE receipt_reference IS NOT NULL"
-    )
-
-
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -919,11 +861,9 @@ MIGRATIONS = [
     (20, "网页导入预览与幂等确认", _apply_import_previews),
     (21, "累计录入题目计数", _apply_lifetime_problem_count),
     (22, "手动付款快照与核账凭证", _apply_manual_claim_receipts),
-    # 40-43 预留给学习小组新功能（oy-followup 分支任务 D），避免与其他分支冲突。
+    # 学习小组功能保留原迁移编号，避免与其他分支冲突。
     (40, "学习小组：每周小目标", _apply_group_weekly_goals),
     (41, "学习小组：今日动态隐私开关", _apply_group_today_visibility),
-    (42, "学习小组：共享题单", _apply_group_shared_problems),
-    (43, "学习小组：留言板", _apply_group_messages),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

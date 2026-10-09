@@ -441,11 +441,8 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("DROP TABLE IF EXISTS import_previews")
         conn.execute("DROP TRIGGER problem_lifetime_insert")
         conn.execute("ALTER TABLE users DROP COLUMN lifetime_problem_count")
-        # migrations 40-43 add these; a real version-10 database has none of them
+        # migrations 40-41 add these; a real version-10 database has none of them
         conn.execute("DROP TABLE IF EXISTS group_weekly_goals")
-        conn.execute("DROP TABLE IF EXISTS group_shared_problems")
-        conn.execute("DROP TABLE IF EXISTS group_problem_collections")
-        conn.execute("DROP TABLE IF EXISTS group_messages")
         conn.execute("ALTER TABLE users DROP COLUMN show_group_today")
         # migration 18 adds this column, so a real version-10 database does not have it
         conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")

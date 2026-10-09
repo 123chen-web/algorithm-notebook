@@ -1372,12 +1372,9 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews",
-                  "group_shared_problems", "group_problem_collections"):
+                  "problem_recommendations", "import_previews"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
-    # 小组留言板按匿名留存：留言保留，作者显示为"已注销用户 #id"（见下方的
-    # 用户名匿名化）；每周小目标属于小组资产，保留。
-    # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
+    # 每周小目标属于小组资产，保留。
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
         "DELETE FROM post_summaries WHERE post_id IN (SELECT id FROM posts WHERE user_id = ?) "
@@ -1916,32 +1913,6 @@ class GroupTodayVisibilityInput(InputModel):
     show: StrictBool
 
 
-class SharedProblemInput(InputModel):
-    title: Annotated[str, Field(min_length=1, max_length=200)]
-    zone: str
-    source_url: Annotated[str, Field(max_length=2000)] = ""
-    note: Annotated[str, Field(max_length=60)] = ""
-
-    @field_validator("zone")
-    @classmethod
-    def valid_zone(cls, value):
-        if value not in PROBLEM_ZONES:
-            raise ValueError("请选择一个有效的题目分区")
-        return value
-
-    @field_validator("source_url")
-    @classmethod
-    def valid_source_url(cls, value):
-        value = value.strip()
-        if value and not re.match(r"^https?://", value):
-            raise ValueError("来源链接必须以 http:// 或 https:// 开头")
-        return value
-
-
-class GroupMessageInput(InputModel):
-    body: Annotated[str, Field(min_length=1, max_length=300)]
-
-
 GROUP_MAX_MEMBERS = 10
 GROUP_MAX_PER_USER = 5
 GROUP_INVITE_CODE_LENGTH = 8
@@ -1954,12 +1925,6 @@ GROUP_WEEKLY_GOAL_MIN_TARGET = 5
 GROUP_WEEKLY_GOAL_MAX_TARGET = 500
 GROUP_WEEKLY_GOAL_DAILY_CAP = 20  # 每人每天对小组合计的贡献封顶，防刷数。
 GROUP_TODAY_GOAL_REVIEWS = 1  # 今日动态"完成每日目标"：当天至少复习 1 道即达标。
-GROUP_SHARED_MAX_PER_GROUP = 100  # 每组共享题单上限。
-GROUP_SHARED_MAX_PER_DAY = 5  # 每人每天最多推荐条数。
-GROUP_MESSAGE_MAX_PER_MINUTE = 6
-GROUP_MESSAGE_MAX_PER_DAY = 100
-GROUP_MESSAGE_LIST_MAX = 500  # 留言板最多展示最近 500 条可见留言。
-GROUP_MESSAGE_LIST_DEFAULT = 30
 
 
 def generate_group_invite_code():
@@ -2249,14 +2214,6 @@ def group_today_feed(conn, group_id):
         entry["goal_met"] = reviewed_today >= GROUP_TODAY_GOAL_REVIEWS
         feed.append(entry)
     return feed
-
-
-def normalize_shared_key(source_url, title):
-    """共享题单去重键：有来源链接按链接规范化，否则按题名规范化。"""
-    url = (source_url or "").strip().lower().rstrip("/")
-    if url:
-        return "url:" + url
-    return "title:" + " ".join(title.split()).lower()
 
 
 POST_LIST_DEFAULT_LIMIT = 20

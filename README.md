@@ -792,40 +792,6 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 `PUT /api/me/group-today`），关闭后组内只显示"未公开"。仅小组成员可见，
 非成员访问返回 404；不暴露邮箱等私密字段。
 
-### 小组共享题单
-
-成员可把"自己的一道题"推荐到小组，只共享题名、分区、来源链接和一句
-推荐语（≤60 字）；不共享错因、笔记、代码、标签。每个小组最多 100 条，
-每人每天最多推荐 5 条（按推荐人时区的本地日）；同一小组内按"来源链接
-或题名规范化"去重（链接去首尾空白/小写/去末尾斜杠，题名压缩空白转小写），
-重复推荐返回 409 与中文提示。
-
-其他成员可一键"收进我的错题本"：创建一道自己的题（题名/分区沿用推荐内容，
-思路备注注明"来自小组 X 的推荐"），已收过的显示"已收录"，不重复创建。
-推荐人可撤回，组长可删除任意一条（均为软删除）。成员退出或被移除后，
-其推荐保留但显示"已离开的成员"。账号注销时清理其推荐记录。
-
-接口：`POST /api/groups/{id}/shared-problems` 推荐，
-`GET /api/groups/{id}/shared-problems` 分页查看（`limit`/`offset`），
-`DELETE /api/groups/{id}/shared-problems/{sid}` 撤回/删除，
-`POST /api/groups/{id}/shared-problems/{sid}/collect` 收录。
-
-### 小组留言板
-
-轻量留言板，不是即时聊天：纯文字、只有组员可见、没有实时推送。进入页面
-时加载，提供"刷新"按钮与"加载更早的留言"（`before_id` 分页）。每条
-≤300 字；每人每分钟最多 6 条、每天最多 100 条（内存限流）；留言作者可删
-自己的，组长可删任意一条（软删除）。每组最多展示最近 500 条可见留言，
-实现方式：先取第 500 条的 id 作为下界，再在其上做 `before_id` 分页，
-保证翻页也翻不出 500 条范围。
-
-内容安全：不渲染 Markdown 与 HTML，链接只当纯文本显示（前端一律
-`textContent`）；长度校验 + 5 分钟内重复内容检测 + 频率限制。账号注销时
-留言保留，作者显示为"已离开的成员"（用户名已匿名化为"已注销用户 #id"）。
-
-接口：`GET /api/groups/{id}/messages`（`limit`/`before_id`），
-`POST /api/groups/{id}/messages`，`DELETE /api/groups/{id}/messages/{mid}`。
-
 ## 数据结构
 
 - users：账号、密码哈希、邮箱（可为空）、时区、上次提醒发送日期、
@@ -883,8 +849,6 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 | 22 | 手动付款金额、周期、名称快照与实收/流水核账（历史未知保留 NULL） |
 | 40 | 学习小组：每周小目标（`group_weekly_goals`） |
 | 41 | 学习小组：今日动态隐私开关（`users.show_group_today`，默认开启） |
-| 42 | 学习小组：共享题单（`group_shared_problems`、`group_problem_collections`） |
-| 43 | 学习小组：留言板（`group_messages`） |
 
 数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
 
