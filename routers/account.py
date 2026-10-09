@@ -143,11 +143,25 @@ def export_data(user=Depends(main.current_user)):
             note["tags"] = [tag for tag in note["tags"].split(",") if tag]
             note["pinned"] = bool(note["pinned"])
             notes.append(note)
+
+        # N1 双向链接：只导出本人的链接关系（种类、原文目标文字、别名、是否悬空）。
+        note_links = []
+        for row in conn.execute(
+            "SELECT source_note_id, link_kind, target_text, alias_text, "
+            "target_note_id, target_problem_id, created_at FROM note_links "
+            "WHERE user_id = ? ORDER BY id", (user["id"],),
+        ):
+            note = dict(row)
+            note["dangling"] = (
+                note["target_note_id"] is None and note["target_problem_id"] is None
+            )
+            note_links.append(note)
     payload = {
         "exported_at": main.utc_now(),
         "username": user["username"],
         "problems": list(problems.values()),
         "notes": notes,
+        "note_links": note_links,
     }
     filename = f"{PRODUCT_NAME}导出_{user['username']}_{main.today_for(user).isoformat()}.json"
     return Response(

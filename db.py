@@ -853,6 +853,30 @@ def _apply_plugin_api(conn):
         conn.execute(f"ALTER TABLE problems ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
 
 
+def _apply_note_links(conn):
+    # N1 笔记双向链接：保存笔记时同事务重解析 [[标题]] / [[题:标题]] 落库。
+    # target_note_id / target_problem_id 可空（悬空：目标不存在、已删除或属于他人）；
+    # 软删除笔记时入链 target 置空，账号注销时由 main.delete_account_data 显式清理。
+    conn.execute(
+        """
+        CREATE TABLE note_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source_note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            link_kind TEXT NOT NULL CHECK(link_kind IN ('note', 'problem')),
+            target_note_id INTEGER NULL REFERENCES notes(id) ON DELETE SET NULL,
+            target_problem_id INTEGER NULL REFERENCES problems(id) ON DELETE SET NULL,
+            target_text TEXT NOT NULL DEFAULT '',
+            alias_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_note_links_source ON note_links(source_note_id, id)")
+    conn.execute("CREATE INDEX idx_note_links_target_note ON note_links(target_note_id)")
+    conn.execute("CREATE INDEX idx_note_links_user ON note_links(user_id)")
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 MIGRATIONS = [
@@ -881,6 +905,7 @@ MIGRATIONS = [
     (23, "私人笔记", _apply_notes),
     (24, "复习提醒开关与退订token", _apply_reminder_prefs),
     (28, "插件 API token 与题目来源字段", _apply_plugin_api),
+    (70, "笔记双向链接", _apply_note_links),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

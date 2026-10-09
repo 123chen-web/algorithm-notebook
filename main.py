@@ -1373,7 +1373,7 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews", "notes"):
+                  "problem_recommendations", "import_previews", "notes", "note_links"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # 论坛按既有规则匿名留存；采纳和摘要不能保留注销前的关联/提炼内容。
     conn.execute(
