@@ -853,6 +853,37 @@ def _apply_plugin_api(conn):
         conn.execute(f"ALTER TABLE problems ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
 
 
+def _apply_group_weekly_goals(conn):
+    # 学习小组每周小目标：一组每周（北京时间周一为起点）一条，由组长设定。
+    # 进度由复习/新增记录实时统计，不落库，因此目标可改、进度不可删。
+    conn.execute(
+        """
+        CREATE TABLE group_weekly_goals (
+            id INTEGER PRIMARY KEY,
+            group_id INTEGER NOT NULL REFERENCES study_groups(id) ON DELETE CASCADE,
+            week_start TEXT NOT NULL,
+            goal_type TEXT NOT NULL CHECK(goal_type IN ('review', 'record')),
+            target INTEGER NOT NULL CHECK(target BETWEEN 5 AND 500),
+            created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(group_id, week_start)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX idx_group_weekly_goals_group ON group_weekly_goals(group_id)"
+    )
+
+
+def _apply_group_today_visibility(conn):
+    # 今日动态隐私开关：默认开启（1），关闭后组内只显示"未公开"。
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN show_group_today INTEGER NOT NULL DEFAULT 1 "
+        "CHECK(show_group_today IN (0, 1))"
+    )
+
+
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
 def _apply_feedback_profiles(conn):
@@ -896,6 +927,9 @@ MIGRATIONS = [
     (23, "私人笔记", _apply_notes),
     (24, "复习提醒开关与退订token", _apply_reminder_prefs),
     (28, "插件 API token 与题目来源字段", _apply_plugin_api),
+    # 学习小组功能保留原迁移编号，避免与其它分支冲突
+    (40, "学习小组：每周小目标", _apply_group_weekly_goals),
+    (41, "学习小组：今日动态隐私开关", _apply_group_today_visibility),
     (50, "榜单显示名与资料公开设置", _apply_feedback_profiles),
     (51, "小黄鸭独立每日额度", _apply_duck_usage),
     (52, "用户手填实付金额与凭证", _apply_claim_actual_amount),

@@ -156,6 +156,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "profile_public_bio": 1,
             "profile_public_count": 1,
             "profile_public_joined": 1,
+            "show_group_today": 1,
         }
         plan_id = insert_plan(conn)
         conn.execute(

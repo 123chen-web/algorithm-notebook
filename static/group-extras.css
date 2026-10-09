@@ -1,0 +1,58 @@
+/* 学习小组新功能样式：每周目标 / 今日动态。
+ * 进度条不用行内 style：JS 写 data-progress（5% 一档），宽度由下面的属性选择器决定。
+ * 动画只在 prefers-reduced-motion: no-preference 下启用。 */
+#groups-page .groups-extras-section { margin-top: var(--space-6); }
+#groups-page .groups-extras-section > h3 { margin: 0 0 var(--space-3); }
+
+#groups-page .groups-goal-bar {
+  display: block; height: 10px; overflow: hidden;
+  background: var(--quota-track); border-radius: var(--radius-pill);
+}
+#groups-page .groups-goal-bar > span {
+  display: block; width: 100%; height: 100%;
+  transform: scaleX(0); transform-origin: left;
+  background: var(--azurite); border-radius: inherit;
+}
+#groups-page .groups-goal-bar[data-progress="0"] > span { transform: scaleX(0); }
+#groups-page .groups-goal-bar[data-progress="5"] > span { transform: scaleX(.05); }
+#groups-page .groups-goal-bar[data-progress="10"] > span { transform: scaleX(.1); }
+#groups-page .groups-goal-bar[data-progress="15"] > span { transform: scaleX(.15); }
+#groups-page .groups-goal-bar[data-progress="20"] > span { transform: scaleX(.2); }
+#groups-page .groups-goal-bar[data-progress="25"] > span { transform: scaleX(.25); }
+#groups-page .groups-goal-bar[data-progress="30"] > span { transform: scaleX(.3); }
+#groups-page .groups-goal-bar[data-progress="35"] > span { transform: scaleX(.35); }
+#groups-page .groups-goal-bar[data-progress="40"] > span { transform: scaleX(.4); }
+#groups-page .groups-goal-bar[data-progress="45"] > span { transform: scaleX(.45); }
+#groups-page .groups-goal-bar[data-progress="50"] > span { transform: scaleX(.5); }
+#groups-page .groups-goal-bar[data-progress="55"] > span { transform: scaleX(.55); }
+#groups-page .groups-goal-bar[data-progress="60"] > span { transform: scaleX(.6); }
+#groups-page .groups-goal-bar[data-progress="65"] > span { transform: scaleX(.65); }
+#groups-page .groups-goal-bar[data-progress="70"] > span { transform: scaleX(.7); }
+#groups-page .groups-goal-bar[data-progress="75"] > span { transform: scaleX(.75); }
+#groups-page .groups-goal-bar[data-progress="80"] > span { transform: scaleX(.8); }
+#groups-page .groups-goal-bar[data-progress="85"] > span { transform: scaleX(.85); }
+#groups-page .groups-goal-bar[data-progress="90"] > span { transform: scaleX(.9); }
+#groups-page .groups-goal-bar[data-progress="95"] > span { transform: scaleX(.95); }
+#groups-page .groups-goal-bar[data-progress="100"] > span { transform: scaleX(1); }
+@media (prefers-reduced-motion: no-preference) {
+  #groups-page .groups-goal-bar > span { transition: transform .6s ease; }
+}
+#groups-page .groups-goal-caption { margin: var(--space-2) 0 0; font-size: var(--text-sm); }
+#groups-page .groups-goal-done { color: var(--azurite); }
+#groups-page .groups-goal-form {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3);
+  margin-top: var(--space-4); align-items: end;
+}
+#groups-page .groups-goal-form label { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+#groups-page .groups-goal-form input, #groups-page .groups-goal-form select { min-width: 0; margin-top: var(--space-1); }
+
+#groups-page .groups-today-item {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--line);
+}
+#groups-page .groups-today-who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+#groups-page .groups-today-met { color: var(--azurite); font-weight: 600; }
+
+@media (max-width: 640px) {
+  #groups-page .groups-goal-form { grid-template-columns: minmax(0, 1fr); }
+}

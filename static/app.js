@@ -740,6 +740,7 @@ function updateUserInfo() {
   configureRank();
   window.Profile?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch, getView: () => view, avatar: avatarElement });
   window.Rank?.syncSetting(user);
+  window.GroupExtras?.renderTodayVisibilitySetting();
   window.NavFocus?.configure({ getUser: () => user, getView: () => view }); // 专注模式按用户 id 读取开关
   window.PushSettings?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   $("#push-settings-host") && window.PushSettings?.mount($("#push-settings-host"));
@@ -1296,6 +1297,7 @@ function renderStudyGroup(group) {
     members.append(row);
   }
   renderGroupWeakness(group.weakness_by_zone);
+  window.GroupExtras?.renderAll(group);
   $("#groups-delete").hidden = !group.is_creator;
   void loadGroupLevelRules();
   rememberGroupLevel(group);

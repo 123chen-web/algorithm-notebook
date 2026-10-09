@@ -448,6 +448,9 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
             conn.execute(f"ALTER TABLE problems DROP COLUMN {column}")
         conn.execute("DROP TRIGGER problem_lifetime_insert")
         conn.execute("ALTER TABLE users DROP COLUMN lifetime_problem_count")
+        # migrations 40-41 add these; a real version-10 database has none of them
+        conn.execute("DROP TABLE IF EXISTS group_weekly_goals")
+        conn.execute("ALTER TABLE users DROP COLUMN show_group_today")
         # migration 18 adds this column, so a real version-10 database does not have it
         conn.execute("ALTER TABLE mistakes DROP COLUMN pending_reason")
         # migration 19 adds bio; the frozen version-10 fixture must omit it too
