@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ink">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="欧叶OY 新手指南：三分钟上手、间隔复习、AI 额度、导入错题、小组榜单隐私、常见问题与反馈方式。">
+  <title>使用指南与常见问题 · 欧叶OY</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <!-- 主题选择与首页共用一份本地脚本和令牌，不依赖任何外部资源。 -->
+  <script src="/static/themes.js?v=1"></script>
+  <link rel="stylesheet" href="/static/style.css?v=51">
+  <link rel="stylesheet" href="/static/help.css?v=1">
+  <script defer src="/static/help.js?v=1"></script>
+</head>
+<body class="help-page">
+  <a class="skip-link" href="#help-content">跳到主要内容</a>
+  <main id="help-content" class="help-wrap">
+    <header class="help-header">
+      <p class="eyebrow">新朋友先看这里</p>
+      <h1>欧叶OY 使用指南与常见问题</h1>
+      <p class="help-lead">这份指南只讲一件事：怎么用起来。每节都很短，跟着步骤做即可。</p>
+      <p class="help-back"><a href="/">← 返回欧叶OY 首页</a></p>
+
+      <div class="help-toolbar">
+        <label class="help-search" for="help-search">
+          <span class="help-search-label">在本页搜索</span>
+          <input id="help-search" type="search" placeholder="试试搜：额度、密码、导入、榜单、主屏幕" autocomplete="off" aria-describedby="help-search-hint">
+        </label>
+        <p id="help-search-hint" class="field-hint">搜索只在本页筛选内容，不会联网、不会发送任何信息。</p>
+        <p id="help-search-empty" class="help-search-empty" hidden>没有找到相关内容，换个词试试（比如搜「复习」「邮箱」）。</p>
+      </div>
+
+      <nav class="help-toc" aria-label="本页目录">
+        <h2 class="help-toc-title">目录</h2>
+        <ol>
+          <li><a href="#quick-start">三分钟上手</a></li>
+          <li><a href="#spaced-review">间隔复习与卡片涂色</a></li>
+          <li><a href="#ai-quota">AI 功能与额度</a></li>
+          <li><a href="#import-extension">导入旧错题与浏览器扩展</a></li>
+          <li><a href="#community-privacy">小组、讨论区与榜单隐私</a></li>
+          <li><a href="#faq">常见问题</a></li>
+          <li><a href="#feedback">怎么反馈问题</a></li>
+        </ol>
+      </nav>
+    </header>
+
+    <section id="quick-start" class="help-panel help-section" data-keywords="上手 注册 账号 新增记录 速记 一句话 完整 复习 进度 打卡 总览 新手 开始 第一步">
+      <h2>一、三分钟上手</h2>
+
+      <h3>第 1 步：注册一个账号</h3>
+      <ol class="help-steps">
+        <li>打开网站，在首页选择「注册」，填用户名、邮箱和密码。</li>
+        <li>建议注册后顺手绑定邮箱：以后能找回密码、接收复习提醒。</li>
+        <li>体验账号可以随便看，但数据会被定期清理；想长期留存错题，请用正式账号。</li>
+      </ol>
+
+      <h3>第 2 步：记下第一道错题</h3>
+      <p>点页面右上角的「新增记录」。记录方式有三种，按你当下的时间选：</p>
+      <ul class="help-ways">
+        <li>
+          <h4>速记（最赶时间时用）</h4>
+          <p>只填题目名字和分区，十秒存一条。系统会自动建一条「待补」的易错点，等你有空再回来补代码、思路和错因。适合课堂上、考试中先占个坑。</p>
+        </li>
+        <li>
+          <h4>一句话（大多数时候用它）</h4>
+          <p>在速记的基础上，再用一句话写清错因，例如「循环边界少写了等号」「把下标从 1 开始算成了 0」。够用、不费劲，也足够安排复习。</p>
+        </li>
+        <li>
+          <h4>完整记录（重点题用）</h4>
+          <p>把代码、解题思路、多条易错点都记上。适合值得反复看的经典题、考前整理的薄弱题；暂时不想填的部分可以勾选跳过，以后再补。</p>
+        </li>
+      </ul>
+      <p class="help-note">三种方式记下来的题都会自动进入复习安排，没有「必须一次写完整」的压力，先记下来最重要。</p>
+
+      <h3>第 3 步：每天花几分钟复习</h3>
+      <ol class="help-steps">
+        <li>打开左侧导航的「今日复习」，到期的错题都会列在里面。</li>
+        <li>先自己在脑子里回忆一遍，再点开对照。</li>
+        <li>如实评分：忘了、很困难但答对、记得、熟练。系统会据此自动安排下次复习时间。</li>
+        <li>每天至少完成一次复习评分，就算当天打卡。</li>
+      </ol>
+
+      <h3>第 4 步：看看自己的进度</h3>
+      <ol class="help-steps">
+        <li>「总览」页看连续打卡、复习次数和真实保持率。</li>
+        <li>「掌握度」页看每个知识分区的掌握情况，低于 70% 且到期的分区会被标成「快被遗忘」，优先复习它。</li>
+      </ol>
+    </section>
+
+    <section id="spaced-review" class="help-panel help-section" data-keywords="间隔复习 遗忘 复习间隔 明天 几天后 卡片 背景 涂色 完成度 熟练 21 天 二十一天 易错点 平均 掌握度 为什么">
+      <h2>二、间隔复习与卡片涂色</h2>
+
+      <h3>为什么不是今天连着复习十遍</h3>
+      <p>举个小例子：</p>
+      <ol class="help-steps">
+        <li>今天你做错了一道题，明天先来看一次。</li>
+        <li>明天想起来了，下一次就排到 6 天后。</li>
+        <li>6 天后还记得，间隔会继续拉长到十几天、二十几天。</li>
+        <li>每次都在「快要忘但还没忘」的时候回忆一遍，这道题就会慢慢变成长久记忆。</li>
+        <li>如果某次你忘了，没关系，间隔会自动缩短，重新多来几轮。</li>
+      </ol>
+      <p>你不需要自己排计划：到了该复习的日子，题会自动出现在「今日复习」里，照着做就行。</p>
+
+      <h3>卡片背景的「完成度涂色」是什么意思</h3>
+      <ul class="help-bullets">
+        <li>涂色表示这道题离「熟练」还有多远：<strong>复习间隔达到 21 天，就算熟练</strong>，对应涂满。</li>
+        <li>一道题如果记了多条易错点，完成度按这些易错点<strong>取平均</strong>：只要还有一条没掌握好，整道题就不会提前涂满。</li>
+        <li>所以涂色不是「做了多少次」，而是「隔了多久你依然记得」。颜色越接近涂满，说明这条知识越牢。</li>
+      </ul>
+    </section>
+
+    <section id="ai-quota" class="help-panel help-section" data-keywords="AI 人工智能 额度 次数 每天 每日 免费 体验 标准版 进阶版 套餐 扣费 退还 退款 失败 服务器 出错 繁忙 502 503 504 生成 拍照 薄弱点 小黄鸭 计费">
+      <h2>三、AI 功能与额度</h2>
+
+      <h3>AI 能帮你做什么</h3>
+      <ul class="help-bullets">
+        <li>围绕你的薄弱点生成新的练习题；</li>
+        <li>分析一批错题里反复出现的问题；</li>
+        <li>拍照识别题目、自动归并相似错因；</li>
+        <li>「讲给小黄鸭听」对话式讲解，帮你把思路说通。</li>
+      </ul>
+
+      <h3>每天有多少次</h3>
+      <p>额度按天计算，每天刷新。各档额度如下：</p>
+      <div class="help-table-wrap">
+        <table class="help-table">
+          <thead>
+            <tr><th scope="col">账号 / 套餐</th><th scope="col">AI 额度</th><th scope="col">说明</th></tr>
+          </thead>
+          <tbody>
+            <tr data-plan="free" data-limit="20">
+              <td>免费用户</td>
+              <td>20 次 / 天</td>
+              <td>注册正式账号后的默认额度</td>
+            </tr>
+            <tr data-plan="trial" data-limit="4">
+              <td>体验账号</td>
+              <td>4 次 / 天</td>
+              <td>免注册体验用，数据可能定期清理</td>
+            </tr>
+            <tr data-plan="standard" data-limit="50">
+              <td>标准版</td>
+              <td>50 次 / 天</td>
+              <td>付费套餐，额度是免费版的 2.5 倍</td>
+            </tr>
+            <tr data-plan="pro" data-limit="120">
+              <td>进阶版</td>
+              <td>120 次 / 天</td>
+              <td>付费套餐，适合高频使用</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>首页顶部的「今日 AI 生成额度」进度条会显示今天还剩多少次。</p>
+
+      <h3>调用失败了，会扣次数吗</h3>
+      <p>用人话说：<strong>因为网站或 AI 服务器出错而失败的，次数会自动退还给你，不用找人补。</strong></p>
+      <ul class="help-bullets">
+        <li>提示服务器出错、网关错误之类的故障（不是你操作的问题），这一次自动退还。</li>
+        <li>提示「AI 现在比较忙，请稍后再试；这次没有消耗额度」时，本来就没有扣次数，稍后再试即可。</li>
+        <li>输入内容太少、没点生成等压根没有真正发起调用的情况，也不会扣次数。</li>
+      </ul>
+      <p class="help-note">额度、套餐与退还规则以 <a href="ai-billing.html">AI 额度与计费说明页</a> 为唯一权威来源；如本页与该页不一致，以该页为准。</p>
+    </section>
+
+    <section id="import-extension" class="help-panel help-section" data-keywords="导入 旧错题 批量 文件 导入预览 预览 勾选 确认导入 扩展 浏览器扩展 插件 安装">
+      <h2>四、导入旧错题与浏览器扩展</h2>
+
+      <h3>把以前的错题批量导进来</h3>
+      <ol class="help-steps">
+        <li>打开左侧「全部记录」页，点右上角的「导入错题」。</li>
+        <li>选择准备好的文件，点「预览文件」。</li>
+        <li>进入<strong>导入预览</strong>：系统先把识别到的题目列给你看，预览 30 分钟内有效；这一步不会写入任何数据。</li>
+        <li>勾选你真正想导入的题目，再点「确认导入」，勾选的内容才会正式存进你的错题本。</li>
+      </ol>
+      <p class="help-note">建议导入前先预览一遍，把识别错、不想要的条目取消勾选，避免整理两遍。</p>
+
+      <h3>浏览器扩展</h3>
+      <div class="help-placeholder">
+        <p><strong>扩展安装方法即将更新。</strong></p>
+        <p>浏览器扩展正在准备中，本页会在上线后补上安装步骤，请先使用网页版的「导入错题」。</p>
+      </div>
+    </section>
+
+    <section id="community-privacy" class="help-panel help-section" data-keywords="小组 学习小组 邀请码 讨论区 论坛 发帖 评论 榜单 排行榜 匿名 显示名 真名 隐私 别人 看得到 看不到 头像 用户名 打卡 薄弱点 昨日之星">
+      <h2>五、小组、讨论区与榜单：别人能看到什么</h2>
+
+      <h3>学习小组</h3>
+      <ul class="help-bullets">
+        <li>凭 8 位邀请码加入，每组最多 10 人，组内显示真实用户名，体验账号也能参与。</li>
+        <li>组员看得到：彼此的用户名、连续打卡天数、小组贡献积分，以及匿名汇总的「组内薄弱点信号」（一个分区至少有 3 位成员记录过易错点才会显示占比，<strong>看不到具体是谁的哪道题</strong>）。</li>
+        <li>组员看不到：你的题目、代码、思路和错因详情，这些只有你自己能看。</li>
+        <li>邀请码仅小组成员可见；随时可以退出，最后一位成员退出后小组自动删除。</li>
+      </ul>
+
+      <h3>讨论区</h3>
+      <ul class="help-bullets">
+        <li>发帖和评论都会显示你的用户名，好回答可以被楼主「采纳」。</li>
+        <li>体验账号只能浏览，不能发帖和评论。</li>
+      </ul>
+
+      <h3>榜单</h3>
+      <ul class="help-bullets">
+        <li>榜单上显示：用户名、头像、昨日复习次数、连续打卡天数。</li>
+        <li>不想被别人看到：打开右上角头像菜单，取消勾选「参与公开榜单」即可匿名——你不会出现在榜单、「昨日之星」「本周热门题目」里，但自己的数据照常能看。</li>
+        <li>你也可以填写「榜单显示名」（选填）：建议写真名，方便同学在榜单上认出你；不填则显示你的用户名。</li>
+        <li>体验账号、被封禁和已注销的账号不上榜。</li>
+      </ul>
+    </section>
+
+    <section id="faq" class="help-panel help-section" data-keywords="常见问题 FAQ 忘记密码 重置 改邮箱 换邮箱 收不到邮件 垃圾邮件 手机 主屏幕 安装 导出 数据 注销 删除账号 Ctrl F5 强制刷新 白屏 点不动 缓存 安卓 iPhone Safari Chrome">
+      <h2>六、常见问题</h2>
+
+      <details class="help-faq">
+        <summary>忘记密码了怎么办？</summary>
+        <div class="help-faq-body">
+          <ol class="help-steps">
+            <li>在登录页点「忘记密码？」。</li>
+            <li>输入注册时填写的邮箱，提交后去收重置邮件。</li>
+            <li>重置链接 30 分钟内有效，点开后按提示设置新密码。</li>
+          </ol>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>怎么改邮箱？</summary>
+        <div class="help-faq-body">
+          <p>登录后点右上角头像 →「我的个人资料」，在资料页修改邮箱。为了确认是本人操作，需要输入当前密码。改邮箱后，找回密码和提醒邮件都会发到新邮箱。</p>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>收不到邮件（重置邮件 / 验证邮件）怎么办？</summary>
+        <div class="help-faq-body">
+          <ol class="help-steps">
+            <li>先翻一下邮箱的「垃圾邮件」「订阅邮件」文件夹。</li>
+            <li>确认邮箱地址没有拼错，且是你注册或绑定的那个邮箱。</li>
+            <li>重置邮件发送后有 60 秒倒计时，请勿连续重复点击，稍等几分钟。</li>
+            <li>还是收不到，请按本页最后一节的方式联系开发者，并说明你用的是哪个邮箱。</li>
+          </ol>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>怎么把网站加到手机主屏幕，像 App 一样用？</summary>
+        <div class="help-faq-body">
+          <p><strong>安卓（Chrome 浏览器）：</strong>打开网站后，点右上角三个点的菜单，选「添加到主屏幕」或「安装应用」，按提示确认。</p>
+          <p><strong>iPhone（Safari 浏览器）：</strong>用 Safari 打开网站，点底部的「分享」按钮（方框向上箭头），选择「添加到主屏幕」，再点右上角「添加」。</p>
+          <p class="help-note">iPhone 需要用系统自带的 Safari 添加，第三方浏览器里可能没有这个选项。</p>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>怎么导出我的数据？</summary>
+        <div class="help-faq-body">
+          <p>点右上角头像菜单：</p>
+          <ul class="help-bullets">
+            <li>「导出我的数据」：下载你在站内的全部数据；</li>
+            <li>「导出到 Anki」：按范围或分区生成可导入 Anki 的文件，重复导入不会产生重复卡片。</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>怎么注销（删除）账号？</summary>
+        <div class="help-faq-body">
+          <p>点右上角头像菜单 →「注销账号…」，按提示验证身份后完成。注销后，你的题目、错因、复习记录、练习、头像和小组成员关系会被删除；你在讨论区发过的帖子和评论会以「已注销用户」的占位身份保留，订单与支付记录按财务要求留存。</p>
+          <p class="help-note">如果你是某个小组的最后一位成员，需要先退出小组（退出后小组自动删除）再注销。</p>
+        </div>
+      </details>
+
+      <details class="help-faq">
+        <summary>页面点不动、显示异常怎么办？</summary>
+        <div class="help-faq-body">
+          <ol class="help-steps">
+            <li>电脑：按 <kbd>Ctrl</kbd> + <kbd>F5</kbd> 强制刷新（Mac 按 <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>），会重新加载最新页面。</li>
+            <li>手机：把浏览器标签页彻底关掉，再重新打开网站。</li>
+            <li>还不行：换一个浏览器试试，或清理浏览器缓存后再打开。</li>
+            <li>依然异常：按最后一节的格式反馈给开发者。</li>
+          </ol>
+        </div>
+      </details>
+    </section>
+
+    <section id="feedback" class="help-panel help-section" data-keywords="反馈 报错 bug 问题 联系 开发者 内测群 讨论区 截图 提示 设备 手机 电脑 浏览器 定位 模板">
+      <h2>七、怎么反馈问题，定位最快</h2>
+      <p>可以在「讨论区」发标题带【反馈】的帖子，也可以通过你拿到内测邀请的群 / 联系方式直接发给开发者。描述时请带上四样信息：</p>
+      <ol class="help-steps">
+        <li><strong>在哪个页面</strong>：例如「今日复习」「榜单」「导入错题」。</li>
+        <li><strong>点了什么</strong>：按了哪个按钮、提交了什么内容、导入了什么文件。</li>
+        <li><strong>看到了什么</strong>：页面上完整的提示文字，或是白屏、一直转圈、没反应。</li>
+        <li><strong>用什么设备</strong>：手机还是电脑、什么浏览器（如 iPhone Safari、安卓 Chrome、电脑 Edge），以及大概的时间。</li>
+      </ol>
+      <p>能附一张截图最好。可以直接照这个模板填：</p>
+      <blockquote class="help-template">
+        <p>我在【＿＿】页面，点了【＿＿】，结果看到【＿＿】；我用的是【手机型号 / 电脑 + 浏览器】，时间大约【＿＿】。</p>
+      </blockquote>
+    </section>
+
+    <footer class="help-footer">
+      <nav aria-label="页面底部链接">
+        <a href="/">返回首页</a>
+        <a href="/terms">服务条款</a>
+        <a href="/privacy">隐私政策</a>
+        <a href="ai-billing.html">AI 额度与计费说明</a>
+      </nav>
+      <p class="field-hint">欧叶OY · 邀请内测中，功能与界面可能持续调整。</p>
+    </footer>
+  </main>
+</body>
+</html>
