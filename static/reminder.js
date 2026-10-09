@@ -56,6 +56,7 @@
   }
 
   async function save(optIn, ticket) {
+    if (!alive(ticket) || saving) return;
     saving = true;
     setBusy();
     setStatus("保存中…", false);
@@ -65,6 +66,7 @@
         body: JSON.stringify({ opt_in: optIn }),
       });
       if (!alive(ticket)) return;
+      currentUser().reminder_opt_in = Boolean(updated.opt_in);
       setStatus(updated.opt_in ? "已开启每日复习提醒。" : "已关闭每日复习提醒。", false);
     } catch (error) {
       if (!alive(ticket)) return;
@@ -115,6 +117,7 @@
     },
     mount(node) {
       generation += 1;
+      saving = false;
       container = node;
       root = build();
       container.replaceChildren(root);

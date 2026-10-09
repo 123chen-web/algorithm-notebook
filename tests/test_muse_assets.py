@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / 'static'
 
 
+def test_reminder_state_fix_bumps_asset_version():
+    page = (STATIC / 'index.html').read_text(encoding='utf-8')
+    assert page.count('/static/reminder.js?v=2') == 1
+    assert '/static/reminder.js?v=1' not in page
+
+
 @pytest.mark.parametrize('name', ['notes', 'heatmap', 'import-problem', 'reminder', 'similar'])
 def test_integrated_modules_use_host_api_and_inert_dom(name):
     source = (STATIC / f'{name}.js').read_text(encoding='utf-8')

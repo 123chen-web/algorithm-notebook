@@ -98,10 +98,16 @@ def test_version_18_upgrade_preserves_user_and_pending_reason(tmp_path, monkeypa
         before = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == 22
+        assert db.schema_version(conn) == 28
         after = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
         assert after.pop('bio') == ''
         assert after.pop('lifetime_problem_count') == 0
+        assert after.pop('reminder_opt_in') == 1
+        reminder_token = after.pop('reminder_token')
+        owner_prefix, secret = reminder_token.split('.', 1)
+        assert owner_prefix == '7'
+        assert len(secret) == 32 and all(c.isalnum() or c in '_-' for c in secret)
+        assert after.pop('api_token_hash') is None
         assert after == before
         column = next(row for row in conn.execute('PRAGMA table_info(users)') if row['name'] == 'bio')
         assert (column['type'], column['notnull'], column['dflt_value']) == ('TEXT', 1, "''")

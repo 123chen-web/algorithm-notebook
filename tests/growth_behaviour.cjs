@@ -27,6 +27,60 @@ function changeUser(env) {
   env.module.reset(); env.state.epoch++; env.state.user = { id: 2 };
 }
 
+test("reminder saved state survives a same-user remount", async () => {
+  const env = setup("reminder.js", "Reminder");
+  env.state.user.reminder_opt_in = true;
+  env.module.mount(env.host);
+  const toggle = env.host.querySelector(".reminder-toggle");
+  toggle.checked = false;
+  toggle.dispatchEvent({ type: "change" });
+  assert.equal(env.requests[0].path, "/api/me/reminder");
+  assert.deepEqual(JSON.parse(env.requests[0].options.body), { opt_in: false });
+  env.requests[0].resolve({ opt_in: false });
+  await tick(); await tick();
+  env.module.mount(env.host);
+  assert.equal(env.host.querySelector(".reminder-toggle").checked, false);
+  assert.equal(env.host.querySelector(".reminder-toggle").disabled, false);
+});
+
+test("reminder remount during save remains usable and discards the old response", async () => {
+  const env = setup("reminder.js", "Reminder");
+  env.state.user.reminder_opt_in = true;
+  env.module.mount(env.host);
+  const oldToggle = env.host.querySelector(".reminder-toggle");
+  oldToggle.checked = false;
+  oldToggle.dispatchEvent({ type: "change" });
+  env.module.mount(env.host);
+  assert.equal(env.host.querySelector(".reminder-toggle").disabled, false);
+  env.requests[0].resolve({ opt_in: false });
+  await tick(); await tick();
+  assert.equal(env.state.user.reminder_opt_in, true);
+  assert.equal(env.host.querySelector(".reminder-toggle").checked, true);
+  oldToggle.dispatchEvent({ type: "change" });
+  assert.equal(env.requests.length, 1, "detached controls must not create a new write");
+});
+
+for (const failure of [false, true]) {
+  test(`reminder discards a previous account's ${failure ? "failure" : "success"}`, async () => {
+    const env = setup("reminder.js", "Reminder");
+    env.state.user.reminder_opt_in = true;
+    env.module.mount(env.host);
+    const toggle = env.host.querySelector(".reminder-toggle");
+    toggle.checked = false;
+    toggle.dispatchEvent({ type: "change" });
+    changeUser(env);
+    env.state.user.reminder_opt_in = true;
+    env.module.mount(env.host);
+    if (failure) env.requests[0].reject(new Error("old account error"));
+    else env.requests[0].resolve({ opt_in: false });
+    await tick(); await tick();
+    assert.equal(env.state.user.reminder_opt_in, true);
+    assert.equal(env.host.querySelector(".reminder-toggle").checked, true);
+    assert.equal(env.host.querySelector(".reminder-toggle").disabled, false);
+    assert.equal(env.host.querySelector(".reminder-settings-status").textContent, "");
+  });
+}
+
 for (const stale of [false, true]) {
   test(`the real link button ${stale ? "discards a prior session" : "requests and fills the form"}`, async () => {
     const env = setup("import-problem.js", "ImportProblem");
