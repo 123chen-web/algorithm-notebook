@@ -1,0 +1,29 @@
+/* 套路库页面：只用主题令牌，无行内样式。 */
+.patterns-main { max-width: 860px; margin: 0 auto; padding: var(--space-6) max(16px, var(--space-5)) var(--space-8); overflow-wrap: anywhere; }
+.patterns-header { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+.patterns-header h1 { margin: var(--space-3) 0 var(--space-2); }
+.patterns-header p { margin: 0; color: var(--ink-2); line-height: var(--lh-prose); }
+.patterns-back { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-hover); }
+.patterns-tools { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
+.patterns-search { display: block; margin: 0; }
+.patterns-cats { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.patterns-cat { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-badge); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.patterns-cat[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent-hover); font-weight: 600; }
+.patterns-status { margin: 0; color: var(--muted); }
+.patterns-list { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.pattern-card { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.pattern-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-height: 48px; padding: var(--space-3) var(--space-4); cursor: pointer; }
+.pattern-title { flex: 1 1 14em; min-width: 0; font-weight: 600; }
+.pattern-chip { padding: 2px var(--space-2); border-radius: var(--radius-badge); background: var(--paper-2); color: var(--ink-2); font-size: var(--text-meta); }
+.pattern-level { background: var(--soft); color: var(--accent-hover); }
+.pattern-body { padding: 0 var(--space-4) var(--space-4); }
+.pattern-idea { margin: 0 0 var(--space-3); color: var(--ink); line-height: var(--lh-prose); }
+.pattern-section h4 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-md); }
+.pattern-section h5 { margin: var(--space-2) 0 var(--space-1); font-size: var(--text-sm); color: var(--ink-2); }
+.pattern-section p { margin: 0; line-height: var(--lh-prose); }
+.pattern-bullets { margin: 0; padding-left: 1.2em; line-height: var(--lh-prose); }
+.pattern-code { margin: 0 0 var(--space-2); padding: var(--space-3); overflow-x: auto; border-radius: var(--radius-sm); background: var(--code-surface); color: var(--code-ink); font-size: var(--text-sm); line-height: 1.5; }
+.pattern-related { margin: var(--space-3) 0 0; color: var(--ink-2); }
+.pattern-copy { min-height: 44px; margin-top: var(--space-3); padding: 0 var(--space-4); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .pattern-card:hover { border-color: var(--ink-2); } }
+@media (max-width: 520px) { .pattern-summary { padding: var(--space-3); } .pattern-body { padding: 0 var(--space-3) var(--space-3); } }
