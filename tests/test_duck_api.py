@@ -22,6 +22,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
+    monkeypatch.setenv("DUCK_DAILY_LIMIT", "2")
     main.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
@@ -90,7 +91,7 @@ def duck(client, mistake_id, turns, finish=False):
 def attempts(user_id=1):
     with connect() as conn:
         row = conn.execute(
-            "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
+            "SELECT attempts FROM duck_usage WHERE user_id = ?", (user_id,)
         ).fetchone()
     return row["attempts"] if row else 0
 
@@ -105,6 +106,53 @@ def ai_calls(user_id=1):
 GOOD = FakeResponse("哪里没想清楚？", "stop")
 USER = {"role": "user", "text": "我当时的思路是维护一个闭区间。"}
 DUCK = {"role": "duck", "text": "区间里剩一个元素时呢？"}
+
+
+def test_duck_quota_is_independent_even_when_normal_ai_is_exhausted(client, monkeypatch):
+    fake_ai(monkeypatch, GOOD)
+    owner = register(client)
+    mistake_id = new_mistake(client)
+    day = main.today_for({'timezone': 'Asia/Shanghai'}).isoformat()
+    with connect(write=True) as conn:
+        conn.execute('INSERT INTO ai_usage VALUES (?, ?, 2)', (owner['id'], day))
+    assert duck(client, mistake_id, [USER]).status_code == 200
+    assert attempts() == 1
+    with connect() as conn:
+        assert conn.execute('SELECT attempts FROM ai_usage').fetchone()[0] == 2
+
+
+def test_duck_busy_429_does_not_charge_or_lock_daily_quota(client, monkeypatch):
+    from ai_limits import ai_slot
+    fake_ai(monkeypatch, GOOD)
+    register(client)
+    mistake_id = new_mistake(client)
+    monkeypatch.setenv('AI_MAX_CONCURRENCY', '1')
+    with ai_slot():
+        response = duck(client, mistake_id, [USER])
+    assert response.status_code == 429
+    assert '没有消耗' in response.json()['detail']
+    assert attempts() == 0
+    assert duck(client, mistake_id, [USER]).status_code == 200
+
+
+def test_duck_concurrent_requests_atomically_reserve_last_attempt(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    provider = fake_ai(monkeypatch, GOOD)
+    register(client)
+    mistake_id = new_mistake(client)
+    monkeypatch.setenv('DUCK_DAILY_LIMIT', '1')
+    barrier = Barrier(2)
+    def request():
+        barrier.wait(timeout=10)
+        return duck(client, mistake_id, [USER]).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: request(), range(2)))
+    assert sorted(results) == [200, 429]
+    assert attempts() == 1
+    assert len(provider.requests) == 1
+    with connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM ai_usage').fetchone()[0] == 0
 
 
 # ---------------- 成功路径与契约 ----------------

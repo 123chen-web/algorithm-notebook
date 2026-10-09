@@ -18,14 +18,14 @@ def test_lifetime_count_survives_deletion_and_remains_owner_scoped(client):
     create_quick(client, '第二题')
     profile_url = f"/api/users/{owner['id']}/public"
     before = client.get(profile_url).json()
-    assert (before['problem_count'], before['lifetime_problem_count']) == (2, 2)
+    assert before['lifetime_problem_count'] == 2
     assert client.delete(f'/api/problems/{first}').status_code == 200
     after = client.get(profile_url).json()
-    assert (after['problem_count'], after['lifetime_problem_count']) == (1, 2)
+    assert after['lifetime_problem_count'] == 2
     client.post('/api/auth/logout')
     second_owner = register(client, 'bob')
     second = client.get(f"/api/users/{second_owner['id']}/public").json()
-    assert (second['problem_count'], second['lifetime_problem_count']) == (0, 0)
+    assert second['lifetime_problem_count'] == 0
     assert client.get(profile_url).json()['lifetime_problem_count'] == 2
 
 

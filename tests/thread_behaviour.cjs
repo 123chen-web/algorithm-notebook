@@ -404,9 +404,12 @@ function appEnv() {
   mountForumMarkup(env.document);
   const $ = (selector) => env.document.documentElement.querySelector(selector);
   const calls = [], messages = [];
+  const location = { pathname: "/", search: "", hash: "#/app" };
   let pending = Promise.resolve();
   Object.assign(env.context, {
     $, user: { id: 1, username: "我", avatar_version: 0, has_avatar: false, is_trial: false, ai_enabled: true },
+    location, history: { replaceState(_state, _title, url) { location.hash = url.slice(url.indexOf('#')); } },
+    renderPageRoute() { env.window.loginShown = location.hash === "#/auth"; },
     sessionEpoch: 1, view: "forum", busy: false,
     forumPost: post(), forumCommentOrder: "earliest", forumOnlyOp: false, forumCodeOnly: false,
     forumMentionOnly: false, forumPreview: false, forumDetailGeneration: 0, forumCurrentComment: null,
@@ -802,6 +805,34 @@ test("app submit: failure explains retry without discarding the draft or reply t
   env.calls[1].resolve(row(8, 8)); await env.pending();
 });
 
+test("feedback: reply network failure explains retry in Chinese and allows another send", async () => {
+  const env = appEnv(); env.render();
+  const field = env.$("#forum-comment-body"); field.value = "网络中断时保留草稿";
+  env.context.selectForumReply(env.context.forumPost.comments[0]);
+  env.context.submitForumComment(); await tick();
+  env.calls[0].reject(new TypeError("Failed to fetch")); await env.pending();
+  assert.match(env.$("#forum-comment-status").textContent, /网络.*重试|发送失败.*重试/);
+  assert.equal(field.value, "网络中断时保留草稿");
+  assert.equal(env.context.forumReplyTarget.id, 1);
+  env.context.submitForumComment(); await tick();
+  assert.equal(env.calls.length, 2);
+  env.calls[1].resolve(row(8, 8)); await env.pending();
+});
+
+test("feedback: reply 401 explains login expiry even after api invalidates the session", async () => {
+  const env = appEnv(); env.render();
+  env.$("#forum-comment-body").value = "过期登录的草稿";
+  env.context.submitForumComment(); await tick();
+  // The production api() calls signedOut() before rejecting a 401 response.
+  env.context.sessionEpoch++;
+  env.context.user = null;
+  env.context.view = "home";
+  env.calls[0].reject(Object.assign(new Error("请先登录"), { status: 401 })); await env.pending();
+  assert.match(env.messages.join(" "), /登录.*过期|重新登录|请先登录/);
+  assert.equal(env.context.location.hash, "#/auth", "expiry brings the user straight to login");
+  assert.equal(env.window.loginShown, true);
+});
+
 test("app submit: a late failure cannot display errors after leaving the discussion", async () => {
   const env = appEnv(); env.render();
   env.$("#forum-comment-body").value = "离开前草稿";
@@ -820,4 +851,129 @@ test("app submit: successful send preserves text typed while its response was pe
   env.calls[0].resolve(row(8, 8, { body: "第一条回复", user_id: 1 })); await env.pending();
   assert.equal(field.value, "下一条还没发的回复");
   assert.equal(env.floor(8).textContent.includes("第一条回复"), true);
+});
+
+test("feedback: opening an unanswered post reveals its composer and accepts its first reply", async () => {
+  const env = appEnv();
+  env.context.user.ai_enabled = false;
+  env.$("#forum-detail").hidden = true;
+  env.$("#forum-list").hidden = false;
+  const opening = env.context.openForumPost(72);
+  env.calls[0].resolve({ ...post(72), comments: [], comment_count: 0 });
+  await opening;
+  assert.equal(env.$("#forum-detail").hidden, false);
+  assert.equal(env.$("#forum-list").hidden, true);
+  assert.equal(env.$("#forum-comment-form").hidden, false);
+  env.$("#forum-comment-body").value = "这是第一条回复";
+  env.$("#forum-comment-form").dispatchEvent(new FakeEvent("submit"));
+  await tick();
+  assert.equal(env.calls[1].url, "/api/posts/72/comments");
+  env.calls[1].resolve(row(80, 1, { body: "这是第一条回复", user_id: 1 }));
+  await env.pending();
+  assert.equal(env.floor(80).textContent.includes("这是第一条回复"), true);
+  assert.equal(env.document.activeElement, env.floor(80));
+});
+
+test("feedback: a collapsed or accepted comment remains replyable", () => {
+  const env = appEnv();
+  const comments = [row(3, 3, { body: "很长的正文\n".repeat(30) }), row(4, 4)];
+  env.render({ ...post(), comments, accepted_comment_id: 4 });
+  for (const id of [3, 4]) {
+    const reply = env.actions(env.floor(id)).find((button) => button.textContent === "回复");
+    assert.ok(reply, `floor ${id} has a reply action`);
+    reply.click();
+    assert.equal(env.context.forumReplyTarget.id, id);
+    assert.equal(env.$("#forum-comment-body").hidden, false);
+    assert.equal(env.document.activeElement, env.$("#forum-comment-body"));
+  }
+});
+
+test("feedback: out-of-order detail results cannot replace the newer unanswered post", async () => {
+  const env = appEnv(); env.context.user.ai_enabled = false;
+  const older = env.context.openForumPost(71);
+  const newer = env.context.openForumPost(72);
+  env.calls[1].resolve({ ...post(72), comments: [] }); await newer;
+  env.calls[0].resolve({ ...post(71), comments: [] }); await older;
+  assert.equal(env.context.forumPost.id, 72);
+  assert.equal(env.$("#forum-detail").hidden, false);
+  assert.equal(env.$("#forum-comment-form").hidden, false);
+});
+
+test("feedback: opening failure gives a visible Chinese retry without losing the list", async () => {
+  const env = appEnv(); env.context.user.ai_enabled = false;
+  env.$("#forum-detail").hidden = true;
+  env.$("#forum-list").hidden = false;
+  const opening = env.context.openForumPost(72);
+  // A failed GET must remain reviewable beside the list, even when global toast scrolls away.
+  const settled = Promise.resolve(opening).catch(() => {});
+  env.calls[0].reject(new TypeError("Failed to fetch")); await settled;
+  const notice = env.$("#forum-open-status");
+  assert.ok(notice, "opening status is present in the forum markup");
+  assert.match(notice.textContent, /打不开|无法打开|打开.*失败/);
+  const retry = env.$("#forum-open-retry");
+  assert.ok(retry, "an opening failure offers an actionable retry");
+  assert.equal(retry.hidden, false);
+  retry.click(); await tick();
+  assert.equal(env.calls[1].url, "/api/posts/72");
+  env.calls[1].resolve({ ...post(72), comments: [] }); await tick();
+  assert.equal(env.$("#forum-detail").hidden, false);
+  assert.equal(env.$("#forum-comment-form").hidden, false);
+});
+
+test("feedback: a slow detail GET explains loading while keeping the list visible", async () => {
+  const env = appEnv(); env.context.user.ai_enabled = false;
+  env.$("#forum-detail").hidden = true;
+  env.$("#forum-list").hidden = false;
+  const opening = env.context.openForumPost(72);
+  const status = env.$("#forum-open-status");
+  assert.ok(status, "loading a post exposes a status area");
+  assert.match(status.textContent, /正在.*打开|正在.*加载/);
+  assert.equal(env.$("#forum-list").hidden, false);
+  env.calls[0].resolve({ ...post(72), comments: [] }); await opening;
+  assert.equal(env.$("#forum-detail").hidden, false);
+});
+
+test("feedback: an older detail failure cannot cover a newly opened post with retry", async () => {
+  const env = appEnv(); env.context.user.ai_enabled = false;
+  const older = Promise.resolve(env.context.openForumPost(71)).catch(() => {});
+  const newer = env.context.openForumPost(72);
+  env.calls[1].resolve({ ...post(72), comments: [] }); await newer;
+  env.calls[0].reject(new TypeError("Failed to fetch")); await older;
+  assert.equal(env.context.forumPost.id, 72);
+  assert.equal(env.$("#forum-detail").hidden, false);
+  const retry = env.$("#forum-open-retry");
+  assert.ok(retry);
+  assert.equal(retry.hidden, true, "late errors do not ask to reopen an old post");
+});
+
+test("feedback: a stale 401 reply failure does not interrupt a newly signed-in account", async () => {
+  const env = appEnv(); env.render();
+  env.$("#forum-comment-body").value = "旧账号草稿";
+  env.context.submitForumComment(); await tick();
+  env.context.sessionEpoch++;
+  env.context.user = { ...env.context.user, id: 99 };
+  env.calls[0].reject(Object.assign(new Error("请先登录"), { status: 401 })); await env.pending();
+  assert.equal(env.messages.length, 0);
+});
+
+test("feedback: keyboard viewport shrinking keeps the focused reply field visible", () => {
+  const env = appEnv(); env.render();
+  const field = env.$("#forum-comment-body");
+  field.focus();
+  field.getBoundingClientRect = () => ({ top: 450, bottom: 600 });
+  const viewport = { offsetTop: 0, height: 400 };
+  env.window.visualViewport = viewport;
+  field.scrollIntoView = (options) => { field.lastKeyboardScroll = options; };
+  assert.equal(typeof env.context.keepForumReplyVisible, "function");
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll.block, "center");
+  assert.equal(field.lastKeyboardScroll.behavior, "auto");
+  field.lastKeyboardScroll = null;
+  field.getBoundingClientRect = () => ({ top: 100, bottom: 250 });
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll, null, "visible fields do not jump while typing");
+  env.context.view = "home";
+  field.getBoundingClientRect = () => ({ top: 450, bottom: 600 });
+  env.context.keepForumReplyVisible();
+  assert.equal(field.lastKeyboardScroll, null, "other views are untouched");
 });

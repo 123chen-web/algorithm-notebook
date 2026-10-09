@@ -855,6 +855,21 @@ def _apply_plugin_api(conn):
 
 # 新迁移写成 apply(conn) 函数，追加递增且不重复的版本号；不要修改已发布的
 # SCHEMA、基线或旧迁移，也不要在迁移函数里 commit、rollback 或 executescript.
+def _apply_feedback_profiles(conn):
+    conn.execute("ALTER TABLE users ADD COLUMN rank_display_name TEXT NOT NULL DEFAULT ''")
+    for field in ('bio', 'count', 'joined'):
+        conn.execute(f"ALTER TABLE users ADD COLUMN profile_public_{field} INTEGER NOT NULL DEFAULT 1 CHECK(profile_public_{field} IN (0, 1))")
+
+
+def _apply_duck_usage(conn):
+    conn.execute('CREATE TABLE duck_usage (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, attempts INTEGER NOT NULL CHECK(attempts >= 0), PRIMARY KEY(user_id, day))')
+
+
+def _apply_claim_actual_amount(conn):
+    conn.execute('ALTER TABLE manual_payment_claims ADD COLUMN actual_paid_cents INTEGER CHECK(actual_paid_cents IS NULL OR (typeof(actual_paid_cents) = \'integer\' AND actual_paid_cents > 0))')
+    conn.execute("ALTER TABLE manual_payment_claims ADD COLUMN payer_receipt TEXT NOT NULL DEFAULT ''")
+
+
 MIGRATIONS = [
     (1, "历史数据库基线", _apply_baseline),
     (2, "AI 调用记账", _apply_ai_calls),
@@ -881,6 +896,9 @@ MIGRATIONS = [
     (23, "私人笔记", _apply_notes),
     (24, "复习提醒开关与退订token", _apply_reminder_prefs),
     (28, "插件 API token 与题目来源字段", _apply_plugin_api),
+    (50, "榜单显示名与资料公开设置", _apply_feedback_profiles),
+    (51, "小黄鸭独立每日额度", _apply_duck_usage),
+    (52, "用户手填实付金额与凭证", _apply_claim_actual_amount),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

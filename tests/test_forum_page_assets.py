@@ -419,8 +419,8 @@ def test_board_keeps_the_ids_the_app_depends_on_and_the_search_landmark(document
 
 def test_board_script_is_versioned_external_and_loaded_before_app(document):
     scripts = [node["attrs"].get("src", "") for node in document if node["tag"] == "script"]
-    assert scripts.count("/static/board.js?v=2") == 1
-    board_index = scripts.index("/static/board.js?v=2")
+    assert scripts.count("/static/board.js?v=3") == 1
+    board_index = scripts.index("/static/board.js?v=3")
     app_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js")
     thread_index = scripts.index("/static/thread.js?v=1")
     emoji_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/emoji.js")

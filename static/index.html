@@ -45,7 +45,7 @@
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
   <link rel="stylesheet" href="/static/recommend.css?v=1">
   <link rel="stylesheet" href="/static/pending-reason.css?v=1">
-  <link rel="stylesheet" href="/static/profile.css?v=1">
+  <link rel="stylesheet" href="/static/profile.css?v=2">
   <link rel="stylesheet" href="/static/import-wizard.css?v=1">
   <link rel="stylesheet" href="/static/scratch.css?v=1">
   <link rel="stylesheet" href="/static/code-runner.css?v=1">
@@ -76,8 +76,8 @@
   <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=4"></script>
   <script defer src="/static/thread.js?v=1"></script>
-  <script defer src="/static/board.js?v=2"></script>
-  <script defer src="/static/profile.js?v=2"></script>
+  <script defer src="/static/board.js?v=3"></script>
+  <script defer src="/static/profile.js?v=3"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=1"></script>
   <script defer src="/static/rank.js?v=2"></script>
@@ -1041,7 +1041,7 @@
           <p id="rank-yesterday-status" class="muted" role="status" aria-live="polite"></p>
           <ol id="rank-yesterday-list" class="rank-list" aria-describedby="rank-yesterday-rules"></ol>
           <p id="rank-yesterday-me" class="rank-me"></p>
-          <p class="muted rank-privacy">榜单只显示用户名、头像、昨日复习次数和连续打卡天数。不想出现在榜单上？打开右上角账号菜单，取消勾选“参与公开榜单”即可，你仍能看到自己的数据。</p>
+          <p class="muted rank-privacy">熟人小范围使用，建议用真名；不想公开可选择匿名。可在“我的资料”填写榜单显示名，留空继续显示昵称。仅登录用户可查看榜单；在账号菜单取消勾选“参与公开榜单”后不会上榜，你仍能看到自己的数据。</p>
         </section>
 
         <section id="rank-hot" class="panel rank-panel" aria-labelledby="rank-hot-title" aria-busy="false">
@@ -1064,7 +1064,7 @@
 
         <section class="panel leaderboard-list" aria-labelledby="leaderboard-list-title">
           <h3 id="leaderboard-list-title">连续打卡天数排行榜</h3>
-          <p id="leaderboard-rules" class="muted">展示连续打卡至少 1 天、参与公开榜单的正式账号及其用户名，天数相同按用户编号升序排列。</p>
+          <p id="leaderboard-rules" class="muted">展示连续打卡至少 1 天、参与公开榜单的正式账号及其榜单显示名（未填则使用昵称），天数相同按用户编号升序排列。</p>
           <p id="leaderboard-status" class="muted" role="status" aria-live="polite"></p>
           <div id="leaderboard-table-wrap" hidden>
             <table class="leaderboard-table" aria-labelledby="leaderboard-list-title" aria-describedby="leaderboard-rules">
@@ -1263,6 +1263,8 @@
 
               <h3 id="forum-list-title" class="forum-sr-only" tabindex="-1">全部帖子</h3>
               <ol id="forum-posts" class="board-list" aria-labelledby="forum-list-title"></ol>
+              <p id="forum-open-status" role="status" aria-live="polite"></p>
+              <button id="forum-open-retry" type="button" hidden>打不开，点此重试</button>
               <div id="board-notice" class="board-notice" hidden></div>
               <div id="board-foot" class="board-foot" hidden>
                 <button id="board-more" type="button" class="board-more" hidden></button>

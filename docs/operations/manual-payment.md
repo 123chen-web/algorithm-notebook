@@ -85,5 +85,11 @@ python -B admin_tool.py confirm-claim 12 --received-cents 990 --receipt wechat:�
 
 ## 数据库与升级
 
+- 迁移 52 追加用户手填的 `actual_paid_cents` 和可选 `payer_receipt`。套餐页实际付款金额
+  默认留空，必须由用户手动填写，最多两位小数；凭证支持流水号或文字说明，不新增上传入口。
+  用户提交“我已付款”只会生成待核对登记，实付与套餐快照标价不一致时明确提示人工核对。
+  用户的申报金额不等于已验证到账；站长仍须在收款 App 查到账记录，并手填实收金额与完整流水后确认。
+  历史登记的用户申报金额保持 NULL，不按套餐价格推算。
+
 - 迁移 11 新增表 `manual_payment_claims`（`status` 为 `pending/confirmed/rejected`）；升级无需手工操作，启动时自动迁移。回滚程序版本前请先备份（见 [backup-and-restore.md](backup-and-restore.md)）。
 - 迁移 22 追加五个可空核账字段与非空流水唯一索引；历史快照保持未知，已有已确认记录不伪造凭证。新程序的 API 与 CLI 确认操作都必须提交核账信息，不再支持空请求体或仅登记编号直接开通。

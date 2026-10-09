@@ -43,7 +43,7 @@ def get_achievement_share_card(user=Depends(main.current_user)):
 def leaderboard(user=Depends(main.current_user)):
     with main.connect() as conn:
         users = conn.execute(
-            "SELECT id, username, timezone, is_trial, public_rank_opt_out FROM users "
+            "SELECT id, username, rank_display_name, timezone, is_trial, public_rank_opt_out FROM users "
             "WHERE deleted_at IS NULL AND is_banned = 0"
         ).fetchall()
         review_rows = conn.execute(
@@ -72,7 +72,7 @@ def leaderboard(user=Depends(main.current_user)):
     entries = [
         {
             "rank": index + 1,
-            "display_name": row["username"],
+            "display_name": row["rank_display_name"] or row["username"],
             "streak_days": streaks[row["id"]],
         }
         for index, row in enumerate(eligible[:main.LEADERBOARD_SIZE])

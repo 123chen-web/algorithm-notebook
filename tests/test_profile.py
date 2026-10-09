@@ -48,9 +48,9 @@ def test_profile_safe_aggregates_from_other_account(client, monkeypatch):
     response = client.get(f"/api/users/{owner['id']}/public")
     assert response.status_code == 200
     assert response.json() == {
-        'user_id': owner['id'], 'username': 'alice', 'bio': '<script>hello</script>',
-        'avatar_version': 4, 'has_avatar': False, 'problem_count': 1, 'lifetime_problem_count': 1,
-        'mistake_count': 2, 'streak_days': 1, 'review_count': 1, 'achievement_count': 1,
+        'user_id': owner['id'], 'display_name': 'alice', 'bio': '<script>hello</script>',
+        'avatar_version': 4, 'has_avatar': False, 'lifetime_problem_count': 1,
+        'joined_at': response.json()['joined_at'],
     }
 
 
@@ -98,7 +98,7 @@ def test_version_18_upgrade_preserves_user_and_pending_reason(tmp_path, monkeypa
         before = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
     db.init_db()
     with db.connect(write=True) as conn:
-        assert db.schema_version(conn) == 28
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         after = dict(conn.execute('SELECT * FROM users WHERE id = 7').fetchone())
         assert after.pop('bio') == ''
         assert after.pop('lifetime_problem_count') == 0
@@ -108,6 +108,9 @@ def test_version_18_upgrade_preserves_user_and_pending_reason(tmp_path, monkeypa
         assert owner_prefix == '7'
         assert len(secret) == 32 and all(c.isalnum() or c in '_-' for c in secret)
         assert after.pop('api_token_hash') is None
+        assert after.pop('rank_display_name') == ''
+        for field in ('bio', 'count', 'joined'):
+            assert after.pop(f'profile_public_{field}') == 1
         assert after == before
         column = next(row for row in conn.execute('PRAGMA table_info(users)') if row['name'] == 'bio')
         assert (column['type'], column['notnull'], column['dflt_value']) == ('TEXT', 1, "''")

@@ -31,15 +31,26 @@ SERVER_FAILURE_STATUSES = (502, 503, 504)
 
 
 @contextmanager
-def refund_on_server_failure(user_id, day, connect_fn=connect):
+def refund_on_server_failure(user_id, day, connect_fn=connect, *, duck=False):
     """AI 服务端/供应商侧失败（502/503/504）时退还这一次额度；422、429 等不退。"""
     try:
         yield
     except HTTPException as exc:
         if exc.status_code in SERVER_FAILURE_STATUSES:
             with connect_fn(write=True) as conn:
-                release_attempt(conn, user_id, day)
+                if duck:
+                    conn.execute('UPDATE duck_usage SET attempts = attempts - 1 WHERE user_id = ? AND day = ? AND attempts > 0', (user_id, day))
+                else:
+                    release_attempt(conn, user_id, day)
         raise
+
+
+def duck_daily_limit():
+    try:
+        limit = int(os.getenv('DUCK_DAILY_LIMIT', '10'))
+    except ValueError:
+        return 10
+    return limit if limit >= 0 else 10
 
 
 def max_concurrency():

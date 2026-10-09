@@ -91,7 +91,8 @@ def create_manual_claim(data: main.NewManualClaim, user=Depends(main.current_use
             raise HTTPException(403, "体验账号不能登记付款，请先注册正式账号")
         try:
             claim = manual_claims.create_claim(
-                conn, user["id"], data.plan_id, data.payer_note, data.contact, main.utc_now()
+                conn, user["id"], data.plan_id, data.payer_note, data.contact, main.utc_now(),
+                actual_paid_cents=data.actual_paid_cents, payer_receipt=data.payer_receipt,
             )
         except manual_claims.ClaimError as error:
             raise main.claim_http_error(error) from None
