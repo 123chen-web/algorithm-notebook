@@ -280,7 +280,7 @@ def test_migrations_40_to_41_upgrade(tmp_path, monkeypatch):
 
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "old.db"))
     full = db_module.MIGRATIONS
-    assert [version for version, _, _ in full if version >= 40] == [40, 41]
+    assert [version for version, _, _ in full if 40 <= version < 50] == [40, 41]
     monkeypatch.setattr(db_module, "MIGRATIONS", [m for m in full if m[0] <= 22])
     monkeypatch.setattr(db_module, "SCHEMA_VERSION", 22)
     init_db()

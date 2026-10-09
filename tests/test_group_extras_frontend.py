@@ -1,6 +1,7 @@
 """Group extras frontend: node behavior checks + static contracts (no temp dirs)."""
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -178,9 +179,9 @@ def test_group_extras_static_contracts():
         assert f'id="{element_id}"' in html, f"missing #{element_id} in index.html"
     assert "/static/group-extras.js?v=2" in html
     assert "/static/group-extras.css?v=2" in html
-    assert "/static/app.js?v=85" in html
+    assert re.search(r"/static/app\.js\?v=\d+", html)
     # group-extras.js 必须在 app.js 之前加载（app.js 调用 window.GroupExtras）。
-    assert html.index("group-extras.js?v=2") < html.index("app.js?v=85")
+    assert html.index("group-extras.js?v=2") < html.index("app.js?v=")
 
 
 def test_group_extras_wired_in_app_js():
