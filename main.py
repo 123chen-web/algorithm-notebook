@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
@@ -1111,6 +1112,9 @@ async def lifespan(app):
     init_db()
     yield
 
+
+# 字体文件类型显式登记：不依赖系统 MIME 表（Windows 注册表、精简镜像里可能没有 woff2）。
+mimetypes.add_type("font/woff2", ".woff2")
 
 app = FastAPI(
     lifespan=lifespan,
