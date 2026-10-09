@@ -9,3 +9,4 @@ data/
 *.db-shm
 .mcp.json
 .claude/
+tests/e2e/artifacts/
