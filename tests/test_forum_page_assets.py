@@ -60,7 +60,7 @@ def test_forum_stylesheet_is_versioned_and_loaded_after_shared_styles(document, 
     ]
     assert len(matches) == 1
     forum_index, attrs = matches[0]
-    assert attrs["href"] == "/static/forum.css?v=6"
+    assert attrs["href"] == "/static/forum.css?v=7"
     shared_indices = [
         index for index, attrs in enumerate(links)
         if attrs.get("href", "").split("?", 1)[0] in (

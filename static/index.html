@@ -11,16 +11,16 @@
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
   <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=51">
+  <link rel="stylesheet" href="/static/style.css?v=52">
   <link rel="stylesheet" href="/static/intro.css?v=18">
   <link rel="stylesheet" href="/static/intro-film.css?v=2">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
-  <link rel="stylesheet" href="/static/themes.css?v=13">
-  <link rel="stylesheet" href="/static/new-record.css?v=6">
+  <link rel="stylesheet" href="/static/themes.css?v=14">
+  <link rel="stylesheet" href="/static/new-record.css?v=7">
   <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=3">
   <link rel="stylesheet" href="/static/groups.css?v=2">
-  <link rel="stylesheet" href="/static/forum.css?v=6">
+  <link rel="stylesheet" href="/static/forum.css?v=7">
   <link rel="stylesheet" href="/static/shell.css?v=3">
   <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
@@ -28,13 +28,13 @@
   <link rel="stylesheet" href="/static/emoji.css?v=2">
   <link rel="stylesheet" href="/static/palette.css?v=2">
   <link rel="stylesheet" href="/static/focus.css?v=3">
-  <link rel="stylesheet" href="/static/review-extras.css?v=1">
+  <link rel="stylesheet" href="/static/review-extras.css?v=2">
   <link rel="stylesheet" href="/static/tags.css?v=2">
   <link rel="stylesheet" href="/static/practice.css?v=1">
   <link rel="stylesheet" href="/static/mastery.css?v=3">
   <link rel="stylesheet" href="/static/clusters.css?v=3">
   <link rel="stylesheet" href="/static/typical.css?v=1">
-  <link rel="stylesheet" href="/static/account.css?v=1">
+  <link rel="stylesheet" href="/static/account.css?v=2">
   <link rel="stylesheet" href="/static/anki-export.css?v=1">
   <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
@@ -220,7 +220,7 @@
               <button id="account-password" type="button" hidden>修改密码…</button>
               <button id="account-revoke-others" type="button" hidden>退出其他设备</button>
               <button id="account-delete" type="button" class="account-danger" hidden>注销账号…</button>
-              <button type="button" class="link-button fx-toggle" id="fx-toggle"></button>
+              <button type="button" class="link-button fx-toggle" id="fx-toggle" aria-label="山水涟漪特效"></button>
               <button type="button" class="link-button nav-focus-toggle" id="nav-focus-toggle-account" aria-pressed="false">专注模式：关</button>
               <label class="account-preference account-rank-pref" id="account-public-rank-label" for="account-public-rank" hidden>
                 <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
@@ -352,7 +352,7 @@
         <p class="intro-invitation">
           <span class="intro-dot" aria-hidden="true"></span>
           <span>目前处于内部测试阶段，暂不对外开放。</span>
-          <button type="button" class="link-button fx-toggle" id="fx-toggle-intro"></button>
+          <button type="button" class="link-button fx-toggle" id="fx-toggle-intro" aria-label="山水涟漪特效"></button>
         </p>
       </div>
       <nav class="legal-links" aria-label="法律信息">

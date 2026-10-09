@@ -4,7 +4,7 @@
 .review-source-link { display: block; }
 #detail .detail-heading h2 { min-width: 0; overflow-wrap: anywhere; }
 .review-preference { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; margin: 0; color: var(--ink-2); font-size: var(--text-sm); font-weight: 400; }
-.review-preference input { width: 20px; height: 20px; min-height: 20px; margin: 0; accent-color: var(--accent); }
+.review-preference input { width: 24px; height: 24px; min-height: 24px; margin: 0; accent-color: var(--accent); }
 .review-recall { display: grid; gap: var(--space-2); margin: var(--space-4) 0; color: var(--ink-2); font-size: var(--text-sm); font-weight: 400; }
 .review-recall input { width: 100%; min-width: 0; min-height: 42px; }
 .review-reveal { display: block; width: 100%; min-height: 48px; margin: var(--space-4) 0; border-style: dashed; color: var(--ink); background: var(--surface); }

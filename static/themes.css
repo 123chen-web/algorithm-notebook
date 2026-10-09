@@ -93,7 +93,7 @@ html[data-theme="qixi"] :is(.panel:not(.panel .panel), #cards, #detail) { backgr
   html[data-view="welcome"] .brand-copy > p { display: none; }
   .public-preferences { flex-wrap: nowrap; gap: 6px; }
   .public-preferences > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .public-preferences > select { width: 78px; padding: 8px 4px; font-size: 11px; }
+  .public-preferences > select { width: 78px; min-height: 36px; padding: 8px 4px; font-size: 12px; }
 }
 @media (max-width: 380px) {
   .public-preferences { margin-left: 0; }
