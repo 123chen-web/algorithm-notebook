@@ -11,7 +11,7 @@
 ## 能做什么
 
 - **记录**：三种方式——速记（只写题名，错因以后补）、一句话（写下“我以为…其实…”）、
-  完整记录；每道题可拆成多条易错点，分别复习。也可以用[浏览器扩展](docs/features/plugin-api.md)
+  完整记录；每道题可拆成多条易错点，分别复习，还可以自己补一份“正确代码”（网站不生成答案）。也可以用[浏览器扩展](static/extension.html)（网站里有下载和安装说明；接口见[扩展 API](docs/features/plugin-api.md)）
   在洛谷、力扣、牛客、Codeforces、AtCoder 的题目页一键收录。
 - **复习**：同一道题只显示一张卡，卡片背景按复习完成度从左向右涂色；先自己回忆、再看错因、
   再打分；每档评分都会预览下次间隔，支持撤销、推迟、暂停和每日上限；专注模式一次只看一张卡。
@@ -119,4 +119,4 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **72**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **73**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–73 笔记），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。

@@ -1,6 +1,6 @@
 # 浏览器扩展 API
 
-扩展是独立项目，不在主仓代码目录。token 是长期导入凭证，数据库只保存 SHA-256，明文只在签发响应出现。请只配置可信的 HTTPS 站点。
+扩展源码是独立项目，不在主仓代码目录；打好的安装包放在 `static/downloads/ouye-companion-extension.zip`，用户在网站的 `/static/extension.html` 下载、生成 token 并按步骤安装。token 是长期导入凭证，数据库只保存 SHA-256，明文只在签发响应出现。请只配置可信的 HTTPS 站点。
 
 1. 已登录会话调用 `POST /api/users/api-token` 签发或轮换，返回 `{token}`，旧 token 立即失效。
 2. 扩展调用 `POST /api/problems/import-from-extension`，带 `Authorization: Bearer <token>` 及 `X-CSRF-Protection: 1`。
