@@ -158,7 +158,7 @@ test("静态契约: 不使用 innerHTML / 行内 style / eval / 存储 API / 外
 });
 
 test("静态契约: index.html 版本号与加载顺序", () => {
-  const notesLinks = html.indexOf("notes-links.js?v=7");
+  const notesLinks = html.indexOf("notes-links.js?v=8");
   const app = html.indexOf("app.js?v=94");
   const notesJs = html.indexOf("notes.js?v=6");
   assert.ok(notesLinks > notesJs, "notes-links.js 在 notes.js 之后");

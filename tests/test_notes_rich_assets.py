@@ -21,7 +21,7 @@ def test_assets_versioned_and_loaded_in_order():
     versions = dict(scripts)
     assert versions["notes-rich.js"] == "7"
     assert versions["notes.js"] == "6"
-    assert versions["notes-links.js"] == "7"
+    assert versions["notes-links.js"] == "8"
     assert versions["app.js"] == "94"
 
 
