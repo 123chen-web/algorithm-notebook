@@ -196,7 +196,7 @@ def test_migration_28_applies_on_fresh_database(client):
     # client fixture 已在新库上跑完 init_db。新库版本等于当前最新迁移
     # （迁移 72 为笔记画板；迁移 28 的结构效果在下方列断言中仍然成立）。
     with connect() as conn:
-        assert schema_version(conn) == SCHEMA_VERSION == 72
+        assert schema_version(conn) == SCHEMA_VERSION == 73
         user_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(users)")
         }

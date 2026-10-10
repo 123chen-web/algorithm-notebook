@@ -448,7 +448,7 @@ def test_migration_upgrades_version_10_database(tmp_path, monkeypatch):
         conn.execute("ALTER TABLE users DROP COLUMN reminder_token")
         conn.execute("DROP INDEX idx_users_api_token_hash")
         conn.execute("ALTER TABLE users DROP COLUMN api_token_hash")
-        for column in ("source", "source_url", "statement", "difficulty"):
+        for column in ("source", "source_url", "statement", "difficulty", "correct_code"):
             conn.execute(f"ALTER TABLE problems DROP COLUMN {column}")
         conn.execute("DROP TRIGGER problem_lifetime_insert")
         conn.execute("ALTER TABLE users DROP COLUMN lifetime_problem_count")

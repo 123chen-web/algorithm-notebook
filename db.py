@@ -1026,7 +1026,9 @@ def _apply_correct_code(conn):
     早先导入笔记时，正确代码被拼在思路末尾（【正确代码】+ 代码围栏）。这里把它移到
     新列，思路里不再重复；只处理导入器生成的那一种格式，其它文字原样保留。
     """
-    conn.execute("ALTER TABLE problems ADD COLUMN correct_code TEXT NOT NULL DEFAULT ''")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(problems)")}
+    if "correct_code" not in columns:
+        conn.execute("ALTER TABLE problems ADD COLUMN correct_code TEXT NOT NULL DEFAULT ''")
     rows = conn.execute(
         "SELECT id, thinking FROM problems WHERE thinking LIKE '%【正确代码】%'"
     ).fetchall()

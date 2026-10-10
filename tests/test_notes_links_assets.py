@@ -28,7 +28,7 @@ def test_assets_versioned_and_loaded_before_app_js():
     versions = dict(scripts)
     assert versions["notes-links.js"] == "8"
     assert versions["notes.js"] == "6"
-    assert versions["app.js"] == "94"
+    assert versions["app.js"] == "96"
 
 
 def test_no_inline_style_or_inline_script_in_markup():

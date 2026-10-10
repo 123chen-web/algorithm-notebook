@@ -15,7 +15,7 @@ from test_app import client, register
 ENDPOINT = "/api/export"
 TODAY = date(2026, 9, 19)
 PROBLEM_KEYS = {
-    "id", "title", "zone", "language", "code", "thinking", "created_at", "mistakes",
+    "id", "title", "zone", "language", "code", "correct_code", "thinking", "created_at", "mistakes",
 }
 MISTAKE_KEYS = {
     "id", "description", "repetitions", "interval_days", "ease_factor",
@@ -57,6 +57,7 @@ def seed_notebook(user_id, marker):
                 "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (user_id, *problem.values()),
             ).lastrowid
+            problem["correct_code"] = ""
             problem["mistakes"] = []
             for mistake_number in range(1, mistake_count + 1):
                 mistake = {
