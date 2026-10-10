@@ -25,8 +25,8 @@ function deferred() {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** 装好 draw-host 的假环境；api 每次调用都记录下来由测试手动应答。 */
-function setup(files = ["draw-host.js"]) {
-  const env = load(files, { extra: { location: { origin: ORIGIN } } });
+function setup(files = ["draw-host.js"], windowExtra = {}) {
+  const env = load(files, { extra: { location: { origin: ORIGIN }, ...windowExtra } });
   // vm 上下文默认没有这些浏览器全局，按需补齐。
   env.context.Uint8Array = Uint8Array;
   const atob = (data) => Buffer.from(data, "base64").toString("binary");
@@ -483,4 +483,44 @@ test("reset：关闭面板、清空列表且不发起网络请求", () => {
   assert.equal(ctx.DrawHost.ownedIds().size, 0);
   // reset 之后不应触发列表刷新请求。
   assert.equal(ctx.calls.length, 0);
+});
+
+function historyEnv() {
+  const listeners = {};
+  const history = {
+    pushed: 0, backs: 0,
+    pushState() { this.pushed += 1; },
+    back() { this.backs += 1; },
+  };
+  return {
+    listeners, history,
+    extra: { history, addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); } },
+  };
+}
+
+test("浏览器后退：打开画板压入一格历史，关闭时只退回这一格", async () => {
+  const h = historyEnv();
+  const ctx = setup(["draw-host.js"], h.extra);
+  await openReady(ctx, 9);
+  assert.equal(h.history.pushed, 1);
+  assert.equal(h.history.backs, 0);
+  ctx.DrawHost.reset();
+  assert.equal(h.history.backs, 1);
+  ctx.DrawHost.reset();
+  assert.equal(h.history.backs, 1, "已经退回过，不能重复后退");
+});
+
+test("浏览器后退：有未保存更改且选择取消时，面板保持打开并补回历史", async () => {
+  const h = historyEnv();
+  const ctx = setup(["draw-host.js"], h.extra);
+  const mount = await openReady(ctx, 9);
+  ctx.DrawHost.onFrameMessage(mount.event("draw:change", { scene: { elements: [] } }));
+  ctx.state.confirmed = false;
+  assert.equal(h.listeners.popstate.length, 1);
+  h.listeners.popstate[0]();
+  await tick(); await tick();
+  assert.equal(ctx.state.confirms.length, 1);
+  assert.equal(mount.panel.el.hidden, false);
+  assert.equal(h.history.pushed, 2, "取消后要补回一格历史，下一次后退仍先关画板");
+  assert.equal(h.history.backs, 0);
 });

@@ -278,6 +278,23 @@
         requestClose(false);
       }
     });
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("popstate", () => {
+        const panel = controller.panel;
+        if (!panel || panel.closed || !panel.historyPushed) return;
+        panel.historyPushed = false; // 浏览器已经退回一步，关闭面板时不要再退一次
+        void requestClose(false).then(() => {
+          if (panel.closed) return;
+          // 在“有未保存更改”的确认里选了取消：补回一格历史，画板继续打开。
+          try {
+            window.history.pushState({ oyDraw: true }, "", window.location.href);
+            panel.historyPushed = true;
+          } catch (_error) {
+            /* 忽略 */
+          }
+        });
+      });
+    }
     // 笔记正文里的画板缩略图：事件委托打开；error 不冒泡，用捕获阶段兜底占位。
     document.addEventListener("click", (event) => {
       const ref = event.target.closest && event.target.closest(".notes-drawing-ref");
@@ -598,6 +615,16 @@
     drawCache.gateSeq += 1;
     panel.current = { id };
     panel.closed = false;
+    // 浏览器的“后退”应当先关掉画板、留在笔记页，而不是直接离开本站：
+    // 打开时压入一格历史，popstate 时关闭面板；用按钮或 Esc 关闭时再退回这一格。
+    if (!panel.historyPushed) {
+      try {
+        window.history.pushState({ oyDraw: true }, "", window.location.href);
+        panel.historyPushed = true;
+      } catch (_error) {
+        /* 没有 history 能力时忽略，仍可用按钮关闭 */
+      }
+    }
     panel.closing = false;
     panel.ready = false;
     panel.detailLoaded = false;
@@ -800,6 +827,14 @@
   }
 
   function hidePanel(panel, options = {}) {
+    if (panel.historyPushed) {
+      panel.historyPushed = false;
+      try {
+        window.history.back(); // 退回打开时压入的那一格，保持浏览器历史干净
+      } catch (_error) {
+        /* 忽略 */
+      }
+    }
     teardownPanelSession(panel);
     panel.ready = false;
     panel.closed = true;
