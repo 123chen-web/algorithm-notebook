@@ -10,29 +10,27 @@
 
 ## 能做什么
 
-- **记录**：题目、当时的思路、错在哪；每道题可拆成多条易错点，分别复习。
-- **复习**：先自己回忆、再看错因、再打分；每档评分都会预览下次间隔，支持撤销、
-  推迟、暂停和每日上限；专注模式一次只看一张卡。
-- **AI 辅助**：橡皮鸭讲题（你讲、它追问）、变体题、薄弱点分析、拍照识别手写题、
+- **记录**：三种方式——速记（只写题名，错因以后补）、一句话（写下“我以为…其实…”）、
+  完整记录；每道题可拆成多条易错点，分别复习。也可以用[浏览器扩展](docs/features/plugin-api.md)
+  在洛谷、力扣、牛客、Codeforces、AtCoder 的题目页一键收录。
+- **复习**：同一道题只显示一张卡，卡片背景按复习完成度从左向右涂色；先自己回忆、再看错因、
+  再打分；每档评分都会预览下次间隔，支持撤销、推迟、暂停和每日上限；专注模式一次只看一张卡。
+- **笔记**：所见即所得编辑器——输入 `/` 选标题、列表、待办、代码、公式、表格，选中文字加粗或加链接，
+  粘贴图片；用 `[[ ]]` 链接另一篇笔记或一道错题，并能看到笔记关系图；自带画板（Excalidraw，自托管）。
+  另有[算法套路库](static/patterns.html)：41 个常见套路的触发信号、模板代码、常见坑和例题。
+- **AI 辅助**：橡皮鸭讲题（你讲、它追问，有独立的每日次数）、变体题、薄弱点分析、拍照识别手写题、
   AI 讨论要点；额度规则见[AI 额度与计费](static/ai-billing.html)。
 - **看清自己**：总览与趋势、掌握度、“我的三大典型失误”和考前一页纸、目标计划卡、
-  草稿演算区、榜单与昨日之星。
-- **一起学**：学习小组、讨论区（采纳、有用、AI 要点）。
+  草稿演算区、每日推荐题、榜单与昨日之星。
+- **一起学**：学习小组（每周小目标、组内今日动态）、讨论区（采纳、有用、AI 要点）、
+  榜单（可填榜单显示名，也可匿名）。
 - **随身带**：手机“添加到主屏幕”像 App 一样用，断网也能评分，联网后自动补交。
 - **提醒与导出**：每日邮件或微信提醒；整本 JSON 导出、导出到 Anki。
 - **收款**：手动收款（个人收款码 + 站长确认）和兑换码；支付宝、微信支付的代码已接好。
 
-## 技术与部署
+新朋友可以先看[新手指南](static/help.html)。
 
-登录后可从账号菜单、讨论作者昵称/评论头像或小组成员打开个人资料。
-`PUT /api/me/bio` 接受 `{bio}`（最多 200 字，可清空），
-`GET /api/users/{id}/public` 只返回显示名、头像及本人选择公开的简介、累计题目数、加入时间。
-不返回邮箱、用户名字段、个人笔记或学习明细。本人可在“我的资料”修改公开设置，
-并选填榜单显示名（1~12 个字，建议真名，禁止 URL、@、空白与控制字符）。
-该名字仅用于登录后的榜单和资料卡，留空沿用昵称；匿名用户不上榜，也不在资料卡显示榜单名。
-累计以功能启用时当前保留题目为起点，此后每次实际入库计数，删题不减少；
-升级前已删除的题目无法恢复计数。注销时清空累计。
-注销会清空简介；封禁或注销账号的资料不可见。退出公开榜单不隐藏讨论中的资料入口。
+## 技术与部署
 
 FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
 线上使用 DeepSeek。Web 进程不执行用户代码；可选的独立运行服务支持 Python、C++，
@@ -117,8 +115,8 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 - 社区：[讨论区](docs/features/forum.md)、[学习小组](docs/features/groups.md)、[榜单](docs/features/leaderboard.md)。
 - 数据：[模型与完整迁移表](docs/dev/data-model.md)、[数据导出](docs/features/export.md)、[Markdown/JSON 导入](docs/features/import-notes.md)。
 - 开发：[测试与样本环境](docs/dev/testing.md)、[界面与原创场景](docs/features/ui-style.md)、[移动与离线](docs/features/mobile.md)。
-- 账号：[账号安全](docs/features/account-security.md)、[头像](docs/features/avatar.md)、[体验账号](docs/operations/trial-accounts.md)、[提醒](docs/features/reminders.md)。
+- 账号：[账号安全](docs/features/account-security.md)、[个人资料与榜单显示名](docs/features/profile.md)、[头像](docs/features/avatar.md)、[体验账号](docs/operations/trial-accounts.md)、[提醒](docs/features/reminders.md)。
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **28**；1–22 的已发布迁移保持原样。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **72**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
