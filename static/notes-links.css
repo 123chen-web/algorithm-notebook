@@ -161,3 +161,16 @@
   font-size: 0.85rem;
   cursor: pointer;
 }
+
+/* 关系图整体折叠：默认只露一行说明 */
+.notes-graph-fold {
+  margin-top: 16px;
+}
+
+.notes-graph-fold > summary {
+  min-height: 40px;
+  padding: 8px 4px;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  cursor: pointer;
+}

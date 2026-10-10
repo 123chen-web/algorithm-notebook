@@ -20,13 +20,13 @@ def test_markup_has_each_required_id_exactly_once():
 
 
 def test_assets_versioned_and_loaded_before_app_js():
-    assert '<link rel="stylesheet" href="/static/notes-links.css?v=4">' in HTML
+    assert '<link rel="stylesheet" href="/static/notes-links.css?v=5">' in HTML
     scripts = re.findall(r'<script defer src="/static/([\w.-]+\.js)\?v=(\d+)"></script>', HTML)
     names = [name for name, _ in scripts]
     assert names.count("notes-links.js") == 1
     assert names.index("notes-links.js") < names.index("app.js"), "图谱脚本必须在 app.js 之前"
     versions = dict(scripts)
-    assert versions["notes-links.js"] == "4"
+    assert versions["notes-links.js"] == "5"
     assert versions["notes.js"] == "3"
     assert versions["app.js"] == "92"
 

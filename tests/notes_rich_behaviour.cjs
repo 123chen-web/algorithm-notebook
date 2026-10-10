@@ -149,7 +149,7 @@ test("静态契约: vendor 只在 notes-rich.js 内动态注入", () => {
 
 test("静态契约: 加载顺序与版本号", () => {
   const notesJs = html.indexOf("notes.js?v=3");
-  const linksJs = html.indexOf("notes-links.js?v=4");
+  const linksJs = html.indexOf("notes-links.js?v=5");
   const richJs = html.indexOf("notes-rich.js?v=4");
   const appJs = html.indexOf("app.js?v=92");
   assert.ok(notesJs > -1 && linksJs > notesJs, "notes-links.js 在 notes.js 后");

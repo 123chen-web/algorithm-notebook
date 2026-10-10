@@ -537,16 +537,16 @@
     header.setAttribute("class", "nl-graph-head");
     const modeGlobal = document.createElement("button");
     modeGlobal.type = "button";
-    modeGlobal.textContent = "全局图";
+    modeGlobal.textContent = "全部笔记";
     const modeDepth1 = document.createElement("button");
     modeDepth1.type = "button";
-    modeDepth1.textContent = "以本笔记为中心 1 层";
+    modeDepth1.textContent = "只看最上面一篇及直接相关的";
     const modeDepth2 = document.createElement("button");
     modeDepth2.type = "button";
-    modeDepth2.textContent = "以本笔记为中心 2 层";
+    modeDepth2.textContent = "再多看一层";
     const listToggle = document.createElement("button");
     listToggle.type = "button";
-    listToggle.textContent = "列表视图";
+    listToggle.textContent = "文字列表";
     header.append(modeGlobal, modeDepth1, modeDepth2, listToggle);
     container.append(header);
 
@@ -562,6 +562,14 @@
         center: state.center || undefined,
         depth: state.mode === "depth2" ? 2 : 1,
       });
+      if (!selection?.edges?.length) {
+        // 没有任何链接时不画一块空白画布，告诉用户怎么才会有图。
+        const hint = document.createElement("p");
+        hint.setAttribute("class", "nl-graph-note nl-graph-empty");
+        hint.textContent = "还没有互相链接的笔记。写笔记时输入 [[ 就能选另一篇笔记，链接起来后这里会画出它们的关系。";
+        container.append(hint);
+        return;
+      }
       renderSvgGraph(container, selection);
       if (data?.truncated) {
         const note = document.createElement("p");
