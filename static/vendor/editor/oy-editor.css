@@ -1,0 +1,696 @@
+/**
+ * oy-editor.css — 欧叶OY Tiptap 编辑器主题。
+ * 集成契约：全部颜色/尺寸走 CSS 变量，由宿主 static/style.css 提供；
+ * 本文件不定义 :root 默认值、不写十六进制颜色字面量；所有选择器以 .oy-editor 开头。
+ */
+
+/* ---------- 包裹层与编辑区 ---------- */
+.oy-editor {
+  position: relative;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 240px;
+}
+
+.oy-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--selection);
+}
+
+.oy-editor-mount {
+  min-height: inherit;
+}
+
+.oy-editor .ProseMirror {
+  outline: none;
+  padding: var(--space-4) var(--space-5);
+  min-height: 200px;
+  line-height: 1.75;
+  font-size: var(--text-base);
+  caret-color: var(--accent);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.oy-editor .ProseMirror p {
+  margin: 0 0 var(--space-3);
+  line-height: 1.75;
+}
+
+.oy-editor .ProseMirror > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- 标题层级 ---------- */
+.oy-editor .ProseMirror h1,
+.oy-editor .ProseMirror h2,
+.oy-editor .ProseMirror h3 {
+  line-height: 1.4;
+  font-weight: 700;
+  color: var(--ink);
+  margin: var(--space-5) 0 var(--space-3);
+}
+
+.oy-editor .ProseMirror h1 { font-size: var(--text-2xl); }
+.oy-editor .ProseMirror h2 { font-size: var(--text-xl); }
+.oy-editor .ProseMirror h3 { font-size: var(--text-lg); }
+
+/* ---------- 引用 / 分割线 / 列表 ---------- */
+.oy-editor .ProseMirror blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.oy-editor .ProseMirror blockquote p {
+  margin: 0 0 var(--space-2);
+}
+
+.oy-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--line-strong);
+  margin: var(--space-5) 0;
+}
+
+.oy-editor .ProseMirror ul,
+.oy-editor .ProseMirror ol {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-6);
+}
+
+.oy-editor .ProseMirror li {
+  margin: var(--space-1) 0;
+  line-height: 1.75;
+}
+
+.oy-editor .ProseMirror li p {
+  margin: 0;
+}
+
+/* 任务列表 */
+.oy-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: var(--space-2);
+}
+
+/* 任务列表。
+   注意：Tiptap 3 的 TaskItem 渲染为 <li data-checked="…">（不再带 data-type），
+   选择器统一挂在 ul[data-type="taskList"] 下，兼容两种标记，并压过宿主表单 input 宽度规则。 */
+.oy-editor .ProseMirror ul[data-type="taskList"] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.oy-editor .ProseMirror ul[data-type="taskList"] > li > label {
+  flex: none;
+  margin-top: 0.35em;
+  line-height: 1;
+}
+
+.oy-editor .ProseMirror ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.oy-editor .ProseMirror ul[data-type="taskList"] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* placeholder */
+.oy-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ---------- 代码块（含语言选择器） ---------- */
+.oy-editor .oy-codeblock {
+  position: relative;
+  margin: var(--space-4) 0;
+  background: var(--code-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.oy-editor .oy-codeblock-lang {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 2;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+  background: var(--field-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  max-width: 40%;
+}
+
+.oy-editor .oy-codeblock-pre {
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+}
+
+.oy-editor .oy-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--code-ink);
+  background: transparent;
+}
+
+.oy-editor .ProseMirror code:not(.oy-code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--code-surface);
+  color: var(--code-ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  padding: 0.1em 0.35em;
+  overflow-wrap: break-word;
+}
+
+/* ---------- 表格 ---------- */
+.oy-editor .ProseMirror table {
+  border-collapse: collapse;
+  margin: var(--space-4) 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+  font-size: var(--text-sm);
+}
+
+.oy-editor .ProseMirror th,
+.oy-editor .ProseMirror td {
+  border: 1px solid var(--line-strong);
+  padding: var(--space-2) var(--space-3);
+  min-width: 48px;
+  vertical-align: top;
+}
+
+.oy-editor .ProseMirror th {
+  background: var(--paper-2);
+  font-weight: 700;
+  text-align: left;
+}
+
+.oy-editor .ProseMirror .selectedCell {
+  background: var(--selection);
+}
+
+/* ---------- 公式 ---------- */
+.oy-editor .oy-math-inline {
+  display: inline-block;
+  padding: 0 0.25em;
+  margin: 0 0.1em;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.oy-editor .oy-math-inline:hover,
+.oy-editor .oy-math-inline:focus-visible {
+  background: var(--soft);
+  outline: 2px solid var(--selection);
+}
+
+.oy-editor .oy-math-block {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  text-align: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow-x: auto;
+}
+
+.oy-editor .oy-math-block:hover,
+.oy-editor .oy-math-block:focus-visible {
+  border-color: var(--accent);
+}
+
+.oy-editor .oy-math-error {
+  color: var(--danger-ink);
+  background: var(--danger-soft);
+  border-radius: var(--radius-xs);
+  padding: 0 0.3em;
+}
+
+/* ---------- 图片 ---------- */
+.oy-editor .oy-image-wrap {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.oy-editor .oy-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.oy-editor .oy-image-uploading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  min-height: 80px;
+  padding: var(--space-3) var(--space-4);
+  color: var(--muted);
+  background: var(--paper-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+/* ---------- 互链 ---------- */
+.oy-editor .oy-wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  padding: 0 0.15em;
+}
+
+.oy-editor .oy-wikilink:hover,
+.oy-editor .oy-wikilink:focus-visible {
+  background: var(--soft);
+}
+
+.oy-editor .oy-wikilink-problem {
+  color: var(--gamboge);
+  font-weight: 600;
+}
+
+/* ---------- 斜杠菜单 ---------- */
+.oy-editor .oy-slash-menu {
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgb(var(--menu-shadow-rgb) / 0.18);
+  padding: var(--space-2);
+  overflow-y: auto;
+}
+
+.oy-editor .oy-slash-item {
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.oy-editor .oy-slash-item.oy-active,
+.oy-editor .oy-slash-item:hover {
+  background: var(--soft);
+}
+
+.oy-editor .oy-slash-item-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.oy-editor .oy-slash-item-desc {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ---------- 浮动工具栏 ---------- */
+.oy-editor .oy-bubble {
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgb(var(--menu-shadow-rgb) / 0.18);
+  padding: var(--space-2);
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.oy-editor .oy-bubble[hidden] {
+  display: none;
+}
+
+.oy-editor .oy-bubble-btn {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.oy-editor .oy-bubble-btn:hover {
+  background: var(--soft);
+}
+
+.oy-editor .oy-bubble-btn.oy-active {
+  color: var(--accent);
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+.oy-editor .oy-bubble-btn-sm {
+  font-size: var(--text-xs);
+}
+
+.oy-editor .oy-bubble-tablegroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-left: 1px solid var(--line);
+  padding-left: var(--space-2);
+  margin-left: var(--space-1);
+}
+
+/* ---------- 链接输入 popover ---------- */
+.oy-editor .oy-link-pop {
+  z-index: 31;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgb(var(--menu-shadow-rgb) / 0.18);
+  padding: var(--space-3);
+  min-width: 240px;
+  max-width: calc(100% - 16px);
+}
+
+.oy-editor .oy-link-input {
+  flex: 1;
+  min-width: 160px;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background: var(--field-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+}
+
+.oy-editor .oy-link-ok,
+.oy-editor .oy-link-del {
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--field-surface);
+  color: var(--ink);
+}
+
+.oy-editor .oy-link-ok {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+.oy-editor .oy-link-err {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--danger-ink);
+}
+
+/* ---------- [[ 联想菜单 / 通用选择列表 ---------- */
+.oy-editor .oy-link-menu {
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgb(var(--menu-shadow-rgb) / 0.18);
+  padding: var(--space-2);
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.oy-editor .oy-link-item {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.oy-editor .oy-link-item.oy-active,
+.oy-editor .oy-link-item:hover {
+  background: var(--soft);
+}
+
+.oy-editor .oy-link-item-kind {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--soft);
+  border-radius: var(--radius-xs);
+}
+
+.oy-editor .oy-link-item-label {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- TeX 输入框 / 公式源码编辑框 ---------- */
+.oy-editor .oy-tex-prompt,
+.oy-editor .oy-math-edit {
+  z-index: 32;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgb(var(--menu-shadow-rgb) / 0.18);
+  padding: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  max-width: calc(100% - 16px);
+}
+
+.oy-editor .oy-math-edit {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 240px;
+}
+
+.oy-editor .oy-tex-input,
+.oy-editor .oy-math-edit-input {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink);
+  background: var(--field-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  width: 100%;
+}
+
+.oy-editor .oy-tex-input {
+  width: 220px;
+}
+
+.oy-editor .oy-math-edit-input {
+  resize: vertical;
+}
+
+.oy-editor .oy-tex-ok,
+.oy-editor .oy-tex-cancel,
+.oy-editor .oy-math-edit-save,
+.oy-editor .oy-math-edit-cancel {
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--field-surface);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.oy-editor .oy-tex-ok,
+.oy-editor .oy-math-edit-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+.oy-editor .oy-math-edit-bar {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* 只读态 */
+.oy-editor.oy-readonly .oy-editor-mount {
+  pointer-events: none;
+}
+
+/* ---------- 链接 mark ---------- */
+.oy-editor .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- lowlight 高亮 token（只用 class，配色全部走 var()） ---------- */
+.oy-editor .hljs-keyword,
+.oy-editor .hljs-selector-tag,
+.oy-editor .hljs-built_in {
+  color: var(--azurite);
+}
+
+.oy-editor .hljs-string,
+.oy-editor .hljs-regexp,
+.oy-editor .hljs-meta .hljs-string {
+  color: var(--success-ink);
+}
+
+.oy-editor .hljs-comment,
+.oy-editor .hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.oy-editor .hljs-number,
+.oy-editor .hljs-literal {
+  color: var(--gamboge);
+}
+
+.oy-editor .hljs-title,
+.oy-editor .hljs-title.function_,
+.oy-editor .hljs-function .hljs-title {
+  color: var(--accent);
+}
+
+.oy-editor .hljs-attr,
+.oy-editor .hljs-attribute,
+.oy-editor .hljs-variable,
+.oy-editor .hljs-template-variable {
+  color: var(--group-ink);
+}
+
+.oy-editor .hljs-type,
+.oy-editor .hljs-class .hljs-title {
+  color: var(--gamboge);
+}
+
+.oy-editor .hljs-operator,
+.oy-editor .hljs-punctuation {
+  color: var(--ink-2);
+}
+
+.oy-editor .hljs-symbol,
+.oy-editor .hljs-selector-id,
+.oy-editor .hljs-selector-class {
+  color: var(--danger-ink);
+}
+
+.oy-editor .hljs-emphasis { font-style: italic; }
+.oy-editor .hljs-strong { font-weight: 700; }
+
+/* ---------- 375px 不溢出 ---------- */
+@media (max-width: 480px) {
+  .oy-editor .ProseMirror {
+    padding: var(--space-3);
+  }
+
+  .oy-editor .oy-bubble {
+    max-width: calc(100vw - 32px);
+  }
+
+  .oy-editor .oy-slash-menu,
+  .oy-editor .oy-link-menu {
+    max-width: calc(100vw - 32px);
+  }
+
+  .oy-editor .oy-tex-input {
+    width: 160px;
+  }
+}
+
+/* ---------- 动效：只在允许时 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .oy-editor .oy-slash-menu,
+  .oy-editor .oy-link-menu,
+  .oy-editor .oy-bubble,
+  .oy-editor .oy-link-pop,
+  .oy-editor .oy-tex-prompt,
+  .oy-editor .oy-math-edit {
+    animation: oy-pop-in var(--motion-enter) var(--motion-ease);
+  }
+
+  .oy-editor .oy-bubble-btn,
+  .oy-editor .oy-slash-item,
+  .oy-editor .oy-link-item {
+    transition: background var(--motion-fast) var(--motion-ease);
+  }
+}
+
+@keyframes oy-pop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 键盘焦点可见 ---------- */
+.oy-editor .oy-bubble-btn:focus-visible,
+.oy-editor .oy-slash-item:focus-visible,
+.oy-editor .oy-codeblock-lang:focus-visible,
+.oy-editor .oy-link-ok:focus-visible,
+.oy-editor .oy-tex-ok:focus-visible,
+.oy-editor .oy-math-edit-save:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

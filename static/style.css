@@ -7,6 +7,9 @@
   --serif: "Times New Roman", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
   --kai: "KaiTi", "STKaiti", "Kaiti SC", "Songti SC", serif;
   --danger: #9d3d35; --radius: 18px; --radius-sm: 10px;
+  /* 所见即所得编辑器（static/vendor/editor）引用 --danger-ink 表达错误文字，
+     直接复用既有 --danger 令牌，两个主题都随 --danger 级联，不新增颜色字面量。 */
+  --danger-ink: var(--danger);
   /* Shared semantic colors retain the existing state and component palettes. */
   --glass-surface: rgb(245 240 230 / .88);
   --on-accent: #fff; --selection: #f3d5cf; --field-surface: #fffefc;

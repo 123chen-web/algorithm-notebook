@@ -1,239 +1,289 @@
-/* N2 笔记富渲染：行内/块级公式、mermaid 流程图、图片附件、工具栏、实时预览、灯箱。
-   只用 style.css / themes.css 的 CSS 变量令牌；不写颜色字面量、不用高优先级声明；
-   动效与指针悬浮反馈都包在对应媒体查询里；手机断点另写。 */
+/* N2/N5 笔记富内容样式：静态渲染（.notes-rich，即卡片正文 .notes-body）与所见即所得
+   编辑器（.ProseMirror）共用同一套排版；以及附件/画板图片、公式（KaTeX）、流程图、灯箱。
+   旧的 Markdown 工具栏 / “怎么写”小抄 / 实时预览已随 N5 移除。
+   仅使用 style.css 设计令牌；不写颜色字面量；动效只在允许动画时出现。 */
 
-/* ── 编辑器：桌面 textarea 与预览并排，手机折叠到下方 ── */
-/* 输入框在上、预览在下，各占满整行（并排会把预览挤成一条细缝）。 */
-.nr-editor {
-  display: block;
+/* ---------------- 静态正文（与编辑器 .ProseMirror 对齐） ---------------- */
+
+.notes-rich {
+  font-size: var(--text-base);
+  line-height: 1.75;
+  color: var(--ink);
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
-.nr-editor > textarea {
-  width: 100%;
+.notes-rich > :first-child {
+  margin-top: 0;
+}
+
+.notes-rich > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-rich p {
+  margin: 0 0 var(--space-3);
+  line-height: 1.75;
+}
+
+.notes-rich h1,
+.notes-rich h2,
+.notes-rich h3 {
+  line-height: 1.4;
+  font-weight: 700;
+  color: var(--ink);
+  margin: var(--space-5) 0 var(--space-3);
+}
+
+.notes-rich h1 { font-size: var(--text-2xl); }
+.notes-rich h2 { font-size: var(--text-xl); }
+.notes-rich h3 { font-size: var(--text-lg); }
+
+.notes-rich blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--line-strong);
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.notes-rich blockquote p {
+  margin: 0 0 var(--space-2);
+}
+
+.notes-rich blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-rich hr {
+  border: none;
+  border-top: 1px solid var(--line-strong);
+  margin: var(--space-5) 0;
+}
+
+.notes-rich ul,
+.notes-rich ol {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-6);
+}
+
+.notes-rich li {
+  margin: var(--space-1) 0;
+  line-height: 1.75;
+}
+
+/* 待办清单（- [ ] / - [x]）：只读勾选框 */
+.notes-rich ul.notes-task-list {
+  list-style: none;
+  padding-left: var(--space-2);
+}
+
+.notes-rich .notes-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.notes-rich .notes-task-item input[type="checkbox"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.35em;
+  accent-color: var(--accent);
+  cursor: default;
+}
+
+.notes-rich .notes-task-text {
+  flex: 1;
   min-width: 0;
-  min-height: 140px;
 }
 
-.nr-preview {
-  margin-top: 8px;
+/* ---------------- 行内代码 / 代码块（与编辑器同一套深色代码面） ---------------- */
+
+.notes-rich code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--code-ink);
+  background: var(--code-surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper);
-  padding: 8px 12px 10px;
+  border-radius: var(--radius-xs);
+  padding: 0.1em 0.35em;
+  overflow-wrap: break-word;
+}
+
+.notes-rich pre {
+  position: relative;
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--code-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 
-.nr-preview::before {
-  content: "预览效果";
-  display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-/* ── 工具栏 ── */
-.nr-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0;
-}
-
-.nr-toolbar button {
-  background: var(--paper-2);
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: 6px;
-  padding: 6px 12px;
-  min-height: 36px;
-  color: var(--ink);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-/* ── “怎么写”小抄 ── */
-.nr-help {
-  margin: 4px 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-2);
-  padding: 4px 12px;
-}
-
-.nr-help > summary {
-  min-height: 36px;
-  padding: 6px 0;
-  color: var(--ink-2);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.nr-help-intro {
-  margin: 4px 0 8px;
-  color: var(--ink-2);
-  font-size: 0.85rem;
-  line-height: 1.6;
-}
-
-.nr-help-list {
-  display: grid;
-  gap: 6px;
-  margin: 0 0 8px;
+.notes-rich pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--code-ink);
+  background: transparent;
+  border: none;
   padding: 0;
-  list-style: none;
+  white-space: pre;
 }
 
-.nr-help-list li {
-  display: grid;
-  grid-template-columns: 7.5em minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+/* ---------------- 表格（GFM，外层横向滚动，手机不溢出） ---------------- */
+
+.notes-rich .notes-table-wrap {
+  margin: var(--space-4) 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }
 
-.nr-help-what {
+.notes-rich table.notes-rich-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  background: var(--field-surface);
+}
+
+.notes-rich table.notes-rich-table th,
+.notes-rich table.notes-rich-table td {
+  border: 1px solid var(--line-strong);
+  padding: var(--space-2) var(--space-3);
+  min-width: 48px;
+  text-align: left;
+  vertical-align: top;
+  line-height: var(--lh-ui);
+}
+
+.notes-rich table.notes-rich-table th {
+  background: var(--paper-2);
+  font-weight: 700;
   color: var(--ink);
-  font-size: 0.85rem;
-  font-weight: 600;
 }
 
-.nr-help-list code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink-2);
-  font-size: 0.8rem;
+/* ---------------- 链接 / 图片 / 公式 / 流程图 ---------------- */
+
+.notes-rich a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.nr-help-list button {
-  min-height: 36px;
-  padding: 4px 12px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--accent-hover);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-@media (max-width: 520px) {
-  .nr-help-list li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .nr-help-list code {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .nr-toolbar button:hover {
-    background: var(--soft);
-  }
-}
-
-.nr-toolbar button:focus-visible {
-  outline: 2px solid var(--azurite);
-  outline-offset: 1px;
-}
-
-/* ── 附件图片 ── */
-.nr-image {
+.notes-rich .nr-image {
+  display: block;
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
+  margin: var(--space-3) 0;
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+
+.notes-rich .nr-image-interactive {
   cursor: zoom-in;
 }
 
-/* ── 公式块：窄屏可横向滚动 ── */
-.nr-block-math {
-  overflow-x: auto;
-  overflow-y: hidden;
-  margin: 8px 0;
-  padding: 4px 0;
+.notes-rich .nr-inline-math {
+  display: inline-block;
+  padding: 0 0.25em;
+  margin: 0 0.1em;
+  vertical-align: baseline;
 }
 
-/* ── mermaid 容器 ── */
-.nr-mermaid {
-  margin: 8px 0;
+.notes-rich .nr-block-math {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  text-align: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 
-.nr-mermaid svg {
+.notes-rich .nr-mermaid {
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  text-align: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+.notes-rich .nr-mermaid svg {
   max-width: 100%;
   height: auto;
 }
 
-/* ── 渲染失败回退：该处显示原文 + 中文提示，不影响其余内容 ── */
-.nr-fallback {
-  display: block;
-  margin: 8px 0;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--paper-2);
-  color: var(--muted);
-  font-size: 0.85rem;
-}
+/* ---------------- 图片灯箱（不引入颜色字面量，整面用主题纸色） ---------------- */
 
-.nr-fallback code {
-  display: block;
-  white-space: pre-wrap;
-  color: var(--ink);
-}
-
-/* ── 上传进度条 ── */
-.nr-uploading {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 4px 0;
-}
-
-/* ── 灯箱 ── */
 .nr-lightbox {
   position: fixed;
   inset: 0;
-  background: var(--ink);
+  z-index: 70;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 60;
-  padding: 24px;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--paper);
 }
 
-.nr-lightbox img {
+.nr-lightbox-image {
   max-width: 100%;
-  max-height: 100%;
-  border-radius: 6px;
-}
-
-.nr-lightbox button {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: var(--paper-2);
+  max-height: 86vh;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+}
+
+.nr-lightbox-close {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
   color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .nr-lightbox {
-    animation: nr-fade-in 120ms ease;
-  }
+/* ---------------- 悬停反馈仅在精确指针设备上启用 ---------------- */
 
-  @keyframes nr-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
+@media (hover: hover) and (pointer: fine) {
+  .notes-rich a:hover { color: var(--accent-hover); }
+  .notes-rich .nr-image-interactive:hover { border-color: var(--line-strong); }
+  .nr-lightbox-close:hover { background: var(--soft); border-color: var(--line-strong); }
 }
+
+.nr-lightbox-close:focus-visible,
+.notes-rich a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------------- 手机宽度：收紧内边距、表格/代码横向滚动 ---------------- */
 
 @media (max-width: 520px) {
-  .nr-editor {
-    flex-direction: column;
-  }
+  .notes-rich pre { padding: var(--space-3); }
+  .notes-rich .nr-block-math,
+  .notes-rich .nr-mermaid { padding: var(--space-3); }
+  .notes-rich table.notes-rich-table { font-size: var(--text-xs); }
+  .notes-rich table.notes-rich-table th,
+  .notes-rich table.notes-rich-table td { padding: var(--space-2); }
+}
 
-  .nr-editor > textarea {
-    min-height: 120px;
-  }
+/* ---------------- 动效仅在用户未要求减少动态时播放 ---------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .notes-rich .nr-image-interactive { transition: border-color var(--motion-fast) var(--motion-ease); }
+  .notes-rich a { transition: color var(--motion-fast) var(--motion-ease); }
+  .nr-lightbox-close { transition: background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
+  .nr-lightbox { animation: nr-lightbox-in var(--motion-enter) var(--motion-ease); }
+  @keyframes nr-lightbox-in { from { opacity: 0; } to { opacity: 1; } }
 }

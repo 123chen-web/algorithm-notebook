@@ -9,8 +9,8 @@ def test_problem_cards_assets_and_load_order():
     index = (STATIC / 'index.html').read_text(encoding='utf-8')
     assert index.count('/static/problem-cards.css?v=1') == 1
     assert index.count('/static/problem-cards.js?v=2') == 1
-    assert index.index('problem-cards.js?v=2') < index.index('focus.js?v=4') < index.index('app.js?v=92')
-    for file, version in [('overview.js', 4), ('clusters.js', 7), ('app.js', 92)]:
+    assert index.index('problem-cards.js?v=2') < index.index('focus.js?v=4') < index.index('app.js?v=94')
+    for file, version in [('overview.js', 4), ('clusters.js', 7), ('app.js', 94)]:
         assert f'/static/{file}?v={version}' in index
 
 

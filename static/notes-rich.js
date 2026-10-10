@@ -242,6 +242,10 @@
       const html = window.katex.renderToString(box.__nrCode, {
         throwOnError: false,
         trust: false,
+        // 与编辑器内的公式渲染保持一致（OYEditor 同样使用 MathML 输出）：
+        // HTML 输出会带大量逐公式计算的内联 style，在 style-src 'self' 的 CSP 下
+        // 每条公式都会触发 style-src-attr 违规；MathML 输出无内联样式，由浏览器原生排版。
+        output: "mathml",
         displayMode: Boolean(box.__nrDisplay),
       });
       const node = nodeFromHtmlString(html, !box.__nrDisplay);
@@ -315,26 +319,7 @@
     }
   }
 
-  // ── 编辑器接线：工具栏 / 实时预览 / 粘贴拖拽上传 / 灯箱 ──
-  const MERMAID_TEMPLATE = [
-    "```mermaid",
-    "flowchart TD",
-    "  A[开始] --> B{条件成立?}",
-    "  B -- 是 --> C[执行处理]",
-    "  B -- 否 --> D[跳过]",
-    "  C --> D",
-    "```",
-    "",
-  ].join("\n");
-
-  const TABLE_TEMPLATE = [
-    "",
-    "| 列一 | 列二 | 列三 |",
-    "| --- | --- | --- |",
-    "| 内容 | 内容 | 内容 |",
-    "",
-  ].join("\n");
-
+  // ── 降级 textarea 的辅助：光标处插入文本（所见即所得编辑器由 notes-editor.js 接管） ──
   function insertAtCursor(ta, before, after, placeholder) {
     const start = ta.selectionStart !== undefined ? ta.selectionStart : ta.value.length;
     const end = ta.selectionEnd !== undefined ? ta.selectionEnd : ta.value.length;
@@ -342,31 +327,6 @@
     ta.setRangeText(before + selected + after, start, end, "end");
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
-
-  // 按钮用文字而不是字母缩写，鼠标停一下还有提示；流程图在当前安全策略下不能渲染，所以不放按钮。
-  const TOOLS = [
-    { label: "加粗", aria: "加粗", before: "**", after: "**", placeholder: "加粗文字" },
-    { label: "斜体", aria: "斜体", before: "*", after: "*", placeholder: "斜体文字" },
-    { label: "行内代码", aria: "行内代码", before: "`", after: "`", placeholder: "code" },
-    { label: "代码块", aria: "插入代码块", before: "\n```\n", after: "\n```\n", placeholder: "代码" },
-    { label: "公式", aria: "插入行内公式", before: "$", after: "$", placeholder: "a^2+b^2=c^2" },
-    { label: "插图", aria: "插入图片附件", file: true },
-    { label: "表格", aria: "插入表格模板", block: TABLE_TEMPLATE },
-  ];
-
-  // “怎么写”小抄：每行一个常用写法，点“插入”就把示例放进光标处，不用记符号。
-  const HELP_ITEMS = [
-    { what: "小标题", example: "## 小标题", block: "\n## 小标题\n" },
-    { what: "列表", example: "- 第一条", block: "\n- 第一条\n- 第二条\n" },
-    { what: "编号步骤", example: "1. 第一步", block: "\n1. 第一步\n2. 第二步\n" },
-    { what: "引用一句话", example: "> 重点", block: "\n> 重点\n" },
-    { what: "链接", example: "[文字](网址)", before: "[", after: "](网址)", placeholder: "文字" },
-    { what: "数学公式", example: "$a^2+b^2=c^2$", before: "$", after: "$", placeholder: "a^2+b^2=c^2" },
-    { what: "整行公式", example: "$$ ... $$", block: "\n$$\nE = mc^2\n$$\n" },
-    { what: "代码", example: "```python ... ```", block: "\n```python\nprint(1)\n```\n" },
-    { what: "链到另一篇笔记", example: "[[笔记标题]]", before: "[[", after: "]]", placeholder: "笔记标题" },
-    { what: "链到一道错题", example: "[[题:题目标题]]", before: "[[题:", after: "]]", placeholder: "题目标题" },
-  ];
 
   function uploadFile(file, onProgress) {
     return new Promise((resolve, reject) => {
@@ -391,162 +351,6 @@
       const form = new FormData();
       form.append("file", file);
       xhr.send(form);
-    });
-  }
-
-  function setStatus(statusEl, text) {
-    statusEl.textContent = text;
-  }
-
-  async function uploadAndInsert(ta, statusEl, file) {
-    setStatus(statusEl, "正在上传图片…");
-    try {
-      const data = await uploadFile(file, (ratio) => {
-        setStatus(statusEl, "正在上传图片 " + Math.round(ratio * 100) + "%");
-      });
-      ownedIds.add(Number(data.id));
-      insertAtCursor(ta, "", "", data.markdown + "\n");
-      setStatus(statusEl, "");
-    } catch (err) {
-      setStatus(statusEl, err.message || "图片上传失败");
-    }
-  }
-
-  function buildToolbar(bar, ta, statusEl) {
-    TOOLS.forEach((tool) => {
-      const button = document.createElement("button");
-      button.setAttribute("type", "button");
-      button.setAttribute("aria-label", tool.aria);
-      button.setAttribute("title", tool.aria);
-      button.textContent = tool.label;
-      button.addEventListener("click", () => {
-        ta.focus();
-        if (tool.file) {
-          pickImageFile(ta, statusEl);
-        } else if (tool.block) {
-          insertAtCursor(ta, "", "", tool.block);
-        } else {
-          insertAtCursor(ta, tool.before, tool.after, tool.placeholder);
-        }
-      });
-      bar.appendChild(button);
-    });
-  }
-
-  function buildHelp(ta) {
-    const details = document.createElement("details");
-    details.setAttribute("class", "nr-help");
-    const summary = document.createElement("summary");
-    summary.textContent = "不熟悉怎么排版？点开看写法（点“插入”就能用）";
-    details.appendChild(summary);
-    const intro = document.createElement("p");
-    intro.setAttribute("class", "nr-help-intro");
-    intro.textContent = "直接写文字就行，下面是可选的小技巧。保存后会按这些写法显示成漂亮的样式；输入时下方会实时预览。";
-    details.appendChild(intro);
-    const list = document.createElement("ul");
-    list.setAttribute("class", "nr-help-list");
-    HELP_ITEMS.forEach((item) => {
-      const row = document.createElement("li");
-      const what = document.createElement("span");
-      what.setAttribute("class", "nr-help-what");
-      what.textContent = item.what;
-      const example = document.createElement("code");
-      example.textContent = item.example;
-      const insert = document.createElement("button");
-      insert.setAttribute("type", "button");
-      insert.setAttribute("aria-label", "插入" + item.what + "的示例");
-      insert.textContent = "插入";
-      insert.addEventListener("click", () => {
-        ta.focus();
-        if (item.block) insertAtCursor(ta, "", "", item.block);
-        else insertAtCursor(ta, item.before, item.after, item.placeholder);
-      });
-      row.appendChild(what);
-      row.appendChild(example);
-      row.appendChild(insert);
-      list.appendChild(row);
-    });
-    details.appendChild(list);
-    const tip = document.createElement("p");
-    tip.setAttribute("class", "nr-help-intro");
-    tip.textContent = "插入图片：点上面的“插图”，或者直接把图片粘贴、拖进输入框。画图：点页面里的“新建画板”。";
-    details.appendChild(tip);
-    return details;
-  }
-
-  let fileInput = null;
-  function pickImageFile(ta, statusEl) {
-    if (!fileInput) {
-      fileInput = document.createElement("input");
-      fileInput.setAttribute("type", "file");
-      fileInput.setAttribute("accept", "image/*");
-      fileInput.addEventListener("change", () => {
-        const files = Array.from(fileInput.files || []);
-        files.forEach((file) => uploadAndInsert(ta, statusEl, file));
-        fileInput.value = "";
-      });
-    }
-    fileInput.click();
-  }
-
-  function initComposer() {
-    const ta = document.getElementById("notes-content");
-    if (!ta || ta.dataset.nrRichInit === "1") return;
-    ta.dataset.nrRichInit = "1";
-
-    const bar = document.createElement("div");
-    bar.setAttribute("class", "nr-toolbar");
-    const status = document.createElement("div");
-    status.setAttribute("class", "nr-uploading");
-    status.setAttribute("aria-live", "polite");
-
-    const editor = document.createElement("div");
-    editor.setAttribute("class", "nr-editor");
-    const preview = document.createElement("div");
-    preview.setAttribute("class", "nr-preview");
-    preview.setAttribute("id", "notes-preview");
-    preview.hidden = true; // 没有内容时不占位，写了才出现
-
-    ta.parentNode.insertBefore(bar, ta);
-    ta.parentNode.insertBefore(buildHelp(ta), ta);
-    ta.parentNode.insertBefore(editor, ta);
-    editor.appendChild(ta);
-    editor.appendChild(preview);
-    editor.parentNode.insertBefore(status, editor.nextSibling);
-
-    buildToolbar(bar, ta, status);
-
-    let timer = null;
-    ta.addEventListener("input", () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        preview.hidden = !ta.value.trim();
-        const root = window.Notes.renderNoteMarkdown(ta.value);
-        preview.replaceChildren(root);
-      }, 300);
-    });
-
-    ta.addEventListener("paste", (event) => {
-      const files = event.clipboardData && event.clipboardData.files
-        ? Array.from(event.clipboardData.files)
-        : [];
-      const images = files.filter((file) => /^image\//.test(file.type));
-      if (!images.length) return;
-      event.preventDefault();
-      images.forEach((file) => uploadAndInsert(ta, status, file));
-    });
-
-    ta.addEventListener("dragover", (event) => {
-      event.preventDefault();
-    });
-    ta.addEventListener("drop", (event) => {
-      const files = event.dataTransfer && event.dataTransfer.files
-        ? Array.from(event.dataTransfer.files)
-        : [];
-      const images = files.filter((file) => /^image\//.test(file.type));
-      if (!images.length) return;
-      event.preventDefault();
-      images.forEach((file) => uploadAndInsert(ta, status, file));
     });
   }
 
@@ -610,17 +414,22 @@
     }
   };
   PUB.insertAtCursor = insertAtCursor;
-  PUB.initComposer = initComposer;
   PUB.knownRegistry = () => registry.slice();
-  PUB.MERMAID_TEMPLATE = MERMAID_TEMPLATE;
+  // 所见即所得编辑器（notes-editor.js）上传图片复用此 XHR；上传成功即登记为本人附件，
+  // 之后列表静态渲染（resolveImages）才会把 attachment:ID 落位成 <img>。
+  PUB.uploadFile = async (file, onProgress) => {
+    const data = await uploadFile(file, onProgress);
+    if (data && data.id !== undefined) ownedIds.add(Number(data.id));
+    return data;
+  };
+  PUB.rememberAttachment = (id) => {
+    if (id !== undefined && id !== null && Number(id) > 0) ownedIds.add(Number(id));
+  };
 
   if (typeof window !== "undefined") {
     window.NotesRich = PUB;
+    // 仅保留附件图片灯箱委托；旧的 Markdown 工具栏 / “怎么写”小抄 / 实时预览已随
+    // N5 所见即所得编辑器移除（编辑器自带斜杠菜单、浮动工具栏与图片粘贴上传）。
     document.addEventListener("click", onDocumentClick);
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", initComposer);
-    } else {
-      initComposer();
-    }
   }
 })();

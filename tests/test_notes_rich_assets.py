@@ -13,16 +13,16 @@ MAIN = (ROOT / "main.py").read_text(encoding="utf-8")
 
 
 def test_assets_versioned_and_loaded_in_order():
-    assert '<link rel="stylesheet" href="/static/notes-rich.css?v=4">' in HTML
+    assert '<link rel="stylesheet" href="/static/notes-rich.css?v=5">' in HTML
     scripts = re.findall(r'<script defer src="/static/([\w.-]+\.js)\?v=(\d+)"></script>', HTML)
     names = [name for name, _ in scripts]
     assert names.count("notes-rich.js") == 1
     assert names.index("notes.js") < names.index("notes-links.js") < names.index("notes-rich.js") < names.index("app.js")
     versions = dict(scripts)
-    assert versions["notes-rich.js"] == "5"
-    assert versions["notes.js"] == "4"
-    assert versions["notes-links.js"] == "6"
-    assert versions["app.js"] == "92"
+    assert versions["notes-rich.js"] == "7"
+    assert versions["notes.js"] == "6"
+    assert versions["notes-links.js"] == "7"
+    assert versions["app.js"] == "94"
 
 
 def test_no_inline_style_or_inline_script_in_markup():

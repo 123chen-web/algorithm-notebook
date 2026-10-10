@@ -17,6 +17,9 @@
   const SEARCH_DELAY = 250;
   const TITLE_FALLBACK_LEN = 30;
   const TAG_MAX = 10;
+  // 与后端 routers/notes.py 的 NOTE_CONTENT_MAX 保持一致（Pydantic max_length）。
+  // 前端先拦一道，给出中文提示，避免超长提交后才收到 422。
+  const NOTE_CONTENT_MAX = 20000;
 
   let hooks = null;
   let generation = 0;
@@ -61,17 +64,24 @@
     return [...seen];
   }
 
+  // 标题里可能带行内排版（加粗、链接、互链、图片占位），卡片标题只保留可读文字。
+  function cleanHeadingText(text) {
+    return String(text ?? "")
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/\[\[(?:题:|笔记:)?([^\]]+)\]\]/g, "$1")
+      .replace(/^(?:[-*>]|\d+[.)])\s+/, "")
+      .replace(/[*`$]/g, "")
+      .trim();
+  }
+
   /** 笔记显示标题：有 title 用 title，否则取 content 首个非空行前 30 字。 */
   function noteTitle(note) {
     const title = String(note?.title ?? "").trim();
     if (title) return title;
     const firstLine = String(note?.content ?? "").split("\n").map((line) => line.trim()).find((line) => line) || "";
     // 没有单独标题时取第一行；去掉 # 标题符号、列表/引用符号和加粗符号，别把排版符号当标题显示。
-    const cleaned = firstLine
-      .replace(/^#{1,6}\s*/, "")
-      .replace(/^(?:[-*>]|\d+[.)])\s+/, "")
-      .replace(/[*`$]/g, "")
-      .trim();
+    const cleaned = cleanHeadingText(firstLine.replace(/^#{1,6}\s*/, ""));
     return (cleaned || firstLine).slice(0, TITLE_FALLBACK_LEN);
   }
 
@@ -83,6 +93,21 @@
     const first = lines.findIndex((line) => line.trim());
     if (first !== -1 && /^#{1,3}\s+\S/.test(lines[first])) lines.splice(first, 1);
     return lines.join("\n");
+  }
+
+  /** N5：卡片标题的显示策略——只有用户显式写了标题，或正文首行本身是 ATX 标题块时，
+      卡片头部才显示标题；正文开头当标题的旧做法不再重复显示（避免“标题=正文第一句”）。
+      返回应显示的标题文本；不需要标题时返回 null。纯函数，Node 测试直接调用。 */
+  function cardHeading(note) {
+    const explicit = String(note?.title ?? "").trim();
+    if (explicit) return explicit;
+    const content = String(note?.content ?? "");
+    const firstLine = content.split("\n").map((line) => line.trim()).find((line) => line) || "";
+    const heading = /^#{1,3}\s+(.+)$/.exec(firstLine);
+    if (!heading) return null;
+    // 与 noteTitle 一致地去掉行内排版符号，避免把链接 / ** / ` / $ 显示进卡片标题。
+    const cleaned = cleanHeadingText(heading[1]);
+    return cleaned || null;
   }
 
   /** 列表查询串：只带非默认值；limit 钳在 1..100。 */
@@ -131,67 +156,233 @@
       ref.append(img, title);
       return ref;
     }
+    function isHttpUrl(url) {
+      try {
+        return /^https?:\/\//i.test(url) && ["http:", "https:"].includes(new URL(url).protocol);
+      } catch {
+        return false;
+      }
+    }
+
+    // 逐字符扫描行内语法：行内代码 → 图片 → 显式链接 → 粗/斜/删除线 → 反斜杠转义。
+    // 与旧实现一致：非 http(s) 链接（javascript:/data:/vbscript: 等）与未命中的写法一律落纯文本。
     function inline(parent, text) {
-      // 图片语法 !\[alt\]\(url\) 必须排在普通链接前面，否则 ! 后面的 [alt] 会被当成链接文本。
-      const pattern = /`([^`\n]+)`|!\[([^\]]*)\]\(([^)\s]*)\)|\[([^\]]*)\]\(([^)\s]*)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
-      let from = 0;
-      for (const match of text.matchAll(pattern)) {
-        parent.append(document.createTextNode(text.slice(from, match.index)));
-        let node;
-        if (match[1] !== undefined) node = h("code", match[1]);
-        else if (match[2] !== undefined) {
-          if (/^drawing:\d+$/.test(String(match[3]))) {
-            node = drawingRefNode(match[2], match[3]);
+      const s = String(text ?? "");
+      let i = 0;
+      let buf = "";
+      const flush = () => { if (buf) { parent.append(document.createTextNode(buf)); buf = ""; } };
+      const push = (node) => { flush(); parent.append(node); };
+      while (i < s.length) {
+        const rest = s.slice(i);
+        let m;
+        if ((m = /^`([^`\n]+)`/.exec(rest))) {
+          push(h("code", m[1]));
+        } else if ((m = /^!\[([^\]]*)\]\(([^)\s]*)\)/.exec(rest))) {
+          let node;
+          if (/^drawing:\d+$/.test(m[2])) {
+            node = drawingRefNode(m[1], m[2]);
           } else {
-            // N2：图片先落成 data-* 占位 span，是否真的渲染成 <img> 由 NotesRich 决定
-            // （仅本人 attachment:ID 渲染；外链一律回退为纯文本，不发请求）。
+            // 图片先落 data-* 占位 span，是否真渲染成 <img> 由 NotesRich 决定（仅本人附件）。
             node = document.createElement("span");
             node.setAttribute("data-nr-img", "1");
-            node.setAttribute("data-alt", match[2]);
-            node.setAttribute("data-src", match[3]);
+            node.setAttribute("data-alt", m[1]);
+            node.setAttribute("data-src", m[2]);
           }
-        } else if (match[4] !== undefined) {
-          let safe = false;
-          try { safe = /^https?:\/\//i.test(match[5]) && ["http:", "https:"].includes(new URL(match[5]).protocol); } catch {}
-          if (safe) {
-            node = h("a", match[4]);
-            node.setAttribute("href", match[5]);
-            node.setAttribute("target", "_blank");
-            node.setAttribute("rel", "noopener");
-          } else node = document.createTextNode(match[0]);
-        } else node = h(match[6] !== undefined ? "strong" : "em", match[6] ?? match[7]);
-        parent.append(node);
-        from = match.index + match[0].length;
+          push(node);
+        } else if ((m = /^\[([^\]]+)\]\(([^)\s]*)\)/.exec(rest))) {
+          if (isHttpUrl(m[2])) {
+            const a = h("a", m[1]);
+            a.setAttribute("href", m[2]);
+            a.setAttribute("target", "_blank");
+            a.setAttribute("rel", "noopener");
+            push(a);
+          } else {
+            buf += m[0]; // 非 http(s) 链接按纯文本显示
+          }
+        } else if ((m = /^\*\*([^*]+)\*\*/.exec(rest))) {
+          push(h("strong", m[1]));
+        } else if ((m = /^\*([^*\n]+)\*/.exec(rest))) {
+          push(h("em", m[1]));
+        } else if ((m = /^~~([^~\n]+)~~/.exec(rest))) {
+          push(h("del", m[1]));
+        } else if ((m = /^\\([\\`*_{}[\]()#+\-.!~>])/.exec(rest))) {
+          buf += m[1]; // 编辑器会对行首符号做反斜杠转义，展示时还原成普通字符
+        } else {
+          buf += s[i];
+          i += 1;
+          continue;
+        }
+        i += m[0].length;
       }
-      parent.append(document.createTextNode(text.slice(from)));
+      flush();
     }
+
+    // GFM 表格：表头行 + 分隔行（|:--|--:|）+ 数据行。单元格用 textContent 填，绝不拼 HTML。
+    function splitTableRow(line) {
+      let s = String(line).trim();
+      if (s.startsWith("|")) s = s.slice(1);
+      if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+      return s.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, "|").trim());
+    }
+
+    function isTableStart(lines, i) {
+      if (i + 1 >= lines.length) return false;
+      const header = lines[i];
+      const sep = lines[i + 1];
+      if (!header.includes("|")) return false;
+      if (!/^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(sep)) return false;
+      const heads = splitTableRow(header);
+      const marks = splitTableRow(sep);
+      return heads.length > 0 && heads.length === marks.length;
+    }
+
+    function buildTable(lines, i) {
+      const headers = splitTableRow(lines[i]);
+      const rows = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].includes("|") && lines[j].trim()) {
+        const cells = splitTableRow(lines[j]);
+        if (cells.length !== headers.length) break;
+        rows.push(cells);
+        j += 1;
+      }
+      const wrap = h("div", null, "notes-table-wrap");
+      const table = h("table", null, "notes-rich-table");
+      const thead = document.createElement("thead");
+      const headRow = h("tr");
+      for (const text of headers) { const th = h("th"); th.textContent = text; headRow.append(th); }
+      thead.append(headRow);
+      const tbody = document.createElement("tbody");
+      for (const cells of rows) {
+        const tr = h("tr");
+        for (const text of cells) { const td = h("td"); td.textContent = text; tr.append(td); }
+        tbody.append(tr);
+      }
+      table.append(thead, tbody);
+      wrap.append(table);
+      return { node: wrap, next: j };
+    }
+
+    // 列表项：任务清单项 - [ ] / - [x]，无序列表 -/*/+，有序列表 1. / 1)；记录缩进层级。
+    function matchListItem(line) {
+      let m;
+      if ((m = /^(\s*)([-*+])\s+\[([ xX])\]\s+(.*)$/.exec(line))) {
+        return { indent: m[1].length, marker: "task", checked: m[3].toLowerCase() === "x", content: m[4] };
+      }
+      if ((m = /^(\s*)([-*+])\s+(.*)$/.exec(line))) {
+        return { indent: m[1].length, marker: "ul", content: m[3] };
+      }
+      if ((m = /^(\s*)\d+[.)]\s+(.*)$/.exec(line))) {
+        return { indent: m[1].length, marker: "ol", content: m[2] };
+      }
+      return null;
+    }
+
+    // 递归构建（可嵌套）列表；同层标记变化时结束，交由外层另起一个列表。
+    function buildList(lines, i) {
+      const first = matchListItem(lines[i]);
+      const tag = first.marker === "ol" ? "ol" : "ul";
+      const list = h(tag);
+      if (first.marker === "task") list.className = "notes-task-list";
+      const baseIndent = first.indent;
+      let li = null;
+      while (i < lines.length) {
+        const cur = matchListItem(lines[i]);
+        if (!cur || cur.indent < baseIndent) break;
+        if (cur.indent > baseIndent) {
+          if (!li) break;
+          const sub = buildList(lines, i); // 更深缩进 = 嵌套到上一个 li 里
+          li.append(sub.node);
+          i = sub.next;
+          continue;
+        }
+        const curTag = cur.marker === "ol" ? "ol" : "ul";
+        if (curTag !== tag) break; // 有序/无序切换：另起列表
+        if (cur.marker === "task") {
+          li = h("li", null, "notes-task-item");
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.disabled = true;
+          box.checked = cur.checked;
+          box.setAttribute("aria-readonly", "true");
+          box.tabIndex = -1;
+          const text = h("span", null, "notes-task-text");
+          inline(text, cur.content);
+          li.append(box, text);
+        } else {
+          li = h("li");
+          inline(li, cur.content);
+        }
+        list.append(li);
+        i += 1;
+      }
+      return { node: list, next: i };
+    }
+
+    // 块级解析：围栏代码 → 分割线 → 引用 → 表格 → 列表 → 标题/段落。
+    function parseBlocks(textLines) {
+      const fragment = document.createDocumentFragment();
+      let index = 0;
+      while (index < textLines.length) {
+        const line = textLines[index];
+        const fence = /^(```|~~~)(.*)$/.exec(line);
+        if (fence) {
+          const body = [];
+          index += 1;
+          while (index < textLines.length && !textLines[index].startsWith(fence[1])) {
+            body.push(textLines[index]);
+            index += 1;
+          }
+          if (index < textLines.length) index += 1; // 收尾围栏
+          const pre = h("pre");
+          const code = h("code", body.join("\n"));
+          const lang = fence[2].trim();
+          if (lang) code.className = `language-${lang}`;
+          pre.append(code);
+          fragment.append(pre);
+          continue;
+        }
+        if (/^\s{0,3}(?:[-*_]\s*){3,}$/.test(line)) {
+          fragment.append(document.createElement("hr"));
+          index += 1;
+          continue;
+        }
+        if (/^\s{0,3}>/.test(line)) {
+          const quoted = [];
+          while (index < textLines.length && /^\s{0,3}>/.test(textLines[index])) {
+            quoted.push(textLines[index].replace(/^\s{0,3}>\s?/, ""));
+            index += 1;
+          }
+          const bq = h("blockquote");
+          if (quoted.length === 1) inline(bq, quoted[0]);
+          else bq.replaceChildren(parseBlocks(quoted));
+          fragment.append(bq);
+          continue;
+        }
+        if (isTableStart(textLines, index)) {
+          const built = buildTable(textLines, index);
+          fragment.append(built.node);
+          index = built.next;
+          continue;
+        }
+        if (matchListItem(line)) {
+          const built = buildList(textLines, index);
+          fragment.append(built.node);
+          index = built.next;
+          continue;
+        }
+        if (!line.trim()) { index += 1; continue; }
+        const heading = line.match(/^(#{1,3})\s+(.*)$/);
+        const block = h(heading ? `h${heading[1].length}` : "p");
+        inline(block, heading ? heading[2] : line);
+        fragment.append(block);
+        index += 1;
+      }
+      return fragment;
+    }
+
     const lines = String(source ?? "").split("\n");
-    let list = null;
-    let listTag = "";
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (line.startsWith("```")) {
-        list = null;
-        const body = [];
-        while (++index < lines.length && !lines[index].startsWith("```")) body.push(lines[index]);
-        const pre = h("pre"); pre.append(h("code", body.join("\n"))); root.append(pre);
-        continue;
-      }
-      const heading = line.match(/^(#{1,3})\s+(.*)$/);
-      const item = line.match(/^-\s+(.*)$/);
-      const numbered = line.match(/^\d+[.)]\s+(.*)$/);
-      if (item || numbered) {
-        const tag = item ? "ul" : "ol";
-        if (!list || listTag !== tag) { list = h(tag); listTag = tag; root.append(list); }
-        const li = h("li"); inline(li, (item || numbered)[1]); list.append(li); continue;
-      }
-      list = null;
-      if (!line.trim()) continue;
-      const quote = line.match(/^>\s?(.*)$/);
-      if (quote) { const bq = h("blockquote"); inline(bq, quote[1]); root.append(bq); continue; }
-      const block = h(heading ? `h${heading[1].length}` : "p");
-      inline(block, heading ? heading[2] : line); root.append(block);
-    }
+    root.append(parseBlocks(lines));
     // N1：代码块/行内代码已落成 <pre><code>/<code>，再对剩余文本节点做 [[ ]] 链接落位。
     // 注：仅在 notes-links.js 已加载时生效；Node 测试只加载 notes.js 时为 no-op。
     if (window.NotesLinks && typeof window.NotesLinks.attachInlineLinks === "function") {
@@ -263,6 +454,43 @@
     notice.textContent = text || "";
   }
 
+  /* N5：新建区正文可能是 OYEditor 所见即所得，也可能降级为 #notes-content textarea；
+     保存 / 清空 / 预填 / 模板插入都走这一层，两条路径行为一致。 */
+  function composerEditor() {
+    const ed = window.NotesEditor;
+    return ed && typeof ed.editorActive === "function" && ed.editorActive() ? ed : null;
+  }
+
+  function getComposerContent() {
+    const ed = composerEditor();
+    if (ed) return ed.getComposerMarkdown();
+    return String($("#notes-content")?.value ?? "");
+  }
+
+  function setComposerContent(markdown, focus) {
+    const text = String(markdown ?? "");
+    const ed = composerEditor();
+    if (ed) ed.setComposerMarkdown(text);
+    else { const ta = $("#notes-content"); if (ta) ta.value = text; }
+    if (focus) focusComposer();
+  }
+
+  function focusComposer() {
+    const ed = composerEditor();
+    if (ed && typeof ed.focusComposer === "function") ed.focusComposer();
+    else $("#notes-content")?.focus();
+  }
+
+  function insertComposerTemplate(markdown) {
+    const text = String(markdown ?? "");
+    const ed = composerEditor();
+    if (ed && typeof ed.insertComposerTemplate === "function") ed.insertComposerTemplate(text);
+    else if (window.NotesRich && typeof window.NotesRich.insertAtCursor === "function") {
+      const ta = $("#notes-content");
+      if (ta) window.NotesRich.insertAtCursor(ta, "", "", text);
+    }
+  }
+
   function sortNotes() {
     notes.sort((a, b) => {
       const pin = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
@@ -314,12 +542,15 @@
       pin.setAttribute("aria-label", "已置顶");
       titleWrap.append(pin);
     }
-    titleWrap.append(h("strong", noteTitle(note)));
+    // N5：没有显式标题、且正文首行不是标题块时，不再把正文开头重复当标题显示。
+    const heading = cardHeading(note);
+    if (heading) titleWrap.append(h("strong", heading));
     head.append(titleWrap);
     head.append(h("time", noteTime(note.updated_at || note.created_at), "notes-time"));
     card.append(head);
 
-    const body = h("div", null, "notes-body");
+    // notes-rich：静态正文排版与所见即所得编辑器共用同一套样式（见 notes-rich.css）。
+    const body = h("div", null, "notes-body notes-rich");
     const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
     body.replaceChildren(renderNoteMarkdown(bodyWithoutDerivedTitle(note), { drawingIds }));
     card.append(body);
@@ -485,12 +716,11 @@
     fillProblemOptions();
     const select = $("#notes-problem");
     if (select) select.value = String(pendingPrefill.id);
-    const content = $("#notes-content");
-    // N1：新建笔记正文预填 [[题:题目标题]]，直接建立题目双向链接。
-    if (content && pendingPrefill.title && !content.value) {
-      content.value = `[[题:${pendingPrefill.title}]]`;
+    // N1：新建笔记正文预填 [[题:题目标题]]，直接建立题目双向链接（编辑器或 textarea 同路）。
+    if (pendingPrefill.title && !getComposerContent().trim()) {
+      setComposerContent(`[[题:${pendingPrefill.title}]]`);
     }
-    if (content && hooks?.getView?.() === "notes") content.focus();
+    if (hooks?.getView?.() === "notes") focusComposer();
     pendingPrefill = null;
   }
 
@@ -503,10 +733,9 @@
   }
 
   function clearComposer() {
-    const content = $("#notes-content");
+    setComposerContent("");
     const tags = $("#notes-tags-input");
     const select = $("#notes-problem");
-    if (content) content.value = "";
     if (tags) tags.value = "";
     if (select) select.value = "";
     composerNotice("");
@@ -515,16 +744,21 @@
   async function saveComposer() {
     if (!hooks?.api) return;
     const token = takeToken();
-    const contentEl = $("#notes-content");
-    const content = String(contentEl?.value ?? "").trim();
+    const rawContent = getComposerContent();
+    const content = String(rawContent ?? "").trim();
     if (!content) {
       composerNotice("至少写点什么");
-      contentEl?.focus();
+      focusComposer();
+      return;
+    }
+    if (rawContent.length > NOTE_CONTENT_MAX) {
+      composerNotice(`正文不能超过 ${NOTE_CONTENT_MAX} 字，请精简后再保存。`);
+      focusComposer();
       return;
     }
     const tags = parseTags($("#notes-tags-input")?.value);
     const problemId = $("#notes-problem")?.value || "";
-    const draft = { content: contentEl?.value, tags: $("#notes-tags-input")?.value, problem: $("#notes-problem")?.value };
+    const draft = { content: rawContent, tags: $("#notes-tags-input")?.value, problem: $("#notes-problem")?.value };
     const saveButton = $("#notes-save");
     if (saveButton) saveButton.disabled = true;
     try {
@@ -545,7 +779,10 @@
       total += 1;
       hasMore = notes.length < total;
       sortNotes();
-      if (contentEl?.value === draft.content && $("#notes-tags-input")?.value === draft.tags && $("#notes-problem")?.value === draft.problem) clearComposer();
+      // 只有保存期间用户没有改动草稿才清空；失败 / 改过都保留内容。
+      if (getComposerContent() === draft.content
+          && $("#notes-tags-input")?.value === draft.tags
+          && $("#notes-problem")?.value === draft.problem) clearComposer();
       if (filtered) await reloadList();
       else renderList();
       if (!alive(token)) return;
@@ -606,10 +843,28 @@
     titleInput.value = note.title || "";
     titleInput.placeholder = "标题（可选，空则取正文首行）";
     titleInput.setAttribute("aria-label", "笔记标题");
-    const area = h("textarea", null, "notes-edit-content");
-    area.rows = 6;
-    area.value = note.content || "";
-    area.setAttribute("aria-label", "笔记正文");
+
+    // N5：正文优先挂所见即所得编辑器；OYEditor 缺失或初始化抛错时回退到 textarea。
+    const bodyHost = h("div", null, "notes-edit-body");
+    let editCtl = null;
+    let area = null;
+    try {
+      if (window.NotesEditor && typeof window.NotesEditor.mountEdit === "function"
+          && !(typeof window.NotesEditor.isFallback === "function" && window.NotesEditor.isFallback())) {
+        editCtl = window.NotesEditor.mountEdit(bodyHost, note.content || "");
+      }
+    } catch (_error) {
+      editCtl = null;
+    }
+    if (!editCtl) {
+      area = h("textarea", null, "notes-edit-content");
+      area.rows = 6;
+      area.maxLength = NOTE_CONTENT_MAX;
+      area.value = note.content || "";
+      area.setAttribute("aria-label", "笔记正文");
+      bodyHost.append(area);
+    }
+
     const tagInput = h("input", null, "notes-edit-tags");
     tagInput.type = "text";
     tagInput.value = (note.tags || []).join(" ");
@@ -624,19 +879,35 @@
     error.hidden = true;
     error.setAttribute("role", "status");
     row.append(save, cancel);
-    editor.append(titleInput, area, tagInput, row, error);
+    editor.append(titleInput, bodyHost, tagInput, row, error);
     body.replaceWith(editor);
-    area.focus();
+    if (editCtl && typeof editCtl.focus === "function") editCtl.focus();
+    else area.focus();
+
+    const readBody = () => (editCtl ? editCtl.getMarkdown() : area.value);
+    const teardownEditor = () => {
+      if (editCtl && typeof editCtl.destroy === "function") {
+        try { editCtl.destroy(); } catch { /* 卸载失败不影响卡片恢复 */ }
+      }
+      editCtl = null;
+    };
 
     cancel.addEventListener("click", () => {
+      teardownEditor();
       editor.replaceWith(body);
       actions.hidden = false;
     });
     save.addEventListener("click", async () => {
-      const content = area.value.trim();
+      const raw = readBody();
+      const content = String(raw ?? "").trim();
       if (!content) {
         error.hidden = false;
         error.textContent = "至少写点什么";
+        return;
+      }
+      if (String(raw ?? "").length > NOTE_CONTENT_MAX) {
+        error.hidden = false;
+        error.textContent = `正文不能超过 ${NOTE_CONTENT_MAX} 字，请精简后再保存。`;
         return;
       }
       const token = takeToken();
@@ -646,11 +917,12 @@
           method: "PUT",
           body: JSON.stringify({
             title: titleInput.value.trim(),
-            content: area.value,
+            content: raw,
             tags: parseTags(tagInput.value),
           }),
         });
         if (!alive(token)) return;
+        teardownEditor();
         Object.assign(note, updated);
         sortNotes();
         renderList();
@@ -740,8 +1012,10 @@
   }
 
   window.Notes = Object.freeze({
-    escapeHtml, parseTags, noteTitle, buildNotesQuery, renderNoteMarkdown, collectTags, noteTime,
+    escapeHtml, parseTags, noteTitle, cardHeading, buildNotesQuery, renderNoteMarkdown, collectTags, noteTime,
     configure, load, loadMore, openWithProblem, reset, snapshot,
+    NOTE_CONTENT_MAX,
+    getComposerContent, setComposerContent, focusComposer, insertComposerTemplate,
     generation: () => generation,
   });
 })();

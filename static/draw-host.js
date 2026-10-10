@@ -219,7 +219,18 @@
     panel: null,
     lastActivator: null,
     lastNoteField: null,
+    // 所见即所得编辑器注册的插入回调：保存画板后把 ![标题](drawing:ID) 插进编辑器。
+    noteInserter: null,
   };
+
+  // 由 notes-editor.js 注册/清理。fn 接收 { id, title }。
+  function setNoteInserter(fn) {
+    controller.noteInserter = typeof fn === "function" ? fn : null;
+  }
+
+  function clearNoteInserter() {
+    controller.noteInserter = null;
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -894,6 +905,16 @@
     );
   }
 
+  // 插入到笔记的瞬间主动导出并上传一次缩略图（关闭面板时还会再传一次）。
+  // 面板未就绪时返回 false；任何失败都由调用方忽略，不影响场景内容。
+  function requestThumbUpload() {
+    const panel = controller.panel;
+    if (!panel || panel.closed || !panel.ready || !panel.detailLoaded) {
+      return Promise.resolve(false);
+    }
+    return exportAndUploadThumb(panel).then(() => true).catch(() => false);
+  }
+
   function chooseNoteField() {
     const last = controller.lastNoteField;
     if (last && (!document.contains || document.contains(last)) && isVisible(last)) return last;
@@ -909,12 +930,23 @@
   function insertIntoNote() {
     const panel = controller.panel;
     if (!panel || !panel.current) return;
+    const title = panel.current.title || "未命名画板";
+    const payload = { id: panel.current.id, title };
+    // 所见即所得编辑器优先：由编辑器把 drawing:ID 以图片节点形式插入当前实例。
+    if (typeof controller.noteInserter === "function") {
+      try {
+        controller.noteInserter(payload);
+        controller.hooks.notify?.(`已把画板「${title}」插入到笔记`);
+        return;
+      } catch (error) {
+        // 插入器异常时回退到下方 textarea 逻辑。
+      }
+    }
     const field = chooseNoteField();
     if (!field || field.hidden) {
       controller.hooks.notify("请先打开一篇笔记再插入画板", true);
       return;
     }
-    const title = panel.current.title || "未命名画板";
     insertAtCursor(field, drawingRefMarkdown(panel.current.id, title));
     field.focus();
     controller.hooks.notify(`已把画板「${title}」插入到笔记光标处`);
@@ -929,6 +961,10 @@
     openDrawing,
     closePanel,
     requestClose,
+    createDrawing,
+    requestThumbUpload,
+    setNoteInserter,
+    clearNoteInserter,
     ownedIds,
     // 纯函数与内部句柄暴露给 node 行为测试。
     isTrustedFrameMessage,

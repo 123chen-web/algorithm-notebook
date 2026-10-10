@@ -522,6 +522,7 @@ function signedOut() {
   window.Notes?.reset(); // 笔记列表、筛选和题目下拉同样属于上一位用户
   window.NotesLinks?.reset(); // 关联区与图谱属于上一位用户，登出一并还原
   window.DrawHost?.reset(); // 画板列表与打开中的面板也属于上一位用户
+  window.NotesEditor?.reset(); // 所见即所得编辑器实例与草稿表面一并复位
   $("#forum-post").replaceChildren();
   $("#forum-comments").replaceChildren();
   $("#forum-comment-form").reset();
@@ -947,8 +948,11 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "forum") await showForumList();
   else if (view === "notes") {
     await window.Notes.load();
-    // 首次进入静默加载画板列表，避免反过来再触发一次笔记列表刷新。
-    await window.DrawHost?.load({ notify: false });
+    // 首次进入静默拉取画板列表后，仍需让笔记列表再渲染一次：卡片正文里的
+    // ![标题](drawing:ID) 只有在画板 id 集合就绪后才能渲染成缩略图，否则首次
+    // 进入笔记页（尤其手机端直接落到笔记视图）会一直显示原始 Markdown 文本。
+    // onDrawingsChanged 内部有“正在编辑不重渲染”的保护，不会冲掉未保存正文。
+    await window.DrawHost?.load();
   }
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
@@ -5624,8 +5628,12 @@ window.DrawHost?.configure({
   notify: (text, isError) => message(text, isError),
   // 画板增删改后刷新笔记正文里的引用缩略图（仅在笔记视图）；
   // 但笔记正在卡片内编辑时不能重渲染，否则会冲掉未保存正文（含刚插入的画板引用）。
+  // .notes-editor 是编辑态外壳（富文本/降级 textarea 都在其中），.notes-edit-content
+  // 是降级路径的 textarea：两者任一存在都视为正在编辑。
   onDrawingsChanged: () => {
-    if (view === "notes" && !document.querySelector(".notes-edit-content")) {
+    if (view === "notes"
+        && !document.querySelector(".notes-editor")
+        && !document.querySelector(".notes-edit-content")) {
       window.Notes?.load();
     }
   },
@@ -5639,6 +5647,17 @@ window.NotesLinks?.configure({
   getView: () => view,
   showView,
   notify: (text) => message(text),
+});
+
+// N5 所见即所得编辑器适配层（static/notes-editor.js）：图片上传走 NotesRich，
+// 互链/画板/题目回调由其内部复用 NotesLinks / DrawHost；这里只注入宿主能力。
+window.NotesEditor?.configure({
+  api,
+  getUser: () => user,
+  getEpoch: () => sessionEpoch,
+  getView: () => view,
+  showView,
+  notify: (text, isError) => message(text, isError),
 });
 
 $("#timezone").value =

@@ -1,18 +1,23 @@
-/* 笔记页：Memos 式时间线。全部样式挂在 #notes-page 下，避免污染全局；用站内既有变量跟随主题。 */
+/* 笔记页：Memos 式时间线。全部样式挂在 #notes-page 下，避免污染全局；只用 style.css 设计令牌。
+   N5：正文（标题/引用/代码/列表/表格/任务清单/链接/图片）的排版统一交给 notes-rich.css，
+   与所见即所得编辑器共用同一套样式；本文件只负责页面骨架、卡片、表单、按钮、状态。 */
 #notes-page .notes-wrap { display: grid; gap: var(--space-5); max-width: 860px; margin: 0 auto; padding: var(--space-2) 0 var(--space-8); }
 
 #notes-page .notes-head h2 { margin: 0; font: 500 clamp(22px, 3vw, 30px)/var(--lh-heading) var(--serif); }
-#notes-page .notes-sub { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); }
+#notes-page .notes-sub { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-prose); }
 
-/* ── composer ── */
+/* ── composer（新建区） ── */
 #notes-page .notes-composer { display: grid; gap: var(--space-3); padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 #notes-page .notes-composer-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
-#notes-page .notes-field { display: block; }
+#notes-page .notes-field { display: block; min-width: 0; }
+#notes-page .notes-content-field { display: grid; gap: var(--space-2); }
 #notes-page .notes-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-#notes-page #notes-content { width: 100%; min-height: 96px; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: var(--text-base); line-height: var(--lh-prose); resize: vertical; }
+#notes-page #notes-content { width: 100%; min-height: 120px; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: var(--text-base); line-height: var(--lh-prose); resize: vertical; }
 #notes-page #notes-content:focus { outline: 2px solid var(--azurite); outline-offset: 1px; }
+#notes-page #notes-content[hidden] { display: none; }
 #notes-page .notes-tags-field { flex: 1 1 220px; }
 #notes-page #notes-tags-input { width: 100%; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
+#notes-page #notes-tags-input:focus, #notes-page .notes-edit-title:focus, #notes-page .notes-edit-tags:focus { outline: 2px solid var(--azurite); outline-offset: 1px; }
 #notes-page .notes-problem-field { flex: 1 1 180px; }
 #notes-page #notes-problem { width: 100%; min-height: 40px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
 #notes-page #notes-save { min-height: 40px; padding: 0 var(--space-5); }
@@ -23,57 +28,65 @@
 #notes-page .notes-toolbar { display: grid; gap: var(--space-3); }
 #notes-page .notes-search { display: block; }
 #notes-page #notes-search { width: 100%; min-height: 40px; padding: 0 var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); }
+#notes-page #notes-search:focus { outline: 2px solid var(--azurite); outline-offset: 1px; }
 #notes-page .notes-tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 #notes-page .notes-chip { min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
-#notes-page .notes-chip:hover { border-color: var(--azurite); color: var(--ink); }
 #notes-page .notes-chip.is-active { border-color: var(--azurite); background: var(--soft); color: var(--ink); font-weight: 600; }
 #notes-page .notes-chip-sm { min-height: 28px; font-size: var(--text-xs); }
 
-/* ── 列表 ── */
+/* ── 列表与卡片 ── */
 #notes-page .notes-list { display: grid; gap: var(--space-4); }
 #notes-page .notes-card { padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 #notes-page .notes-card.is-pinned { border-color: var(--azurite); }
 #notes-page .notes-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-3); }
-#notes-page .notes-card-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--text-md); }
-#notes-page .notes-card-title strong { overflow-wrap: anywhere; }
-#notes-page .notes-time { flex: none; color: var(--ink-2); font-size: var(--text-xs); }
-#notes-page .notes-body { overflow-wrap: anywhere; font-size: var(--text-base); line-height: var(--lh-prose); }
-#notes-page .notes-body p { margin: 0 0 var(--space-2); }
-#notes-page .notes-body p:last-child { margin-bottom: 0; }
-#notes-page .notes-body h1, #notes-page .notes-body h2, #notes-page .notes-body h3 { margin: var(--space-4) 0 var(--space-2); line-height: var(--lh-heading); }
-#notes-page .notes-body h1 { font-size: var(--text-lg); }
-#notes-page .notes-body h2 { font-size: var(--text-md); }
-#notes-page .notes-body h3 { font-size: var(--text-base); }
-#notes-page .notes-body ul { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
-#notes-page .notes-body pre { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); overflow-x: auto; }
-#notes-page .notes-body code { font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; font-size: .92em; }
-#notes-page .notes-body pre code { background: none; padding: 0; }
-#notes-page .notes-body a { color: var(--azurite); }
+#notes-page .notes-card-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--text-md); font-weight: 600; color: var(--ink); }
+#notes-page .notes-card-title strong { overflow-wrap: anywhere; font-weight: 600; }
+#notes-page .notes-pin { flex: none; font-size: var(--text-sm); line-height: 1; }
+#notes-page .notes-time { flex: none; color: var(--ink-2); font-size: var(--text-xs); white-space: nowrap; }
+/* 正文容器：具体排版规则在 notes-rich.css（.notes-rich），这里只给布局兜底。 */
+#notes-page .notes-body { overflow-wrap: anywhere; }
+#notes-page .notes-body:empty { display: none; }
 #notes-page .notes-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 #notes-page .notes-actions { display: flex; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px dashed var(--line); }
 #notes-page .notes-action { min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
-#notes-page .notes-action:hover { border-color: var(--azurite); color: var(--ink); }
 #notes-page .notes-action.is-danger:hover { border-color: var(--danger); color: var(--danger); }
 #notes-page .notes-actions[hidden] { display: none; }
 
 /* ── 原地编辑 ── */
 #notes-page .notes-editor { display: grid; gap: var(--space-2); }
+#notes-page .notes-edit-body { min-width: 0; }
 #notes-page .notes-edit-title, #notes-page .notes-edit-tags { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
-#notes-page .notes-edit-content { min-height: 120px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); resize: vertical; }
+#notes-page .notes-edit-content { width: 100%; min-height: 160px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font-size: var(--text-base); line-height: var(--lh-prose); resize: vertical; }
+#notes-page .notes-edit-content:focus { outline: 2px solid var(--azurite); outline-offset: 1px; }
 #notes-page .notes-editor-row { display: flex; gap: var(--space-2); }
 
 /* ── 状态与分页 ── */
-#notes-page .notes-status { margin: 0; color: var(--ink-2); font-size: var(--text-sm); text-align: center; }
+#notes-page .notes-status { margin: 0; padding: var(--space-5) var(--space-4); color: var(--ink-2); font-size: var(--text-sm); text-align: center; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); }
 #notes-page .notes-status[hidden] { display: none; }
 #notes-page .notes-foot { display: flex; justify-content: center; }
 #notes-page #notes-more { min-height: 40px; padding: 0 var(--space-6); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); cursor: pointer; }
-#notes-page #notes-more:hover { border-color: var(--azurite); }
 #notes-page #notes-more[hidden] { display: none; }
 
-/* 引用：左侧一道竖线 */
-#notes-list blockquote {
-  margin: 6px 0;
-  padding: 2px 12px;
-  border-left: 3px solid var(--accent);
-  color: var(--ink-2);
+/* ---------------- 悬停反馈仅在精确指针设备上启用 ---------------- */
+@media (hover: hover) and (pointer: fine) {
+  #notes-page .notes-chip:hover { border-color: var(--azurite); color: var(--ink); }
+  #notes-page .notes-action:hover { border-color: var(--azurite); color: var(--ink); }
+  #notes-page #notes-more:hover { border-color: var(--azurite); }
+}
+
+/* ---------------- 手机宽度：收紧留白，表单纵向堆叠 ---------------- */
+@media (max-width: 520px) {
+  #notes-page .notes-wrap { gap: var(--space-4); padding: var(--space-2) 0 var(--space-6); }
+  #notes-page .notes-composer { padding: var(--space-4); gap: var(--space-3); }
+  #notes-page .notes-card { padding: var(--space-4); }
+  #notes-page .notes-composer-row { flex-direction: column; align-items: stretch; }
+  #notes-page .notes-tags-field, #notes-page .notes-problem-field { flex: 1 1 auto; }
+  #notes-page #notes-save { width: 100%; }
+  #notes-page .notes-editor-row { flex-direction: row; }
+  #notes-page .notes-card-head { align-items: flex-start; }
+}
+
+/* ---------------- 动效仅在用户未要求减少动态时播放 ---------------- */
+@media (prefers-reduced-motion: no-preference) {
+  #notes-page .notes-chip, #notes-page .notes-action, #notes-page #notes-more, #notes-page .notes-card { transition: border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease); }
 }

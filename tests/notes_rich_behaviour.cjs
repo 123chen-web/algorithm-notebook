@@ -147,15 +147,24 @@ test("静态契约: vendor 只在 notes-rich.js 内动态注入", () => {
   assert.ok(nrJs.includes("securityLevel"), "mermaid 须 strict");
 });
 
+test("静态契约: KaTeX 用 MathML 输出，避免内联 style 触发 CSP", () => {
+  assert.ok(nrJs.includes('output: "mathml"'), "公式渲染必须 output: mathml（无内联样式）");
+});
+
 test("静态契约: 加载顺序与版本号", () => {
-  const notesJs = html.indexOf("notes.js?v=4");
-  const linksJs = html.indexOf("notes-links.js?v=6");
-  const richJs = html.indexOf("notes-rich.js?v=5");
-  const appJs = html.indexOf("app.js?v=92");
+  const vendorEditor = html.indexOf("vendor/editor/oy-editor.js?v=3");
+  const notesJs = html.indexOf("notes.js?v=6");
+  const linksJs = html.indexOf("notes-links.js?v=7");
+  const richJs = html.indexOf("notes-rich.js?v=7");
+  const editorJs = html.indexOf("notes-editor.js?v=3");
+  const appJs = html.indexOf("app.js?v=94");
+  assert.ok(vendorEditor > -1 && vendorEditor < notesJs, "oy-editor.js 在 notes.js 前");
   assert.ok(notesJs > -1 && linksJs > notesJs, "notes-links.js 在 notes.js 后");
   assert.ok(richJs > linksJs, "notes-rich.js 在 notes-links.js 后");
-  assert.ok(appJs > richJs, "app.js 在 notes-rich.js 后");
-  assert.ok(html.includes("notes-rich.css?v=4"), "引入 notes-rich.css");
+  assert.ok(editorJs > richJs && appJs > editorJs, "notes-editor.js 在 rich 后、app 前");
+  assert.ok(html.includes("vendor/editor/oy-editor.css?v=3"), "引入 oy-editor.css");
+  assert.ok(html.includes("notes-rich.css?v=5"), "引入 notes-rich.css");
+  assert.ok(html.includes("notes-editor.css?v=1"), "引入 notes-editor.css");
 });
 
 test("静态契约: CSS 只用主题令牌、动效/hover/手机断点包裹", () => {

@@ -1,0 +1,226 @@
+/* N5 所见即所得编辑器在笔记页的外壳样式（static/notes-editor.js）。
+ * 只使用 static/style.css 的设计令牌；不写颜色字面量、不写行内样式。
+ * 编辑器内部样式见 static/vendor/editor/oy-editor.css。 */
+
+.notes-editor-hint {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  color: var(--muted);
+}
+
+.notes-editor-hint .notes-keycap,
+.notes-editor-hint kbd {
+  display: inline-block;
+  padding: 0 0.4em;
+  margin: 0 0.1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.notes-content-field {
+  display: block;
+}
+
+.notes-editor-host {
+  min-width: 0;
+}
+
+.notes-editor-host .oy-editor {
+  background: var(--field-surface);
+}
+
+/* 卡片内“编辑已有笔记”时的编辑器外壳 */
+.notes-edit-host {
+  margin: var(--space-2) 0;
+}
+
+.notes-edit-host .oy-editor {
+  min-height: 200px;
+  background: var(--field-surface);
+}
+
+/* 降级提示：编辑器加载失败时的中文说明（克制的警示色，全部来自令牌）。 */
+.notes-editor-fallback {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  color: var(--error-ink);
+  background: var(--error-surface);
+  border: 1px solid var(--error-line);
+  border-radius: var(--radius-sm);
+}
+
+/* 降级 textarea 与编辑器视觉对齐 */
+#notes-content:not([hidden]) {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-base);
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--field-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+#notes-content:not([hidden]):focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--selection);
+}
+
+/* ---------------- 关联题目选择弹层 ---------------- */
+
+.notes-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(var(--shadow-rgb), 0.45);
+}
+
+.notes-picker {
+  width: min(420px, calc(100vw - 2 * var(--space-5)));
+  max-height: min(80vh, 560px);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(var(--menu-shadow-rgb), 0.22);
+}
+
+.notes-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.notes-picker-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--lh-heading);
+  color: var(--ink);
+}
+
+.notes-picker-close {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.notes-picker-filter {
+  flex: none;
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background: var(--field-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+}
+
+.notes-picker-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--selection);
+}
+
+.notes-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.notes-picker-status {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.notes-picker-item {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .notes-picker-close:hover {
+    background: var(--soft);
+    border-color: var(--line-strong);
+  }
+
+  .notes-picker-item:hover {
+    background: var(--soft);
+    border-color: var(--line);
+  }
+}
+
+.notes-picker-item:focus-visible,
+.notes-picker-close:focus-visible,
+.notes-picker-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 520px) {
+  .notes-picker {
+    width: calc(100vw - 2 * var(--space-4));
+    padding: var(--space-3);
+  }
+
+  #notes-content:not([hidden]) {
+    padding: var(--space-3);
+  }
+}
+
+/* 弹层入场仅在用户未要求减少动态时播放 */
+@media (prefers-reduced-motion: no-preference) {
+  .notes-picker {
+    animation: notes-picker-in var(--motion-enter) var(--motion-ease);
+  }
+
+  .notes-picker-item,
+  .notes-picker-close {
+    transition: background var(--motion-fast) var(--motion-ease),
+      border-color var(--motion-fast) var(--motion-ease);
+  }
+
+  @keyframes notes-picker-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}

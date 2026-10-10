@@ -311,12 +311,29 @@
     }).catch(() => {});
   }
 
+  function composerIsEmpty() {
+    const rich = window.NotesEditor;
+    if (rich && typeof rich.editorActive === "function" && rich.editorActive()) {
+      return !String(rich.getComposerMarkdown() || "").trim();
+    }
+    const content = document.querySelector("#notes-content");
+    return !String(content?.value || "").trim();
+  }
+
   function prefillNewNote(title) {
     if (!hooks?.showView) return;
     void hooks.showView("notes").then(() => {
+      if (!composerIsEmpty()) return;
+      // 走 notes.js 的统一内容写入层（富文本编辑器 / 降级 textarea 都覆盖）。
+      if (window.Notes && typeof window.Notes.setComposerContent === "function") {
+        window.Notes.setComposerContent(`[[${title}]]`, true);
+        return;
+      }
       const content = document.querySelector("#notes-content");
-      if (content && !content.value) content.value = `[[${title}]]`;
-      content?.focus?.();
+      if (content) {
+        content.value = `[[${title}]]`;
+        content.focus?.();
+      }
     }).catch(() => {});
   }
 
@@ -330,10 +347,23 @@
     const title = anchor.getAttribute("data-link-target") || "";
     const resolved = anchor.getAttribute("data-link-resolved") === "1";
     if (kind === "problem") {
-      // 题目链接：切到笔记视图并按题目过滤（本应用无独立题目路由）。
+      openLinkTarget(title, "problem");
+      return;
+    }
+    openLinkTarget(title, "note", resolved);
+  }
+
+  // 供编辑器 onLinkClick 与静态链接共用的统一跳转入口。
+  // resolvedHint 仅静态链接能提供（已解析→定位；未解析→预填新建）；
+  // 编辑器回调拿不到该标记时，用已知标题表判断。
+  function openLinkTarget(title, kind, resolvedHint) {
+    if (kind === "problem") {
       locateProblem(title);
       return;
     }
+    const resolved = typeof resolvedHint === "boolean"
+      ? resolvedHint
+      : knownNoteTitles.has(title);
     if (resolved) locateNoteByTitle(title);
     else prefillNewNote(title);
   }
@@ -712,15 +742,15 @@
     // 图谱容器。
     const graphBox = document.querySelector("#notes-graph");
     if (graphBox) await mountGraph(graphBox);
-    // 模板按钮。
+    // 模板按钮：编辑器态插入到所见即所得编辑器，降级 textarea 态由 Notes 统一处理。
     const tpl = document.querySelector("#notes-solution-template");
     if (tpl && !tpl.dataset.nlBound) {
       tpl.dataset.nlBound = "1";
       tpl.addEventListener("click", () => {
-        const content = document.querySelector("#notes-content");
-        if (content) {
-          content.value = content.value ? `${content.value}\n${SOLUTION_TEMPLATE}` : SOLUTION_TEMPLATE;
-          content.focus();
+        // 正在卡片内编辑（富文本外壳 .notes-editor 或降级 textarea）时不把模板插进新建区。
+        if (document.querySelector(".notes-editor")) return;
+        if (window.Notes && typeof window.Notes.insertComposerTemplate === "function") {
+          window.Notes.insertComposerTemplate(SOLUTION_TEMPLATE);
         }
       });
     }
@@ -761,7 +791,7 @@
   window.NotesLinks = Object.freeze({
     codeRanges, parseLinkTokens, detectLinkQuery, buildLinkInsertion,
     selectGraphNodes, computeLayout, hashString,
-    setKnownTargets, attachInlineLinks,
+    setKnownTargets, attachInlineLinks, openLinkTarget,
     configure, enterNotesView, reset, SOLUTION_TEMPLATE,
   });
 })();

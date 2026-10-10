@@ -215,7 +215,8 @@ test("composer: 保存成功 → 断言 POST body，插到列表顶部并清空�
   assert.equal(document.querySelector("#notes-tags-input").value, "");
   // 正文由 DOM 节点构造；检查实际节点内容与样式结构。
   const card = document.querySelector("#notes-list").querySelector(".notes-card");
-  assert.equal(card.querySelector("strong").textContent, "hello world"); // 标题取正文首行，并去掉排版符号
+  // N5：无显式标题、且正文首行不是标题块时，卡片头部不再重复显示“标题=正文第一句”。
+  assert.equal(card.querySelector(".notes-card-title strong"), null);
   const body = card.querySelector(".notes-body");
   assert.equal(body.textContent, "hello world");
   assert.equal(body.querySelector("strong").textContent, "world");
@@ -530,6 +531,19 @@ test("noteTitle: 首行的 # 标题、列表、引用符号不会出现在标题
   assert.equal(Notes.noteTitle({ title: "", content: "- 第一条\n- 第二条" }), "第一条");
   assert.equal(Notes.noteTitle({ title: "", content: "1. 先排序" }), "先排序");
   assert.equal(Notes.noteTitle({ title: "", content: "> 重点 **提醒**" }), "重点 提醒");
+});
+
+test("noteTitle/cardHeading: 标题里的链接、互链、图片语法只保留可读文字", () => {
+  const { Notes } = load(["notes.js"]).window;
+  assert.equal(
+    Notes.noteTitle({ title: "", content: "# [**手测标题**](https://example.com/note)\n正文" }),
+    "手测标题");
+  assert.equal(
+    Notes.cardHeading({ title: "", content: "# 见 [[题:求极限]] 的推导" }),
+    "见 求极限 的推导");
+  assert.equal(
+    Notes.cardHeading({ title: "", content: "# ![图](attachment:2) 配图笔记" }),
+    "图 配图笔记");
 });
 
 test("renderNoteMarkdown: 编号列表和引用都能渲染", () => {
