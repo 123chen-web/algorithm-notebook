@@ -158,12 +158,12 @@ test("静态契约: 不使用 innerHTML / 行内 style / eval / 存储 API / 外
 });
 
 test("静态契约: index.html 版本号与加载顺序", () => {
-  const notesLinks = html.indexOf("notes-links.js?v=3");
+  const notesLinks = html.indexOf("notes-links.js?v=4");
   const app = html.indexOf("app.js?v=92");
   const notesJs = html.indexOf("notes.js?v=3");
   assert.ok(notesLinks > notesJs, "notes-links.js 在 notes.js 之后");
   assert.ok(app > notesLinks, "notes-links.js 在 app.js 之前");
-  assert.ok(html.includes("notes-links.css?v=3"), "引入 notes-links.css");
+  assert.ok(html.includes("notes-links.css?v=4"), "引入 notes-links.css");
 });
 
 test("静态契约: CSS 只用主题令牌、动效/hover/手机断点包裹", () => {

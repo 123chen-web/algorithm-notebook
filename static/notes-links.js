@@ -476,20 +476,27 @@
         box.append(empty);
         return;
       }
+      // 默认折叠，只留一行摘要，点开才看明细，避免每张笔记卡片被关联信息占满。
+      const fold = document.createElement("details");
+      fold.setAttribute("class", "nl-related-fold");
+      const summary = document.createElement("summary");
+      summary.textContent = `关联：引用了 ${outgoing.length} 处 · 被 ${backlinks.length} 处引用`;
+      fold.append(summary);
       if (outgoing.length) {
         const h = document.createElement("p");
         h.setAttribute("class", "nl-related-title");
-        h.textContent = `出链（${outgoing.length}）`;
-        box.append(h);
-        for (const link of outgoing) box.append(relatedItem(link, false));
+        h.textContent = `这篇引用了（${outgoing.length}）`;
+        fold.append(h);
+        for (const link of outgoing) fold.append(relatedItem(link, false));
       }
       if (backlinks.length) {
         const h = document.createElement("p");
         h.setAttribute("class", "nl-related-title");
-        h.textContent = `反向链接（${backlinks.length}）`;
-        box.append(h);
-        for (const back of backlinks) box.append(relatedItem(back, true));
+        h.textContent = `被这些引用（${backlinks.length}）`;
+        fold.append(h);
+        for (const back of backlinks) fold.append(relatedItem(back, true));
       }
+      box.append(fold);
     } catch {
       // 关联区加载失败不影响卡片主体。
     }

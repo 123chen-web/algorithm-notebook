@@ -152,3 +152,12 @@
     align-items: stretch;
   }
 }
+
+/* 关联区折叠：摘要一行，点开看明细 */
+.nl-related-fold > summary {
+  min-height: 36px;
+  padding: 6px 0;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  cursor: pointer;
+}

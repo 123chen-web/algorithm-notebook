@@ -149,13 +149,13 @@ test("静态契约: vendor 只在 notes-rich.js 内动态注入", () => {
 
 test("静态契约: 加载顺序与版本号", () => {
   const notesJs = html.indexOf("notes.js?v=3");
-  const linksJs = html.indexOf("notes-links.js?v=3");
-  const richJs = html.indexOf("notes-rich.js?v=3");
+  const linksJs = html.indexOf("notes-links.js?v=4");
+  const richJs = html.indexOf("notes-rich.js?v=4");
   const appJs = html.indexOf("app.js?v=92");
   assert.ok(notesJs > -1 && linksJs > notesJs, "notes-links.js 在 notes.js 后");
   assert.ok(richJs > linksJs, "notes-rich.js 在 notes-links.js 后");
   assert.ok(appJs > richJs, "app.js 在 notes-rich.js 后");
-  assert.ok(html.includes("notes-rich.css?v=3"), "引入 notes-rich.css");
+  assert.ok(html.includes("notes-rich.css?v=4"), "引入 notes-rich.css");
 });
 
 test("静态契约: CSS 只用主题令牌、动效/hover/手机断点包裹", () => {

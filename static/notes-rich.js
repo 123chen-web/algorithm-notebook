@@ -341,15 +341,29 @@
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  // 按钮用文字而不是字母缩写，鼠标停一下还有提示；流程图在当前安全策略下不能渲染，所以不放按钮。
   const TOOLS = [
-    { label: "B", aria: "加粗", before: "**", after: "**", placeholder: "加粗文字" },
-    { label: "I", aria: "斜体", before: "*", after: "*", placeholder: "斜体文字" },
-    { label: "</>", aria: "行内代码", before: "`", after: "`", placeholder: "code" },
-    { label: "{}", aria: "插入代码块", before: "\n```\n", after: "\n```\n", placeholder: "代码" },
-    { label: "∑", aria: "插入行内公式", before: "$", after: "$", placeholder: "x^2" },
-    { label: "M", aria: "插入 mermaid 流程图模板", block: MERMAID_TEMPLATE },
-    { label: "图", aria: "插入图片附件", file: true },
-    { label: "表", aria: "插入表格模板", block: TABLE_TEMPLATE },
+    { label: "加粗", aria: "加粗", before: "**", after: "**", placeholder: "加粗文字" },
+    { label: "斜体", aria: "斜体", before: "*", after: "*", placeholder: "斜体文字" },
+    { label: "行内代码", aria: "行内代码", before: "`", after: "`", placeholder: "code" },
+    { label: "代码块", aria: "插入代码块", before: "\n```\n", after: "\n```\n", placeholder: "代码" },
+    { label: "公式", aria: "插入行内公式", before: "$", after: "$", placeholder: "a^2+b^2=c^2" },
+    { label: "插图", aria: "插入图片附件", file: true },
+    { label: "表格", aria: "插入表格模板", block: TABLE_TEMPLATE },
+  ];
+
+  // “怎么写”小抄：每行一个常用写法，点“插入”就把示例放进光标处，不用记符号。
+  const HELP_ITEMS = [
+    { what: "小标题", example: "## 小标题", block: "\n## 小标题\n" },
+    { what: "列表", example: "- 第一条", block: "\n- 第一条\n- 第二条\n" },
+    { what: "编号步骤", example: "1. 第一步", block: "\n1. 第一步\n2. 第二步\n" },
+    { what: "引用一句话", example: "> 重点", block: "\n> 重点\n" },
+    { what: "链接", example: "[文字](网址)", before: "[", after: "](网址)", placeholder: "文字" },
+    { what: "数学公式", example: "$a^2+b^2=c^2$", before: "$", after: "$", placeholder: "a^2+b^2=c^2" },
+    { what: "整行公式", example: "$$ ... $$", block: "\n$$\nE = mc^2\n$$\n" },
+    { what: "代码", example: "```python ... ```", block: "\n```python\nprint(1)\n```\n" },
+    { what: "链到另一篇笔记", example: "[[笔记标题]]", before: "[[", after: "]]", placeholder: "笔记标题" },
+    { what: "链到一道错题", example: "[[题:题目标题]]", before: "[[题:", after: "]]", placeholder: "题目标题" },
   ];
 
   function uploadFile(file, onProgress) {
@@ -401,6 +415,7 @@
       const button = document.createElement("button");
       button.setAttribute("type", "button");
       button.setAttribute("aria-label", tool.aria);
+      button.setAttribute("title", tool.aria);
       button.textContent = tool.label;
       button.addEventListener("click", () => {
         ta.focus();
@@ -414,6 +429,47 @@
       });
       bar.appendChild(button);
     });
+  }
+
+  function buildHelp(ta) {
+    const details = document.createElement("details");
+    details.setAttribute("class", "nr-help");
+    const summary = document.createElement("summary");
+    summary.textContent = "不熟悉怎么排版？点开看写法（点“插入”就能用）";
+    details.appendChild(summary);
+    const intro = document.createElement("p");
+    intro.setAttribute("class", "nr-help-intro");
+    intro.textContent = "直接写文字就行，下面是可选的小技巧。保存后会按这些写法显示成漂亮的样式；输入时下方会实时预览。";
+    details.appendChild(intro);
+    const list = document.createElement("ul");
+    list.setAttribute("class", "nr-help-list");
+    HELP_ITEMS.forEach((item) => {
+      const row = document.createElement("li");
+      const what = document.createElement("span");
+      what.setAttribute("class", "nr-help-what");
+      what.textContent = item.what;
+      const example = document.createElement("code");
+      example.textContent = item.example;
+      const insert = document.createElement("button");
+      insert.setAttribute("type", "button");
+      insert.setAttribute("aria-label", "插入" + item.what + "的示例");
+      insert.textContent = "插入";
+      insert.addEventListener("click", () => {
+        ta.focus();
+        if (item.block) insertAtCursor(ta, "", "", item.block);
+        else insertAtCursor(ta, item.before, item.after, item.placeholder);
+      });
+      row.appendChild(what);
+      row.appendChild(example);
+      row.appendChild(insert);
+      list.appendChild(row);
+    });
+    details.appendChild(list);
+    const tip = document.createElement("p");
+    tip.setAttribute("class", "nr-help-intro");
+    tip.textContent = "插入图片：点上面的“插图”，或者直接把图片粘贴、拖进输入框。画图：点页面里的“新建画板”。";
+    details.appendChild(tip);
+    return details;
   }
 
   let fileInput = null;
@@ -447,8 +503,10 @@
     const preview = document.createElement("div");
     preview.setAttribute("class", "nr-preview");
     preview.setAttribute("id", "notes-preview");
+    preview.hidden = true; // 没有内容时不占位，写了才出现
 
     ta.parentNode.insertBefore(bar, ta);
+    ta.parentNode.insertBefore(buildHelp(ta), ta);
     ta.parentNode.insertBefore(editor, ta);
     editor.appendChild(ta);
     editor.appendChild(preview);
@@ -460,6 +518,7 @@
     ta.addEventListener("input", () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
+        preview.hidden = !ta.value.trim();
         const root = window.Notes.renderNoteMarkdown(ta.value);
         preview.replaceChildren(root);
       }, 300);
