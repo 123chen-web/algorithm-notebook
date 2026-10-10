@@ -36,12 +36,14 @@ def test_cuoti_file_becomes_one_record(tmp_path):
     record = records[0]
     assert record["title"] == "B3625 迷宫寻路"
     assert record["language"] == "C++"
-    # 复习时看到的是"我当时写的"代码，正确代码放进思路里。
+    # 复习时看到的是"我当时写的"代码，正确代码单独放进 correct_code。
     assert "return 1;" in record["code"] and record["code"].endswith("\n")
     assert record["mistakes"] == ["多条语句要一起生效就必须加花括号。"]
     assert record["created_at"] == "2026-09-23T12:00:00+00:00"
-    for expected in ("标签：BFS、语法坑", "【题目大意】", "【来源】", "【错误原因】", "【正确代码】", "return 0;"):
+    for expected in ("标签：BFS、语法坑", "【题目大意】", "【来源】", "【错误原因】"):
         assert expected in record["thinking"]
+    assert "【正确代码】" not in record["thinking"]
+    assert "return 0;" in record["correct_code"]
     assert record["fallback"] is False
 
 

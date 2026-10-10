@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import sqlite3
 import unicodedata
@@ -1012,6 +1013,37 @@ MIGRATIONS = [
     (71, "笔记图片附件", _apply_note_attachments),
 ]
 MIGRATIONS.append((72, "画板 note_drawings", _apply_note_drawings))
+
+
+_CORRECT_CODE_TAIL = re.compile(
+    r"\n*【正确代码】\n```[^\n]*\n(.*?)\n```\s*$", re.DOTALL
+)
+
+
+def _apply_correct_code(conn):
+    """题目新增可选的"正确代码"。
+
+    早先导入笔记时，正确代码被拼在思路末尾（【正确代码】+ 代码围栏）。这里把它移到
+    新列，思路里不再重复；只处理导入器生成的那一种格式，其它文字原样保留。
+    """
+    conn.execute("ALTER TABLE problems ADD COLUMN correct_code TEXT NOT NULL DEFAULT ''")
+    rows = conn.execute(
+        "SELECT id, thinking FROM problems WHERE thinking LIKE '%【正确代码】%'"
+    ).fetchall()
+    for row in rows:
+        match = _CORRECT_CODE_TAIL.search(row[1])
+        if not match:
+            continue
+        rest = row[1][: match.start()].rstrip()
+        if not rest or not match.group(1).strip():
+            continue
+        conn.execute(
+            "UPDATE problems SET thinking = ?, correct_code = ? WHERE id = ?",
+            (rest, match.group(1) + "\n", row[0]),
+        )
+
+
+MIGRATIONS.append((73, "题目的可选正确代码", _apply_correct_code))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

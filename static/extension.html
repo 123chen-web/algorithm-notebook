@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ink">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="欧叶OY 刷题伴侣浏览器扩展：下载、安装、生成连接密钥，在洛谷、力扣、牛客、Codeforces、AtCoder 一键收录题目。">
+  <title>浏览器扩展 · 欧叶OY</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <script src="/static/themes.js?v=1"></script>
+  <link rel="stylesheet" href="/static/style.css?v=53">
+  <link rel="stylesheet" href="/static/help.css?v=1">
+  <link rel="stylesheet" href="/static/extension.css?v=1">
+  <script defer src="/static/extension.js?v=1"></script>
+</head>
+<body class="help-page">
+  <main class="help-wrap">
+    <header class="help-header">
+      <p class="eyebrow">刷题时一键收录</p>
+      <h1>浏览器扩展：欧叶OY 刷题伴侣</h1>
+      <p class="help-lead">在洛谷、力扣、牛客、Codeforces、AtCoder 的题目页，右下角会出现「记到欧叶OY」按钮，点一下就把题目记进来，只需再补一句错因。</p>
+      <p class="help-back"><a href="/">← 返回欧叶OY 首页</a> · <a href="/static/help.html">新手指南</a></p>
+    </header>
+
+    <section class="help-section" aria-labelledby="ext-step1">
+      <h2 id="ext-step1">第一步：下载并安装</h2>
+      <p><a class="ext-download" href="/static/downloads/ouye-companion-extension.zip" download>下载扩展（约 30 KB）</a></p>
+      <ol>
+        <li>把下载的压缩包解压到一个固定的文件夹（解压后不要删，删了扩展就没了）。</li>
+        <li>Chrome 地址栏输入 <code>chrome://extensions</code>，Edge 输入 <code>edge://extensions</code>，回车。</li>
+        <li>打开「开发者模式」，点「加载已解压的扩展程序」，选择解压出来的 <code>ouye-extension</code> 文件夹。</li>
+        <li>工具栏出现红色「O」图标就装好了。</li>
+      </ol>
+    </section>
+
+    <section class="help-section" aria-labelledby="ext-step2">
+      <h2 id="ext-step2">第二步：生成连接密钥</h2>
+      <p>扩展需要一把「密钥」才能往你的账号里记题。点下面的按钮生成，复制后到扩展的「选项」里粘贴并保存。</p>
+      <p class="field-hint">密钥只显示这一次，请马上复制；再次生成会让旧密钥立刻失效。请不要发给别人。</p>
+      <p><button type="button" id="ext-make-token" class="primary">生成连接密钥</button></p>
+      <div id="ext-token-box" class="ext-token-box" hidden>
+        <input id="ext-token" type="text" readonly aria-label="连接密钥" spellcheck="false">
+        <button type="button" id="ext-copy">复制</button>
+      </div>
+      <p id="ext-status" class="field-hint" role="status"></p>
+    </section>
+
+    <section class="help-section" aria-labelledby="ext-step3">
+      <h2 id="ext-step3">第三步：开始用</h2>
+      <ol>
+        <li>打开一道题，比如洛谷 <code>luogu.com.cn/problem/P1001</code>。</li>
+        <li>点右下角红色按钮「记到欧叶OY」，写一句错因（可以跳过），点「记下来」。</li>
+        <li>回到欧叶OY，在「全部记录」里就能看到这道题。</li>
+      </ol>
+      <p>如果不想装扩展，也可以在欧叶OY 的「新增记录」页直接粘贴题目链接，同样支持洛谷、力扣、牛客、Codeforces、AtCoder。</p>
+    </section>
+  </main>
+</body>
+</html>

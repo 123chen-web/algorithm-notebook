@@ -277,6 +277,8 @@ class ProblemFields(InputModel):
     ] = ""
     code: str = Field(min_length=1, max_length=40000)
     thinking: ThinkingText
+    # 可选：用户自己补的正确代码；网站不提供标准答案。
+    correct_code: str = Field(default="", max_length=40000)
 
     @field_validator("zone")
     @classmethod
@@ -869,7 +871,7 @@ def require_admin(user):
 
 
 MISTAKE_SELECT = """
-SELECT m.*, p.title, p.zone, p.language, p.code, p.thinking
+SELECT m.*, p.title, p.zone, p.language, p.code, p.correct_code, p.thinking
 FROM mistakes m
 JOIN problems p ON p.id = m.problem_id
 """

@@ -205,14 +205,13 @@ def parse_cuoti(text):
         text_part = body(prefix)
         if text_part:
             parts.append(f"【{label}】\n{text_part}")
-    if wrong and right:
-        parts.append(f"【正确代码】\n```{right[0]}\n{right[1]}\n```")
     takeaway = body("关键收获")
     if not takeaway:
         raise ValueError("缺少关键收获（它会作为复习用的易错点）")
     record = {
         "title": title.strip(), "language": language, "code": chosen[1] + "\n",
         "thinking": "\n\n".join(parts), "mistakes": [takeaway], "fallback": False,
+        "correct_code": right[1] + "\n" if wrong and right else "",
     }
     date = fields.get("记录日期", "")
     if CUOTI_DATE.fullmatch(date):
@@ -283,10 +282,10 @@ def existing_titles(conn, user_id):
 
 def insert_record(conn, record, user_id, day, now):
     cursor = conn.execute(
-        "INSERT INTO problems(user_id,title,language,code,thinking,created_at) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO problems(user_id,title,language,code,thinking,created_at,correct_code) "
+        "VALUES (?,?,?,?,?,?,?)",
         (user_id, record["title"], record["language"], record["code"],
-         record["thinking"], record.get("created_at", now)),
+         record["thinking"], record.get("created_at", now), record.get("correct_code", "")),
     )
     conn.executemany(
         "INSERT INTO mistakes(problem_id,description,due_date) VALUES (?,?,?)",

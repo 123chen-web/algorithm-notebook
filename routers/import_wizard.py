@@ -77,7 +77,7 @@ def _parse_export(text, zone):
                 raise ValueError("待补标记需要是布尔值")
             descriptions.append(main.QUICK_MISTAKE_PLACEHOLDER if flag else mistake["description"])
             pending.append(flag)
-        fields = {key: item.get(key) for key in ("title", "language", "code", "thinking")}
+        fields = {key: item.get(key) for key in ("title", "language", "code", "thinking", "correct_code") if key in item}
         # Ordinary validation protects all limits; no client-supplied scheduling is imported.
         valid = main.NewProblem(**fields, zone=zone, mistakes=descriptions, quick=False)
         record = {**valid.model_dump(exclude={"zone", "quick"}), "fallback": False,

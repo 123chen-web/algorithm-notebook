@@ -21,7 +21,7 @@
   const FLUSH_BATCH = 10;
   const MAX_PREFETCH_ITEMS = 50;
   const ITEM_FIELDS = [
-    "id", "problem_id", "title", "zone", "language", "code", "thinking", "description",
+    "id", "problem_id", "title", "zone", "language", "code", "correct_code", "thinking", "description",
     "repetitions", "interval_days", "ease_factor", "due_date", "version", "tags",
     // 仅保存服务端题级展示快照；评分操作和逐条队列的结构保持不变。
     "progress", "problem_tags", "problem_due_count", "problem_mistakes",

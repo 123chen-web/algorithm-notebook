@@ -67,7 +67,7 @@ def export_data(user=Depends(main.current_user)):
         problems = {}
         for row in conn.execute(
             """
-            SELECT id, title, zone, language, code, thinking, created_at
+            SELECT id, title, zone, language, code, correct_code, thinking, created_at
             FROM problems WHERE user_id = ? ORDER BY id
             """,
             (user["id"],),

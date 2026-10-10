@@ -2795,6 +2795,9 @@ function renderProblemEditor(item) {
       window.Capture ? window.Capture.renderThinking(item.thinking) : element("p", item.thinking, "multiline"),
       element("h4", codeZones.has(item.zone) ? "当时的代码" : "当时的解题过程"),
       element("pre", item.code, "code"),
+      ...(item.correct_code
+        ? [element("h4", "正确代码"), element("pre", item.correct_code, "code")]
+        : []),
       editBtn
     );
   }
@@ -2829,6 +2832,7 @@ function renderProblemEditor(item) {
     codeField.append(codeLabelText, code);
 
     const thinking = textarea(item.thinking, 8000, 4);
+    const correctCode = textarea(item.correct_code || "", 40000, 6, true);
 
     const save = element("button", "保存题目信息", "primary");
     save.type = "submit";
@@ -2843,6 +2847,7 @@ function renderProblemEditor(item) {
       field("分区", zoneSelect),
       languageField,
       codeField,
+      field("正确代码（可选，自己补）", correctCode),
       field("思路", thinking),
       save,
       cancel
@@ -2857,6 +2862,7 @@ function renderProblemEditor(item) {
             zone: zoneSelect.value,
             language: language.value,
             code: code.value,
+            correct_code: correctCode.value,
             thinking: thinking.value,
           }),
         });
@@ -3940,6 +3946,7 @@ function buildProblemPayload(form, quick) {
     zone: data.get("zone"),
     language: data.get("language"),
     code: data.get("code"),
+    correct_code: mode === "full" ? String(data.get("correct_code") || "") : "",
     thinking: skipThinking ? "" : data.get("thinking"),
     mistakes: !quick || (skipThinking && !skipMistakes) ? mistakes
       : (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []),

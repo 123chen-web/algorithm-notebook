@@ -224,6 +224,16 @@
         code.append(block);
         detail.append(code);
       }
+      if (item.correct_code) {
+        const right = node("section", "focus-section");
+        right.append(node("h3", "focus-label", "正确代码"));
+        const rightBlock = node("pre", "code focus-code");
+        rightBlock.textContent = item.correct_code;
+        rightBlock.tabIndex = 0;
+        rightBlock.setAttribute("aria-label", "正确代码，可滚动");
+        right.append(rightBlock);
+        detail.append(right);
+      }
       card.append(detail);
     }
     if (modern()) {

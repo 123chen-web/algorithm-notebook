@@ -50,6 +50,7 @@
   <link rel="stylesheet" href="/static/rank.css?v=2">
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
   <link rel="stylesheet" href="/static/recommend.css?v=1">
+  <link rel="stylesheet" href="/static/toolbox.css?v=1">
   <link rel="stylesheet" href="/static/pending-reason.css?v=1">
   <link rel="stylesheet" href="/static/profile.css?v=2">
   <link rel="stylesheet" href="/static/import-wizard.css?v=1">
@@ -72,13 +73,13 @@
   <script defer src="/static/palette.js?v=3"></script>
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/problem-cards.js?v=2"></script>
-  <script defer src="/static/focus.js?v=4"></script>
+  <script defer src="/static/focus.js?v=5"></script>
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
-  <script defer src="/static/print.js?v=2"></script>
+  <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=4"></script>
   <script defer src="/static/overview.js?v=4"></script>
   <script defer src="/static/thread.js?v=1"></script>
@@ -107,7 +108,7 @@
   <script defer src="/static/anki-export.js?v=1"></script>
   <script defer src="/static/offline-queue.js?v=1"></script>
   <script defer src="/static/pwa-register.js?v=1"></script>
-  <script defer src="/static/offline-sync.js?v=4"></script>
+  <script defer src="/static/offline-sync.js?v=5"></script>
   <script defer src="/static/offline-review.js?v=3"></script>
   <script defer src="/static/import-problem.js?v=2"></script>
   <script defer src="/static/similar.js?v=3"></script>
@@ -119,7 +120,7 @@
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610103"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
-  <script defer src="/static/app.js?v=95"></script>
+  <script defer src="/static/app.js?v=96"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -161,6 +162,12 @@
           <p class="sidebar-heading" id="sidebar-g-account">账号</p>
           <button type="button" class="nav-item" data-view="plan"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span class="nav-label">我的套餐</span></button>
           <button type="button" class="nav-item" data-view="admin" id="admin-tab" data-admin-only hidden><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span class="nav-label">管理后台</span></button>
+        </div>
+        <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-tools">
+          <p class="sidebar-heading" id="sidebar-g-tools">帮助与工具</p>
+          <a class="nav-link-out" href="/static/help.html" target="_blank" rel="noopener">新手指南</a>
+          <a class="nav-link-out" href="/static/patterns.html" target="_blank" rel="noopener">算法套路库</a>
+          <a class="nav-link-out" href="/static/extension.html" target="_blank" rel="noopener">浏览器扩展</a>
         </div>
       </nav>
       <section class="sidebar-section" id="sidebar-calendar-section" aria-labelledby="sidebar-calendar-title">
@@ -272,6 +279,8 @@
                 <a href="/static/help.html" target="_blank" rel="noopener">新手指南</a>
                 <span aria-hidden="true">·</span>
                 <a href="/static/patterns.html" target="_blank" rel="noopener">套路库</a>
+                <span aria-hidden="true">·</span>
+                <a href="/static/extension.html" target="_blank" rel="noopener">浏览器扩展</a>
               </nav>
               <button id="logout" type="button" hidden>退出登录</button>
             </div>
@@ -395,6 +404,8 @@
         <a href="/static/help.html" target="_blank" rel="noopener">新手指南</a>
         <span aria-hidden="true">·</span>
         <a href="/static/patterns.html" target="_blank" rel="noopener">套路库</a>
+        <span aria-hidden="true">·</span>
+        <a href="/static/extension.html" target="_blank" rel="noopener">浏览器扩展</a>
         <span aria-hidden="true">·</span>
         <button type="button" id="intro-film-replay" class="intro-film-replay">重看开场</button>
       </nav>
@@ -979,6 +990,12 @@
                             spellcheck="false" class="code"
                             aria-describedby="code-hint"
                             placeholder="粘贴当时的代码，保留错误也没关系。"></textarea>
+                </label>
+                <label data-role="correct-code-field">
+                  <span>正确代码（可选，自己补）</span>
+                  <textarea name="correct_code" maxlength="40000" rows="6"
+                            spellcheck="false" class="code"
+                            placeholder="想起正确写法或改对之后，可以把代码贴在这里，复习时对照。网站不会替你生成答案。"></textarea>
                 </label>
               </div>
             </section>
@@ -1776,6 +1793,11 @@
         <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>榜单</span></button>
         <button type="button" class="more-item" data-view="plan"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span>我的套餐</span></button>
         <button type="button" class="more-item" data-view="admin" id="more-admin" data-admin-only hidden><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>管理后台</span></button>
+      </div>
+      <div class="more-links">
+        <a href="/static/help.html" target="_blank" rel="noopener">新手指南</a>
+        <a href="/static/patterns.html" target="_blank" rel="noopener">算法套路库</a>
+        <a href="/static/extension.html" target="_blank" rel="noopener">浏览器扩展</a>
       </div>
       <div class="more-foot"><button type="button" class="more-refresh" id="more-refresh"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span>刷新当前页</span></button></div>
     </div>

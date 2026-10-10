@@ -157,7 +157,7 @@ test("静态契约: 加载顺序与版本号", () => {
   const linksJs = html.indexOf("notes-links.js?v=8");
   const richJs = html.indexOf("notes-rich.js?v=7");
   const editorJs = html.indexOf("notes-editor.js?v=3");
-  const appJs = html.indexOf("app.js?v=95");
+  const appJs = html.indexOf("app.js?v=96");
   assert.ok(vendorEditor > -1 && vendorEditor < notesJs, "oy-editor.js 在 notes.js 前");
   assert.ok(notesJs > -1 && linksJs > notesJs, "notes-links.js 在 notes.js 后");
   assert.ok(richJs > linksJs, "notes-rich.js 在 notes-links.js 后");

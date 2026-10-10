@@ -7,7 +7,7 @@
 (() => {
   const STORAGE_KEY = "algorithm-notebook-print-options";
   const DEFAULTS = {
-    zones: null, scope: "all", tag: "", thinking: true, code: true, tags: true,
+    zones: null, scope: "all", tag: "", thinking: true, code: true, correctCode: true, tags: true,
     schedule: false, notes: true, pageBreaks: true,
   };
   const $ = (selector) => document.querySelector(selector);
@@ -165,6 +165,7 @@
     contentBox.append(
       checkbox("当时的思路", "thinking"),
       checkbox("当时的代码", "code"),
+      checkbox("正确代码", "correctCode", "只有自己补过的题才有"),
       checkbox("错因标签", "tags"),
       checkbox("复习情况", "schedule", "次数和下次复习日"),
       checkbox("留几行空白写笔记", "notes"),
@@ -206,6 +207,14 @@
       section.append(node("h5", "", "当时的代码"));
       const pre = node("pre", "print-code");
       pre.textContent = first.code;
+      section.append(pre);
+      block.append(section);
+    }
+    if (options.correctCode && first.correct_code) {
+      const section = node("section", "print-block");
+      section.append(node("h5", "", "正确代码"));
+      const pre = node("pre", "print-code");
+      pre.textContent = first.correct_code;
       section.append(pre);
       block.append(section);
     }
