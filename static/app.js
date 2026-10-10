@@ -3845,7 +3845,7 @@ $("#problem-photo-form").addEventListener("submit", (event) => {
 /* ---- GROWTH F1：从链接导入题目预填 ----
    只预填表单不直接建题，用户核对后走现有保存流程。 */
 $("#import-from-url-btn")?.addEventListener("click", () => run(async () => {
-  const url = prompt("粘贴 LeetCode / Codeforces 题目链接：");
+  const url = prompt("粘贴 LeetCode / Codeforces / 洛谷题目链接：");
   if (!url || !url.trim()) return;
   const epoch = sessionEpoch;
   const owner = user?.id;

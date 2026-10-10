@@ -105,3 +105,24 @@ def test_link_parsing_never_requests_third_party(app_client, monkeypatch):
         response = app_client.post("/api/problems/fetch-from-url", json={"url": url})
         assert response.status_code == 200
         assert response.json()["source_url"] == url
+
+
+def test_luogu_fetch_ok(app_client):
+    response = app_client.post(
+        "/api/problems/fetch-from-url",
+        json={"url": "https://www.luogu.com.cn/problem/p1001?contestId=1"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "洛谷 P1001"
+    assert body["description"] == ""
+
+
+def test_luogu_bad_path_and_spoof_422(app_client):
+    for url in (
+        "https://www.luogu.com.cn/contest/1",
+        "https://luogu.com.cn.evil.com/problem/P1001",
+        "https://notluogu.com.cn/problem/P1001",
+    ):
+        response = app_client.post("/api/problems/fetch-from-url", json={"url": url})
+        assert response.status_code == 422, url
