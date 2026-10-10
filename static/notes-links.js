@@ -469,13 +469,7 @@
       box.replaceChildren();
       const outgoing = data?.outgoing || [];
       const backlinks = data?.backlinks || [];
-      if (!outgoing.length && !backlinks.length) {
-        const empty = document.createElement("p");
-        empty.setAttribute("class", "nl-empty");
-        empty.textContent = "暂无关联笔记或题目。";
-        box.append(empty);
-        return;
-      }
+      if (!outgoing.length && !backlinks.length) return; // 没有链接就什么都不显示，别每张卡片都挂一行“暂无”
       // 默认折叠，只留一行摘要，点开才看明细，避免每张笔记卡片被关联信息占满。
       const fold = document.createElement("details");
       fold.setAttribute("class", "nl-related-fold");

@@ -69,3 +69,11 @@
 #notes-page #notes-more { min-height: 40px; padding: 0 var(--space-6); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); cursor: pointer; }
 #notes-page #notes-more:hover { border-color: var(--azurite); }
 #notes-page #notes-more[hidden] { display: none; }
+
+/* 引用：左侧一道竖线 */
+#notes-list blockquote {
+  margin: 6px 0;
+  padding: 2px 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-2);
+}

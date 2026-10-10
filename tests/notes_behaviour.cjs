@@ -215,7 +215,7 @@ test("composer: 保存成功 → 断言 POST body，插到列表顶部并清空�
   assert.equal(document.querySelector("#notes-tags-input").value, "");
   // 正文由 DOM 节点构造；检查实际节点内容与样式结构。
   const card = document.querySelector("#notes-list").querySelector(".notes-card");
-  assert.equal(card.querySelector("strong").textContent, "hello **world**"); // 标题取正文首行
+  assert.equal(card.querySelector("strong").textContent, "hello world"); // 标题取正文首行，并去掉排版符号
   const body = card.querySelector(".notes-body");
   assert.equal(body.textContent, "hello world");
   assert.equal(body.querySelector("strong").textContent, "world");
@@ -522,4 +522,20 @@ test("保存期间新草稿：提交响应不会清空用户随后输入的正�
   assert.equal(document.querySelector("#notes-content").value, "用户随后输入的新草稿");
   assert.equal(document.querySelector("#notes-tags-input").value, "新草稿标签");
   assert.equal(document.querySelector("#notes-problem").value, "7");
+});
+
+test("noteTitle: 首行的 # 标题、列表、引用符号不会出现在标题里", () => {
+  const { Notes } = load(["notes.js"]).window;
+  assert.equal(Notes.noteTitle({ title: "", content: "## 二分查找小结\n- 要点" }), "二分查找小结");
+  assert.equal(Notes.noteTitle({ title: "", content: "- 第一条\n- 第二条" }), "第一条");
+  assert.equal(Notes.noteTitle({ title: "", content: "1. 先排序" }), "先排序");
+  assert.equal(Notes.noteTitle({ title: "", content: "> 重点 **提醒**" }), "重点 提醒");
+});
+
+test("renderNoteMarkdown: 编号列表和引用都能渲染", () => {
+  const { Notes } = load(["notes.js"]).window;
+  const root = Notes.renderNoteMarkdown("1. 第一步\n2. 第二步\n\n> 记住这句");
+  const tags = root.children.map((node) => node.tagName.toLowerCase());
+  assert.deepEqual(tags, ["ol", "blockquote"]);
+  assert.equal(root.children[0].children.length, 2);
 });

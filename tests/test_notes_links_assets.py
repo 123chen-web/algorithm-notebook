@@ -26,8 +26,8 @@ def test_assets_versioned_and_loaded_before_app_js():
     assert names.count("notes-links.js") == 1
     assert names.index("notes-links.js") < names.index("app.js"), "图谱脚本必须在 app.js 之前"
     versions = dict(scripts)
-    assert versions["notes-links.js"] == "5"
-    assert versions["notes.js"] == "3"
+    assert versions["notes-links.js"] == "6"
+    assert versions["notes.js"] == "4"
     assert versions["app.js"] == "92"
 
 

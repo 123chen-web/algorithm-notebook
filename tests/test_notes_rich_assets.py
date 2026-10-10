@@ -19,9 +19,9 @@ def test_assets_versioned_and_loaded_in_order():
     assert names.count("notes-rich.js") == 1
     assert names.index("notes.js") < names.index("notes-links.js") < names.index("notes-rich.js") < names.index("app.js")
     versions = dict(scripts)
-    assert versions["notes-rich.js"] == "4"
-    assert versions["notes.js"] == "3"
-    assert versions["notes-links.js"] == "5"
+    assert versions["notes-rich.js"] == "5"
+    assert versions["notes.js"] == "4"
+    assert versions["notes-links.js"] == "6"
     assert versions["app.js"] == "92"
 
 

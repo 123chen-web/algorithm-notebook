@@ -66,7 +66,23 @@
     const title = String(note?.title ?? "").trim();
     if (title) return title;
     const firstLine = String(note?.content ?? "").split("\n").map((line) => line.trim()).find((line) => line) || "";
-    return firstLine.slice(0, TITLE_FALLBACK_LEN);
+    // 没有单独标题时取第一行；去掉 # 标题符号、列表/引用符号和加粗符号，别把排版符号当标题显示。
+    const cleaned = firstLine
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^(?:[-*>]|\d+[.)])\s+/, "")
+      .replace(/[*`$]/g, "")
+      .trim();
+    return (cleaned || firstLine).slice(0, TITLE_FALLBACK_LEN);
+  }
+
+  // 标题取自正文第一行的“# 小标题”时，卡片标题已经显示了它，正文里不再重复一遍。
+  function bodyWithoutDerivedTitle(note) {
+    const content = String(note?.content ?? "");
+    if (String(note?.title ?? "").trim()) return content;
+    const lines = content.split("\n");
+    const first = lines.findIndex((line) => line.trim());
+    if (first !== -1 && /^#{1,3}\s+\S/.test(lines[first])) lines.splice(first, 1);
+    return lines.join("\n");
   }
 
   /** 列表查询串：只带非默认值；limit 钳在 1..100。 */
@@ -151,6 +167,7 @@
     }
     const lines = String(source ?? "").split("\n");
     let list = null;
+    let listTag = "";
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
       if (line.startsWith("```")) {
@@ -162,12 +179,16 @@
       }
       const heading = line.match(/^(#{1,3})\s+(.*)$/);
       const item = line.match(/^-\s+(.*)$/);
-      if (item) {
-        if (!list) { list = h("ul"); root.append(list); }
-        const li = h("li"); inline(li, item[1]); list.append(li); continue;
+      const numbered = line.match(/^\d+[.)]\s+(.*)$/);
+      if (item || numbered) {
+        const tag = item ? "ul" : "ol";
+        if (!list || listTag !== tag) { list = h(tag); listTag = tag; root.append(list); }
+        const li = h("li"); inline(li, (item || numbered)[1]); list.append(li); continue;
       }
       list = null;
       if (!line.trim()) continue;
+      const quote = line.match(/^>\s?(.*)$/);
+      if (quote) { const bq = h("blockquote"); inline(bq, quote[1]); root.append(bq); continue; }
       const block = h(heading ? `h${heading[1].length}` : "p");
       inline(block, heading ? heading[2] : line); root.append(block);
     }
@@ -300,7 +321,7 @@
 
     const body = h("div", null, "notes-body");
     const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
-    body.replaceChildren(renderNoteMarkdown(note.content, { drawingIds }));
+    body.replaceChildren(renderNoteMarkdown(bodyWithoutDerivedTitle(note), { drawingIds }));
     card.append(body);
 
     // N1：关联区（出链 + 反向链接）占位，由 window.NotesLinks 异步填充。

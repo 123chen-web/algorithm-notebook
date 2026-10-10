@@ -229,8 +229,10 @@
     return mermaidPromise;
   }
 
-  function nodeFromHtmlString(html) {
-    const doc = new DOMParser().parseFromString("<div>" + html + "</div>", "text/html");
+  function nodeFromHtmlString(html, inline) {
+    // 行内公式必须包在 span 里，包成 div 会让每个公式独占一行。
+    const tag = inline ? "span" : "div";
+    const doc = new DOMParser().parseFromString("<" + tag + ">" + html + "</" + tag + ">", "text/html");
     return document.importNode(doc.body.firstChild, true);
   }
 
@@ -242,7 +244,7 @@
         trust: false,
         displayMode: Boolean(box.__nrDisplay),
       });
-      const node = nodeFromHtmlString(html);
+      const node = nodeFromHtmlString(html, !box.__nrDisplay);
       if (box.__nrDisplay) node.setAttribute("class", "nr-block-math");
       box.replaceWith(node);
     } catch (_err) {
