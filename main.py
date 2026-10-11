@@ -1486,7 +1486,7 @@ def delete_account_data(conn, user_id, deleted_at):
 
     for table in ("sessions", "password_resets", "user_push", "mistake_scratch", "problems",
                   "mistake_tags", "weakness_insights", "mistake_clusters",
-                  "ai_usage", "duck_usage", "comment_votes",
+                  "ai_usage", "duck_usage", "comment_votes", "ai_feedback",
                   "manual_payment_claims", "goals", "review_ops",
                   "problem_recommendations", "import_previews", "notes", "note_links",
                   "note_attachments", "note_drawings", "email_changes"):

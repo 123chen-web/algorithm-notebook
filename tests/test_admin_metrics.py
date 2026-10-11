@@ -146,7 +146,7 @@ def test_empty_database_is_all_zero_with_filled_days(client, admin):
         assert result[key] == {"current": 0, "previous": 0}, key
     assert result["ai"] == {
         "calls": {"current": 0, "previous": 0}, "failed": {"current": 0, "previous": 0},
-        "tokens": {"prompt": 0, "completion": 0}, "by_feature": [],
+        "tokens": {"prompt": 0, "completion": 0}, "by_feature": [], "feedback": [],
     }
     assert result["pending_reports"] == 0
     assert result["redeem"] == {"created": 0, "redeemed": 0, "unused": 0}
@@ -155,6 +155,33 @@ def test_empty_database_is_all_zero_with_filled_days(client, admin):
     }
     assert [d["date"] for d in result["daily"]] == [f"2026-09-{n}" for n in range(22, 29)]
     assert all(d["new_users"] == d["active_users"] == d["reviews"] == 0 for d in result["daily"])
+
+
+def test_ai_feedback_summary_counts_by_kind(client, admin):
+    with connect(write=True) as conn:
+        # variant：近 7 天 1 有用 1 没用 + 7 天前 1 有用（只进累计）。
+        conn.execute(
+            "INSERT INTO ai_feedback(user_id, kind, ref_id, useful, created_at) "
+            "VALUES (1, 'variant', 1, 1, ?), (1, 'variant', 2, 0, ?), (1, 'variant', 3, 1, ?)",
+            (at(25), at(24), at(10)),
+        )
+        # duck：近 7 天 2 没用。
+        conn.execute(
+            "INSERT INTO ai_feedback(user_id, kind, ref_id, useful, created_at) "
+            "VALUES (1, 'duck', NULL, 0, ?), (1, 'duck', NULL, 0, ?)",
+            (at(26), at(27)),
+        )
+    result = metrics(client)
+    feedback = {row["kind"]: row for row in result["ai"]["feedback"]}
+    assert feedback["variant"] == {
+        "kind": "variant", "useful_7d": 1, "useless_7d": 1,
+        "useful_total": 2, "useless_total": 1,
+    }
+    assert feedback["duck"] == {
+        "kind": "duck", "useful_7d": 0, "useless_7d": 2,
+        "useful_total": 0, "useless_total": 2,
+    }
+    assert "weakness" not in feedback
 
 
 def test_daily_dates_cross_month_boundary_for_thirty_days(client, admin):

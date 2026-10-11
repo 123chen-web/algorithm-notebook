@@ -2622,8 +2622,49 @@ async function openMistake(id) {
 const VARIANT_SECTION_PATTERN =
   /^【错因】\s*\n([\s\S]*?)\n【讲解】\s*\n([\s\S]*?)\n【核心知识点】\s*\n([\s\S]*?)\n【练习题】\s*\n([\s\S]*)$/;
 
-function renderVariantDescription(text) {
-  const match = text.trim().match(VARIANT_SECTION_PATTERN);
+/* AI 回答有用/没用反馈：只收布尔值。点后变为"已记录，谢谢"；
+   离线或失败时静默恢复按钮；晚到响应按登录代次/账号丢弃。 */
+function renderAiFeedback(kind, refId) {
+  const wrap = element("div", "", "ai-feedback");
+  const label = element("span", "这道题对你有帮助吗？", "ai-feedback-label");
+  const yesBtn = element("button", "有用", "ai-feedback-btn");
+  const noBtn = element("button", "没用", "ai-feedback-btn");
+  yesBtn.type = "button";
+  noBtn.type = "button";
+  let voted = false;
+
+  async function vote(useful) {
+    if (voted) return;
+    const epoch = sessionEpoch;
+    const userId = user?.id;
+    if (!userId) return;
+    voted = true;
+    yesBtn.disabled = true;
+    noBtn.disabled = true;
+    try {
+      await api("/api/ai-feedback", {
+        method: "POST",
+        body: JSON.stringify({ kind, ref_id: refId ?? null, useful }),
+      });
+    } catch (error) {
+      // 离线或失败时静默：恢复按钮，不打断使用。
+      voted = false;
+      yesBtn.disabled = false;
+      noBtn.disabled = false;
+      return;
+    }
+    // 登出、换号之后晚到的响应一律丢弃。
+    if (epoch !== sessionEpoch || user?.id !== userId) return;
+    wrap.replaceChildren(element("span", "已记录，谢谢", "ai-feedback-done"));
+  }
+
+  yesBtn.addEventListener("click", () => void vote(true));
+  noBtn.addEventListener("click", () => void vote(false));
+  wrap.append(label, yesBtn, noBtn);
+  return wrap;
+}
+
+function renderVariantDescription(text) {  const match = text.trim().match(VARIANT_SECTION_PATTERN);
   if (!match) {
     // 新变体只含单题正文（编程题还带样例）；也兼容更早的纯文本题目。
     return element("pre", text, "prose");
@@ -2731,7 +2772,8 @@ function renderVariant(variant, isCodeZone) {
     savedAt,
     form,
     judgment,
-    reference
+    reference,
+    renderAiFeedback("variant", variant.id)
   );
   return box;
 }

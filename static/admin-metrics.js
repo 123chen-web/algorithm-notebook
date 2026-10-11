@@ -15,6 +15,7 @@
     { key: "reviews", label: "复习次数" },
   ];
   const FEATURE_NAMES = { variant: "变式练习", weakness: "弱点分析", photo: "拍照识别", clusters: "错因聚类" };
+  const FEEDBACK_KIND_NAMES = { variant: "变体题", duck: "小黄鸭", weakness: "薄弱点分析" };
   const FUNNEL_STEPS = [
     { key: "registered", label: "注册" },
     { key: "first_record", label: "记第一条错题" },
@@ -179,6 +180,12 @@
         label: "AI 调用", value: ai.calls.current, change: delta(ai.calls.current, ai.calls.previous),
         sub: `失败 ${ai.failed.current} · 令牌 ${formatTokens(ai.tokens.prompt + ai.tokens.completion)}`,
       }),
+      // AI 有用/没用反馈：每种 kind 一张卡，值是近 7 天有用数。
+      ...(ai.feedback || []).map((item) => metricCard({
+        label: `反馈·${FEEDBACK_KIND_NAMES[item.kind] || item.kind}`,
+        value: item.useful_7d,
+        sub: `没用 ${item.useless_7d} · 累计有用 ${item.useful_total} / 没用 ${item.useless_total}`,
+      })),
     ];
     const pending = Number(result.pending_reports) || 0;
     const reports = metricCard({

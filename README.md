@@ -111,7 +111,7 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 ## 详细文档
 
 - 学习：[调度与五档评分](docs/features/scheduling.md)、[撤销与暂停](docs/features/review-feel.md)、[私人笔记](docs/features/notes.md)、[成长功能](docs/features/growth.md)。
-- AI：[功能与额度](docs/features/ai.md)、[AI 额度与计费](static/ai-billing.html)。
+- AI：[功能与额度](docs/features/ai.md)、[AI 额度与计费](static/ai-billing.html)、[有用/没用反馈](docs/features/ai-feedback.md)。
 - 社区：[讨论区](docs/features/forum.md)、[学习小组](docs/features/groups.md)、[榜单](docs/features/leaderboard.md)。
 - 数据：[模型与完整迁移表](docs/dev/data-model.md)、[数据导出](docs/features/export.md)、[Markdown/JSON 导入](docs/features/import-notes.md)。
 - 开发：[测试与样本环境](docs/dev/testing.md)、[界面与原创场景](docs/features/ui-style.md)、[移动与离线](docs/features/mobile.md)。
@@ -119,4 +119,4 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **73**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–73 笔记），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **74**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–73 笔记、74 AI 反馈），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。

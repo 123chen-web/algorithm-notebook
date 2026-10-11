@@ -139,6 +139,22 @@ def compute_metrics(conn, days, now):
                   AND reporter.deleted_at IS NULL AND owner.deleted_at IS NULL)
     """).fetchone()[0]
 
+    # AI 有用/没用反馈：按 kind 汇总近 7 天和累计的有用/没用数。反馈不记文字，
+    # 不关联账号过滤（注销时随账号删除），这里只做总量统计。
+    week_start = (today - timedelta(days=6)).isoformat()
+    feedback_rows = conn.execute(
+        """
+        SELECT kind,
+            SUM(CASE WHEN useful = 1 AND created_at >= :week_start THEN 1 ELSE 0 END) AS useful_7d,
+            SUM(CASE WHEN useful = 0 AND created_at >= :week_start THEN 1 ELSE 0 END) AS useless_7d,
+            SUM(CASE WHEN useful = 1 THEN 1 ELSE 0 END) AS useful_total,
+            SUM(CASE WHEN useful = 0 THEN 1 ELSE 0 END) AS useless_total
+        FROM ai_feedback
+        GROUP BY kind
+        """,
+        {"week_start": week_start},
+    ).fetchall()
+
     redeem = conn.execute("""
         SELECT COALESCE(SUM(created_at >= :cur_start AND created_at < :end), 0),
                COALESCE(SUM(redeemed_by IS NOT NULL AND redeemed_at >= :cur_start
@@ -190,6 +206,17 @@ def compute_metrics(conn, days, now):
     def total(column):
         return sum(row[column] or 0 for row in ai_rows)
 
+    feedback = [
+        {
+            "kind": row["kind"],
+            "useful_7d": row["useful_7d"] or 0,
+            "useless_7d": row["useless_7d"] or 0,
+            "useful_total": row["useful_total"] or 0,
+            "useless_total": row["useless_total"] or 0,
+        }
+        for row in feedback_rows
+    ]
+
     return {
         "days": days,
         "generated_at": now.isoformat(),
@@ -204,6 +231,7 @@ def compute_metrics(conn, days, now):
             "failed": {"current": total("failed"), "previous": total("prev_failed")},
             "tokens": {"prompt": total("prompt_tokens"), "completion": total("completion_tokens")},
             "by_feature": by_feature,
+            "feedback": feedback,
         },
         "pending_reports": reports,
         "redeem": {"created": redeem[0], "redeemed": redeem[1], "unused": redeem[2]},

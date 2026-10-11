@@ -162,6 +162,7 @@
         panel.finished = true;
         panel.nodes.summary.hidden = false;
         panel.nodes.summaryText.textContent = reply;
+        panel.nodes.feedback.hidden = false;
         panel.nodes.status.textContent = `小黄鸭的总结：${reply}`;
       }
     } catch (error) {
@@ -189,6 +190,15 @@
     panel.nodes.log.replaceChildren();
     panel.nodes.summary.hidden = true;
     panel.nodes.summaryText.textContent = "";
+    panel.nodes.feedback.hidden = true;
+    panel.voted = false;
+    // 投票后按钮被换成"已记录，谢谢"，重来时恢复。
+    panel.nodes.feedback.replaceChildren(
+      node("span", "这道题对你有帮助吗？", "duck-feedback-label"),
+      panel.nodes.feedbackYes, panel.nodes.feedbackNo,
+    );
+    panel.nodes.feedbackYes.disabled = false;
+    panel.nodes.feedbackNo.disabled = false;
     panel.nodes.input.value = "";
     hideError();
     panel.nodes.status.textContent = "已清空，重新开始。";
@@ -231,7 +241,13 @@
     const summary = node("div", "duck-summary");
     summary.hidden = true;
     const summaryText = node("p", "duck-summary-text", "");
-    summary.append(node("h4", "duck-summary-title", "小黄鸭的总结"), summaryText);
+    const feedback = node("div", "duck-feedback");
+    feedback.hidden = true;
+    const feedbackLabel = node("span", "这道题对你有帮助吗？", "duck-feedback-label");
+    const feedbackYes = button("有用", "duck-feedback-btn");
+    const feedbackNo = button("没用", "duck-feedback-btn");
+    feedback.append(feedbackLabel, feedbackYes, feedbackNo);
+    summary.append(node("h4", "duck-summary-title", "小黄鸭的总结"), summaryText, feedback);
 
     const composer = node("div", "duck-composer");
     const input = node("textarea", "duck-input");
@@ -265,12 +281,43 @@
       finished: false,
       quotaOut: false,
       pending: null,
+      voted: false,
       nodes: {
         input, send: sendBtn, finish: finishBtn, restart: restartBtn,
         round: head.querySelector(".duck-round"), count, log, status,
         error, errorText, retry, summary, summaryText,
+        feedback, feedbackYes, feedbackNo,
       },
     };
+
+    /* AI 反馈：只收布尔值。点后变为"已记录，谢谢"；离线或失败时静默恢复；
+       晚到响应按登录代次/账号/面板代次丢弃。 */
+    async function voteFeedback(useful) {
+      if (!panel || panel.voted) return;
+      const request = takeTicket();
+      if (!request.userId) return;
+      panel.voted = true;
+      feedbackYes.disabled = true;
+      feedbackNo.disabled = true;
+      try {
+        await hooks.api("/api/ai-feedback", {
+          method: "POST",
+          body: JSON.stringify({ kind: "duck", ref_id: null, useful }),
+        });
+      } catch (error) {
+        // 离线或失败时静默：恢复按钮，不打断使用。
+        if (panel) {
+          panel.voted = false;
+          feedbackYes.disabled = false;
+          feedbackNo.disabled = false;
+        }
+        return;
+      }
+      if (!current(request)) return; // 晚到响应丢弃
+      feedback.replaceChildren(node("span", "已记录，谢谢", "duck-feedback-done"));
+    }
+    feedbackYes.addEventListener("click", () => void voteFeedback(true));
+    feedbackNo.addEventListener("click", () => void voteFeedback(false));
 
     let composing = false; // 输入法组合输入期间 Enter 不发送
     input.addEventListener("compositionstart", () => { composing = true; });

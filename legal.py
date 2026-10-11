@@ -6,7 +6,7 @@ import re
 
 
 PRODUCT_NAME = "欧叶OY"
-TERMS_VERSION = "2026-10-09"
+TERMS_VERSION = "2026-10-11"
 
 
 def _asset_version(filename):
@@ -37,6 +37,7 @@ def _privacy_content(operator, contact):
           <li>提醒设置：如果你开启邮件复习提醒，我们会保存提醒开关和用于退订的凭证。</li>
           <li>交易数据：订单与支付记录，用于确认套餐、处理退款和履行财务记录要求。</li>
           <li>AI 调用日志：模型、用量、耗时等调用元数据，以及功能类型、调用时间和成功或失败状态；不记录题目、代码、对话或照片内容。</li>
+          <li>AI 回答的有用/没用反馈：你对变体题、小黄鸭总结、薄弱点分析点的“有用”或“没用”，只记布尔值，不含任何文字。</li>
         </ul>
       </section>
       <section aria-labelledby="privacy-purpose">

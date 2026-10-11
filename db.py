@@ -1046,6 +1046,41 @@ def _apply_correct_code(conn):
 
 
 MIGRATIONS.append((73, "题目的可选正确代码", _apply_correct_code))
+
+
+def _apply_ai_feedback(conn):
+    """AI 回答有用/没用反馈表：只收布尔值，不收文字。
+
+    幂等：表已存在时跳过建表；索引一律 IF NOT EXISTS。
+    """
+    tables = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    if "ai_feedback" not in tables:
+        conn.execute(
+            """
+            CREATE TABLE ai_feedback (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                ref_id INTEGER,
+                useful INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_feedback_user_kind_ref "
+        "ON ai_feedback(user_id, kind, ref_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ai_feedback_kind_created "
+        "ON ai_feedback(kind, created_at)"
+    )
+
+
+MIGRATIONS.append((74, "AI 有用/没用反馈", _apply_ai_feedback))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

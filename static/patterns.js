@@ -31,6 +31,31 @@
     return !needle || searchText(pattern).includes(needle);
   }
 
+  /* 例题链接：只给白名单域名生成，防止数据里混入别的域名。
+     洛谷题号直接拼 problem 路径；力扣只有题号没有 slug，不猜 slug，
+     链到带 search 参数的题库页。其它 source 保持纯文字。 */
+  function exampleUrl(example) {
+    if (example.source === "luogu") return `https://www.luogu.com.cn/problem/${encodeURIComponent(example.id)}`;
+    if (example.source === "leetcode-cn") return `https://leetcode.cn/problemset/?search=${encodeURIComponent(example.id)}`;
+    return null;
+  }
+
+  function exampleItem(example) {
+    const item = node("li", "");
+    const text = `${SOURCE_NAMES[example.source] || example.source} ${example.id}　${example.title}`;
+    const url = exampleUrl(example);
+    if (!url) {
+      item.textContent = text;
+      return item;
+    }
+    const link = node("a", text, "pattern-example-link");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    item.append(link);
+    return item;
+  }
+
   function section(title, child) {
     const wrap = node("section", "pattern-section");
     wrap.append(node("h4", "", title), child);
@@ -96,7 +121,7 @@
     body.append(section("模板代码", codes));
     const examples = node("ul", "pattern-bullets");
     for (const example of pattern.examples || []) {
-      examples.append(node("li", "", `${SOURCE_NAMES[example.source] || example.source} ${example.id}　${example.title}`));
+      examples.append(exampleItem(example));
     }
     body.append(section("经典例题（只列题号和题名，请自行到对应网站查看）", examples));
     const related = (pattern.related || []).map((id) => byId.get(id)).filter(Boolean);

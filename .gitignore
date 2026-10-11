@@ -16,3 +16,6 @@ tests/e2e/artifacts/
 
 # 内部审查报告，不进公开仓库
 docs/reports/
+
+# AI 评估工具的本地真实数据，不进仓库
+tools/ai_eval/cases.local.json

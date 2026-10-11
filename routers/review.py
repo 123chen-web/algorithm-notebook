@@ -444,3 +444,69 @@ def save_variant_result(
 
     # 保存练习结果不会隐式修改原易错点的复习计划。
     return dict(result)
+
+
+AI_FEEDBACK_KINDS = ("variant", "duck", "weakness")
+AI_FEEDBACK_LIMIT = 120
+AI_FEEDBACK_WINDOW_SECONDS = 3600
+
+
+class AiFeedbackInput(main.InputModel):
+    kind: str
+    ref_id: int | None = None
+    useful: bool
+
+
+@router.post("/api/ai-feedback")
+def submit_ai_feedback(data: AiFeedbackInput, user=Depends(main.current_user)):
+    """AI 回答有用/没用反馈：只收布尔值，不收文字。
+
+    再次点击同一 (kind, ref_id) 就是改票。variant 的 ref_id 必须是当前用户
+    自己的变体题 id；duck/weakness 的 ref_id 必须为 null。
+    """
+    if data.kind not in AI_FEEDBACK_KINDS:
+        raise HTTPException(422, "不支持的反馈类型")
+    if main.rate_limited(
+        f"ai_feedback:{user['id']}", AI_FEEDBACK_LIMIT, AI_FEEDBACK_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "反馈太频繁，请稍后再试")
+    if data.kind == "variant":
+        if data.ref_id is None:
+            raise HTTPException(422, "变体题反馈需要 ref_id")
+    elif data.ref_id is not None:
+        raise HTTPException(422, "该类型反馈不需要 ref_id")
+
+    useful = 1 if data.useful else 0
+    with main.connect(write=True) as conn:
+        if data.kind == "variant":
+            owned = conn.execute(
+                """
+                SELECT v.id FROM variants v
+                JOIN mistakes m ON m.id = v.mistake_id
+                JOIN problems p ON p.id = m.problem_id
+                WHERE v.id = ? AND p.user_id = ?
+                """,
+                (data.ref_id, user["id"]),
+            ).fetchone()
+            if owned is None:
+                raise HTTPException(404, "变体题不存在")
+        # 改票：ref_id 为 NULL 时唯一索引不把 NULL 视为相等，不能用 ON CONFLICT，
+        # 先查后改。
+        existing = conn.execute(
+            "SELECT id FROM ai_feedback WHERE user_id = ? AND kind = ? "
+            "AND (ref_id = ? OR (ref_id IS NULL AND ? IS NULL))",
+            (user["id"], data.kind, data.ref_id, data.ref_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE ai_feedback SET useful = ?, created_at = datetime('now') "
+                "WHERE id = ?",
+                (useful, existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO ai_feedback(user_id, kind, ref_id, useful) "
+                "VALUES (?, ?, ?, ?)",
+                (user["id"], data.kind, data.ref_id, useful),
+            )
+    return {"ok": True}

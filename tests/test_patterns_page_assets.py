@@ -44,3 +44,23 @@ def test_page_only_reads_its_own_static_data():
 def test_every_asset_the_page_links_exists():
     for path in re.findall(r'(?:href|src)="(/static/[^"?]+)', HTML):
         assert (STATIC.parent / path.lstrip("/")).exists(), path
+
+
+def test_example_links_only_use_whitelisted_domains():
+    # 例题链接的域名白名单：只允许洛谷和力扣，防止数据里混入别的域名。
+    urls = re.findall(r"https://[A-Za-z0-9.-]+", JS)
+    assert urls, "patterns.js 应该生成例题链接"
+    for url in urls:
+        host = url.split("//", 1)[1]
+        assert host in {"www.luogu.com.cn", "leetcode.cn"}, url
+    assert "https://www.luogu.com.cn/problem/" in JS
+    assert "https://leetcode.cn/problemset/?search=" in JS
+    # 链接在新标签页打开，不把本站窗口交出去。
+    assert 'link.target = "_blank"' in JS
+    assert 'link.rel = "noopener noreferrer"' in JS
+
+
+def test_example_sources_are_all_linkable():
+    # 数据里的 source 必须都在白名单里，否则前端只会显示文字。
+    sources = {example["source"] for item in DATA for example in item["examples"]}
+    assert sources <= {"luogu", "leetcode-cn"}, sources
