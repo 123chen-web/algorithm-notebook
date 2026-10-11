@@ -490,13 +490,15 @@ def submit_ai_feedback(data: AiFeedbackInput, user=Depends(main.current_user)):
             ).fetchone()
             if owned is None:
                 raise HTTPException(404, "变体题不存在")
-        # 改票：ref_id 为 NULL 时唯一索引不把 NULL 视为相等，不能用 ON CONFLICT，
-        # 先查后改。
-        existing = conn.execute(
-            "SELECT id FROM ai_feedback WHERE user_id = ? AND kind = ? "
-            "AND (ref_id = ? OR (ref_id IS NULL AND ? IS NULL))",
-            (user["id"], data.kind, data.ref_id, data.ref_id),
-        ).fetchone()
+        # 变体题按 (用户, 变体题) 改票；小黄鸭/薄弱点分析没有可对应的具体对象，
+        # 每次点击都记一条新反馈（界面在同一次回答后只给点一次），这样统计的是
+        # 每次回答的好坏，不是"每人只留最后一票"。
+        existing = None
+        if data.kind == "variant":
+            existing = conn.execute(
+                "SELECT id FROM ai_feedback WHERE user_id = ? AND kind = ? AND ref_id = ?",
+                (user["id"], data.kind, data.ref_id),
+            ).fetchone()
         if existing:
             conn.execute(
                 "UPDATE ai_feedback SET useful = ?, created_at = datetime('now') "

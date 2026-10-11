@@ -46,7 +46,7 @@ def test_feedback_vote_and_change_vote(client, monkeypatch):
     assert rows[0]["ref_id"] == variant_id
 
 
-def test_duck_feedback_allows_null_ref_id_and_change_vote(client):
+def test_duck_feedback_allows_null_ref_id_and_records_each_answer(client):
     register(client)
     user_id = 1
 
@@ -54,16 +54,15 @@ def test_duck_feedback_allows_null_ref_id_and_change_vote(client):
         "/api/ai-feedback", json={"kind": "duck", "ref_id": None, "useful": True}
     )
     assert response.status_code == 200
-    # ref_id 为 NULL 时重复点击也要改票，不能新增行（SQLite 唯一索引把 NULL
-    # 视为互不相等，所以接口里是先查后改）。
+    # 小黄鸭没有可对应的具体对象：每次回答各记一条，统计的是每次回答的好坏，
+    # 不是"每人只留最后一票"。
     response = client.post(
         "/api/ai-feedback", json={"kind": "duck", "ref_id": None, "useful": False}
     )
     assert response.status_code == 200
     rows = _feedback_rows(user_id)
-    assert len(rows) == 1
-    assert rows[0]["useful"] == 0
-    assert rows[0]["ref_id"] is None
+    assert [row["useful"] for row in rows] == [1, 0]
+    assert all(row["ref_id"] is None for row in rows)
 
 
 def test_variant_feedback_for_other_users_variant_is_404(client, monkeypatch):

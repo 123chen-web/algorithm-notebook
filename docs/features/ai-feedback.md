@@ -10,11 +10,11 @@
 - 小黄鸭总结后：同样一行（不关联具体题目）
 - 薄弱点分析：预留 kind，界面暂未接入
 
-再次点击同一项就是改票（覆盖上一次）。
+变体题再次点击同一项就是改票（覆盖上一次）；小黄鸭、薄弱点分析每次回答各记一条（界面在同一次回答后只能点一次）。
 
 ## 存哪
 
-`ai_feedback` 表（迁移 74）：`(user_id, kind, ref_id)` 唯一。`kind` 只允许
+`ai_feedback` 表（迁移 74）：变体题按 `(user_id, kind, ref_id)` 改票；`kind` 只允许
 `variant` / `duck` / `weakness`；`variant` 的 `ref_id` 是变体题 id，
 `duck` / `weakness` 的 `ref_id` 为空。
 
