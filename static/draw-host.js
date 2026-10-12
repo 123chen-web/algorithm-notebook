@@ -650,6 +650,8 @@
     setSaveState(panel, "idle");
     panel.titleEl.textContent = "画板加载中…";
     panel.insertBtn.disabled = true;
+    // 从“画板”页打开时没有可插入的笔记，隐藏“插入到笔记”；在笔记页里仍然显示。
+    panel.insertBtn.hidden = controller.hooks?.getView?.() === "whiteboard";
     panel.loadingTip.textContent = "首次打开画板需要准备本地资源（约 8MB），请稍候…";
     panel.loadingTip.hidden = false;
     panel.reloadBtn.hidden = true;

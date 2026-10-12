@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="/static/notes-rich.css?v=5">
   <link rel="stylesheet" href="/static/vendor/editor/oy-editor.css?v=3">
   <link rel="stylesheet" href="/static/notes-editor.css?v=1">
-  <link rel="stylesheet" href="/static/draw-host.css?v=202610092">
+  <link rel="stylesheet" href="/static/draw-host.css?v=202610121">
   <link rel="stylesheet" href="/static/shell.css?v=4">
   <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
@@ -74,7 +74,7 @@
   <script defer src="/static/cursor-fx.js?v=18"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
-  <script defer src="/static/palette.js?v=3"></script>
+  <script defer src="/static/palette.js?v=4"></script>
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/problem-cards.js?v=2"></script>
   <script defer src="/static/focus.js?v=5"></script>
@@ -127,9 +127,9 @@
   <script defer src="/static/notes.js?v=6"></script>
   <script defer src="/static/notes-links.js?v=8"></script>
   <script defer src="/static/notes-rich.js?v=7"></script>
-  <script defer src="/static/draw-host.js?v=202610103"></script>
+  <script defer src="/static/draw-host.js?v=202610121"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
-  <script defer src="/static/app.js?v=100"></script>
+  <script defer src="/static/app.js?v=101"></script>
   <script defer src="/static/view-history.js?v=1"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
@@ -152,6 +152,7 @@
           <button type="button" class="nav-item" data-view="print"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg><span class="nav-label">考前打印版</span></button>
           <button type="button" class="nav-item" data-view="new"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg><span class="nav-label">新增记录</span></button>
           <button type="button" class="nav-item" data-view="notes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span class="nav-label">笔记</span></button>
+          <button type="button" class="nav-item" data-view="whiteboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 14l3-3 3 2 4-5"/><path d="M8 21h8"/></svg><span class="nav-label">画板</span></button>
           <button type="button" class="nav-item" data-view="roadmap"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h6M14 6h6M4 12h6M14 12h6M4 18h6M14 18h6"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/></svg><span class="nav-label">学习路线</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-insight">
@@ -1319,14 +1320,6 @@
             </label>
             <div id="notes-tag-row" class="notes-tag-row" role="group" aria-label="按标签筛选"></div>
           </div>
-          <section class="draw-host" id="draw-host" aria-label="画板">
-            <div class="draw-host-head">
-              <h3>我的画板</h3>
-              <button type="button" id="draw-new">＋ 新建画板</button>
-            </div>
-            <p class="draw-host-status" id="draw-list-status" hidden></p>
-            <div class="draw-list" id="draw-list"></div>
-          </section>
           <div id="notes-list" class="notes-list" aria-live="polite"></div>
           <p id="notes-status" class="notes-status" role="status" hidden></p>
           <details id="notes-graph-fold" class="notes-graph-fold">
@@ -1336,6 +1329,26 @@
           <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
         </div>
 
+      </section>
+
+      <section id="whiteboard-page" aria-labelledby="whiteboard-title" hidden>
+        <div class="notes-wrap">
+          <header class="notes-head">
+            <div>
+              <h2 id="whiteboard-title">画板</h2>
+              <p class="notes-sub">随手画图、画思路、画数据结构。画好后自动保存，也可以在笔记里用“/”插入画板。</p>
+            </div>
+          </header>
+          <section class="draw-host" id="draw-host" aria-label="画板">
+            <div class="draw-host-head">
+              <h3>我的画板</h3>
+              <button type="button" id="draw-new">＋ 新建画板</button>
+            </div>
+            <p class="draw-host-status" id="draw-list-status" hidden></p>
+            <div class="draw-list" id="draw-list"></div>
+          </section>
+        </div>
+      </section>
         <div class="draw-panel" id="draw-panel" role="dialog" aria-modal="true" aria-labelledby="draw-panel-title" hidden>
           <div class="draw-panel-bar">
             <span class="draw-panel-title" id="draw-panel-title">画板</span>
@@ -1356,7 +1369,6 @@
             <button type="button" id="draw-retry">重试</button>
           </div>
         </div>
-      </section>
 
       <section id="forum-page" aria-labelledby="forum-title" hidden>
         <section id="forum-list" aria-labelledby="forum-list-title">
@@ -1855,6 +1867,7 @@
         <button type="button" class="more-item" data-view="heatmap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="10" y="3" width="5" height="5" rx="1"/><rect x="17" y="3" width="5" height="5" rx="1"/><rect x="3" y="10" width="5" height="5" rx="1"/><rect x="10" y="10" width="5" height="5" rx="1"/><rect x="17" y="10" width="5" height="5" rx="1"/><rect x="3" y="17" width="5" height="5" rx="1"/><rect x="10" y="17" width="5" height="5" rx="1"/><rect x="17" y="17" width="5" height="5" rx="1"/></svg><span class="nav-label">掌握度热力图</span></button>
         <button type="button" class="more-item" data-view="forum"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>讨论区</span></button>
         <button type="button" class="more-item" data-view="notes"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span>笔记</span></button>
+        <button type="button" class="more-item" data-view="whiteboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 14l3-3 3 2 4-5"/><path d="M8 21h8"/></svg><span>画板</span></button>
         <button type="button" class="more-item" data-view="roadmap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h6M14 6h6M4 12h6M14 12h6M4 18h6M14 18h6"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/></svg><span>学习路线</span></button>
         <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>榜单</span></button>
         <button type="button" class="more-item" data-view="plan"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span>我的套餐</span></button>

@@ -14,6 +14,7 @@
     groups: "小组 学习小组", forum: "讨论 评论 帖子 社区", leaderboard: "榜单 排行榜 排行 昨日之星 热门题目 打卡",
     plan: "套餐 会员 订阅 额度 支付", admin: "后台 管理 举报", clusters: "专题 归并 相似",
     print: "打印 考前 错题本", mastery: "掌握度 趋势 曲线 遗忘",
+    whiteboard: "画板 白板 画图 草图 手绘",
   };
   const ICONS = {
     page: "M5 12h14M13 6l6 6-6 6",

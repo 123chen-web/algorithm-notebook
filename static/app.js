@@ -941,6 +941,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#groups-page").hidden = view !== "groups";
   $("#forum-page").hidden = view !== "forum";
   $("#notes-page").hidden = view !== "notes";
+  $("#whiteboard-page").hidden = view !== "whiteboard";
   $("#admin-page").hidden = view !== "admin";
   renderUserInfo();
   renderHomeQuota();
@@ -960,6 +961,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
     // onDrawingsChanged 内部有“正在编辑不重渲染”的保护，不会冲掉未保存正文。
     await window.DrawHost?.load();
   }
+  else if (view === "whiteboard") await window.DrawHost?.load();
   else if (view === "leaderboard") await loadLeaderboard();
   else if (view === "insights") await loadWeaknessAnalysis();
   else if (view === "achievements") await loadAchievements();
