@@ -5,7 +5,11 @@ from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 HTML = (STATIC / "patterns.html").read_text(encoding="utf-8")
-JS = (STATIC / "patterns.js").read_text(encoding="utf-8")
+JS = (
+    (STATIC / "patterns.js").read_text(encoding="utf-8")
+    + "\n"
+    + (STATIC / "pattern-render.js").read_text(encoding="utf-8")
+)
 CSS = (STATIC / "patterns.css").read_text(encoding="utf-8")
 DATA = json.loads((STATIC / "data" / "patterns.json").read_text(encoding="utf-8"))
 FIELDS = {"id", "title", "category", "level", "signals", "idea", "template_python", "template_cpp",
@@ -56,8 +60,8 @@ def test_example_links_only_use_whitelisted_domains():
     assert "https://www.luogu.com.cn/problem/" in JS
     assert "https://leetcode.cn/problemset/?search=" in JS
     # 链接在新标签页打开，不把本站窗口交出去。
-    assert 'link.target = "_blank"' in JS
-    assert 'link.rel = "noopener noreferrer"' in JS
+    assert 'link.setAttribute("target", "_blank")' in JS
+    assert 'link.setAttribute("rel", "noopener noreferrer")' in JS
 
 
 def test_example_sources_are_all_linkable():

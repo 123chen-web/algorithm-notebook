@@ -1,0 +1,47 @@
+/* 主站「学习路线」页：只用主题令牌，无行内样式，无十六进制颜色。
+   卡片本体复用 patterns.css（和独立套路库页共用同一份渲染与样式）。 */
+.roadmap-summary-card { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.roadmap-summary-text { margin: 0; color: var(--ink-2); }
+.roadmap-progress { width: 100%; }
+.roadmap-cats { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.roadmap-cat-row { display: grid; gap: var(--space-1); }
+.roadmap-cat-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); font-size: var(--text-sm); }
+.roadmap-cat-name { color: var(--ink); }
+.roadmap-cat-num { color: var(--muted); }
+.roadmap-cat-bar { width: 100%; }
+
+.roadmap-weak { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); }
+.roadmap-weak-title { color: var(--ink); }
+.roadmap-weak-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.roadmap-weak-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--ink-2); line-height: var(--lh-prose); }
+.roadmap-weak-go { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface); color: var(--accent-hover); font: inherit; cursor: pointer; }
+
+.roadmap-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-3); }
+.roadmap-filters label { display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--ink-2); }
+.roadmap-filters select, .roadmap-filters input { min-height: 44px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; }
+.roadmap-count { margin: 0 0 var(--space-3); color: var(--muted); }
+
+/* 「属于哪个套路」选择器：新增记录页与编辑题目弹窗共用 */
+.pattern-picker { display: grid; gap: var(--space-2); margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.pattern-picker-legend { padding: 0 var(--space-2); color: var(--ink-2); font-size: var(--text-sm); }
+.pattern-picker-chosen { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.pattern-picker-chip { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-radius: var(--radius-badge); background: var(--soft); color: var(--accent-hover); font-size: var(--text-sm); }
+.pattern-picker-remove { min-height: 32px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-badge); background: transparent; color: var(--ink-2); font: inherit; cursor: pointer; }
+.pattern-picker-search { display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--ink-2); }
+.pattern-picker-input { min-height: 44px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; }
+.pattern-picker-options { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; max-height: 15rem; overflow-y: auto; }
+.pattern-picker-pick { width: 100%; min-height: 40px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.pattern-picker-pick[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent-hover); font-weight: 600; }
+.pattern-picker-pick:disabled { opacity: .55; cursor: not-allowed; }
+.pattern-picker-empty, .pattern-picker-more { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.pattern-picker-hint { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.form-patterns:empty { display: none; }
+
+@media (max-width: 520px) {
+  .roadmap-filters { grid-template-columns: 1fr; }
+  .roadmap-weak { padding: var(--space-3); }
+  .pattern-picker { padding: var(--space-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-weak-go, .roadmap-filters select { transition: none; }
+}

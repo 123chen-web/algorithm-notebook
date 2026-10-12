@@ -1,0 +1,136 @@
+"""学习路线（把套路库搬进主站）：套路的学习状态、例题勾选，以及题目与套路的关联。
+
+三张表（db 迁移 74）：
+
+- pattern_progress：每个套路 0/1 条记录，status ∈ {learning, mastered}；没有记录 = 未学。
+- pattern_example_done：勾过哪些经典例题（key = "<source>:<id>"）。
+- problem_patterns：一道错题最多挂 3 个套路（上限由 main.normalize_pattern_ids 校验）。
+
+pattern_id / example_key 必须在启动期读进来的 static/data/patterns.json 白名单里，
+不在就 422——不把用户提交的字符串直接写进数据库。
+
+main 命名空间下的名字一律用 main.<name> 在调用时取属性，方便测试 monkeypatch。
+"""
+import main
+
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
+
+router = APIRouter()
+
+
+class RoadmapStatus(main.InputModel):
+    # none = 删掉记录回到"未学"。
+    status: Literal["none", "learning", "mastered"]
+
+
+class ExampleDone(main.InputModel):
+    done: bool
+
+
+def _known(pattern_id):
+    if not main.pattern_is_known(pattern_id):
+        raise HTTPException(422, "没有这个套路")
+    return pattern_id
+
+
+def _rate(user, what):
+    if main.rate_limited(
+        f"roadmap:{what}:{user['id']}", main.ROADMAP_LIMIT, main.ROADMAP_WINDOW_SECONDS
+    ):
+        raise HTTPException(429, "操作太频繁了，歇一下再试")
+
+
+@router.get("/api/roadmap")
+def get_roadmap(user=Depends(main.current_user)):
+    """只返回本人数据：套路状态、勾过的例题、每个套路下记过几道错题。"""
+    with main.connect() as conn:
+        progress = {
+            row["pattern_id"]: row["status"]
+            for row in conn.execute(
+                "SELECT pattern_id, status FROM pattern_progress WHERE user_id = ?",
+                (user["id"],),
+            )
+        }
+        examples_done = {}
+        for row in conn.execute(
+            "SELECT pattern_id, example_key FROM pattern_example_done "
+            "WHERE user_id = ? ORDER BY rowid",
+            (user["id"],),
+        ):
+            examples_done.setdefault(row["pattern_id"], []).append(row["example_key"])
+        # 错题数：按题目计（一道题 = 一条记录），不是按易错点条目计。
+        mistake_counts = {
+            row["pattern_id"]: row["total"]
+            for row in conn.execute(
+                """
+                SELECT pp.pattern_id AS pattern_id, COUNT(DISTINCT p.id) AS total
+                FROM problem_patterns pp
+                JOIN problems p ON p.id = pp.problem_id
+                WHERE p.user_id = ?
+                GROUP BY pp.pattern_id
+                """,
+                (user["id"],),
+            )
+        }
+    # 套路被下架（清单里没有了）时，历史记录不再下发，前端也就不会渲染出空白卡片。
+    progress = {key: value for key, value in progress.items() if main.pattern_is_known(key)}
+    examples_done = {key: value for key, value in examples_done.items() if main.pattern_is_known(key)}
+    mistake_counts = {key: value for key, value in mistake_counts.items() if main.pattern_is_known(key)}
+    return {
+        "progress": progress,
+        "examples_done": examples_done,
+        "mistake_counts": mistake_counts,
+    }
+
+
+@router.put("/api/roadmap/{pattern_id}")
+def set_pattern_status(pattern_id: str, data: RoadmapStatus, user=Depends(main.current_user)):
+    _known(pattern_id)
+    _rate(user, "status")
+    with main.connect(write=True) as conn:
+        if data.status == "none":
+            conn.execute(
+                "DELETE FROM pattern_progress WHERE user_id = ? AND pattern_id = ?",
+                (user["id"], pattern_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO pattern_progress(user_id, pattern_id, status, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pattern_id)
+                DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at
+                """,
+                (user["id"], pattern_id, data.status, main.utc_now()),
+            )
+    return {"ok": True, "pattern_id": pattern_id, "status": data.status}
+
+
+@router.put("/api/roadmap/{pattern_id}/examples/{example_key}")
+def set_example_done(
+    pattern_id: str, example_key: str, data: ExampleDone, user=Depends(main.current_user)
+):
+    _known(pattern_id)
+    # key 必须是这个套路 examples 里真实存在的那几道，避免把任意字符串写进去。
+    if example_key not in main.pattern_example_keys(pattern_id):
+        raise HTTPException(422, "这道例题不属于这个套路")
+    _rate(user, "example")
+    with main.connect(write=True) as conn:
+        if data.done:
+            conn.execute(
+                """
+                INSERT INTO pattern_example_done(user_id, pattern_id, example_key, done_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pattern_id, example_key) DO NOTHING
+                """,
+                (user["id"], pattern_id, example_key, main.utc_now()),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM pattern_example_done "
+                "WHERE user_id = ? AND pattern_id = ? AND example_key = ?",
+                (user["id"], pattern_id, example_key),
+            )
+    return {"ok": True, "pattern_id": pattern_id, "example_key": example_key, "done": data.done}

@@ -73,9 +73,9 @@ def list_mistakes(
         sql += " ORDER BY m.due_date ASC, m.id ASC"
         rows = conn.execute(sql, params).fetchall()
         tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
-        items = enrich_problems(conn, user['id'], [
+        items = main.attach_pattern_ids(conn, enrich_problems(conn, user['id'], [
             main.mistake_public({**dict(row), 'tags': tags_by_id[row['id']]}) for row in rows
-        ], day)
+        ], day))
     return {
         "today": day,
         "items": items,
@@ -139,7 +139,9 @@ def get_mistake(mistake_id: int, user=Depends(main.current_user)):
             )
         ]
         item["tags"] = tags_for_mistakes(conn, [mistake_id])[mistake_id]
-        item = enrich_problems(conn, user['id'], [item], main.today_for(user).isoformat())[0]
+        item = main.attach_pattern_ids(
+            conn, enrich_problems(conn, user['id'], [item], main.today_for(user).isoformat())
+        )[0]
     item["today"] = main.today_for(user).isoformat()
     return item
 

@@ -63,6 +63,8 @@
   <link rel="stylesheet" href="/static/manual-claims.css?v=2">
   <link rel="stylesheet" href="/static/print.css?v=2">
   <link rel="stylesheet" href="/static/heatmap.css?v=2">
+  <link rel="stylesheet" href="/static/patterns.css?v=2">
+  <link rel="stylesheet" href="/static/roadmap.css?v=1">
   <script defer src="/static/scenes.js?v=6"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
@@ -77,6 +79,9 @@
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
+  <script defer src="/static/pattern-render.js?v=1"></script>
+  <script defer src="/static/pattern-picker.js?v=1"></script>
+  <script defer src="/static/roadmap.js?v=1"></script>
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
@@ -120,7 +125,7 @@
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610103"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
-  <script defer src="/static/app.js?v=97"></script>
+  <script defer src="/static/app.js?v=98"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
 </head>
@@ -142,6 +147,7 @@
           <button type="button" class="nav-item" data-view="print"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg><span class="nav-label">考前打印版</span></button>
           <button type="button" class="nav-item" data-view="new"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M16 3l5 5M10 19l3-7 6-6a2 2 0 0 0-3-3l-6 6-3 7Z"/></svg><span class="nav-label">新增记录</span></button>
           <button type="button" class="nav-item" data-view="notes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span class="nav-label">笔记</span></button>
+          <button type="button" class="nav-item" data-view="roadmap"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h6M14 6h6M4 12h6M14 12h6M4 18h6M14 18h6"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/></svg><span class="nav-label">学习路线</span></button>
         </div>
         <div class="sidebar-group" role="group" aria-labelledby="sidebar-g-insight">
           <p class="sidebar-heading" id="sidebar-g-insight">洞察</p>
@@ -664,6 +670,40 @@
         </div>
       </section>
 
+      <section id="roadmap-page" aria-labelledby="roadmap-title" aria-busy="false" hidden>
+        <div class="page-heading">
+          <div>
+            <h2 id="roadmap-title">学习路线</h2>
+            <p class="muted">给每个算法套路标记进度：未学 / 学习中 / 已掌握。错题多的套路会提醒你先学哪个。</p>
+          </div>
+        </div>
+        <p id="roadmap-status" role="status" aria-live="polite"></p>
+        <button id="roadmap-retry" type="button" hidden>重新加载</button>
+        <section id="roadmap-summary-card" class="panel roadmap-summary-card" aria-labelledby="roadmap-summary-title" hidden>
+          <h3 id="roadmap-summary-title">总体进度</h3>
+          <p id="roadmap-summary-text" class="roadmap-summary-text"></p>
+          <progress id="roadmap-progress" class="roadmap-progress" max="1" value="0" aria-describedby="roadmap-summary-text"></progress>
+          <ul id="roadmap-cats" class="roadmap-cats" role="list"></ul>
+        </section>
+        <div id="roadmap-weak" class="roadmap-weak" hidden></div>
+        <div class="roadmap-filters">
+          <label for="roadmap-cat">分类
+            <select id="roadmap-cat" aria-label="按分类筛选"></select>
+          </label>
+          <label for="roadmap-level">难度
+            <select id="roadmap-level" aria-label="按难度筛选"></select>
+          </label>
+          <label for="roadmap-state">状态
+            <select id="roadmap-state" aria-label="按学习状态筛选"></select>
+          </label>
+          <label for="roadmap-q">搜索
+            <input id="roadmap-q" type="search" autocomplete="off" placeholder="标题或触发信号，例如：二分">
+          </label>
+        </div>
+        <p id="roadmap-count" class="roadmap-count" role="status" aria-live="polite"></p>
+        <ol id="roadmap-list" class="patterns-list"></ol>
+      </section>
+
       <section id="mastery-page" aria-labelledby="mastery-title" aria-busy="false" hidden>
         <div class="page-heading">
           <div>
@@ -991,6 +1031,7 @@
                             aria-describedby="code-hint"
                             placeholder="粘贴当时的代码，保留错误也没关系。"></textarea>
                 </label>
+                <div id="problem-patterns" class="form-patterns"></div>
                 <label data-role="correct-code-field">
                   <span>正确代码（可选，自己补）</span>
                   <textarea name="correct_code" maxlength="40000" rows="6"
@@ -1790,6 +1831,7 @@
         <button type="button" class="more-item" data-view="heatmap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="10" y="3" width="5" height="5" rx="1"/><rect x="17" y="3" width="5" height="5" rx="1"/><rect x="3" y="10" width="5" height="5" rx="1"/><rect x="10" y="10" width="5" height="5" rx="1"/><rect x="17" y="10" width="5" height="5" rx="1"/><rect x="3" y="17" width="5" height="5" rx="1"/><rect x="10" y="17" width="5" height="5" rx="1"/><rect x="17" y="17" width="5" height="5" rx="1"/></svg><span class="nav-label">掌握度热力图</span></button>
         <button type="button" class="more-item" data-view="forum"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h10M7 14h6"/></svg><span>讨论区</span></button>
         <button type="button" class="more-item" data-view="notes"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg><span>笔记</span></button>
+        <button type="button" class="more-item" data-view="roadmap"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 6h6M14 6h6M4 12h6M14 12h6M4 18h6M14 18h6"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/></svg><span>学习路线</span></button>
         <button type="button" class="more-item" data-view="leaderboard"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4M12 13v5M8 21v-3h8v3"/></svg><span>榜单</span></button>
         <button type="button" class="more-item" data-view="plan"><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3Z"/><path d="M12 8v8M8 12h8"/></svg><span>我的套餐</span></button>
         <button type="button" class="more-item" data-view="admin" id="more-admin" data-admin-only hidden><svg class="more-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 4.5 3.2 8.2 8 9 4.8-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>管理后台</span></button>

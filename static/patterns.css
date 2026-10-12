@@ -24,7 +24,39 @@
 .pattern-bullets { margin: 0; padding-left: 1.2em; line-height: var(--lh-prose); }
 .pattern-example-link { color: var(--accent-hover); }
 .pattern-code { margin: 0 0 var(--space-2); padding: var(--space-3); overflow-x: auto; border-radius: var(--radius-sm); background: var(--code-surface); color: var(--code-ink); font-size: var(--text-sm); line-height: 1.5; }
-.pattern-related { margin: var(--space-3) 0 0; color: var(--ink-2); }
+.pattern-related { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 0; color: var(--ink-2); }
+.pattern-related-link { min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-badge); background: var(--surface); color: var(--accent-hover); font: inherit; cursor: pointer; }
 .pattern-copy { min-height: 44px; margin-top: var(--space-3); padding: 0 var(--space-4); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font: inherit; cursor: pointer; }
+.pattern-copy-code { min-height: 40px; margin-top: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+
+/* 模板标签页：Python / C++ 二选一，另一份 hidden。 */
+.pattern-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.pattern-tab { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-2); font: inherit; cursor: pointer; }
+.pattern-tab[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent-hover); font-weight: 600; }
+.pattern-pane[hidden] { display: none; }
+
+/* 经典例题：勾选框 + 能确定的题目链接。 */
+.pattern-examples { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+.pattern-example { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pattern-example-label { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 40px; }
+.pattern-example-box { width: 20px; height: 20px; }
+.pattern-example-link { min-height: 36px; display: inline-flex; align-items: center; color: var(--accent-hover); }
+.pattern-sample h5 { margin: var(--space-2) 0 var(--space-1); font-size: var(--text-sm); color: var(--ink-2); }
+
+/* 三态按钮组（主站「学习路线」用；独立页不传 onStatus，不会渲染出来）。 */
+.pattern-card-actions { display: grid; gap: var(--space-2); padding: 0 var(--space-4) var(--space-4); }
+.pattern-states { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pattern-state { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-2); font: inherit; cursor: pointer; }
+.pattern-state[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.pattern-states[data-status="mastered"] .pattern-state[data-status="mastered"] { background: var(--soft); color: var(--accent-hover); }
+.pattern-master-hint { margin: 0; color: var(--accent-hover); font-size: var(--text-sm); }
+.pattern-mistakes { background: var(--paper-2); color: var(--ink-2); }
 @media (hover: hover) and (pointer: fine) { .pattern-card:hover { border-color: var(--ink-2); } }
-@media (max-width: 520px) { .pattern-summary { padding: var(--space-3); } .pattern-body { padding: 0 var(--space-3) var(--space-3); } }
+@media (max-width: 520px) {
+  .pattern-summary { padding: var(--space-3); }
+  .pattern-body { padding: 0 var(--space-3) var(--space-3); }
+  .pattern-card-actions { padding: 0 var(--space-3) var(--space-3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pattern-card, .pattern-state, .pattern-tab { transition: none; }
+}

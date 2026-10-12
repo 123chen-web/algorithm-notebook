@@ -16,6 +16,7 @@ ENDPOINT = "/api/export"
 TODAY = date(2026, 9, 19)
 PROBLEM_KEYS = {
     "id", "title", "zone", "language", "code", "correct_code", "thinking", "created_at", "mistakes",
+    "pattern_ids",
 }
 MISTAKE_KEYS = {
     "id", "description", "repetitions", "interval_days", "ease_factor",
@@ -59,6 +60,7 @@ def seed_notebook(user_id, marker):
             ).lastrowid
             problem["correct_code"] = ""
             problem["mistakes"] = []
+            problem["pattern_ids"] = []
             for mistake_number in range(1, mistake_count + 1):
                 mistake = {
                     "description": f"{marker}错因{number}-{mistake_number}",
@@ -133,7 +135,9 @@ def seed_notebook(user_id, marker):
 
 
 def assert_export_keys(payload):
-    assert set(payload) == {"exported_at", "username", "problems", "notes", "note_links", "drawings"}
+    assert set(payload) == {
+        "exported_at", "username", "problems", "notes", "note_links", "drawings", "roadmap",
+    }
     # N1：note_links 只含本人链接关系（种类/原文目标文字/别名/是否悬空），不含账号或交易数据。
     assert isinstance(payload["note_links"], list)
     for link in payload["note_links"]:
@@ -348,6 +352,7 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
         "exported_at": now.isoformat(), "username": "小明", "problems": [], "notes": [],
         "note_links": [],
         "drawings": [],
+        "roadmap": {"progress": [], "examples_done": []},
     }
     disposition = response.headers["content-disposition"]
     assert disposition.startswith("attachment; filename*=UTF-8''")

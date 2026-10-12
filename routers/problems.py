@@ -41,6 +41,7 @@ def list_problems(limit: int = 30, user=Depends(main.current_user)):
 @router.post("/api/problems", status_code=201)
 def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
     day = main.today_for(user).isoformat()
+    pattern_ids = main.validated_pattern_ids(data.pattern_ids)
     with main.connect(write=True) as conn:
         main.recheck_account(conn, user["id"])
         cursor = conn.execute(
@@ -55,6 +56,7 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
             ),
         )
         problem_id = cursor.lastrowid
+        main.set_problem_patterns(conn, problem_id, pattern_ids or [])
         mistake_ids = []
         if data.quick and not data.mistakes:
             # 速记：只留证据，自动建 1 条"待补原因"的易错点。
@@ -77,7 +79,7 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
                 )
                 mistake_ids.append(cursor.lastrowid)
 
-    return {"id": problem_id, "mistake_ids": mistake_ids}
+    return {"id": problem_id, "mistake_ids": mistake_ids, "pattern_ids": pattern_ids or []}
 
 
 @router.post("/api/problems/photo")
@@ -126,6 +128,8 @@ async def recognize_problem_photo(user=Depends(main.current_user), file: UploadF
 
 @router.put("/api/problems/{problem_id}")
 def edit_problem(problem_id: int, data: main.ProblemEdit, user=Depends(main.current_user)):
+    # 不传 pattern_ids = 保持不变；传 [] = 清空。
+    pattern_ids = main.validated_pattern_ids(data.pattern_ids)
     with main.connect(write=True) as conn:
         main.owned_problem(conn, problem_id, user["id"])
         conn.execute(
@@ -140,10 +144,21 @@ def edit_problem(problem_id: int, data: main.ProblemEdit, user=Depends(main.curr
                 data.code, data.thinking, data.correct_code, problem_id,
             ),
         )
-        updated = conn.execute(
-            "SELECT * FROM problems WHERE id = ?", (problem_id,)
-        ).fetchone()
-    return dict(updated)
+        main.set_problem_patterns(conn, problem_id, pattern_ids)
+        updated = dict(
+            conn.execute(
+                "SELECT * FROM problems WHERE id = ?", (problem_id,)
+            ).fetchone()
+        )
+        # 回读一遍：不传 pattern_ids 时前端也能拿到"保持不变"后的真实值。
+        updated["pattern_ids"] = [
+            row["pattern_id"]
+            for row in conn.execute(
+                "SELECT pattern_id FROM problem_patterns WHERE problem_id = ? ORDER BY rowid",
+                (problem_id,),
+            )
+        ]
+    return updated
 
 
 @router.delete("/api/problems/{problem_id}")

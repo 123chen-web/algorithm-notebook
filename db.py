@@ -1081,6 +1081,46 @@ def _apply_ai_feedback(conn):
 
 
 MIGRATIONS.append((74, "AI 有用/没用反馈", _apply_ai_feedback))
+
+
+def _apply_roadmap(conn):
+    """学习路线：套路的学习状态、例题勾选、题目与套路的关联。
+
+    三张表都是幂等创建（CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS），
+    重复执行不会报错也不会丢数据。pattern_id / example_key 的合法性由服务端按
+    static/data/patterns.json 的白名单在接口层校验，不在数据库层做约束——套路清单
+    会随内容扩充而变化，写死 CHECK 会让新增套路无法勾选。
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pattern_progress ("
+        "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+        "pattern_id TEXT NOT NULL, "
+        "status TEXT NOT NULL CHECK(status IN ('learning', 'mastered')), "
+        "updated_at TEXT NOT NULL, "
+        "PRIMARY KEY(user_id, pattern_id))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pattern_example_done ("
+        "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+        "pattern_id TEXT NOT NULL, "
+        "example_key TEXT NOT NULL, "
+        "done_at TEXT NOT NULL, "
+        "PRIMARY KEY(user_id, pattern_id, example_key))"
+    )
+    # 一道错题最多挂 3 个套路：上限在接口层校验（见 main.normalize_pattern_ids）。
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS problem_patterns ("
+        "problem_id INTEGER NOT NULL REFERENCES problems(id) ON DELETE CASCADE, "
+        "pattern_id TEXT NOT NULL, "
+        "PRIMARY KEY(problem_id, pattern_id))"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_problem_patterns_pattern "
+        "ON problem_patterns(pattern_id)"
+    )
+
+
+MIGRATIONS.append((75, "学习路线：套路进度、例题勾选与题目关联", _apply_roadmap))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 
