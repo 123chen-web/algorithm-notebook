@@ -37,6 +37,7 @@
   --series-1: #c23a2b; --series-2: #2f6f73; --series-3: #b07a12; --series-4: #3b5bb5;
   --series-5: #7a4fa3; --series-6: #3d7a3a; --series-7: #b03a7a; --series-8: #5b574f;
   --shadow-rgb: 28,27,25; --menu-shadow-rgb: 60,40,20; --pointer-glow-rgb: 238,106,82;
+  --glow: 194,58,43;
   --radius-xs: 6px; --radius-compact: 4px; --radius-badge: 7px; --radius-muted: 8px;
   --radius-option: 12px; --radius-field: 12px; --radius-home: 16px; --radius-large: 24px; --radius-chip: 20px;
   --radius-pill: 999px; --radius-round: 50%; --radius-flat: 0;
@@ -72,6 +73,9 @@ html[data-theme="ink"] {
   --radius: 18px; --radius-sm: 10px; --radius-xs: 6px; --radius-compact: 4px;
   --radius-badge: 7px; --radius-muted: 8px; --radius-option: 12px; --radius-home: 16px;
   --radius-large: 24px; --radius-chip: 20px; --radius-book: 8px 15px 15px 8px;
+  --glow: 194,58,43; --code-ink: #ede6db; --code-surface: #2b2724;
+  --serif: "Times New Roman", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+  --kai: "KaiTi", "STKaiti", "Kaiti SC", "Songti SC", serif;
 }
 html[data-theme="qixi"] {
   --paper: #eaf0e9; --paper-2: #f3f7f1; --surface: #fcfefa;
@@ -89,6 +93,30 @@ html[data-theme="qixi"] {
   --radius: 24px; --radius-sm: 14px; --radius-xs: 10px; --radius-compact: 12px;
   --radius-badge: 10px; --radius-muted: 12px; --radius-option: 16px; --radius-home: 24px;
   --radius-large: 32px; --radius-chip: 24px; --radius-book: 10px 18px 18px 10px;
+  --glow: 50,100,91; --code-ink: #ede6db; --code-surface: #2b2724;
+  --serif: "Times New Roman", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+  --kai: "KaiTi", "STKaiti", "Kaiti SC", "Songti SC", serif;
+}
+/* 雾白：干净的冷灰白底，不依赖任何背景图或画布；强调色深青，红笔/印章仍用红（--review-pen 系不变）。
+   没有可透的背景，所以所有“玻璃”令牌都是不透明的。 */
+html[data-theme="fog"] {
+  --paper: #f4f6f8; --paper-2: #fafbfc; --surface: #ffffff;
+  --ink: #171c22; --ink-2: #4a5561; --muted: #586471;
+  --accent: #0e7490; --accent-hover: #0b5a72; --soft: #e2f0f4; --line: #e3e8ee; --line-strong: #7b8896;
+  --azurite: #1f6683; --gamboge: #d8a23a; --gamboge-ink: #9a6d12;
+  --glass-surface: rgb(250 251 252 / 1); --radius-round: 50%;
+  --review-pen: #ee6a52;
+  --selection: #cfe6ee; --field-surface: #ffffff; --record-surface: #ffffff;
+  --quiet-surface: #f8fafb; --notice-surface: #eaf4f7; --note-grid: #e3e8ee;
+  --home-surface: #ffffff; --home-refresh: #f4f6f8; --quota-track: #e3e8ee;
+  --tile-neutral: #e8ecf0; --tile-azurite: #e1eef2; --tile-accent: #dcedf2; --tile-gamboge: #f4ebcf;
+  --shadow-rgb: 20,40,60; --menu-shadow-rgb: 20,40,60; --pointer-glow-rgb: 14,116,144;
+  --radius: 16px; --radius-sm: 10px; --radius-xs: 6px; --radius-compact: 8px;
+  --radius-badge: 8px; --radius-muted: 10px; --radius-option: 12px; --radius-home: 16px;
+  --radius-large: 24px; --radius-chip: 20px; --radius-book: 8px 14px 14px 8px;
+  --glow: 14,116,144; --code-ink: #e6edf3; --code-surface: #1b2430;
+  --serif: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --kai: "KaiTi", "STKaiti", "Kaiti SC", "Songti SC", serif;
 }
 
 * { box-sizing: border-box; }

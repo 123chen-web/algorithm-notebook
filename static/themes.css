@@ -173,3 +173,7 @@ html[data-theme="qixi"][data-scene-tone="dark"] :is(.intro-links > a, #trial-sta
   html[data-theme="qixi"] .intro .intro-lead { margin-top: 24px; }
   html[data-theme="qixi"] .intro .intro-links { gap: 24px; margin-top: 30px; }
 }
+
+/* 雾白：背景完全安静——没有风景、没有涟漪画布，只有顶上一抹几乎看不出的淡光。 */
+html[data-theme="fog"] { background-image: radial-gradient(1200px 520px at 50% -120px, rgba(var(--glow), .07), transparent 70%); background-repeat: no-repeat; }
+html[data-theme="fog"] :is(.scene-backdrop, .scene-capsule) { display: none; }

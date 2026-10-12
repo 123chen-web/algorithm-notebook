@@ -23,7 +23,9 @@
 
 ---
 
-## 第一期：「雾白」主题（`data-theme="fog"`）★ 先做
+## 第一期：「雾白」主题（`data-theme="fog"`）— **已由 Claude 做完并上线（见 git 历史），Muse 不用做**
+
+（以下保留作设计说明；实际取值见 `static/style.css` 的 `html[data-theme="fog"]`。）
 
 ### 要做的
 1. **新增第三个主题 `fog`，名字“雾白”**，和“水墨红笔（ink）”“栖间（qixi）”并列。四处主题选择器（`#welcome-theme`、`#topbar-theme`、`#account-theme` 等所有 `[data-theme-select]`）都加这个选项；`static/themes.js` 里两处 `"ink" || "qixi"` 的白名单加上 `"fog"`。**新访客默认雾白**（localStorage 里已有选择的老用户不变）。

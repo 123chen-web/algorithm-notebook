@@ -41,9 +41,10 @@
   let preloadSource = null;
   let preloadImage = null;
 
-  const canPlay = () => pageActive && !document.hidden && root.dataset.view === "welcome"
+  const noScenery = () => root.dataset.theme === "fog"; // 雾白没有风景，轮播和预加载都不要跑
+  const canPlay = () => pageActive && !document.hidden && !noScenery() && root.dataset.view === "welcome"
     && !reducedMotion.matches && !mobile.matches && !paused;
-  const canTransition = () => pageActive && !document.hidden && !reducedMotion.matches && !mobile.matches
+  const canTransition = () => pageActive && !document.hidden && !noScenery() && !reducedMotion.matches && !mobile.matches
     && (root.dataset.view === "welcome" || root.dataset.theme === "qixi");
   const canPreload = () => hasScene && canTransition() && root.dataset.view === "welcome"
     && !transitionFrame && !transitionEnd;

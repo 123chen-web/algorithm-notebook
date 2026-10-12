@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-view="pending" data-theme="ink">
+<html lang="zh-CN" data-view="pending" data-theme="fog">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,12 +10,12 @@
   <meta name="theme-color" content="#c23a2b">
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <script src="/static/themes.js?v=1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=54">
+  <script src="/static/themes.js?v=2"></script>
+  <link rel="stylesheet" href="/static/style.css?v=55">
   <link rel="stylesheet" href="/static/intro.css?v=18">
   <link rel="stylesheet" href="/static/intro-film.css?v=2">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
-  <link rel="stylesheet" href="/static/themes.css?v=14">
+  <link rel="stylesheet" href="/static/themes.css?v=16">
   <link rel="stylesheet" href="/static/new-record.css?v=7">
   <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=4">
@@ -67,11 +67,11 @@
   <link rel="stylesheet" href="/static/heatmap.css?v=2">
   <link rel="stylesheet" href="/static/patterns.css?v=2">
   <link rel="stylesheet" href="/static/roadmap.css?v=1">
-  <script defer src="/static/scenes.js?v=6"></script>
+  <script defer src="/static/scenes.js?v=7"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
   <script defer src="/static/intro-film.js?v=2"></script>
-  <script defer src="/static/cursor-fx.js?v=18"></script>
+  <script defer src="/static/cursor-fx.js?v=19"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
   <script defer src="/static/palette.js?v=4"></script>
@@ -215,6 +215,7 @@
         </div>
         <label for="welcome-theme">风格</label>
         <select id="welcome-theme" data-theme-select aria-label="介绍页风格">
+          <option value="fog">雾白</option>
           <option value="ink">水墨红笔</option>
           <option value="qixi">栖间</option>
         </select>
@@ -225,6 +226,7 @@
         <div class="topbar-look-panel">
           <label class="account-preference" for="topbar-theme">风格
             <select id="topbar-theme" data-theme-select aria-label="页面风格">
+              <option value="fog">雾白</option>
               <option value="ink">水墨红笔</option>
               <option value="qixi">栖间</option>
             </select>
@@ -290,6 +292,7 @@
               <div id="reminder-settings-host" class="reminder-settings-host"></div>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
+                  <option value="fog">雾白</option>
                   <option value="ink">水墨红笔</option>
                   <option value="qixi">栖间</option>
                 </select>

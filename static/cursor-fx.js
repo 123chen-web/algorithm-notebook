@@ -112,6 +112,7 @@
     if (!enabled) return "user-off";
     if (wanted === "off") return null;
     if (reducedMotion.matches) return "reduced-motion";
+    if (document.documentElement.dataset.theme === "fog") return "theme";
     if (!effects.has(wanted)) return "unregistered";
     if (noWebGL2) return "no-webgl2";
     return failures.get(wanted) || null;
@@ -715,6 +716,7 @@
     else query.addListener(reconcile);
   }
   document.addEventListener("visibilitychange", reconcile);
+  new MutationObserver(reconcile).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   registerEffect("ripple", createRipple);
   function init() {
     ready = true;

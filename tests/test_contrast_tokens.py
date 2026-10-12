@@ -701,7 +701,8 @@ def intro_film_accents():
     assert fallback, f"请扩展解析以支持 qixi 的 --accent：{qixi_rule}"
     scene_accents = re.findall(r'accent:\s*"(#[0-9a-fA-F]{6})"', scenes)
     assert scene_accents, "scenes.js 里找不到场景强调色"
-    variants = [("ink", None, ink, on_accent)]
+    fog = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})\b", block('html[data-theme="fog"]')).group(1)
+    variants = [("ink", None, ink, on_accent), ("fog", None, fog, on_accent)]
     variants += [("qixi", None, fallback.group(1), on_accent)]
     variants += [("qixi", accent, accent, on_accent) for accent in scene_accents]
     return variants

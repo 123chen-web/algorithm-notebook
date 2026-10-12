@@ -455,9 +455,9 @@ def css_declarations(source):
     assert not blocks, "Unclosed CSS block"
 
 
-def test_default_ink_theme_is_restored_before_styles_and_session_rendering(document):
+def test_default_fog_theme_is_restored_before_styles_and_session_rendering(document):
     root = next(node for node in document.elements if node["tag"] == "html")
-    assert root["attrs"].get("data-theme") == "ink"
+    assert root["attrs"].get("data-theme") == "fog"
     assert root["attrs"].get("data-view") == "pending"
     heads = [(index, node) for index, node in enumerate(document.elements) if node["tag"] == "head"]
     assert len(heads) == 1
@@ -495,7 +495,7 @@ def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document)
             node["attrs"].get("value") for node in document.elements
             if index in node["ancestors"] and node["tag"] == "option"
         ]
-        assert options == ["ink", "qixi"]
+        assert options == ["fog", "ink", "qixi"]
         assert any(
             node["tag"] == "label" and node["attrs"].get("for") == select["attrs"]["id"]
             for node in document.elements
@@ -512,12 +512,12 @@ def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document)
 
 
 def test_theme_storage_reads_and_writes_are_guarded_and_validate_both_choices(theme_source):
-    assert re.search(r'\blet\s+theme\s*=\s*["\']ink["\']\s*;', theme_source)
+    assert re.search(r'\blet\s+theme\s*=\s*["\']fog["\']\s*;', theme_source)
     guards = re.findall(r"\btry\s*\{([\s\S]*?)\}\s*catch\s*\([^)]*\)\s*\{", theme_source)
     assert any("localStorage.getItem(STORAGE_KEY)" in body for body in guards)
     assert any("localStorage.setItem(STORAGE_KEY, theme)" in body for body in guards)
-    assert re.search(r'saved\s*===\s*["\']ink["\']\s*\|\|\s*saved\s*===\s*["\']qixi["\']', theme_source)
-    assert re.search(r'select\.value\s*!==\s*["\']ink["\']\s*&&\s*select\.value\s*!==\s*["\']qixi["\']', theme_source)
+    assert re.search(r'saved\s*===\s*["\']fog["\']\s*\|\|\s*saved\s*===\s*["\']ink["\']\s*\|\|\s*saved\s*===\s*["\']qixi["\']', theme_source)
+    assert re.search(r'select\.value\s*!==\s*["\']fog["\']\s*&&\s*select\.value\s*!==\s*["\']ink["\']\s*&&\s*select\.value\s*!==\s*["\']qixi["\']', theme_source)
     assert "root.dataset.theme = theme" in theme_source
     assert 'document.addEventListener("DOMContentLoaded"' in theme_source
     assert "syncControls()" in theme_source
@@ -588,21 +588,21 @@ def test_reset_and_forgot_panels_hide_trial_and_signin_clears_reset_query(app_so
     assert enter.index('url.searchParams.delete("reset_token")') < enter.index("renderPageRoute()")
 
 
-def test_ink_and_qixi_define_matching_visual_token_sets():
+def test_all_themes_define_matching_visual_token_sets():
     source = (STATIC / "style.css").read_text(encoding="utf-8")
-    tokens = {"ink": {}, "qixi": {}}
+    tokens = {"ink": {}, "qixi": {}, "fog": {}}
     for blocks, declaration in css_declarations(source):
         if len(blocks) != 1:
             continue
-        match = re.fullmatch(r'html\[data-theme=["\'](ink|qixi)["\']\]', blocks[0])
+        match = re.fullmatch(r'html\[data-theme=["\'](ink|qixi|fog)["\']\]', blocks[0])
         if not match:
             continue
         name, separator, value = declaration.partition(":")
         if separator and name.startswith("--"):
             assert name not in tokens[match[1]], f"Duplicate {match[1]} token: {name}"
             tokens[match[1]][name] = value.strip()
-    assert tokens["ink"] and tokens["qixi"]
-    assert tokens["ink"].keys() == tokens["qixi"].keys()
+    assert tokens["ink"] and tokens["qixi"] and tokens["fog"]
+    assert tokens["ink"].keys() == tokens["qixi"].keys() == tokens["fog"].keys()
     required = {
         "--paper", "--paper-2", "--surface", "--ink", "--ink-2", "--muted",
         "--accent", "--accent-hover", "--soft", "--line", "--glass-surface",
@@ -614,6 +614,10 @@ def test_ink_and_qixi_define_matching_visual_token_sets():
     assert "var(--scene-accent" in tokens["qixi"]["--accent"]
     assert tokens["ink"]["--paper"] != tokens["qixi"]["--paper"]
     assert tokens["ink"]["--radius"] != tokens["qixi"]["--radius"]
+    assert tokens["fog"]["--paper"] not in (tokens["ink"]["--paper"], tokens["qixi"]["--paper"])
+    # 雾白没有背景可透：“玻璃”令牌必须不透明；标题用无衬线（不再是宋体）。
+    assert tokens["fog"]["--glass-surface"].endswith("/ 1)")
+    assert tokens["fog"]["--serif"].endswith("sans-serif")
 
 
 @pytest.mark.parametrize("filename", ("style.css", "intro.css", "scenes.css", "themes.css"))
