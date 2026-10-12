@@ -7,6 +7,7 @@ from duck_prompt import (
     DATA_OPEN,
     build_messages,
     check_turns,
+    salvage_reply,
     validate_reply,
 )
 
@@ -276,3 +277,25 @@ def test_problem_fields_are_clipped_before_going_to_the_model():
     block = build_messages(problem, [], False)[1]["content"]
     assert block.count("t") <= 200 + 5 and block.count("z") <= 50 + 5
     assert block.count("n") <= 2000 + 5 and block.count("c") <= 3000 + 5
+
+
+class TestSalvageReply:
+    def test_two_questions_keep_only_the_first(self):
+        text = "你觉得 i>0 成立吗？那 j>0 呢？"
+        assert validate_reply(text, False) == (False, "too_many_questions")
+        assert salvage_reply(text, False) == "你觉得 i>0 成立吗？"
+
+    def test_too_long_is_cut_at_a_sentence_end(self):
+        text = "先说说你的思路。" + "想" * 70 + "。"
+        assert validate_reply(text, False)[1] == "too_long"
+        assert salvage_reply(text, False) == "先说说你的思路。"
+
+    def test_too_long_without_a_usable_sentence_end_is_not_salvaged(self):
+        assert salvage_reply("想" * 100, False) is None
+
+    @pytest.mark.parametrize("text", ["答案是 i>0。", "```x```", ""])
+    def test_answers_code_and_empty_are_never_salvaged(self, text):
+        assert salvage_reply(text, False) is None
+
+    def test_valid_replies_are_left_alone(self):
+        assert salvage_reply("你怎么想的？", False) is None

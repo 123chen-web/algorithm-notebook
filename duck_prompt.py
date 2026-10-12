@@ -121,6 +121,33 @@ def _clean(text: str) -> str:
     return " ".join(text.split())
 
 
+_SENTENCE_END = "。！？!?；;"
+
+
+def salvage_reply(text: str, finish: bool) -> str | None:
+    """回复只是"太长"或"问了不止一个问题"时，裁成合格的一句话，而不是整条作废。
+
+    第一轮追问常常写得又长又带两个问题；整条丢掉用户只会看到"没答好"。
+    只处理这两种可以安全裁剪的情况：含答案或代码的回复仍然不合格，返回 None。
+    """
+    ok, reason = validate_reply(text, finish)
+    if ok or reason not in ("too_long", "too_many_questions"):
+        return None
+    cleaned = _clean(text.strip())
+    limit = MAX_REPLY_LEN_FINISH if finish else MAX_REPLY_LEN
+    if not finish:
+        marks = [index for index, ch in enumerate(cleaned) if ch in _QUESTION_MARKS]
+        if len(marks) > 1:
+            cleaned = cleaned[: marks[0] + 1]
+    if len(cleaned) > limit:
+        cut = max((cleaned.rfind(ch, 0, limit) for ch in _SENTENCE_END), default=-1)
+        if cut <= 0:
+            return None
+        cleaned = cleaned[: cut + 1]
+    ok, result = validate_reply(cleaned, finish)
+    return result if ok else None
+
+
 def validate_reply(text: str, finish: bool) -> tuple[bool, str]:
     """校验 AI 回复，返回 (是否合格, 清理后的文本或不合格原因代码)。"""
     stripped = text.strip()

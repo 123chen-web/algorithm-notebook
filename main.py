@@ -62,7 +62,7 @@ from achievements import evaluate_achievements
 from activity import activity_summary, day_counts
 from admin_metrics import PERIOD_CHOICES, compute_metrics as compute_admin_metrics
 from ai_limits import ai_slot, note_usage, release_attempt, track_call
-from duck_prompt import MAX_USER_TURNS, build_messages, check_turns, validate_reply
+from duck_prompt import MAX_USER_TURNS, build_messages, check_turns, salvage_reply, validate_reply
 from db import ROOT, connect, init_db, normalize_username, schema_version, sec_username_key
 from legal import PRODUCT_NAME, TERMS_VERSION, render_legal_page
 from group_levels import GroupPointsAccumulator, LEVELS, RULES, level_summary
@@ -2101,6 +2101,14 @@ def duck_ai_reply(item, turns, finish):
             ok, result = validate_reply(text, finish)
             if ok:
                 return result
+            # 只是太长或带了两个问题时裁成一句合格的话，不让用户看到"没答好"。
+            salvaged = salvage_reply(text, finish)
+            logger.warning(
+                "duck reply rejected (%s, %d chars, model=%s, salvaged=%s)",
+                result, len(text), model, bool(salvaged),
+            )
+            if salvaged:
+                return salvaged
     except APITimeoutError:
         raise HTTPException(504, "小黄鸭回复超时，请稍后重试") from None
     except RateLimitError:
