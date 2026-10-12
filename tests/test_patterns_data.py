@@ -8,6 +8,7 @@
 - 不联网；临时文件放系统临时目录。
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -18,7 +19,10 @@ from pathlib import Path
 import pytest
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
-DATA = json.loads((STATIC / "data" / "patterns.json").read_text(encoding="utf-8"))
+# tools/check_pattern_batch.py 用环境变量把"当前清单 + 一个批次文件"合并成临时文件来校验；
+# 平时不设置，就是校验正式的 static/data/patterns.json。
+DATA_PATH = Path(os.environ.get("PATTERN_DATA_PATH") or STATIC / "data" / "patterns.json")
+DATA = json.loads(DATA_PATH.read_text(encoding="utf-8"))
 
 REQUIRED_FIELDS = {
     "id", "title", "category", "level", "signals", "idea",
