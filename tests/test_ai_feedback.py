@@ -175,7 +175,7 @@ def test_migration_74_is_idempotent(client):
     db.init_db()
     db.init_db()  # 重复启动幂等
     with db.connect() as conn:
-        assert db.schema_version(conn) == 75
+        assert db.schema_version(conn) == 76
         assert (
             conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_feedback'"

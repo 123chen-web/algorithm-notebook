@@ -1121,6 +1121,32 @@ def _apply_roadmap(conn):
 
 
 MIGRATIONS.append((75, "学习路线：套路进度、例题勾选与题目关联", _apply_roadmap))
+
+
+def _apply_shift_fresh_first_review(conn):
+    """把"刚记下、还没复习过、今天到期"的完整错题顺延一天。
+
+    规则改了：新记的完整错题明天才第一次到期（以前当天就在今日复习里）。线上已经有的
+    这类新题还停在"今天到期"，更新后会和新规则矛盾，所以只做这一次：最近 36 小时内
+    记下、从没复习过、不是"待补错因"的速记、到期日不晚于今天的，到期日 +1 天。
+    旧笔记导入的错题记录时间是原来的日期，不在这个范围内。
+    """
+    conn.execute(
+        """
+        UPDATE mistakes SET due_date = date(due_date, '+1 day')
+        WHERE last_reviewed_at IS NULL
+          AND pending_reason = 0
+          AND suspended_at IS NULL
+          AND due_date <= date('now', '+1 day')
+          AND problem_id IN (
+              SELECT id FROM problems
+              WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-36 hours')
+          )
+        """
+    )
+
+
+MIGRATIONS.append((76, "最近新记的完整错题第一次复习顺延一天", _apply_shift_fresh_first_review))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

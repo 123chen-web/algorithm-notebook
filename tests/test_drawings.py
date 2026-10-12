@@ -328,14 +328,14 @@ def test_account_deletion_removes_rows_and_thumb_files(client):
 
 # ---------------------------------------------------------------- 迁移 72
 
-def test_fresh_database_is_version_75(tmp_path, monkeypatch):
+def test_fresh_database_is_version_76(tmp_path, monkeypatch):
     import db
-    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "fresh75.db"))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "fresh76.db"))
     db.init_db()
     with db.connect() as conn:
-        assert db.schema_version(conn) == 75
-        assert db.SCHEMA_VERSION == 75
-        assert db.MIGRATIONS[-1][0] == 75
+        assert db.schema_version(conn) == 76
+        assert db.SCHEMA_VERSION == 76
+        assert db.MIGRATIONS[-1][0] == 76
         versions = [version for version, _name, _fn in db.MIGRATIONS]
         assert versions == sorted(versions)
         assert len(versions) == len(set(versions))
@@ -366,7 +366,7 @@ def test_migration_72_upgrades_v71_and_is_idempotent(client):
     db.init_db()
     db.init_db()  # 重复启动幂等
     with db.connect() as conn:
-        assert db.schema_version(conn) == 75
+        assert db.schema_version(conn) == 76
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='note_drawings'"
         ).fetchone() is not None
