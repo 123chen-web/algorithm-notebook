@@ -533,6 +533,8 @@ function signedOut() {
   window.Rank?.reset();
   window.GoalCard?.reset();
   window.RecommendCard?.reset();
+  window.SignCard?.reset();
+  window.BriefingCard?.reset();
   window.DuckPanel?.reset();
   window.Reminder?.reset();
   window.Heatmap?.reset();
@@ -1040,6 +1042,10 @@ async function loadHome({ refreshUser = true } = {}) {
     window.GoalCard?.mount(document.querySelector("#goal-card"));
     window.RecommendCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.RecommendCard?.mount(document.querySelector("#recommend-card"));
+    window.SignCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.SignCard?.mount(document.querySelector("#sign-card"));
+    window.BriefingCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.BriefingCard?.mount(document.querySelector("#briefing-card"));
     // GROWTH F3 下周主攻卡片：空数据/失败时模块自带兜底文案
     $("#ov-focus-card").hidden = false;
     window.Heatmap?.mountFocusCard($("#ov-focus"));

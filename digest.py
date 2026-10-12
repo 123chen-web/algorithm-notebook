@@ -573,6 +573,10 @@ def main(argv=None, post=None, http_get=None, sleep=None):
         help="只打印会发给谁、各有几条待复习，不发送、不写库、不联网、不调用 AI",
     )
     parser.add_argument(
+        "--cache-only", action="store_true",
+        help="只抓取并缓存今日简报（给网站的“今日简报”卡片用），不发送给任何人",
+    )
+    parser.add_argument(
         "--username", default=None,
         help="只给指定用户名的管理员发送（仍需满足管理员且开启微信提醒的条件）",
     )
@@ -580,6 +584,10 @@ def main(argv=None, post=None, http_get=None, sleep=None):
 
     getter = http_get if http_get is not None else _http_get
     sleeper = sleep if sleep is not None else time.sleep
+    if args.cache_only:
+        bundle = get_bundle(_cache_day(), getter, sleeper)
+        print(f"简报已缓存：论文 {len(bundle['papers'])} 篇，新闻 {len(bundle['news'])} 条。")
+        return 0
     if not args.dry_run:
         init_db()
 

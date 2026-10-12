@@ -2893,6 +2893,7 @@ import routers.stats
 import routers.problems
 import routers.mistakes
 import routers.review
+import routers.briefing
 import routers.rank
 import routers.groups
 import routers.group_extras
@@ -2919,6 +2920,7 @@ app.include_router(routers.stats.router)
 app.include_router(routers.problems.router)
 app.include_router(routers.mistakes.router)
 app.include_router(routers.review.router)
+app.include_router(routers.briefing.router)
 app.include_router(routers.rank.router)
 app.include_router(routers.groups.router)
 app.include_router(routers.group_extras.router)
