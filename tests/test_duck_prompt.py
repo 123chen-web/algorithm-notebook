@@ -222,6 +222,22 @@ class TestValidateReply:
         assert validate_reply(text, False) == (False, "too_long")
         assert validate_reply(text, True) == (True, text)
 
+    def test_code_symbols_survive_cleaning(self):
+        # 回归：以前把整段里所有的 > _ * # 都删掉，"if(i>0)" 会变成 "if(i0)"。
+        ok, cleaned = validate_reply("当 i>0 且 a_b*2 成立时，if(i>0) 会执行吗？", False)
+        assert ok
+        assert cleaned == "当 i>0 且 a_b*2 成立时，if(i>0) 会执行吗？"
+
+    def test_markdown_markers_are_still_removed(self):
+        ok, cleaned = validate_reply("# 标题\n> 引用\n**加粗** 和 `if(i>0)`", False)
+        assert ok
+        assert cleaned == "标题 引用 加粗 和 if(i>0)"
+
+    def test_system_prompt_forbids_repeating_and_altering_code(self):
+        from duck_prompt import build_messages
+        system = build_messages({"title": "t"}, [{"role": "user", "text": "讲"}], False)[0]["content"]
+        assert "原样照抄" in system and "不要重复已经问过的问题" in system
+
     def test_markdown_not_counted_in_length(self):
         # 去掉 Markdown 标记符后恰好 60 字，合格
         text = "**" + "想" * 60 + "**"
