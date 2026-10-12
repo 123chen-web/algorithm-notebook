@@ -18,7 +18,7 @@
    - 实现上：Pointer Events 统一处理鼠标/触摸/笔；**不引入第三方拖拽库**（本站严格 CSP、没有构建步骤），自己写一个小的状态机即可。
 3. **每个动效都要有“关掉的版本”**：`prefers-reduced-motion: reduce` 下全部改成无动画的即时状态；手机低端机不卡（只动 `transform` / `opacity`，页面不可见时暂停循环动画）。
 4. **主题**：水墨红笔和栖间两套都要好看，颜色只用主题变量（`var(--ink)` `var(--accent)` `var(--surface)` …），不要写死色值（有测试会拦）。
-5. **硬规则**（和之前任务相同）：严格 CSP（不写行内 style、不用 innerHTML 拼用户文字、不用 eval）；测试里不真调用 AI/发邮件；不在项目目录建临时目录；改了静态资源要同步 `?v=` 和测试里的版本 pin；数据库迁移号从 **78** 开始并且幂等；全量 `PYTHONUTF8=1 python -m pytest tests -q -p no:cacheprovider --ignore=tests/e2e` 全绿（本机 `.claude` 目录引起的 `test_billing_docs_consistency` 误报除外）；前端行为要有测试（参照 `tests/*_behaviour.cjs` + `tests/js_harness.cjs` 的假浏览器写法）。
+5. **硬规则**（和之前任务相同）：严格 CSP（不写行内 style、不用 innerHTML 拼用户文字、不用 eval）；测试里不真调用 AI/发邮件；不在项目目录建临时目录；改了静态资源要同步 `?v=` 和测试里的版本 pin；数据库迁移号从 **79** 开始（78 已被“今日推荐的 AtCoder 来源”占用）并且幂等；全量 `PYTHONUTF8=1 python -m pytest tests -q -p no:cacheprovider --ignore=tests/e2e` 全绿（本机 `.claude` 目录引起的 `test_billing_docs_consistency` 误报除外）；前端行为要有测试（参照 `tests/*_behaviour.cjs` + `tests/js_harness.cjs` 的假浏览器写法）。
 6. **每一项单独交付**（单独一个 zip，带 REPORT）：先做 ①，再 ②③④。每项报告里贴 1–2 张截图（桌面 + 手机宽度，两套主题）。
 
 ---

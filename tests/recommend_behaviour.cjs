@@ -225,3 +225,65 @@ test("recommend: cached render does not refetch", async () => {
   assert.equal(ctx.env.calls.length, 1);
   assert.equal(qa(ctx.container, ".rc-item").length, 2);
 });
+
+/* ---------------- 推荐来源（Codeforces / AtCoder / 两个都要） ---------------- */
+
+const AC_ITEM = {
+  oj: "atcoder", id: "abc100_c", contest_id: "abc100", idx: "C", name: "C. Linear Approximation",
+  rating: 800, tags: [], url: "https://atcoder.jp/contests/abc100/tasks/abc100_c",
+  reason: "AtCoder 没有算法标签，这道题按你近期的水平挑选", state: "new",
+};
+
+test("recommend: source picker marks the server's source as pressed", async () => {
+  const ctx = setup();
+  await mountWith(ctx, 200, { items: freshItems(), hint: "", source: "both" });
+  const buttons = qa(ctx.container, ".rc-source-btn");
+  assert.deepEqual(buttons.map((b) => b.textContent), ["Codeforces", "AtCoder", "两个都要"]);
+  assert.deepEqual(buttons.map((b) => b.getAttribute("aria-pressed")), ["false", "false", "true"]);
+});
+
+test("recommend: choosing AtCoder saves the source then reloads", async () => {
+  const ctx = setup();
+  await mountWith(ctx, 200, { items: freshItems(), hint: "", source: "cf" });
+  qa(ctx.container, ".rc-source-btn")[1].click();
+  await tick();
+  const put = ctx.env.calls.at(-1);
+  assert.equal(put.url, "/api/recommend/source");
+  assert.equal(put.init.method, "PUT");
+  assert.deepEqual(JSON.parse(put.init.body), { source: "atcoder" });
+  ctx.env.respond(put, 200, { ok: true, source: "atcoder" });
+  await settle();
+  const get = ctx.env.calls.at(-1);
+  assert.equal(get.url, "/api/recommend");
+  ctx.env.respond(get, 200, { items: [AC_ITEM], hint: "", source: "atcoder" });
+  await settle();
+  assert.equal(q(ctx.container, ".rc-item-name").textContent, "C. Linear Approximation");
+  assert.equal(qa(ctx.container, ".rc-item-tags").length, 0);
+  assert.equal(q(ctx.container, ".rc-footnote").textContent, "题目来自 AtCoder，点击跳转原站；欧叶OY 不保存题面。");
+  assert.equal(qa(ctx.container, ".rc-source-btn")[1].getAttribute("aria-pressed"), "true");
+});
+
+test("recommend: failed source change keeps the old choice and says so", async () => {
+  const ctx = setup();
+  await mountWith(ctx, 200, { items: freshItems(), hint: "", source: "cf" });
+  qa(ctx.container, ".rc-source-btn")[1].click();
+  await tick();
+  ctx.env.respond(ctx.env.calls.at(-1), 500, { detail: "炸了" });
+  await settle();
+  assert.equal(q(ctx.container, ".rc-error").textContent, "切换来源失败，请稍后重试。");
+  assert.equal(qa(ctx.container, ".rc-source-btn")[0].getAttribute("aria-pressed"), "true");
+});
+
+test("recommend: marking an AtCoder item uses the AtCoder endpoint; both sources are named in the footnote", async () => {
+  const ctx = setup();
+  await mountWith(ctx, 200, { items: [...freshItems().slice(0, 1), JSON.parse(JSON.stringify(AC_ITEM))], hint: "", source: "both" });
+  assert.equal(q(ctx.container, ".rc-footnote").textContent, "题目来自 Codeforces、AtCoder，点击跳转原站；欧叶OY 不保存题面。");
+  qa(ctx.container, ".rc-done")[1].click();
+  await tick();
+  const post = ctx.env.calls.at(-1);
+  assert.equal(post.url, "/api/recommend/atcoder/abc100_c");
+  assert.deepEqual(JSON.parse(post.init.body), { state: "done" });
+  ctx.env.respond(post, 200, { ok: true });
+  await settle();
+  assert.equal(q(qa(ctx.container, ".rc-item")[1], ".rc-item-state").textContent, "已完成");
+});

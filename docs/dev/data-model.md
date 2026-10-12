@@ -58,6 +58,7 @@
 | 24 | 邮件提醒偏好与退订凭证（`users.reminder_opt_in/reminder_token`），沿用 `last_reminder_sent` 同日幂等 |
 | 28 | 扩展 token 哈希（`users.api_token_hash`）与题目来源（`problems.source/source_url/statement/difficulty`） |
 | 74 | AI 回答有用/没用反馈（`ai_feedback`，`(user_id, kind, ref_id)` 唯一，只记布尔值） |
+| 78 | 推荐来源 `users.recommend_source` 与 AtCoder 推荐记录（`atcoder_recommendations`） |
 
 25–27 为未发布功能撤回后的空缺，不重用。
 

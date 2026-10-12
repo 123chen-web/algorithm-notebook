@@ -103,7 +103,7 @@ def test_daily_one_is_stable_and_next_day_picks_a_different_problem(client):
 def test_no_cache_gives_hint_not_500(client):
     register(client)
     data = get(client)
-    assert data == {"items": [], "hint": "推荐题库还没准备好"}
+    assert data == {"items": [], "hint": "推荐题库还没准备好", "source": "cf"}
 
 
 def test_corrupt_cache_file_gives_hint(client):
@@ -111,14 +111,14 @@ def test_corrupt_cache_file_gives_hint(client):
     cache = cf_problems.cache_path()
     cache.write_text("{坏掉的 json", encoding="utf-8")
     data = get(client)
-    assert data == {"items": [], "hint": "推荐题库还没准备好"}
+    assert data == {"items": [], "hint": "推荐题库还没准备好", "source": "cf"}
 
 
 def test_no_mistakes_gives_guidance_hint(client):
     register(client)
     write_cache([cf_problem(4, "A", 800, ["graphs"])])
     data = get(client)
-    assert data == {"items": [], "hint": "先记几条错题，我才知道推荐什么"}
+    assert data == {"items": [], "hint": "先记几条错题，我才知道推荐什么", "source": "cf"}
 
 
 def test_unmapped_tags_are_ignored(client):
@@ -127,7 +127,7 @@ def test_unmapped_tags_are_ignored(client):
     seed(owner, tags=("不存在的标签",), created_days_ago=10)
     write_cache([cf_problem(4, "A", 800, ["graphs"])])
     data = get(client)
-    assert data == {"items": [], "hint": "先记几条错题，我才知道推荐什么"}
+    assert data == {"items": [], "hint": "先记几条错题，我才知道推荐什么", "source": "cf"}
 
 
 def test_mapping_and_reason_use_user_tags(client):

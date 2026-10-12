@@ -21,6 +21,10 @@ class RecommendState(BaseModel):
     state: str
 
 
+class RecommendSource(BaseModel):
+    source: str
+
+
 @router.get("/api/recommend")
 def get_recommend(user=Depends(main.current_user)):
     # 登录用户都能看（含体验账号）；纯统计 + 读缓存，不调用 AI、不占额度。
@@ -29,7 +33,31 @@ def get_recommend(user=Depends(main.current_user)):
     today = main.today_for(user)
     with main.connect(write=True) as conn:
         items, hint = recommend_logic.recommend_for_today(conn, user, today)
-    return {"items": items, "hint": hint}
+        source = recommend_logic.source_of(conn, user["id"])
+    return {"items": items, "hint": hint, "source": source}
+
+
+@router.put("/api/recommend/source")
+def set_recommend_source(data: RecommendSource, user=Depends(main.current_user)):
+    if data.source not in recommend_logic.SOURCES:
+        raise HTTPException(422, "推荐来源只能是 cf、atcoder 或 both")
+    with main.connect(write=True) as conn:
+        recommend_logic.set_source(conn, user["id"], data.source)
+    return {"ok": True, "source": data.source}
+
+
+@router.post("/api/recommend/atcoder/{problem_id}")
+def set_atcoder_state(problem_id: str, data: RecommendState, user=Depends(main.current_user)):
+    if data.state not in ("done", "dismissed"):
+        raise HTTPException(422, "state 只能是 done 或 dismissed")
+    with main.connect(write=True) as conn:
+        cursor = conn.execute(
+            "UPDATE atcoder_recommendations SET state = ? WHERE user_id = ? AND problem_id = ?",
+            (data.state, user["id"], problem_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(404, "记录不存在")
+    return {"ok": True}
 
 
 @router.post("/api/recommend/{contest_id}/{idx}")

@@ -6,14 +6,17 @@
 - 落库表 problem_recommendations（迁移 17）：同一用户同一道题只推荐一次。
 """
 
+import hashlib
 import json
 import logging
+import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from mastery import AT_RISK_BELOW, load_mistakes, retention_on
 
+import ac_problems
 import cf_problems
 
 log = logging.getLogger("recommend")
@@ -55,6 +58,15 @@ TOP_TAG_COUNT = 2
 RECOMMEND_COUNT = 1
 
 HINT_NO_CACHE = "推荐题库还没准备好"
+HINT_NO_AC_CACHE = "AtCoder 题库还没准备好"
+
+SOURCES = ("cf", "atcoder", "both")
+# AtCoder 难度口径和 Codeforces 不同（同样水平的人，AtCoder 数字更低）。
+# AtCoder 没有算法标签，所以只能按难度挑，不能按弱点标签挑。
+AC_BAND_DEFAULT = (400, 1000)
+AC_BAND_SKILLED = (400, 1400)
+AC_REASON = "AtCoder 没有算法标签，这道题按你近期的水平挑选"
+_AC_TASK_RE = re.compile(r"atcoder\.jp/contests/[^/\s]+/tasks/([A-Za-z0-9_]+)")
 HINT_NO_MISTAKES = "先记几条错题，我才知道推荐什么"
 
 
@@ -240,8 +252,8 @@ def _stamp(day):
     return f"{day}T{datetime.now(timezone.utc).strftime('%H:%M:%S+00:00')}"
 
 
-def recommend_for_today(conn, user, today):
-    """返回 (items, hint)。items 为空时 hint 说明原因。
+def _recommend_cf(conn, user, today):
+    """Codeforces 来源：返回 (items, hint)。items 为空时 hint 说明原因。
 
     调用方用写连接：第一次返回的题会落库（state=new）。
     """
@@ -287,3 +299,111 @@ def recommend_for_today(conn, user, today):
             (user_id, item["contest_id"], item["idx"], stamp),
         )
     return picked, ""
+
+
+# ---------------------------------------------------------------- AtCoder 来源
+
+
+def source_of(conn, user_id):
+    row = conn.execute("SELECT recommend_source FROM users WHERE id = ?", (user_id,)).fetchone()
+    value = row["recommend_source"] if row else "cf"
+    return value if value in SOURCES else "cf"
+
+
+def set_source(conn, user_id, source):
+    if source not in SOURCES:
+        raise ValueError("推荐来源无效")
+    conn.execute("UPDATE users SET recommend_source = ? WHERE id = ?", (source, user_id))
+
+
+def _ac_item(problem, state="new"):
+    pid = problem["id"]
+    contest = problem.get("contest_id") or pid.rsplit("_", 1)[0]
+    idx = problem.get("index") or pid.rsplit("_", 1)[-1].upper()
+    # 数据里的标题形如 "A. Multiply"；前面补上比赛名，省掉重复的题号前缀。
+    plain = re.sub(r"^[A-Za-z0-9]{1,3}\.\s*", "", problem.get("title") or "") or pid
+    return {
+        "oj": "atcoder",
+        "id": pid,
+        "contest_id": contest,
+        "idx": idx,
+        "name": f"{contest.upper()} {idx} · {plain}",
+        "rating": problem.get("difficulty"),
+        "tags": [],
+        "url": f"https://atcoder.jp/contests/{contest}/tasks/{pid}",
+        "reason": AC_REASON,
+        "state": state,
+    }
+
+
+def select_atcoder(problems, band, excluded, user_id, day):
+    """纯函数：同用户同一天同一份缓存结果稳定；不同用户/不同天散开，不总是最旧的题。"""
+    pool = sorted(
+        (p for p in problems
+         if type(p.get("difficulty")) is int and band[0] <= p["difficulty"] <= band[1]
+         and p.get("id") not in excluded),
+        key=lambda p: p["id"],
+    )
+    if not pool:
+        return None
+    seed = int(hashlib.sha256(f"{user_id}:{day}".encode()).hexdigest()[:8], 16)
+    return pool[seed % len(pool)]
+
+
+def _ac_excluded(conn, user_id, day):
+    """以前推荐过的，加上用户错题本里已经有链接的 AtCoder 题。"""
+    excluded = {
+        row["problem_id"] for row in conn.execute(
+            "SELECT problem_id FROM atcoder_recommendations "
+            "WHERE user_id = ? AND substr(recommended_at, 1, 10) < ?",
+            (user_id, day),
+        )
+    }
+    for row in conn.execute(
+        "SELECT source_url FROM problems WHERE user_id = ? AND source_url LIKE '%atcoder.jp/contests/%'",
+        (user_id,),
+    ):
+        found = _AC_TASK_RE.search(row["source_url"] or "")
+        if found:
+            excluded.add(found.group(1))
+    return excluded
+
+
+def _recommend_atcoder(conn, user, today):
+    payload = ac_problems.load_cache()
+    if payload is None:
+        return [], HINT_NO_AC_CACHE
+    problems = [p for p in payload["problems"] if isinstance(p, dict) and isinstance(p.get("id"), str)]
+    user_id, day = user["id"], today.isoformat()
+    rows = conn.execute(
+        "SELECT problem_id, state FROM atcoder_recommendations "
+        "WHERE user_id = ? AND substr(recommended_at, 1, 10) = ? ORDER BY rowid",
+        (user_id, day),
+    ).fetchall()
+    by_id = {p["id"]: p for p in problems}
+    if rows:
+        return [_ac_item(by_id.get(r["problem_id"]) or {"id": r["problem_id"]}, r["state"]) for r in rows], ""
+    skilled = difficulty_band(conn, user_id, user["timezone"], today)[1] == RATING_MAX_SKILLED
+    band = AC_BAND_SKILLED if skilled else AC_BAND_DEFAULT
+    picked = select_atcoder(problems, band, _ac_excluded(conn, user_id, day), user_id, day)
+    if picked is None:
+        return [], HINT_NO_AC_CACHE
+    conn.execute(
+        "INSERT OR IGNORE INTO atcoder_recommendations(user_id, problem_id, recommended_at, state) "
+        "VALUES (?, ?, ?, 'new')",
+        (user_id, picked["id"], _stamp(day)),
+    )
+    return [_ac_item(picked)], ""
+
+
+def recommend_for_today(conn, user, today):
+    """按用户选的来源（cf / atcoder / both）返回 (items, hint)。默认只用 Codeforces。"""
+    source = source_of(conn, user["id"])
+    if source == "cf":
+        return _recommend_cf(conn, user, today)
+    ac_items, ac_hint = _recommend_atcoder(conn, user, today)
+    if source == "atcoder":
+        return ac_items, ac_hint
+    cf_items, cf_hint = _recommend_cf(conn, user, today)
+    items = cf_items + ac_items
+    return items, "" if items else (cf_hint or ac_hint)

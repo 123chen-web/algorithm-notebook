@@ -1651,7 +1651,7 @@ def delete_account_data(conn, user_id, deleted_at):
                   "mistake_tags", "weakness_insights", "mistake_clusters",
                   "ai_usage", "duck_usage", "comment_votes", "ai_feedback",
                   "manual_payment_claims", "goals", "review_ops",
-                  "problem_recommendations", "import_previews", "notes", "note_links",
+                  "problem_recommendations", "atcoder_recommendations", "import_previews", "notes", "note_links",
                   "note_attachments", "note_drawings", "email_changes",
                   "pattern_progress", "pattern_example_done"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))

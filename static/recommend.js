@@ -12,6 +12,7 @@
   let mode = "idle"; // idle | loading | ready | empty（hidden 时直接清空容器）
   let items = [];
   let hint = "";
+  let source = "cf"; // cf | atcoder | both：推荐来源，存在服务器上
   let notice = ""; // 标记"做完了 / 不感兴趣"失败时的提示
   let busyKey = ""; // 正在提交状态的题目 key，防重复点击
   let generation = 0;
@@ -49,6 +50,34 @@
 
   function itemKey(item) {
     return `${item.contest_id}${item.idx}`;
+  }
+
+  function markPath(item) {
+    if (item.oj === "atcoder") return `/api/recommend/atcoder/${encodeURIComponent(item.id)}`;
+    return `/api/recommend/${item.contest_id}/${item.idx}`;
+  }
+
+  const SOURCE_LABELS = [["cf", "Codeforces"], ["atcoder", "AtCoder"], ["both", "两个都要"]];
+
+  function sourcePicker() {
+    const row = node("div", "rc-source");
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", "推荐来源");
+    row.append(node("span", "rc-source-label", "来源"));
+    for (const [value, label] of SOURCE_LABELS) {
+      const choice = button(label, "rc-source-btn", () => changeSource(value));
+      choice.setAttribute("aria-pressed", source === value ? "true" : "false");
+      if (busyKey) choice.disabled = true;
+      row.append(choice);
+    }
+    return row;
+  }
+
+  function footnote() {
+    const hasAtcoder = items.some((item) => item.oj === "atcoder");
+    const hasCf = items.some((item) => item.oj !== "atcoder");
+    const names = [hasCf ? "Codeforces" : "", hasAtcoder ? "AtCoder" : ""].filter(Boolean).join("、");
+    return `题目来自 ${names || "Codeforces"}，点击跳转原站；欧叶OY 不保存题面。`;
   }
 
   function head() {
@@ -105,7 +134,7 @@
     if (!container) return;
     const card = node("section", "rc-card");
     card.setAttribute("aria-labelledby", "rc-title");
-    card.append(head());
+    card.append(head(), sourcePicker());
     if (mode === "loading") {
       card.append(node("p", "rc-note", "正在挑选题目…"));
     } else if (mode === "ready") {
@@ -113,9 +142,10 @@
       for (const item of items) list.append(itemRow(item));
       card.append(list);
       if (notice) card.append(node("p", "rc-error", notice));
-      card.append(node("p", "rc-footnote", "题目来自 Codeforces，点击跳转原站；欧叶OY 不保存题面。"));
+      card.append(node("p", "rc-footnote", footnote()));
     } else if (mode === "empty") {
       card.append(node("p", "rc-note", hint || "暂时没有推荐。"));
+      if (notice) card.append(node("p", "rc-error", notice));
     }
     container.replaceChildren(card);
   }
@@ -133,6 +163,7 @@
       if (!current(request)) return false;
       const list = Array.isArray(data?.items) ? data.items : [];
       hint = typeof data?.hint === "string" ? data.hint : "";
+      if (["cf", "atcoder", "both"].includes(data?.source)) source = data.source;
       if (list.length > 0) {
         items = list;
         mode = "ready";
@@ -158,7 +189,7 @@
     render();
     const request = ticket();
     try {
-      await hooks.api(`/api/recommend/${item.contest_id}/${item.idx}`, {
+      await hooks.api(markPath(item), {
         method: "POST",
         body: JSON.stringify({ state }),
       });
@@ -173,6 +204,24 @@
         busyKey = "";
         render();
       }
+    }
+  }
+
+  async function changeSource(next) {
+    if (next === source || busyKey) return;
+    const request = ticket();
+    try {
+      await hooks.api("/api/recommend/source", {
+        method: "PUT",
+        body: JSON.stringify({ source: next }),
+      });
+      if (!current(request)) return;
+      source = next;
+      await load();
+    } catch (error) {
+      if (!current(request)) return;
+      notice = "切换来源失败，请稍后重试。";
+      render();
     }
   }
 
@@ -196,6 +245,7 @@
     sequence += 1;
     items = [];
     hint = "";
+    source = "cf";
     notice = "";
     busyKey = "";
     mode = "idle";

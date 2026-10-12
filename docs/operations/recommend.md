@@ -4,7 +4,23 @@
 拉回来的题库缓存里每天挑 1 道难度合适的题，只给题名、难度、标签和原站链接，
 **不保存、不展示题面**。
 
-## 题库怎么来
+## AtCoder 来源（迁移 78）
+
+用户可在卡片上选推荐来源：Codeforces（默认）/ AtCoder / 两个都要，存在 `users.recommend_source`。
+
+- 数据来自社区维护的 AtCoder Problems（`kenkoooo.com/atcoder/resources/`：题目清单 + 难度表），
+  不是官方接口，可能失效；`ac_problems.py` 失败时保留旧缓存，只记日志，不影响其它功能。
+  缓存写到 `data/ac_problems.json`，只保留 `id / contest_id / index / title / difficulty`，
+  只收 ABC / ARC / AGC，不收没有难度或难度为实验性的题。难度按官网口径平滑（低于 400 不出负数）。
+- **刷新**：`python cf_problems.py refresh` 结束后会顺带跑一次 AtCoder 刷新（失败不改变退出码），
+  所以现有的 cron / systemd 不用改。也可单独跑 `python ac_problems.py refresh`。
+- **选题**：AtCoder 没有算法标签，所以不按弱点标签挑，只按难度带挑
+  （默认 400–1000，复习 ≥10 次且近期掌握度 ≥0.8 时 400–1400，常量在 `recommend.py`）；
+  同用户同一天稳定，以前推荐过的、错题本里已经有链接的题不再推荐。
+- 推荐记录存 `atcoder_recommendations`（题号是 `abc123_a` 这样的文本，所以不与 CF 那张整数表混用）；
+  注销账号时随其它用户数据一起删除。
+
+## 题库怎么来（Codeforces）
 
 `cf_problems.py`（仓库根目录）用标准库 `urllib` 请求一次官方接口
 `https://codeforces.com/api/problemset.problems`，只保留字段

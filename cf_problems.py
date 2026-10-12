@@ -252,4 +252,11 @@ if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] != "refresh":
         print("用法：python cf_problems.py refresh", file=sys.stderr)
         sys.exit(2)
-    sys.exit(refresh())
+    code = refresh()
+    try:
+        import ac_problems
+
+        ac_problems.refresh()  # AtCoder 来源是社区数据，失败只记日志
+    except Exception as exc:  # noqa: BLE001
+        log.error("AtCoder 题库刷新异常：%s", exc)
+    sys.exit(code)

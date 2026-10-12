@@ -1179,6 +1179,36 @@ def _apply_move_link_to_source_url(conn):
 
 
 MIGRATIONS.append((77, "题目链接从思路搬到来源链接字段", _apply_move_link_to_source_url))
+
+
+def _apply_atcoder_recommend(conn):
+    # 今日推荐加 AtCoder 来源：用户选择推荐来源（cf / atcoder / both），
+    # AtCoder 的推荐记录单独一张表（题号是 abc123_a 这样的文本，不能塞进 CF 那张整数表）。
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "recommend_source" not in columns:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN recommend_source TEXT NOT NULL DEFAULT 'cf' "
+            "CHECK(recommend_source IN ('cf','atcoder','both'))"
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS atcoder_recommendations (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            problem_id TEXT NOT NULL,
+            recommended_at TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'new'
+                CHECK(state IN ('new', 'done', 'dismissed')),
+            PRIMARY KEY (user_id, problem_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_atcoder_recommendations_user_day "
+        "ON atcoder_recommendations(user_id, recommended_at)"
+    )
+
+
+MIGRATIONS.append((78, "今日推荐增加 AtCoder 来源", _apply_atcoder_recommend))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 
