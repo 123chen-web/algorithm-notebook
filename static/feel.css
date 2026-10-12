@@ -1,0 +1,109 @@
+/* 「手感层」：所有主题共用的悬停、过渡和反馈。
+   原则：背景保持安静，只有鼠标碰到、点击、拖动时才动；只动 transform / opacity；
+   减少动画（prefers-reduced-motion）和触屏（hover: none）下全部关闭。
+   弹簧曲线来自 Jake Archibald 的 linear() 生成器，不支持 linear() 的浏览器回退到普通缓动。 */
+
+:root {
+  --spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1);
+  --soft: cubic-bezier(.22, .8, .24, 1);
+}
+@supports not (transition-timing-function: linear(0, 1)) {
+  :root { --spring: cubic-bezier(.34, 1.4, .5, 1); }
+}
+/* 聚光灯的亮度可以平滑过渡（不支持 @property 的浏览器会直接切换，不影响使用）。 */
+@property --spot-o { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+/* ---------- 悬停：弹簧上浮 + 聚光灯 ---------- */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card) {
+    --mx: 50%; --my: 50%;
+    transition: transform .7s var(--spring), box-shadow .5s var(--soft), border-color .35s, --spot-o .35s;
+    background-image: radial-gradient(320px circle at var(--mx) var(--my), rgba(var(--glow, 14, 116, 144), calc(.11 * var(--spot-o))), transparent 62%);
+  }
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card):hover {
+    --spot-o: 1;
+    transform: translateY(-5px);
+    border-color: rgba(var(--glow, 14, 116, 144), .4);
+    box-shadow: 0 22px 44px -18px rgba(var(--shadow-rgb), .38), 0 0 0 1px rgba(var(--glow, 14, 116, 144), .1);
+  }
+  :is(.ov-tile, .pl-card, .pattern-card, .problem-record-card):hover { transform: translateY(-6px) scale(1.01); }
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card):active {
+    transform: translateY(-2px) scale(.995);
+    transition-duration: .12s, .12s, .35s, .35s;
+  }
+  /* 已经有自己聚光灯的“今日复习”磁贴：只加上浮，不叠第二层光。 */
+  .ov-tile-review { background-image: none; }
+
+  /* 磁吸按钮：位移由 feel.js 写到 translate 属性上，不占用 transform。 */
+  [data-magnetic] { will-change: translate; }
+}
+
+/* ---------- 页面切换：新页面淡入并轻轻上浮 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  :where(#home-page, #new-page, #list-page, #plan-page, #leaderboard-page, #weakness-page, #achievements-page, #weekly-recap-page, #mastery-page, #roadmap-page, #heatmap-page, #clusters-page, #print-page, #notes-page, #whiteboard-page, #forum-page, #groups-page, #admin-page):not([hidden]) {
+    animation: feel-page-in .55s var(--soft) both;
+  }
+}
+@keyframes feel-page-in { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+
+/* ---------- 弹窗：背景虚化淡入，卡片弹簧弹出 ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  dialog[open] { animation: feel-dialog-in .6s var(--spring) both; }
+  dialog[open]::backdrop { animation: feel-fade .35s var(--soft) both; backdrop-filter: blur(5px); }
+}
+@keyframes feel-dialog-in { from { opacity: 0; transform: translateY(26px) scale(.93); } to { opacity: 1; transform: none; } }
+@keyframes feel-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 折叠：<details> 平滑展开（支持 ::details-content 的浏览器） ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  @supports selector(::details-content) {
+    details { interpolate-size: allow-keywords; }
+    details::details-content { height: 0; overflow: clip; transition: height .5s var(--soft), content-visibility .5s allow-discrete; }
+    details[open]::details-content { height: auto; }
+  }
+}
+
+/* ---------- 加载骨架（唯一允许一直在动的东西） ---------- */
+.feel-skeleton { display: grid; gap: var(--space-2, 8px); }
+.feel-skeleton > i {
+  display: block; height: 14px; border-radius: 7px;
+  background: linear-gradient(90deg, var(--line) 25%, rgba(var(--glow, 14, 116, 144), .14) 50%, var(--line) 75%);
+  background-size: 300% 100%;
+  animation: feel-shimmer 1.4s linear infinite;
+}
+.feel-skeleton > i:nth-child(1) { width: 70%; }
+.feel-skeleton > i:nth-child(2) { width: 92%; }
+.feel-skeleton > i:nth-child(3) { width: 55%; }
+@keyframes feel-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .feel-skeleton > i { animation: none; } }
+
+/* ---------- 提示条（Feel.toast） ---------- */
+.feel-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 90; display: grid; gap: 8px; max-width: min(92vw, 380px); pointer-events: none; }
+.feel-toast {
+  position: relative; overflow: hidden; padding: 11px 18px; border-radius: 12px;
+  background: var(--ink); color: var(--paper); font-size: var(--text-md, 14px); line-height: 1.5;
+  box-shadow: 0 14px 32px -12px rgba(var(--shadow-rgb), .55); pointer-events: auto;
+  animation: feel-toast-in .7s var(--spring) both;
+}
+.feel-toast::after { content: ""; position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--accent); transform-origin: left; animation: feel-toast-bar var(--feel-toast-ms, 3200ms) linear forwards; }
+.feel-toast.is-out { animation: feel-toast-out .35s var(--soft) forwards; }
+@keyframes feel-toast-in { from { opacity: 0; transform: translateY(22px) scale(.92); } }
+@keyframes feel-toast-out { to { opacity: 0; transform: translateX(28px); } }
+@keyframes feel-toast-bar { to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .feel-toast, .feel-toast.is-out { animation: none; }
+  .feel-toast::after { display: none; }
+}
+
+/* ---------- 顶部滚动进度条（纯 CSS 滚动驱动动画；不支持的浏览器不显示） ---------- */
+.feel-progress { display: none; }
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    html:not([data-view="welcome"], [data-view="auth"], [data-view="pending"]) .feel-progress {
+      display: block; position: fixed; inset: 0 0 auto 0; z-index: 95; height: 3px; pointer-events: none;
+      background: var(--accent); transform-origin: left; transform: scaleX(0);
+      animation: feel-progress-grow linear both; animation-timeline: scroll(root block);
+    }
+  }
+}
+@keyframes feel-progress-grow { to { transform: scaleX(1); } }

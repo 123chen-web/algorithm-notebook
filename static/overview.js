@@ -52,6 +52,7 @@
     count.closest(".tile-count-wrap").classList.toggle("has-due", due > 0);
     count.textContent = String(due);
     count.hidden = false;
+    window.Feel?.countUp(count);
     $("#home-due-caption").textContent = due > 0
       ? `条易错点等你批改${data.overdue_count > 0 ? `，其中 ${data.overdue_count} 条已逾期` : ""}`
       : "今天的复习都完成了";
@@ -95,6 +96,7 @@
   }
   function renderStreak(data) {
     $("#streak-days").textContent = String(data.streak_days);
+    window.Feel?.countUp($("#streak-days"));
     const today = parseDay(data.today);
     const ticks = data.last7.map((done, index) => {
       const date = new Date(today.getTime());

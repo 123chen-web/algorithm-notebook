@@ -10,7 +10,7 @@ def test_problem_cards_assets_and_load_order():
     assert index.count('/static/problem-cards.css?v=1') == 1
     assert index.count('/static/problem-cards.js?v=2') == 1
     assert index.index('problem-cards.js?v=2') < index.index('focus.js?v=5') < index.index('app.js?v=101')
-    for file, version in [('overview.js', 4), ('clusters.js', 7), ('app.js', 101)]:
+    for file, version in [('overview.js', 5), ('clusters.js', 7), ('app.js', 101)]:
         assert f'/static/{file}?v={version}' in index
 
 

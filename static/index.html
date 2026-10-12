@@ -67,11 +67,13 @@
   <link rel="stylesheet" href="/static/heatmap.css?v=2">
   <link rel="stylesheet" href="/static/patterns.css?v=2">
   <link rel="stylesheet" href="/static/roadmap.css?v=1">
+  <link rel="stylesheet" href="/static/feel.css?v=1">
   <script defer src="/static/scenes.js?v=7"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
   <script defer src="/static/intro-film.js?v=2"></script>
   <script defer src="/static/cursor-fx.js?v=19"></script>
+  <script defer src="/static/feel.js?v=1"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
   <script defer src="/static/palette.js?v=4"></script>
@@ -88,7 +90,7 @@
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=5"></script>
-  <script defer src="/static/overview.js?v=4"></script>
+  <script defer src="/static/overview.js?v=5"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
   <script defer src="/static/profile.js?v=3"></script>
@@ -103,7 +105,7 @@
   <script defer src="/static/manual-claims.js?v=2"></script>
   <script defer src="/static/nav-focus.js?v=1"></script>
   <script defer src="/static/goal-card.js?v=1"></script>
-  <script defer src="/static/recommend.js?v=3"></script>
+  <script defer src="/static/recommend.js?v=4"></script>
   <script defer src="/static/sign.js?v=1"></script>
   <script defer src="/static/briefing.js?v=1"></script>
   <script defer src="/static/pending-reason.js?v=1"></script>
@@ -136,6 +138,7 @@
 </head>
 <body>
   <a class="skip-link" href="#app">跳到主要内容</a>
+  <div class="feel-progress" aria-hidden="true"></div>
   <div id="scene-backdrop" class="scene-backdrop" aria-hidden="true"></div>
   <div class="container">
     <aside id="app-sidebar" class="app-sidebar" aria-label="侧栏">
@@ -315,7 +318,7 @@
             </div>
           </details>
         </div>
-        <button id="topbar-new" type="button" class="topbar-new topbar-only" data-view="new"><svg class="topbar-new-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span>新增记录</span></button>
+        <button id="topbar-new" type="button" class="topbar-new topbar-only" data-view="new" data-magnetic><svg class="topbar-new-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg><span>新增记录</span></button>
         <div id="home-quota" class="home-quota" hidden>
           <div class="home-quota-heading">
             <label for="home-quota-progress">今日 AI 生成额度</label>
@@ -588,7 +591,7 @@
               <p id="tile-review-zones" class="ov-zone-text"></p>
             </div>
             <div class="ov-tile-actions">
-              <button type="button" id="tile-review-start" class="ov-btn ov-btn-light" data-view="today">开始复习</button>
+              <button type="button" id="tile-review-start" class="ov-btn ov-btn-light" data-view="today" data-magnetic>开始复习</button>
               <button type="button" id="tile-review-focus" class="ov-btn ov-btn-ghost" hidden>专注模式</button>
             </div>
           </section>

@@ -42,7 +42,7 @@ def test_changed_assets_had_their_versions_bumped():
 
 def test_overview_files_were_not_touched_by_this_task():
     # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们，版本是 3。
-    assert "/static/overview.js?v=4" in script_sources()
+    assert "/static/overview.js?v=5" in script_sources()
     assert 'href="/static/overview.css?v=3"' in INDEX
 
 

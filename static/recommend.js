@@ -136,7 +136,11 @@
     card.setAttribute("aria-labelledby", "rc-title");
     card.append(head(), sourcePicker());
     if (mode === "loading") {
-      card.append(node("p", "rc-note", "正在挑选题目…"));
+      const skeleton = node("div", "feel-skeleton");
+      skeleton.setAttribute("role", "status");
+      skeleton.setAttribute("aria-label", "正在挑选题目");
+      skeleton.append(node("i"), node("i"), node("i"));
+      card.append(skeleton);
     } else if (mode === "ready") {
       const list = node("ul", "rc-list");
       for (const item of items) list.append(itemRow(item));
