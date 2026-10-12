@@ -380,6 +380,12 @@ class JoinGroup(InputModel):
 
 
 # 速记模式的占位文案：只留证据、原因以后补时，服务端填充的标记文本。
+# 刚记下的完整错题，隔几天第一次到期：默认 1（明天）。速记（错因待补）不受影响，仍然当天出现。
+# 可用环境变量 FIRST_REVIEW_DELAY_DAYS 调整（0 = 当天就要复习）。
+try:
+    FIRST_REVIEW_DELAY_DAYS = max(0, min(30, int(os.getenv("FIRST_REVIEW_DELAY_DAYS", "1"))))
+except ValueError:
+    FIRST_REVIEW_DELAY_DAYS = 1
 QUICK_CODE_PLACEHOLDER = "（速记：代码待补）"
 QUICK_THINKING_PLACEHOLDER = "（速记：思路待补）"
 QUICK_MISTAKE_PLACEHOLDER = "（待补：为什么错）"

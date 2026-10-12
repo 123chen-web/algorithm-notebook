@@ -20,6 +20,7 @@ in tests keeps affecting the moved code.
 import main
 
 import re
+from datetime import timedelta
 import secrets
 from typing import Literal
 from urllib.parse import urlparse
@@ -260,9 +261,9 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
 
 
 def _insert_reason(conn, problem_id, reason, user_id):
-    """为题目建一条带错因的错题（今天到期），与新增记录里的错题同一写法。"""
+    """为题目建一条带错因的错题（明天第一次到期），与新增记录里的完整错题同一写法。"""
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    day = main.today_for(dict(row)).isoformat()
+    day = (main.today_for(dict(row)) + timedelta(days=main.FIRST_REVIEW_DELAY_DAYS)).isoformat()
     cursor = conn.execute(
         "INSERT INTO mistakes(problem_id, description, due_date) VALUES (?, ?, ?)",
         (problem_id, reason, day),

@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 import ai
 import os
+from datetime import timedelta
 from fastapi import APIRouter
 
 
@@ -40,7 +41,11 @@ def list_problems(limit: int = 30, user=Depends(main.current_user)):
 
 @router.post("/api/problems", status_code=201)
 def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
-    day = main.today_for(user).isoformat()
+    today = main.today_for(user)
+    day = today.isoformat()
+    # 刚记下的完整错题当天不用复习（刚写完还记得），明天才第一次到期；
+    # 速记只记了题名、错因待补，仍然今天出现，提醒你尽快补上原因。
+    first_review = (today + timedelta(days=main.FIRST_REVIEW_DELAY_DAYS)).isoformat()
     pattern_ids = main.validated_pattern_ids(data.pattern_ids)
     with main.connect(write=True) as conn:
         main.recheck_account(conn, user["id"])
@@ -75,7 +80,7 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
                     INSERT INTO mistakes(problem_id, description, due_date)
                     VALUES (?, ?, ?)
                     """,
-                    (problem_id, description, day),
+                    (problem_id, description, first_review),
                 )
                 mistake_ids.append(cursor.lastrowid)
 
