@@ -96,6 +96,8 @@
           throw new Error("独立运行服务返回了无效配置。");
         }
         capabilities = data;
+        // 站长没配置独立运行服务时整块藏起来，免得用户看到一个永远点不了的按钮。
+        panel.hidden = data.configured === false;
         for (const option of language.querySelectorAll("option")) option.disabled = Boolean(option.value) && !data.languages.includes(option.value);
         if (language.value && !data.languages.includes(language.value)) language.value = "";
         status.textContent = readyMessage();

@@ -13,9 +13,9 @@ STATIC = ROOT / "static"
 
 def test_runner_assets_are_versioned_before_app():
     source = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert source.count('/static/code-runner.css?v=1') == 1
-    assert source.count('/static/code-runner.js?v=1') == 1
-    assert source.index('/static/code-runner.js?v=1') < source.index('/static/app.js?v=')
+    assert source.count('/static/code-runner.css?v=2') == 1
+    assert source.count('/static/code-runner.js?v=2') == 1
+    assert source.index('/static/code-runner.js?v=2') < source.index('/static/app.js?v=')
 
 
 def test_runner_uses_only_host_api_and_plain_text():

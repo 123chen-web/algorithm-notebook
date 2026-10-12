@@ -238,6 +238,18 @@ test("runner: global busy cleanup cannot enable run or retry during the initial 
   assert.equal(env.query(".cr-retry").disabled, true);
 });
 
+test("runner: the whole panel is hidden while the runner is not configured", async () => {
+  const env = setup(ITEM);
+  await env.caps({ ...CAPABILITIES, configured: false });
+  assert.equal(env.query(".cr-panel").hidden, true);
+});
+
+test("runner: the panel stays visible when the runner is configured", async () => {
+  const env = setup(ITEM);
+  await env.caps();
+  assert.equal(env.query(".cr-panel").hidden, false);
+});
+
 for (const state of ["unconfigured", "disallowed", "trial", "offline"]) {
   test(`runner: global busy cleanup preserves the ${state} run restriction`, async () => {
     const env = setup(ITEM, { offline: state === "offline" });
