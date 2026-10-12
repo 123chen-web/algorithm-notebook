@@ -226,17 +226,6 @@
     return filled;
   }
 
-  function revealAndFocus(control) {
-    const fold = control.closest(".form-fold");
-    const toggle = fold?.querySelector(".form-fold-toggle");
-    if (toggle && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
-    control.focus();
-    if (typeof control.setSelectionRange === "function") {
-      const end = String(control.value).length;
-      control.setSelectionRange(end, end);
-    }
-  }
-
   /* ---------------- 详情页：题目链接行渲染成可点击链接 ---------------- */
   const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 
@@ -310,9 +299,8 @@
 
     function apply(parsed, { title = "", fromBookmark = false } = {}) {
       fillForm(form, parsed, title);
-      const thinking = field(form, "thinking");
-      if (thinking) revealAndFocus(thinking);
-      announce("已从链接带入题名和链接，请补充你的思路");
+      // 识别后不再自动展开并跳到“思路”：用户想先补什么由自己决定。
+      announce("已从链接带入题名和链接");
       showBanner(fromBookmark ? "已从书签带入，请确认后保存" : "");
     }
     function recognize() {

@@ -246,9 +246,9 @@ test("预填：只填空字段，分区只在默认值时改，思路最前面�
   assert.deepEqual(ui.changes, ["算法"], "改分区会触发 change，应用才会切换字段模式");
   assert.equal(ui.sourceUrl.value, "https://leetcode.cn/problems/two-sum/", "链接进了专门的来源链接字段（去掉了跟踪参数）");
   assert.equal(ui.textarea.value, "", "思路保持空白，由用户自己写");
-  assert.equal(ui.toggle.getAttribute("aria-expanded"), "true", "折叠的思路区被展开");
-  assert.equal(env.document.activeElement, ui.textarea);
-  assert.equal(ui.status.textContent, "已从链接带入题名和链接，请补充你的思路");
+  assert.equal(ui.toggle.getAttribute("aria-expanded"), "false", "识别后不自动展开思路区");
+  assert.notEqual(env.document.activeElement, ui.textarea, "焦点不会被带到思路框");
+  assert.equal(ui.status.textContent, "已从链接带入题名和链接");
   assert.equal(ui.banner.hidden, true);
 });
 
@@ -301,7 +301,7 @@ test("书签预填：清洗后的网页标题优先，顶部提示，永不自�
   assert.equal(ui.titleInput.value, "1. 两数之和");
   assert.equal(ui.banner.hidden, false);
   assert.equal(ui.banner.textContent, "已从书签带入，请确认后保存");
-  assert.equal(env.document.activeElement, ui.textarea);
+  assert.notEqual(env.document.activeElement, ui.textarea, "焦点不会被带到思路框");
   assert.equal(submitted, 0);
   ui.form.dispatchEvent(new env.context.Event("reset"));
   assert.equal(ui.banner.hidden, true, "表单重置 / 保存后提示消失");
