@@ -12,8 +12,10 @@ pattern_id / example_key 必须在启动期读进来的 static/data/patterns.jso
 main 命名空间下的名字一律用 main.<name> 在调用时取属性，方便测试 monkeypatch。
 """
 import main
+import pattern_match
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import Field
 from typing import Literal
 
 
@@ -134,3 +136,90 @@ def set_example_done(
                 (user["id"], pattern_id, example_key),
             )
     return {"ok": True, "pattern_id": pattern_id, "example_key": example_key, "done": data.done}
+
+
+# ---------------------------------------------------------------------------
+# 自动归类：根据题目链接、题名、标签、思路猜它属于哪些套路（本地规则，不花 AI 额度）。
+# 结果只是建议，用户确认后才通过 PUT /api/problems/{id}/patterns 真正归类。
+# ---------------------------------------------------------------------------
+
+class SuggestInput(main.InputModel):
+    title: str = Field(default="", max_length=200)
+    thinking: str = Field(default="", max_length=8000)
+    source_url: str = Field(default="", max_length=2000)
+    zone: str = Field(default="算法", max_length=50)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class PatternsInput(main.InputModel):
+    pattern_ids: list[str] = Field(max_length=main.MAX_PATTERNS_PER_PROBLEM + 5)
+
+
+@router.post("/api/roadmap/suggest")
+def suggest_patterns(data: SuggestInput, user=Depends(main.current_user)):
+    """新增记录页边写边猜：给最多 3 个"可能属于"的套路。"""
+    _rate(user, "suggest")
+    suggestions = pattern_match.suggest(
+        title=data.title, thinking=data.thinking, source_url=data.source_url,
+        zone=data.zone, tags=[str(tag)[:20] for tag in data.tags],
+    )
+    return {"suggestions": suggestions}
+
+
+@router.get("/api/roadmap/inbox")
+def classification_inbox(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user=Depends(main.current_user),
+):
+    """"待分类箱"：算法分区里还没归到任何套路的题（新的在前），每道带最多 3 条建议。"""
+    _rate(user, "inbox")
+    with main.connect() as conn:
+        base = (
+            "FROM problems p WHERE p.user_id = ? AND p.zone = '算法' "
+            "AND NOT EXISTS (SELECT 1 FROM problem_patterns pp WHERE pp.problem_id = p.id)"
+        )
+        total = conn.execute(f"SELECT COUNT(*) {base}", (user["id"],)).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT p.id, p.title, p.zone, p.thinking, p.code, p.source_url, p.created_at "
+            f"{base} ORDER BY p.id DESC LIMIT ? OFFSET ?",
+            (user["id"], limit, offset),
+        ).fetchall()
+        tag_rows = conn.execute(
+            "SELECT m.problem_id, t.tag FROM mistake_tags t JOIN mistakes m ON m.id = t.mistake_id "
+            "WHERE m.problem_id IN (SELECT value FROM json_each(?)) ORDER BY t.rowid",
+            (main.json.dumps([row["id"] for row in rows]),),
+        ).fetchall() if rows else []
+    tags = {}
+    for row in tag_rows:
+        tags.setdefault(row["problem_id"], [])
+        if row["tag"] not in tags[row["problem_id"]]:
+            tags[row["problem_id"]].append(row["tag"])
+    items = []
+    for row in rows:
+        thinking = row["thinking"] or ""
+        placeholder = thinking.startswith("（速记")
+        items.append({
+            "problem_id": row["id"],
+            "title": row["title"],
+            "snippet": "" if placeholder else thinking.strip().replace("\n", " ")[:80],
+            "source_url": row["source_url"] or "",
+            "created_at": row["created_at"],
+            "tags": tags.get(row["id"], []),
+            "suggestions": pattern_match.suggest(
+                title=row["title"], thinking=thinking, source_url=row["source_url"] or "",
+                zone=row["zone"], tags=tags.get(row["id"], []), code=(row["code"] or "")[:3000],
+            ),
+        })
+    return {"total": total, "items": items}
+
+
+@router.put("/api/problems/{problem_id}/patterns")
+def set_problem_patterns_route(problem_id: int, data: PatternsInput, user=Depends(main.current_user)):
+    """把一道题归到 0–3 个套路（全量替换；传 [] 就是移出分类）。别人的题一律 404。"""
+    _rate(user, "classify")
+    pattern_ids = main.validated_pattern_ids(data.pattern_ids)
+    with main.connect(write=True) as conn:
+        main.owned_problem(conn, problem_id, user["id"])
+        main.set_problem_patterns(conn, problem_id, pattern_ids)
+    return {"ok": True, "problem_id": problem_id, "pattern_ids": pattern_ids}
