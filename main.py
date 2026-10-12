@@ -126,6 +126,125 @@ WEAKNESS_MIN_MISTAKES = 5
 WEAKNESS_MAX_MISTAKES = 40
 WEAKNESS_RECENT_REVIEWS = 8
 
+# 学习路线：套路清单来自 static/data/patterns.json，进程启动时读一次作为
+# pattern_id 的白名单（内容扩充后重启即可生效）。文件缺失或损坏时白名单为空，
+# 此时所有套路相关的写入都会被拒绝（422），不会静默接受任意字符串写进数据库。
+PATTERN_DATA_PATH = ROOT / "static" / "data" / "patterns.json"
+MAX_PATTERNS_PER_PROBLEM = 3
+# 没有记录 = 未学；none 用于接口上表示"删掉记录回到未学"。
+PATTERN_STATUSES = ("none", "learning", "mastered")
+
+
+def load_pattern_catalog(path=PATTERN_DATA_PATH):
+    """返回 {pattern_id: {"title": ..., "example_keys": frozenset("<source>:<id>")}}。"""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("套路数据读取失败，学习路线白名单为空：%s", path, exc_info=True)
+        return {}
+    catalog = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        pattern_id = entry.get("id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            continue
+        keys = set()
+        for example in entry.get("examples") or []:
+            if isinstance(example, dict) and example.get("source") and example.get("id"):
+                keys.add(f"{example['source']}:{example['id']}")
+        catalog[pattern_id] = {
+            "title": str(entry.get("title") or pattern_id),
+            "example_keys": frozenset(keys),
+        }
+    return catalog
+
+
+PATTERN_CATALOG = load_pattern_catalog()
+
+
+def pattern_is_known(pattern_id):
+    """pattern_id 是否是清单里真实存在的套路。"""
+    return isinstance(pattern_id, str) and pattern_id in PATTERN_CATALOG
+
+
+def pattern_example_keys(pattern_id):
+    """该套路全部例题的 key（<source>:<id>）集合；未知套路返回空集合。"""
+    entry = PATTERN_CATALOG.get(pattern_id)
+    return entry["example_keys"] if entry else frozenset()
+
+
+def normalize_pattern_ids(values):
+    """校验并去重（保持原顺序）。
+
+    None 表示"调用方没有传"（编辑题目时代表保持不变）；空列表代表清空。
+    未知 pattern_id 或去重后超过 MAX_PATTERNS_PER_PROBLEM 都抛 ValueError。
+    """
+    if values is None:
+        return None
+    if not isinstance(values, list):
+        raise ValueError("套路格式不正确")
+    result = []
+    for value in values:
+        if not isinstance(value, str) or not pattern_is_known(value):
+            raise ValueError("请选择一个有效的套路")
+        if value not in result:
+            result.append(value)
+    if len(result) > MAX_PATTERNS_PER_PROBLEM:
+        raise ValueError(f"一道题最多关联 {MAX_PATTERNS_PER_PROBLEM} 个套路")
+    return result
+
+
+def validated_pattern_ids(values):
+    """接口层用：校验失败转成 422，错误消息直接给用户看。"""
+    try:
+        return normalize_pattern_ids(values)
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+
+
+def set_problem_patterns(conn, problem_id, pattern_ids):
+    """全量替换这道题的套路关联。
+
+    pattern_ids 为 None 表示"调用方没传"（编辑时保持不变），此时什么都不做并
+    返回 None；传 [] 表示清空。
+    """
+    if pattern_ids is None:
+        return None
+    conn.execute("DELETE FROM problem_patterns WHERE problem_id = ?", (problem_id,))
+    for pattern_id in pattern_ids:
+        conn.execute(
+            "INSERT OR IGNORE INTO problem_patterns(problem_id, pattern_id) VALUES (?, ?)",
+            (problem_id, pattern_id),
+        )
+    return pattern_ids
+
+
+def attach_pattern_ids(conn, items):
+    """给错题列表补上 pattern_ids（题目 → 套路），编辑表单要用它的初始值。
+
+   就地改 items 并返回；没有关联的题目给空列表（前端据此判断"还没挂过套路"）。
+    """
+    mapping = problem_pattern_ids(conn, [item.get("problem_id") for item in items])
+    for item in items:
+        item["pattern_ids"] = mapping.get(item.get("problem_id"), [])
+    return items
+
+
+def problem_pattern_ids(conn, problem_ids):
+    """{problem_id: [pattern_id, ...]}，按 rowid 顺序；没有关联的题目不出现在结果里。"""
+    result = {}
+    if not problem_ids:
+        return result
+    placeholders = ",".join("?" for _ in problem_ids)
+    for row in conn.execute(
+        f"SELECT problem_id, pattern_id FROM problem_patterns "
+        f"WHERE problem_id IN ({placeholders}) ORDER BY rowid",
+        list(problem_ids),
+    ):
+        result.setdefault(row["problem_id"], []).append(row["pattern_id"])
+    return result
+
 # 头像、拍照识别题目都只接受这几种真实解码出来的格式（不看文件名后缀或
 # 请求头，防止伪装成图片的其他文件类型）；上传后统一重新编码，顺带清掉
 # 原图可能带的 EXIF 等元数据、绝不直接保存或转发用户上传的原始字节。
@@ -279,6 +398,9 @@ class ProblemFields(InputModel):
     thinking: ThinkingText
     # 可选：用户自己补的正确代码；网站不提供标准答案。
     correct_code: str = Field(default="", max_length=40000)
+    # 可选：这道错题属于哪些套路（必须在 static/data/patterns.json 白名单里，最多 3 个）。
+    # 新增时不传/为空表示不关联；编辑时不传表示保持不变，传 [] 表示清空。
+    pattern_ids: list[str] | None = Field(default=None, max_length=8)
 
     @field_validator("zone")
     @classmethod
@@ -910,7 +1032,7 @@ def owned_mistake(conn, mistake_id, user_id):
     ).fetchone()
     if row is None:
         raise HTTPException(404, "记录不存在")
-    return mistake_public(dict(row))
+    return attach_pattern_ids(conn, [mistake_public(dict(row))])[0]
 
 
 def owned_problem(conn, problem_id, user_id):
@@ -1053,6 +1175,10 @@ ANKI_MAX_RECORDS = 5000
 EXPORT_LIMIT = 10
 EXPORT_WINDOW_SECONDS = 60 * 60
 EXPORT_MAX_RECORDS = 5000
+# 学习路线：勾状态 / 勾例题都是高频小写入，按用户给一个宽松的分钟级上限，
+# 只用来挡住脚本刷接口，正常点按钮不会碰到。
+ROADMAP_LIMIT = 120
+ROADMAP_WINDOW_SECONDS = 60
 ANKI_SCOPES = ("all", "zone", "weak", "mastered")
 
 _rate_lock = threading.Lock()
@@ -1489,8 +1615,16 @@ def delete_account_data(conn, user_id, deleted_at):
                   "ai_usage", "duck_usage", "comment_votes",
                   "manual_payment_claims", "goals", "review_ops",
                   "problem_recommendations", "import_previews", "notes", "note_links",
-                  "note_attachments", "note_drawings", "email_changes"):
+                  "note_attachments", "note_drawings", "email_changes",
+                  "pattern_progress", "pattern_example_done"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+    # 题目与套路的关联跟着题目走；problems 在本函数里是显式 DELETE，外键级联
+    # 虽然也开着，但按顺序先清一遍更明确（也覆盖 problem_patterns 先于 problems 被删的情况）。
+    conn.execute(
+        "DELETE FROM problem_patterns WHERE problem_id IN "
+        "(SELECT id FROM problems WHERE user_id = ?)",
+        (user_id,),
+    )
     # users 是匿名化 UPDATE 而非 DELETE，FK 级联不会触发；附件文件必须显式删目录。
     try:
         shutil.rmtree(note_files_dir() / str(user_id), ignore_errors=True)
@@ -2730,6 +2864,7 @@ import routers.mastery
 import routers.plugin_api
 import routers.profile
 import routers.import_wizard
+import routers.roadmap
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
@@ -2768,3 +2903,4 @@ from routers.forum import accept_comment, create_thread_summary, delete_comment,
 # Optional isolated code execution is registered outside the generated block.
 import routers.code_run
 app.include_router(routers.code_run.router)
+app.include_router(routers.roadmap.router)

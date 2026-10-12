@@ -72,7 +72,16 @@ def export_data(user=Depends(main.current_user)):
             """,
             (user["id"],),
         ):
-            problems[row["id"]] = {**dict(row), "mistakes": []}
+            problems[row["id"]] = {**dict(row), "mistakes": [], "pattern_ids": []}
+
+        # 题目 → 套路：按录入顺序，只导 pattern_id 文本（清单本身是静态资源）。
+        for row in conn.execute(
+            "SELECT pp.problem_id, pp.pattern_id FROM problem_patterns pp "
+            "JOIN problems p ON p.id = pp.problem_id "
+            "WHERE p.user_id = ? ORDER BY pp.rowid",
+            (user["id"],),
+        ):
+            problems[row["problem_id"]]["pattern_ids"].append(row["pattern_id"])
 
         mistakes = {}
         for row in conn.execute(
@@ -192,6 +201,26 @@ def export_data(user=Depends(main.current_user)):
             except ValueError:
                 drawing["scene"] = None
             drawings.append(drawing)
+
+        # 学习路线：每个套路的状态 + 勾过哪些例题（两者都是纯个人进度）。
+        roadmap_progress = [
+            {"pattern_id": row["pattern_id"], "status": row["status"],
+             "updated_at": row["updated_at"]}
+            for row in conn.execute(
+                "SELECT pattern_id, status, updated_at FROM pattern_progress "
+                "WHERE user_id = ? ORDER BY rowid",
+                (user["id"],),
+            )
+        ]
+        roadmap_examples = {}
+        for row in conn.execute(
+            "SELECT pattern_id, example_key, done_at FROM pattern_example_done "
+            "WHERE user_id = ? ORDER BY rowid",
+            (user["id"],),
+        ):
+            roadmap_examples.setdefault(row["pattern_id"], []).append(
+                {"example_key": row["example_key"], "done_at": row["done_at"]}
+            )
     payload = {
         "exported_at": main.utc_now(),
         "username": user["username"],
@@ -199,6 +228,13 @@ def export_data(user=Depends(main.current_user)):
         "notes": notes,
         "note_links": note_links,
         "drawings": drawings,
+        "roadmap": {
+            "progress": roadmap_progress,
+            "examples_done": [
+                {"pattern_id": pattern_id, "examples": examples}
+                for pattern_id, examples in roadmap_examples.items()
+            ],
+        },
     }
     filename = f"{PRODUCT_NAME}导出_{user['username']}_{main.today_for(user).isoformat()}.json"
     return Response(

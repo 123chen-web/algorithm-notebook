@@ -543,6 +543,7 @@ function signedOut() {
 window.PushSettings?.reset();
   window.NavFocus?.reset(); // 专注模式开关属于已注销的用户，收起状态与横幅一并还原
   window.Typical?.reset(); // 典型失误卡与一页纸属于已注销的用户，请求代次一并作废
+  window.Roadmap?.reset(); // 学习路线的进度属于已注销的用户，一并作废
   window.ManualClaims?.reset();
   window.ManualClaimsAdmin?.reset();
   $("#admin-reports").replaceChildren();
@@ -749,6 +750,8 @@ function updateUserInfo() {
   $("#push-settings-host") && window.PushSettings?.mount($("#push-settings-host"));
   window.Reminder?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   $("#reminder-settings-host") && window.Reminder?.mount($("#reminder-settings-host"));
+  window.Roadmap?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  mountPatternPicker();
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -929,6 +932,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#achievements-page").hidden = view !== "achievements";
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
   $("#mastery-page").hidden = view !== "mastery";
+  $("#roadmap-page").hidden = view !== "roadmap";
   $("#heatmap-page").hidden = view !== "heatmap";
   $("#clusters-page").hidden = view !== "clusters";
   $("#print-page").hidden = view !== "print";
@@ -959,6 +963,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "achievements") await loadAchievements();
   else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "mastery") await window.Mastery.load();
+  else if (view === "roadmap") await window.Roadmap.load();
   else if (view === "heatmap") await window.Heatmap.loadHeatmap($("#heatmap-grid"), 8);
   else if (view === "clusters") {
     await window.Clusters.load();
@@ -2834,6 +2839,17 @@ function renderProblemEditor(item) {
     const thinking = textarea(item.thinking, 8000, 4);
     const correctCode = textarea(item.correct_code || "", 40000, 6, true);
 
+    // 可选：这道错题属于哪些套路（最多 3 个）。套路清单是静态资源，异步拿到后
+    // 再插入选择器；期间不显示这个字段，保存时也就不会带上 pattern_ids（服务端
+    // 按"没传 = 保持不变"处理）。
+    const patternHost = element("div", "");
+    let patternPicker = null;
+    window.PatternPicker?.load().then(() => {
+      if (patternPicker || !patternHost.isConnected) return;
+      patternPicker = window.PatternPicker.create({ selected: item.pattern_ids || [] });
+      patternHost.replaceChildren(patternPicker.el);
+    }).catch(() => {});
+
     const save = element("button", "保存题目信息", "primary");
     save.type = "submit";
     const cancel = element("button", "取消");
@@ -2849,6 +2865,7 @@ function renderProblemEditor(item) {
       codeField,
       field("正确代码（可选，自己补）", correctCode),
       field("思路", thinking),
+      field("属于哪个套路（可选，最多 3 个）", patternHost),
       save,
       cancel
     );
@@ -2864,6 +2881,9 @@ function renderProblemEditor(item) {
             code: code.value,
             correct_code: correctCode.value,
             thinking: thinking.value,
+            // 选择器还没插进来时不带这个字段，服务端按"保持不变"处理；
+            // 插进来之后以选择器的值为准，传 [] 就是清空。
+            ...(patternPicker ? { pattern_ids: patternPicker.values() } : {}),
           }),
         });
         message("题目信息已更新。");
@@ -3935,6 +3955,21 @@ function applyQuickMode(on) {
 }
 
 // 简写模式只提交当前可见的错因；完整模式的字段及空错因语义沿用原行为。
+// 「属于哪个套路」选择器：新增记录页常驻一个，编辑题目弹窗各自新建一个。
+let newRecordPicker = null;
+
+function mountPatternPicker() {
+  const host = $("#problem-patterns");
+  if (!host || newRecordPicker || !window.PatternPicker) return;
+  window.PatternPicker.load().then(() => {
+    if (newRecordPicker || !host.isConnected) return;
+    newRecordPicker = window.PatternPicker.create({});
+    host.replaceChildren(newRecordPicker.el);
+  }).catch(() => {
+    // 加载失败只是少了这个功能，不阻断新增记录。
+  });
+}
+
 function buildProblemPayload(form, quick) {
   const data = new FormData(form);
   const mistakes = data.getAll("mistake");
@@ -3951,6 +3986,8 @@ function buildProblemPayload(form, quick) {
     mistakes: !quick || (skipThinking && !skipMistakes) ? mistakes
       : (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []),
     quick: Boolean(quick),
+    // 可选：最多 3 个套路；选择器还没加载好时按"不关联"提交，不影响建档。
+    pattern_ids: newRecordPicker ? newRecordPicker.values() : [],
   };
 }
 
@@ -4018,6 +4055,7 @@ $("#problem-form").addEventListener("submit", (event) => {
     notifyDataChanged("create");
 
     form.reset();
+    newRecordPicker?.setValues([]); // 套路选择不在 <form> 里，重置表单时单独清掉
     resetQuickMode(); // 成功后恢复普通模式（开关复位）
     applyZoneFieldMode(form, form.zone.value);
     $("#mistake-inputs").replaceChildren();

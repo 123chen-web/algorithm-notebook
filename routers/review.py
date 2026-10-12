@@ -60,7 +60,7 @@ def rvb_get_queue(
             main.mistake_public({**dict(row), "tags": tags_by_id[row["id"]]})
             for row in rows
         ]
-        items = enrich_problems(conn, user['id'], items, today.isoformat())
+        items = main.attach_pattern_ids(conn, enrich_problems(conn, user['id'], items, today.isoformat()))
         review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
         done_today = review_days.get(today, 0)
     return main.rvb_review_queue(items, today, fresh["daily_review_cap"], done_today, ignore_cap)
