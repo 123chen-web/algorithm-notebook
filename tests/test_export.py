@@ -15,11 +15,11 @@ from test_app import client, register
 ENDPOINT = "/api/export"
 TODAY = date(2026, 9, 19)
 PROBLEM_KEYS = {
-    "id", "title", "zone", "language", "code", "correct_code", "thinking", "source_url", "created_at", "mistakes",
+    "id", "title", "zone", "language", "code", "correct_code", "thinking", "source_url", "verdict", "created_at", "mistakes",
     "pattern_ids",
 }
 MISTAKE_KEYS = {
-    "id", "description", "repetitions", "interval_days", "ease_factor",
+    "id", "description", "counterexample", "repetitions", "interval_days", "ease_factor",
     "due_date", "last_reviewed_at", "reviews", "variants", "tags",
     "pending_reason",
 }
@@ -60,6 +60,7 @@ def seed_notebook(user_id, marker):
             ).lastrowid
             problem["correct_code"] = ""
             problem["source_url"] = ""
+            problem["verdict"] = ""
             problem["mistakes"] = []
             problem["pattern_ids"] = []
             for mistake_number in range(1, mistake_count + 1):
@@ -79,6 +80,7 @@ def seed_notebook(user_id, marker):
                     "VALUES (?, ?, ?, ?, ?, ?, ?, 7)",
                     (problem["id"], *mistake.values()),
                 ).lastrowid
+                mistake["counterexample"] = ""
                 mistake["pending_reason"] = False
                 mistake["reviews"] = []
                 mistake["variants"] = []
