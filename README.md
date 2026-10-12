@@ -17,9 +17,13 @@
   再打分；每档评分都会预览下次间隔，支持撤销、推迟、暂停和每日上限；专注模式一次只看一张卡。
 - **笔记**：所见即所得编辑器——输入 `/` 选标题、列表、待办、代码、公式、表格，选中文字加粗或加链接，
   粘贴图片；用 `[[ ]]` 链接另一篇笔记或一道错题，并能看到笔记关系图；自带画板（Excalidraw，自托管）。
-  另有[算法套路库](static/patterns.html)：41 个常见套路的触发信号、模板代码、常见坑和例题。
-- **AI 辅助**：橡皮鸭讲题（你讲、它追问，有独立的每日次数）、变体题、薄弱点分析、拍照识别手写题、
-  AI 讨论要点；额度规则见[AI 额度与计费](static/ai-billing.html)。
+- **学习路线**：登录后左侧栏的“学习路线”把常见算法套路做成一份可打卡的清单——每个套路标记
+  未学 / 学习中 / 已掌握，按分类和总体显示进度；每个套路有触发信号、核心思路、Python 与 C++ 模板
+  （都经过自动测试真实运行）、常见坑和经典例题（可勾选、可跳转）；记录错题时可以标明属于哪个套路，
+  错得多却还没学的套路会提醒你先学。没登录也能看只读的[套路库](static/patterns.html)（目前 41 个，持续补充）。
+- **AI 辅助**：橡皮鸭讲题（你讲、它追问，有独立的每日次数）、变体题（会参考你自己补的正确代码，
+  按“错在哪一行 → 最小反例 → 一句话规则”讲）、薄弱点分析、拍照识别手写题、AI 讨论要点；
+  每次回答后可以点“有用 / 没用”，只记布尔值、不收文字；额度规则见[AI 额度与计费](static/ai-billing.html)。
 - **看清自己**：总览与趋势、掌握度、“我的三大典型失误”和考前一页纸、目标计划卡、
   草稿演算区、每日推荐题、榜单与昨日之星。
 - **一起学**：学习小组（每周小目标、组内今日动态）、讨论区（采纳、有用、AI 要点）、
@@ -35,11 +39,12 @@
 FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
 线上使用 DeepSeek。Web 进程不执行用户代码；可选的独立运行服务支持 Python、C++，
 未配置时保持关闭，详见 [代码运行服务](docs/operations/code-runner.md)。用 Docker + Caddy 部署，自动 HTTPS，
-每天自动备份，带宕机告警和公开状态页。
+每天自动备份（可选再加密传到腾讯云对象存储做异地备份），带宕机告警和公开状态页。
 
 - 部署与升级：[docs/operations/deploy.md](docs/operations/deploy.md)
 - 零基础上线手册（买服务器到上线）：[deploy/README-零基础上线手册.md](deploy/README-零基础上线手册.md)
 - 备份与恢复：[docs/operations/backup-and-restore.md](docs/operations/backup-and-restore.md)
+- SSH 加固与异地加密备份：[docs/operations/security-and-offsite-backup.md](docs/operations/security-and-offsite-backup.md)
 - 宕机告警与状态页：[docs/operations/watchdog.md](docs/operations/watchdog.md)
 - 手动收款：[docs/operations/manual-payment.md](docs/operations/manual-payment.md)
 - 账号与隐私：[docs/operations/accounts-and-privacy.md](docs/operations/accounts-and-privacy.md)
@@ -119,4 +124,4 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **74**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–73 笔记、74 AI 反馈），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **75**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记、73 正确代码、74 AI 反馈、75 学习路线），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
