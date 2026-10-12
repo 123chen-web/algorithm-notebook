@@ -254,6 +254,18 @@ def parse(text):
     return {key: value for key, value in detail.items() if key != "canonical"}
 
 
+def link_text(row):
+    """思路文字 + 来源链接字段合成的文本：新记录的链接在 source_url 里，旧记录的在思路的“题目链接：”行里。
+
+    扩展导入的题（source 非空）是“想做的题”，不算进热门错题。
+    """
+    text = str(row["thinking"] or "")
+    url = str(row["source_url"] or "").strip()
+    if url and not str(row["source"] or ""):
+        text = f"{LINK_PREFIX}{url}\n{text}"
+    return text
+
+
 def problem_links(thinking):
     """思路文字里每个“题目链接：”行能识别出的 (source, id, 规范链接, 题名)；去重。"""
     found = {}
@@ -276,12 +288,12 @@ def display_name(source, ident, title):
 def _compute(day_from, day_to, min_users, limit):
     start, end = rank_board.day_bounds(day_from, day_to)
     params = {"start": start, "end": end}
-    like = "p.thinking LIKE '%题目链接：%'"
+    like = "(p.thinking LIKE '%题目链接：%' OR (p.source = '' AND p.source_url != ''))"
     with connect() as conn:
         conn.execute("BEGIN")
         created = conn.execute(
             f"""
-            SELECT p.user_id, p.thinking FROM problems p JOIN users u ON u.id = p.user_id
+            SELECT p.user_id, p.thinking, p.source, p.source_url FROM problems p JOIN users u ON u.id = p.user_id
             WHERE p.created_at >= :start AND p.created_at < :end AND {like}
               AND {rank_board.ELIGIBLE_SQL}
             """,
@@ -289,7 +301,7 @@ def _compute(day_from, day_to, min_users, limit):
         ).fetchall()
         reviewed = conn.execute(
             f"""
-            SELECT DISTINCT p.user_id, p.id, p.thinking FROM reviews r
+            SELECT DISTINCT p.user_id, p.id, p.thinking, p.source, p.source_url FROM reviews r
             JOIN mistakes m ON m.id = r.mistake_id
             JOIN problems p ON p.id = m.problem_id
             JOIN users u ON u.id = p.user_id
@@ -301,7 +313,7 @@ def _compute(day_from, day_to, min_users, limit):
     people = {}
     details = {}
     for row in [*created, *reviewed]:
-        for key, detail in problem_links(row["thinking"]).items():
+        for key, detail in problem_links(link_text(row)).items():
             people.setdefault(key, set()).add(row["user_id"])
             # 同一题可能有不同写法的链接：取字典序最小的规范链接，结果稳定。
             if key not in details or detail["canonical"] < details[key]["canonical"]:

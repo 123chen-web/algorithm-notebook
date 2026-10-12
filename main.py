@@ -404,6 +404,24 @@ class ProblemFields(InputModel):
     thinking: ThinkingText
     # 可选：用户自己补的正确代码；网站不提供标准答案。
     correct_code: str = Field(default="", max_length=40000)
+    # 可选：题目来源链接（粘贴链接识别时填）。新增时 None 当作空；编辑时 None = 保持不变，"" = 清除。
+    source_url: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("source_url")
+    @classmethod
+    def valid_source_url(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return ""
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            raise ValueError("题目链接格式不正确") from None
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username:
+            raise ValueError("题目链接只支持 http(s) 地址")
+        return value
     # 可选：这道错题属于哪些套路（必须在 static/data/patterns.json 白名单里，最多 3 个）。
     # 新增时不传/为空表示不关联；编辑时不传表示保持不变，传 [] 表示清空。
     pattern_ids: list[str] | None = Field(default=None, max_length=8)
@@ -999,7 +1017,7 @@ def require_admin(user):
 
 
 MISTAKE_SELECT = """
-SELECT m.*, p.title, p.zone, p.language, p.code, p.correct_code, p.thinking
+SELECT m.*, p.title, p.zone, p.language, p.code, p.correct_code, p.thinking, p.source_url
 FROM mistakes m
 JOIN problems p ON p.id = m.problem_id
 """
@@ -1405,6 +1423,19 @@ _ANKI_URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
 _ANKI_URL_TAIL_RE = re.compile(r"[.,;:!?)\u3001\u3002\uff0c\uff1b\uff01\uff1f\uff09]+$")
 
 
+def anki_url_from_source(source_url, thinking):
+    """优先用题目的来源链接字段；没有（旧数据）再从思路里的“题目链接：”行找。"""
+    candidate = str(source_url or "").strip()
+    if candidate:
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            parsed = None
+        if parsed and parsed.scheme in ("http", "https") and parsed.netloc and not parsed.username:
+            return candidate
+    return anki_url_from_thinking(thinking)
+
+
 def anki_url_from_thinking(thinking):
     """从思路文字的“题目链接：”行提取第一个安全 http(s) 链接；没有则返回空串。"""
     for line in str(thinking or "").split("\n"):
@@ -1446,7 +1477,7 @@ def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
 
     sql = [
         """
-        SELECT m.id, p.title, p.zone, p.thinking, p.code, m.description AS cause,
+        SELECT m.id, p.title, p.zone, p.thinking, p.source_url, p.code, m.description AS cause,
                m.pending_reason,
                (
                    SELECT v.answer_code FROM variants v
@@ -1474,7 +1505,7 @@ def anki_export_records(conn, user_id, timezone_name, today, scope, zone=None):
             "id": row["id"],
             "title": row["title"],
             "zone": row["zone"],
-            "url": anki_url_from_thinking(row["thinking"]),
+            "url": anki_url_from_source(row["source_url"], row["thinking"]),
             # 待补原因的卡片：背面原因处只显示"（待补）"，不泄露内部占位文案。
             "cause": PENDING_REASON_DISPLAY if row["pending_reason"] else row["cause"],
             "notes": row["thinking"],

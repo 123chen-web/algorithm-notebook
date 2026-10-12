@@ -225,13 +225,15 @@ function buildPage(env, { zones = ["数学", "算法", "英语"], thinking = "",
   const textarea = el("textarea", { value: thinking });
   textarea.setAttribute("name", "thinking");
   fold.append(toggle, textarea);
-  form.append(titleInput, select, fold);
+  const sourceUrl = el("input", { type: "hidden", value: "" });
+  sourceUrl.setAttribute("name", "source_url");
+  form.append(sourceUrl, titleInput, select, fold);
   page.append(box, form);
   doc.body.append(page);
   const changes = [];
   select.addEventListener("change", () => changes.push(select.value));
   const capture = env.window.Capture.mount(page);
-  return { page, input, go, status, banner, link, copy, copyStatus, code, form, titleInput, select, textarea, toggle, changes, capture };
+  return { page, input, go, status, banner, link, copy, copyStatus, code, form, titleInput, select, textarea, sourceUrl, toggle, changes, capture };
 }
 
 test("预填：只填空字段，分区只在默认值时改，思路最前面加链接行，焦点落在思路并播报", () => {
@@ -242,7 +244,8 @@ test("预填：只填空字段，分区只在默认值时改，思路最前面�
   assert.equal(ui.titleInput.value, "LeetCode · Two Sum");
   assert.equal(ui.select.value, "算法");
   assert.deepEqual(ui.changes, ["算法"], "改分区会触发 change，应用才会切换字段模式");
-  assert.equal(ui.textarea.value, "题目链接：https://leetcode.cn/problems/two-sum/\n");
+  assert.equal(ui.sourceUrl.value, "https://leetcode.cn/problems/two-sum/", "链接进了专门的来源链接字段（去掉了跟踪参数）");
+  assert.equal(ui.textarea.value, "", "思路保持空白，由用户自己写");
   assert.equal(ui.toggle.getAttribute("aria-expanded"), "true", "折叠的思路区被展开");
   assert.equal(env.document.activeElement, ui.textarea);
   assert.equal(ui.status.textContent, "已从链接带入题名和链接，请补充你的思路");
@@ -256,14 +259,16 @@ test("预填：不覆盖用户已写的题名 / 分区 / 思路，不重复加�
   ui.go.click();
   assert.equal(ui.titleInput.value, "我自己的题名");
   assert.equal(ui.select.value, "英语");
-  assert.equal(ui.textarea.value, "我先想到了双指针");
+  assert.equal(ui.textarea.value, "我先想到了双指针", "用户写的思路原样保留，不往里面加链接");
+  assert.equal(ui.sourceUrl.value, "https://leetcode.cn/problems/two-sum/");
   assert.deepEqual(ui.changes, []);
 
   const again = buildPage(makeEnv());
   again.input.value = "https://leetcode.cn/problems/two-sum/";
   again.go.click();
   again.go.click();
-  assert.equal(again.textarea.value.match(/题目链接：/g).length, 1, "连点两次也只有一行链接");
+  assert.equal(again.sourceUrl.value, "https://leetcode.cn/problems/two-sum/", "连点两次链接字段不变");
+  assert.equal(again.textarea.value, "");
 });
 
 test("预填：认不出的链接给出提示且不动表单；回车和粘贴也会触发识别", async () => {

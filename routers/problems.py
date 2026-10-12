@@ -52,12 +52,13 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
         cursor = conn.execute(
             """
             INSERT INTO problems(
-                user_id, title, zone, language, code, thinking, created_at, correct_code
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                user_id, title, zone, language, code, thinking, created_at, correct_code, source_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["id"], data.title, data.zone, data.language,
                 data.code, data.thinking, main.utc_now(), data.correct_code,
+                data.source_url or "",
             ),
         )
         problem_id = cursor.lastrowid
@@ -141,12 +142,12 @@ def edit_problem(problem_id: int, data: main.ProblemEdit, user=Depends(main.curr
             """
             UPDATE problems
             SET title = ?, zone = ?, language = ?, code = ?, thinking = ?,
-                correct_code = ?
+                correct_code = ?, source_url = COALESCE(?, source_url)
             WHERE id = ?
             """,
             (
                 data.title, data.zone, data.language,
-                data.code, data.thinking, data.correct_code, problem_id,
+                data.code, data.thinking, data.correct_code, data.source_url, problem_id,
             ),
         )
         main.set_problem_patterns(conn, problem_id, pattern_ids)

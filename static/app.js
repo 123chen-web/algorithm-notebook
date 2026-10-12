@@ -2830,6 +2830,18 @@ function renderMistakeText(item) {
   return wrap;
 }
 
+// 题目来源链接：在新标签页打开，只放 http(s) 地址。
+function sourceLinkRow(url) {
+  const row = element("p", "", "problem-source");
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "打开题目链接";
+  row.append(link);
+  return row;
+}
+
 function renderProblemEditor(item) {
   const wrap = element("div", "", "problem-editor");
 
@@ -2838,6 +2850,7 @@ function renderProblemEditor(item) {
     editBtn.type = "button";
     editBtn.addEventListener("click", editForm);
     wrap.replaceChildren(
+      ...(/^https?:\/\//i.test(item.source_url || "") ? [sourceLinkRow(item.source_url)] : []),
       element("h4", "当时的思路"),
       window.Capture ? window.Capture.renderThinking(item.thinking) : element("p", item.thinking, "multiline"),
       element("h4", codeZones.has(item.zone) ? "当时的代码" : "当时的解题过程"),
@@ -4024,6 +4037,7 @@ function buildProblemPayload(form, quick) {
     language: data.get("language"),
     code: data.get("code"),
     correct_code: mode === "full" ? String(data.get("correct_code") || "") : "",
+    source_url: String(data.get("source_url") || ""),
     thinking: skipThinking ? "" : data.get("thinking"),
     mistakes: !quick || (skipThinking && !skipMistakes) ? mistakes
       : (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []),

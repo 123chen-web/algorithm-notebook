@@ -1147,6 +1147,38 @@ def _apply_shift_fresh_first_review(conn):
 
 
 MIGRATIONS.append((76, "最近新记的完整错题第一次复习顺延一天", _apply_shift_fresh_first_review))
+
+
+_LINK_LINE_RE = re.compile(r"^题目链接：[ \t]*(https?://\S+)[ \t]*$")
+
+
+def _apply_move_link_to_source_url(conn):
+    """把思路里的“题目链接：<网址>”行搬到来源链接字段（source_url）。
+
+    只处理 source_url 还是空的题；整行必须正好是这种格式才搬，别的文字原样保留。
+    搬走后思路如果空了，补上和速记一样的占位文字（思路列不允许为空）。
+    """
+    rows = conn.execute(
+        "SELECT id, thinking FROM problems WHERE source_url = '' AND thinking LIKE '%题目链接：%'"
+    ).fetchall()
+    for row in rows:
+        kept, found = [], ""
+        for line in row[1].split("\n"):
+            match = _LINK_LINE_RE.match(line)
+            if match and not found:
+                found = match.group(1)
+            else:
+                kept.append(line)
+        if not found:
+            continue
+        rest = "\n".join(kept).strip()
+        conn.execute(
+            "UPDATE problems SET source_url = ?, thinking = ? WHERE id = ?",
+            (found, rest or "（速记：思路待补）", row[0]),
+        )
+
+
+MIGRATIONS.append((77, "题目链接从思路搬到来源链接字段", _apply_move_link_to_source_url))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

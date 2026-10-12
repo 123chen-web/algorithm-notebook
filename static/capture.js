@@ -217,10 +217,11 @@
         filled.push("zone");
       }
     }
-    if (thinking && isBlank(thinking)) {
-      thinking.value = `${LINK_PREFIX}${parsed.url}\n`;
-      fireEvent(thinking, "input");
-      filled.push("thinking");
+    // 题目链接存进专门的来源链接字段（隐藏输入框），不再塞进“思路”里。
+    const sourceUrl = field(form, "source_url");
+    if (sourceUrl) {
+      sourceUrl.value = parsed.url;
+      filled.push("source_url");
     }
     return filled;
   }

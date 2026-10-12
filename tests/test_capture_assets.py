@@ -36,9 +36,9 @@ def test_capture_ids_exist_once_inside_the_new_record_page(document):
 def test_capture_assets_are_versioned_and_script_precedes_app(html):
     assert '<link rel="stylesheet" href="/static/capture.css?v=1">' in html
     scripts = re.findall(r'<script defer src="(/static/[^"]+)"', html)
-    assert "/static/capture.js?v=1" in scripts
+    assert "/static/capture.js?v=2" in scripts
     app = next(i for i, src in enumerate(scripts) if src.startswith("/static/app.js"))
-    assert scripts.index("/static/capture.js?v=1") < app, "app.js 启动时就要调用 Capture.intake()"
+    assert scripts.index("/static/capture.js?v=2") < app, "app.js 启动时就要调用 Capture.intake()"
 
 
 def test_capture_markup_has_no_inline_style_script_or_javascript_href(html):
