@@ -1,0 +1,423 @@
+[
+  {
+    "id": "sort-custom",
+    "title": "排序与自定义比较",
+    "category": "数组",
+    "level": "入门",
+    "signals": [
+      "按某个字段排序，字段相同再按另一个字段（多级规则）",
+      "题目里出现「如果相同，按……」这种二级规则",
+      "排的不是数字，而是结构体/二元组/字符串",
+      "字符串按长度排、长度相同再按字典序"
+    ],
+    "idea": "比较规则决定顺序：把「谁排前面」写成一个 key 函数（或比较器），排序算法只管按规则交换。Python 里用 key 元组表示优先级，C++ 里写 lambda 比较器；比较器必须满足严格弱序（a<b 和 b<a 不能同时为真），否则 sort 会崩。",
+    "template_python": "def solve():\n    import sys\n    data = sys.stdin.read().split()\n    if not data:\n        return\n    it = iter(data)\n    n = int(next(it))\n    pairs = [(int(next(it)), int(next(it))) for _ in range(n)]\n    # 先按 b 升序，b 相同按 a 升序：key 元组逐项比较\n    pairs.sort(key=lambda p: (p[1], p[0]))\n    sys.stdout.write(\"\\n\".join(f\"{a} {b}\" for a, b in pairs))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<pair<int, int>> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i].first >> a[i].second;\n    // 先按 second 升序，相同按 first 升序\n    sort(a.begin(), a.end(), [](const auto &x, const auto &y) {\n        if (x.second != y.second) return x.second < y.second;\n        return x.first < y.first;\n    });\n    for (int i = 0; i < n; ++i)\n        cout << a[i].first << ' ' << a[i].second << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n log n)，空间 O(n)",
+    "pitfalls": [
+      "比较器里写 <= 会破坏严格弱序，sort 可能崩溃：只用 <，相等时返回 false",
+      "多级排序用 key 元组 (b, a)，别写两次 sort：第二次会打乱第一次的顺序（除非用 stable_sort 倒序排）",
+      "降序需求别写成 key=-x：x 取最小整数时取负会溢出，用 reverse=True 或反转比较方向",
+      "浮点数做 key 有精度坑，能乘成整数比较就别用 float"
+    ],
+    "confusions": "自定义比较 vs 计数排序：值域小（比如 0~100）直接计数 O(n)；规则复杂（多字段、字符串）才用自定义比较。先看值域，再看规则。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1177",
+        "title": "快速排序"
+      },
+      {
+        "source": "luogu",
+        "id": "P1923",
+        "title": "求第 k 小的数"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "56",
+        "title": "合并区间"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "215",
+        "title": "数组中的第K个最大元素"
+      }
+    ],
+    "related": [
+      "dutch-flag",
+      "binary-search-basic"
+    ],
+    "sample_input": "4\n1 3\n2 1\n3 2\n4 1",
+    "sample_output": "2 1\n4 1\n3 2\n1 3"
+  },
+  {
+    "id": "matrix-spiral",
+    "title": "矩阵模拟（螺旋/旋转）",
+    "category": "数组",
+    "level": "入门",
+    "signals": [
+      "题面出现「螺旋」「顺时针打印」「旋转」",
+      "按圈/按层遍历矩阵",
+      "把矩阵旋转 90 度（原地或输出新矩阵）",
+      "边界收缩：上下左右四条边界不断往里收"
+    ],
+    "idea": "维护 up/down/left/right 四条边界，一圈走完收一条；走完当前圈发现边界交错就停。旋转 90 度等价于「转置 + 每行翻转」，原地旋转则是分层做四个角轮换。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    if not data:\n        return\n    n, m = data[0], data[1]\n    a = data[2:2 + n * m]\n    up, down, left, right = 0, n - 1, 0, m - 1\n    res = []\n    while up <= down and left <= right:\n        for c in range(left, right + 1):      # 上边\n            res.append(a[up * m + c])\n        up += 1\n        for r in range(up, down + 1):         # 右边\n            res.append(a[r * m + right])\n        right -= 1\n        if up <= down:                        # 下边（单行时跳过）\n            for c in range(right, left - 1, -1):\n                res.append(a[down * m + c])\n            down -= 1\n        if left <= right:                     # 左边（单列时跳过）\n            for r in range(down, up - 1, -1):\n                res.append(a[r * m + left])\n            left += 1\n    sys.stdout.write(\" \".join(map(str, res)))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n, m;\n    if (!(cin >> n >> m)) return 0;\n    vector<int> a(n * m);\n    for (int i = 0; i < n * m; ++i) cin >> a[i];\n    int up = 0, down = n - 1, left = 0, right = m - 1;\n    bool first = true;\n    auto out = [&](int v) {\n        if (!first) cout << ' ';\n        first = false;\n        cout << v;\n    };\n    while (up <= down && left <= right) {\n        for (int c = left; c <= right; ++c) out(a[up * m + c]);\n        ++up;\n        for (int r = up; r <= down; ++r) out(a[r * m + right]);\n        --right;\n        if (up <= down) {\n            for (int c = right; c >= left; --c) out(a[down * m + c]);\n            --down;\n        }\n        if (left <= right) {\n            for (int r = down; r >= up; --r) out(a[r * m + left]);\n            ++left;\n        }\n    }\n    cout << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(nm)，空间 O(1)（不计输出）",
+    "pitfalls": [
+      "单行/单列矩阵：下半圈和左半圈的 if 不能省，否则会重复打印同一行/列",
+      "边界更新顺序：走完一边立刻收边界，收完马上检查是否交错",
+      "顺时针旋转 90 度是「转置后左右翻转」，逆时针是「转置后上下翻转」，方向别记反",
+      "用 r*m+c 把二维拍平成一维时，行列别写反"
+    ],
+    "confusions": "螺旋遍历 vs 之字形/对角线遍历：都是边界模拟，但螺旋是四边收圈，对角线是按 i+j 分组。看题面要的是圈还是斜线。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "54",
+        "title": "螺旋矩阵"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "48",
+        "title": "旋转图像"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "59",
+        "title": "螺旋矩阵 II"
+      }
+    ],
+    "related": [
+      "sort-custom",
+      "prefix-sum-2d"
+    ],
+    "sample_input": "3 3\n1 2 3\n4 5 6\n7 8 9",
+    "sample_output": "1 2 3 6 9 8 7 4 5"
+  },
+  {
+    "id": "dutch-flag",
+    "title": "荷兰国旗（三路划分）",
+    "category": "双指针",
+    "level": "入门",
+    "signals": [
+      "只有 0/1/2（或红白蓝）三种值，要排好",
+      "数组要划分成「小于 / 等于 / 大于」三段",
+      "快排的三路划分 partition",
+      "要求一遍扫描完成分类"
+    ],
+    "idea": "三个指针：[0,lt) 放 0，[lt,i) 放 1，(gt,n) 放 2，[i,gt] 是未处理区。遇到 0 和 lt 交换后 lt++、i++；遇到 2 和 gt 交换后 gt--（i 不动，因为换来的还没看过）；遇到 1 直接 i++。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    if not data:\n        return\n    n = data[0]\n    a = data[1:1 + n]\n    lt, i, gt = 0, 0, n - 1\n    while i <= gt:\n        if a[i] == 0:\n            a[lt], a[i] = a[i], a[lt]\n            lt += 1\n            i += 1\n        elif a[i] == 2:\n            a[gt], a[i] = a[i], a[gt]\n            gt -= 1  # i 不动：换来的元素还没检查\n        else:\n            i += 1\n    sys.stdout.write(\" \".join(map(str, a)))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    int lt = 0, i = 0, gt = n - 1;\n    while (i <= gt) {\n        if (a[i] == 0) {\n            swap(a[lt], a[i]);\n            ++lt; ++i;\n        } else if (a[i] == 2) {\n            swap(a[gt], a[i]);\n            --gt;  // i 不动：换来的元素还没检查\n        } else {\n            ++i;\n        }\n    }\n    for (int k = 0; k < n; ++k)\n        cout << a[k] << (k + 1 == n ? '\\n' : ' ');\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)",
+    "pitfalls": [
+      "遇到 2 交换后 i 不能 ++：从 gt 换来的元素还没检查，直接跳过会漏掉",
+      "遇到 0 交换后 i 必须 ++：从 lt 换来的只能是 1（已处理区），可以放心跳过",
+      "循环条件是 i <= gt 而不是 i < n：gt 之后全是 2，不用再看",
+      "只有两种值时别硬套三指针，普通双指针 partition 更简单"
+    ],
+    "confusions": "荷兰国旗 vs 快慢指针去重：都是原地多指针，但荷兰国旗是「按值分三段」，去重是「压缩相同值」。看数组值的种类数：3 种用三路划分。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "75",
+        "title": "颜色分类"
+      },
+      {
+        "source": "luogu",
+        "id": "P1923",
+        "title": "求第 k 小的数"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "215",
+        "title": "数组中的第K个最大元素"
+      }
+    ],
+    "related": [
+      "sort-custom",
+      "remove-inplace"
+    ],
+    "sample_input": "9\n2 0 2 1 1 0 1 2 0",
+    "sample_output": "0 0 0 1 1 1 2 2 2"
+  },
+  {
+    "id": "remove-inplace",
+    "title": "原地删除/去重（快慢指针）",
+    "category": "双指针",
+    "level": "入门",
+    "signals": [
+      "「原地」「O(1) 额外空间」删除或去重",
+      "有序数组去重",
+      "删除所有等于 val 的元素",
+      "返回新长度 + 修改原数组"
+    ],
+    "idea": "慢指针 slow 指向「已处理好的末尾」，快指针 fast 扫描全数组；fast 遇到要保留的就写到 slow 位置并 slow++。任何时刻 [0,slow) 恒为答案前缀。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    if not data:\n        return\n    n = data[0]\n    a = data[1:1 + n]\n    slow = 0\n    for fast in range(n):\n        if fast == 0 or a[fast] != a[fast - 1]:\n            a[slow] = a[fast]\n            slow += 1\n    sys.stdout.write(str(slow) + \"\\n\" + \" \".join(map(str, a[:slow])))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    int slow = 0;\n    for (int fast = 0; fast < n; ++fast) {\n        if (fast == 0 || a[fast] != a[fast - 1]) {\n            a[slow] = a[fast];\n            ++slow;\n        }\n    }\n    cout << slow << '\\n';\n    for (int k = 0; k < slow; ++k)\n        cout << a[k] << (k + 1 == slow ? '\\n' : ' ');\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)",
+    "pitfalls": [
+      "fast 从 0 还是 1 开始要和 slow 的初值配套：fast=1 时比较 a[fast]!=a[slow]，fast=0 时比较 a[fast]!=a[fast-1]",
+      "slow 指向的是「下一个要写的位置」，返回的长度就是 slow，不是 slow+1",
+      "无序数组去重要先排序，否则快慢指针失效",
+      "输出只取前 slow 个元素，后面的垃圾值不能要"
+    ],
+    "confusions": "原地去重 vs 荷兰国旗：都是原地多指针，但去重是「压缩」，三路划分是「分类」。数组有序且要去重 → 快慢指针。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "26",
+        "title": "删除有序数组中的重复项"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "27",
+        "title": "移除元素"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "80",
+        "title": "删除有序数组中的重复项 II"
+      }
+    ],
+    "related": [
+      "dutch-flag",
+      "two-pointers-opposite"
+    ],
+    "sample_input": "10\n0 0 1 1 1 2 2 3 3 4",
+    "sample_output": "5\n0 1 2 3 4"
+  },
+  {
+    "id": "prefix-sum-2d",
+    "title": "二维前缀和",
+    "category": "前缀和与差分",
+    "level": "入门",
+    "signals": [
+      "多次询问子矩阵和",
+      "「最大子矩阵」问题",
+      "矩阵不可变、查询很多",
+      "一维前缀和的查询变成了矩形"
+    ],
+    "idea": "s[i][j] 存以 (1,1) 为左上、(i,j) 为右下的矩形和；查 (x1,y1)-(x2,y2) 用容斥：s[x2][y2]-s[x1-1][y2]-s[x2][y1-1]+s[x1-1][y1-1]。预处理 O(nm)，每次查询 O(1)。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    it = iter(data)\n    n = next(it); m = next(it)\n    s = [[0] * (m + 1) for _ in range(n + 1)]\n    for i in range(1, n + 1):\n        row = 0\n        for j in range(1, m + 1):\n            row += next(it)\n            s[i][j] = s[i - 1][j] + row\n    q = next(it)\n    out = []\n    for _ in range(q):\n        x1 = next(it); y1 = next(it); x2 = next(it); y2 = next(it)\n        out.append(str(s[x2][y2] - s[x1 - 1][y2] - s[x2][y1 - 1] + s[x1 - 1][y1 - 1]))\n    sys.stdout.write(\"\\n\".join(out))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n, m;\n    if (!(cin >> n >> m)) return 0;\n    vector<vector<int64>> s(n + 1, vector<int64>(m + 1, 0));\n    for (int i = 1; i <= n; ++i) {\n        int64 row = 0;\n        for (int j = 1; j <= m; ++j) {\n            int64 v; cin >> v;\n            row += v;\n            s[i][j] = s[i - 1][j] + row;\n        }\n    }\n    int q; cin >> q;\n    while (q--) {\n        int x1, y1, x2, y2; cin >> x1 >> y1 >> x2 >> y2;\n        cout << s[x2][y2] - s[x1 - 1][y2] - s[x2][y1 - 1] + s[x1 - 1][y1 - 1] << '\\n';\n    }\n    return 0;\n}\n",
+    "complexity": "预处理 O(nm)，每次查询 O(1)，空间 O(nm)",
+    "pitfalls": [
+      "容斥公式四个角：减掉上边、左边，加回左上角——加回的那一项最容易漏",
+      "下标从 1 开始，多开一行一列；从 0 开始写要处处 +1，更容易错",
+      "和可能超 int（n,m 到 2000 时），C++ 用 long long",
+      "最大子矩阵问题里，枚举上下界后要转成一维最大子段，不能直接查和"
+    ],
+    "confusions": "二维前缀和 vs 二维差分：查子矩阵和用前缀和；多次「子矩阵加 v」最后统一查询用差分。一个管查，一个管改。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1719",
+        "title": "最大加权矩形"
+      },
+      {
+        "source": "luogu",
+        "id": "P2280",
+        "title": "激光炸弹"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "304",
+        "title": "二维区域和检索 - 矩阵不可变"
+      }
+    ],
+    "related": [
+      "prefix-sum",
+      "difference-array"
+    ],
+    "sample_input": "3 3\n1 2 3\n4 5 6\n7 8 9\n2\n1 1 2 2\n2 2 3 3",
+    "sample_output": "12\n28"
+  },
+  {
+    "id": "binary-search-rotated",
+    "title": "旋转数组二分",
+    "category": "二分",
+    "level": "入门",
+    "signals": [
+      "「旋转排序数组」「循环有序」",
+      "先升后降 / 先降后升的数组里找数",
+      "找旋转数组的最小值",
+      "要求 O(log n) 查找"
+    ],
+    "idea": "旋转后数组必有一半有序：比较 mid 和右端点判断哪半有序，再看 target 是否落在有序的那半里——落在就往那半走，否则往另一半。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    if len(data) < 2:\n        return\n    n = data[0]\n    a = data[1:1 + n]\n    target = data[1 + n]\n    lo, hi = 0, n - 1\n    ans = -1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if a[mid] == target:\n            ans = mid\n            break\n        if a[mid] <= a[hi]:\n            if a[mid] < target <= a[hi]:  # 右半有序\n                lo = mid + 1\n            else:\n                hi = mid - 1\n        else:\n            if a[lo] <= target < a[mid]:  # 左半有序\n                hi = mid - 1\n            else:\n                lo = mid + 1\n    print(ans)\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    int target; cin >> target;\n    int lo = 0, hi = n - 1, ans = -1;\n    while (lo <= hi) {\n        int mid = lo + (hi - lo) / 2;\n        if (a[mid] == target) { ans = mid; break; }\n        if (a[mid] <= a[hi]) {\n            if (a[mid] < target && target <= a[hi]) lo = mid + 1;\n            else hi = mid - 1;\n        } else {\n            if (a[lo] <= target && target < a[mid]) hi = mid - 1;\n            else lo = mid + 1;\n        }\n    }\n    cout << ans << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(log n)，空间 O(1)",
+    "pitfalls": [
+      "有重复元素时 a[mid]==a[hi] 无法判断哪半有序，要 hi-- 退化（最坏 O(n)）",
+      "判断 target 是否在有序半里时，区间端点的 <= / >= 别写反，一反就死循环或漏答案",
+      "mid 用 lo+(hi-lo)//2，防溢出是个好习惯",
+      "找最小值和找 target 的收缩方向不一样，别背混：找最小值是拿 mid 和右端比"
+    ],
+    "confusions": "旋转数组二分 vs 普通二分：普通二分靠「有序」直接砍一半，旋转数组先花一次比较判断哪半有序，再砍。先判有序半，再看 target 在不在里面。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "33",
+        "title": "搜索旋转排序数组"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "81",
+        "title": "搜索旋转排序数组 II"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "153",
+        "title": "寻找旋转排序数组中的最小值"
+      }
+    ],
+    "related": [
+      "binary-search-basic",
+      "binary-search-answer",
+      "binary-search-real"
+    ],
+    "sample_input": "7\n4 5 6 7 0 1 2\n0",
+    "sample_output": "4"
+  },
+  {
+    "id": "binary-search-real",
+    "title": "实数二分",
+    "category": "二分",
+    "level": "进阶",
+    "signals": [
+      "求平方根 / 立方根，精度 1e-4",
+      "「保留 x 位小数」「误差不超过」",
+      "答案是实数，但谓词单调",
+      "整数二分答案的题，把 check 改成 double 版"
+    ],
+    "idea": "整数二分的 check(x) 换成实数版：可行域是连续区间，循环固定 100 次（每次区间减半，精度远超 double 有效位）或 while(r-l>eps)。输出时多打几位小数，别卡在精度边界上。",
+    "template_python": "def solve():\n    import sys\n    x = float(sys.stdin.read().split()[0])\n    lo, hi = 0.0, max(1.0, x)\n    for _ in range(100):\n        mid = (lo + hi) / 2\n        if mid * mid <= x:\n            lo = mid\n        else:\n            hi = mid\n    print(f\"{lo:.4f}\")\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    double x;\n    if (!(cin >> x)) return 0;\n    double lo = 0.0, hi = max(1.0, x);\n    for (int i = 0; i < 100; ++i) {\n        double mid = (lo + hi) / 2;\n        if (mid * mid <= x) lo = mid;\n        else hi = mid;\n    }\n    cout.setf(ios::fixed);\n    cout << setprecision(4) << lo << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(迭代次数)，空间 O(1)",
+    "pitfalls": [
+      "while(r-l>eps) 可能因浮点精度多转几圈，固定 100 次更稳",
+      "check 里用 mid*mid<=x，别写成 mid<=x/mid：除法慢，x=0 时还麻烦",
+      "题目要 1e-4 精度就输出 6 位小数，别卡在边界上",
+      "hi 初值要 cover 答案：开方时 hi=max(1,x)，x<1 时平方根比 x 大"
+    ],
+    "confusions": "实数二分 vs 整数二分答案：框架一样（单调谓词 + 夹逼），区别是实数版没有「mid 取整」「lo=mid+1」这类整数陷阱，循环次数固定。先写整数版理解单调性，再换成 double。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1024",
+        "title": "一元三次方程求解"
+      },
+      {
+        "source": "luogu",
+        "id": "P1163",
+        "title": "银行贷款"
+      },
+      {
+        "source": "luogu",
+        "id": "P1577",
+        "title": "切绳子"
+      }
+    ],
+    "related": [
+      "binary-search-basic",
+      "binary-search-answer",
+      "binary-search-rotated"
+    ],
+    "sample_input": "2",
+    "sample_output": "1.4142"
+  },
+  {
+    "id": "discretization",
+    "title": "离散化",
+    "category": "数据结构",
+    "level": "入门",
+    "signals": [
+      "坐标 / 数值大到 1e9，但个数只有 1e5",
+      "「把大数映射成排名」",
+      "区间操作 + 只关心相对顺序",
+      "线段树 / 树状数组题面里先离散化"
+    ],
+    "idea": "只关心相对顺序时，把所有出现过的数排序去重，每个数用它在有序表里的下标（排名）代替。原数组值域从 1e9 压缩到 n，线段树 / 树状数组就能开得下。",
+    "template_python": "def solve():\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    if not data:\n        return\n    n = data[0]\n    a = data[1:1 + n]\n    vals = sorted(set(a))\n    rank = {v: i + 1 for i, v in enumerate(vals)}  # 排名从 1 开始，配树状数组\n    sys.stdout.write(\" \".join(str(rank[v]) for v in a))\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    vector<int> vals = a;\n    sort(vals.begin(), vals.end());\n    vals.erase(unique(vals.begin(), vals.end()), vals.end());\n    for (int i = 0; i < n; ++i) {\n        int r = int(lower_bound(vals.begin(), vals.end(), a[i]) - vals.begin()) + 1;\n        cout << r << (i + 1 == n ? '\\n' : ' ');\n    }\n    return 0;\n}\n",
+    "complexity": "时间 O(n log n)，空间 O(n)",
+    "pitfalls": [
+      "查询用的值也要放进离散化表：只离散数组、漏了询问的端点，lower_bound 会指错位置",
+      "排名从 0 还是 1 开始要和树状数组配套：BIT 要求从 1 开始",
+      "去重别忘了：sort 后 unique+erase 三件套，漏了 unique 排名就错",
+      "long long 的坐标离散化时别转成 int 存：排名可以是 int，原值保持原类型"
+    ],
+    "confusions": "离散化 vs 哈希：哈希是「值 → 随意编号」，离散化是「值 → 保序排名」。需要比较大小 / 区间查询时用离散化，只需要判相等时哈希就够了。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1496",
+        "title": "火烧赤壁"
+      },
+      {
+        "source": "luogu",
+        "id": "P1955",
+        "title": "程序自动分析"
+      },
+      {
+        "source": "luogu",
+        "id": "P1908",
+        "title": "逆序对"
+      }
+    ],
+    "related": [
+      "fenwick-intro",
+      "hash-counting"
+    ],
+    "sample_input": "6\n40 10 40 20 10 30",
+    "sample_output": "4 1 4 2 1 3"
+  },
+  {
+    "id": "palindrome-expand",
+    "title": "回文中心扩展",
+    "category": "字符串",
+    "level": "入门",
+    "signals": [
+      "「最长回文子串」「回文子串个数」",
+      "n 到 1000，O(n^2) 可过",
+      "从中间往两边扩",
+      "奇偶长度都要考虑"
+    ],
+    "idea": "回文关于中心对称：枚举每个中心（字符间的间隙也要），同时往两边扩，能扩就继续。奇回文中心是字符，偶回文中心是间隙；两种都枚举就不会漏。",
+    "template_python": "def solve():\n    import sys\n    s = sys.stdin.read().strip()\n    n = len(s)\n    best = \"\"\n    for c in range(n):\n        l = r = c  # 奇回文：中心是 s[c]\n        while l >= 0 and r < n and s[l] == s[r]:\n            if r - l + 1 > len(best):\n                best = s[l:r + 1]\n            l -= 1\n            r += 1\n        l, r = c, c + 1  # 偶回文：中心是 s[c] 与 s[c+1] 之间\n        while l >= 0 and r < n and s[l] == s[r]:\n            if r - l + 1 > len(best):\n                best = s[l:r + 1]\n            l -= 1\n            r += 1\n    sys.stdout.write(best)\n\n\nif __name__ == \"__main__\":\n    solve()\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    string s;\n    if (!getline(cin, s)) return 0;\n    int n = (int)s.size(), bl = 0, br = -1;  // 最优区间 [bl, br]\n    auto expand = [&](int l, int r) {\n        while (l >= 0 && r < n && s[l] == s[r]) { --l; ++r; }\n        // 回文是 (l, r) 开区间，即 [l+1, r-1]\n        if (r - l - 1 > br - bl + 1) { bl = l + 1; br = r - 1; }\n    };\n    for (int c = 0; c < n; ++c) {\n        expand(c, c);      // 奇回文\n        expand(c, c + 1);  // 偶回文\n    }\n    cout << s.substr(bl, br - bl + 1) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n^2)，空间 O(1)",
+    "pitfalls": [
+      "只枚举奇中心会漏掉偶回文（比如 \"abba\"）：两种中心都要",
+      "更新 best 用严格大于 >：用 >= 会在多个等长答案时取到后面的，样例可能对不上",
+      "l>=0 和 r<n 两个边界条件都要写，少一个就越界",
+      "n 到 1e5 时 O(n^2) 会超时，那是 Manacher 的主场，别硬扩"
+    ],
+    "confusions": "中心扩展 vs Manacher：n≤1000 直接中心扩展，好写不易错；n 到 1e5 才上 Manacher。先看数据范围，再决定。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "5",
+        "title": "最长回文子串"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "647",
+        "title": "回文子串"
+      },
+      {
+        "source": "luogu",
+        "id": "P1210",
+        "title": "回文质数"
+      }
+    ],
+    "related": [
+      "manacher-intro",
+      "kmp"
+    ],
+    "sample_input": "babad",
+    "sample_output": "bab"
+  }
+]

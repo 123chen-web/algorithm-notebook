@@ -1,0 +1,558 @@
+[
+  {
+    "id": "dp-fibonacci",
+    "title": "爬楼梯/斐波那契类",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "一次走 1 步或 2 步，n 级楼梯有几种走法",
+      "f(n) 只和 f(n-1)、f(n-2) 有关，答案呈 1, 2, 3, 5, 8… 的增长",
+      "递推式一眼能写出来，且状态不依赖其它维度的信息",
+      "n 特别大（比如 1e18）时提示你要用矩阵快速幂"
+    ],
+    "idea": "第 n 级只能从第 n-1 级跨一步上来，或从第 n-2 级跨两步上来，所以 f(n) = f(n-1) + f(n-2)。状态只依赖前两项，滚动两个变量就是 O(1) 空间。",
+    "template_python": "def ways(n):\n    '''爬到第 n 级楼梯的走法数：f(n) = f(n-1) + f(n-2)。'''\n    if n <= 2:\n        return n\n    a, b = 1, 2\n    for _ in range(3, n + 1):\n        a, b = b, a + b\n    return b\n\n\nif __name__ == '__main__':\n    import sys\n    n = int(sys.stdin.read().split()[0])\n    print(ways(n))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// f(n) = f(n-1) + f(n-2), f(1) = 1, f(2) = 2\nint64 ways(int n) {\n    if (n <= 2) return n;\n    int64 a = 1, b = 2;\n    for (int i = 3; i <= n; ++i) {\n        int64 c = a + b;\n        a = b;\n        b = c;\n    }\n    return b;\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    cout << ways(n) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)（滚动数组）",
+    "pitfalls": [
+      "初始值写错：f(1)=1, f(2)=2，不要按斐波那契的 0, 1 开头",
+      "n 很大时不能用 O(n) 循环硬推，要转矩阵快速幂",
+      "题目常要求对 1e9+7 取模，每一步加法后都要取模，不能只在最后取",
+      "变体（一次走 1/2/3 步）递推式变成 f(n) = f(n-1) + f(n-2) + f(n-3)，别照抄两项"
+    ],
+    "confusions": "爬楼梯 vs 打家劫舍：爬楼梯是“到第 i 级有几种走法”（加法合并），打家劫舍是“前 i 个里选不相邻的最大和”（取 max）。看到“几种”想加法，看到“最大”想取大。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "70",
+        "title": "爬楼梯"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "509",
+        "title": "斐波那契数"
+      },
+      {
+        "source": "luogu",
+        "id": "P1255",
+        "title": "数楼梯"
+      }
+    ],
+    "related": [
+      "linear-dp",
+      "dp-counting",
+      "fast-pow-gcd"
+    ],
+    "sample_input": "5",
+    "sample_output": "8"
+  },
+  {
+    "id": "dp-house-robber",
+    "title": "打家劫舍（相邻不选）",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "“相邻两个不能同时选”，求最大和/最大金额",
+      "房屋排成一排（直线版），偷了 i 号就不能偷 i-1 号",
+      "排成一圈的版本（首尾也不能同时选）",
+      "选与不选两种决策，且决策只影响相邻位置"
+    ],
+    "idea": "只看前 i 个房间：要么不偷第 i 个（答案是前 i-1 个的最优），要么偷第 i 个（答案是前 i-2 个的最优加上 a[i]）。两个都试，取大。",
+    "template_python": "def rob(a):\n    '''排成一排的房屋，相邻不能都偷，求最大金额。'''\n    prev, cur = 0, 0  # prev = 前 i-1 个的最优，cur = 前 i 个的最优\n    for v in a:\n        prev, cur = cur, max(cur, prev + v)\n    return cur\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n = data[0]\n    a = data[1:1 + n]\n    print(rob(a))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 相邻不能都偷，前 i 个的最大金额\nint64 rob(const vector<int64> &a) {\n    int64 prev = 0, cur = 0;\n    for (int64 v : a) {\n        int64 nxt = max(cur, prev + v);\n        prev = cur;\n        cur = nxt;\n    }\n    return cur;\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int64> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    cout << rob(a) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)（滚动两个变量）",
+    "pitfalls": [
+      "状态更新顺序写反：必须先算出新 cur 再挪 prev，或者用临时变量",
+      "环形版（打家劫舍 II）直接套直线版会偷到首尾相邻，要拆成“偷第 1 个”和“不偷第 1 个”两种情况",
+      "金额可能很大（a[i] 到 1e9，n 到 1e5），和要用 64 位",
+      "删除并获得点数这类变体，先把值域压缩成“选了 x 就不能选 x-1/x+1”的打家劫舍模型再套用"
+    ],
+    "confusions": "打家劫舍 vs 爬楼梯：打家劫舍每步是“偷/不偷”二选一取 max，爬楼梯每步是“走法数”加法合并。一个求最优值，一个数方案数，别套错公式。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "198",
+        "title": "打家劫舍"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "213",
+        "title": "打家劫舍 II"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "740",
+        "title": "删除并获得点数"
+      }
+    ],
+    "related": [
+      "linear-dp",
+      "dp-fibonacci"
+    ],
+    "sample_input": "5\n2 7 9 3 1",
+    "sample_output": "12"
+  },
+  {
+    "id": "kadane",
+    "title": "最大子数组和（Kadane）",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "求“最大子数组和”，子数组必须连续",
+      "以位置 i 结尾的子数组，答案要么是 a[i] 本身，要么是接上前面的",
+      "O(n^2) 枚举左右端点会超时",
+      "环形数组版本（首尾相连）"
+    ],
+    "idea": "cur[i] = 以 i 结尾的最大子数组和，它要么是 a[i] 自己另起一段，要么是 cur[i-1] + a[i] 续上。答案是所有 cur[i] 的最大值，一次遍历搞定。",
+    "template_python": "def max_subarray(a):\n    '''返回非空连续子数组的最大和。'''\n    cur = best = a[0]\n    for v in a[1:]:\n        cur = max(v, cur + v)   # 另起一段，还是续上\n        if cur > best:\n            best = cur\n    return best\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n = data[0]\n    a = data[1:1 + n]\n    print(max_subarray(a))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 返回非空连续子数组的最大和\nint64 max_subarray(const vector<int64> &a) {\n    int64 cur = a[0], best = a[0];\n    for (size_t i = 1; i < a.size(); ++i) {\n        cur = max(a[i], cur + a[i]);\n        best = max(best, cur);\n    }\n    return best;\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int64> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    cout << max_subarray(a) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)",
+    "pitfalls": [
+      "cur 和 best 的初始值要用 a[0] 而不是 0，否则全负数数组会错成 0",
+      "环形版（首尾相连）不能直接套：答案是 max(普通 Kadane, 总和 - 最小子数组和)，且全负数时要特判",
+      "乘积最大子数组不能照抄：负数乘负数会变大，要同时维护最大和最小两个 cur",
+      "题目如果要求输出子数组的左右端点，更新 best 时要顺手记下标"
+    ],
+    "confusions": "Kadane vs 前缀和+枚举：前缀和枚举左右端点是 O(n^2)，Kadane 是“以 i 结尾”的一维 DP，O(n)。先想“以 i 结尾的最优是什么”，想不出来再退到前缀和。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "53",
+        "title": "最大子数组和"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "918",
+        "title": "环形子数组的最大和"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "152",
+        "title": "乘积最大子数组"
+      }
+    ],
+    "related": [
+      "prefix-sum",
+      "linear-dp"
+    ],
+    "sample_input": "9\n-2 1 -3 4 -1 2 1 -5 4",
+    "sample_output": "6"
+  },
+  {
+    "id": "dp-grid",
+    "title": "网格路径 DP",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "m×n 网格，只能向右/向下走，求到右下角的路径数或最小代价",
+      "格子上有障碍，或者每个格子有权重",
+      "“机器人从左上走到右下”，移动方向受限",
+      "状态天然是二维的 (i, j)，且只依赖左、上两个邻居"
+    ],
+    "idea": "走到 (i, j) 只能从左边或上边来，所以 dp[i][j] = dp[i-1][j] + dp[i][j-1]（求路径数）或取 min 加上格子代价（求最小代价）。只用上一行的值就能滚过去。",
+    "template_python": "def grid_paths(grid):\n    '''只能向右/向下走，1 是障碍，返回左上到右下的路径数。'''\n    m, n = len(grid), len(grid[0])\n    dp = [0] * n\n    for i in range(m):\n        for j in range(n):\n            if grid[i][j] == 1:\n                dp[j] = 0\n            elif i == 0 and j == 0:\n                dp[j] = 1\n            elif j == 0:\n                pass  # dp[j] 保持上一行的值\n            else:\n                dp[j] = dp[j] + dp[j - 1]\n    return dp[n - 1]\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    m, n = data[0], data[1]\n    vals = data[2:]\n    grid = [vals[i * n:(i + 1) * n] for i in range(m)]\n    print(grid_paths(grid))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 只能向右/向下走，1 是障碍，返回左上到右下的路径数\nint64 grid_paths(const vector<vector<int>> &g) {\n    int m = g.size(), n = g[0].size();\n    vector<int64> dp(n, 0);\n    for (int i = 0; i < m; ++i)\n        for (int j = 0; j < n; ++j) {\n            if (g[i][j] == 1) dp[j] = 0;\n            else if (i == 0 && j == 0) dp[j] = 1;\n            else if (j == 0) { /* dp[j] 保持上一行的值 */ }\n            else dp[j] = dp[j] + dp[j - 1];\n        }\n    return dp[n - 1];\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int m, n;\n    if (!(cin >> m >> n)) return 0;\n    vector<vector<int>> g(m, vector<int>(n));\n    for (int i = 0; i < m; ++i)\n        for (int j = 0; j < n; ++j) cin >> g[i][j];\n    cout << grid_paths(g) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(mn)，空间 O(n)（滚动一维）",
+    "pitfalls": [
+      "起点或终点是障碍时答案直接是 0，别忘了先判断",
+      "j == 0 那一列不能写 dp[j] = dp[j] + dp[j-1]，左邻居不存在，要保持上一行的值",
+      "求最小代价时初始值要用 INF（障碍格设 INF），别用 0",
+      "路径数可能非常大，题目通常要求取模，记得在加法后取模"
+    ],
+    "confusions": "网格 DP vs BFS 最短路：只能右/下走时 DP 就够了（天然拓扑序）；能上下左右走时格子之间有环，必须用 BFS/0-1 BFS。看移动方向有没有“回头路”。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "62",
+        "title": "不同路径"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "63",
+        "title": "不同路径 II"
+      },
+      {
+        "source": "luogu",
+        "id": "P1002",
+        "title": "过河卒"
+      }
+    ],
+    "related": [
+      "linear-dp",
+      "dp-counting"
+    ],
+    "sample_input": "3 3\n0 0 0\n0 0 0\n0 0 0",
+    "sample_output": "6"
+  },
+  {
+    "id": "dp-lcs",
+    "title": "最长公共子序列",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "两个字符串/序列的“最长公共子序列”（子序列可以不连续）",
+      "“删除最少字符使两串相同”——等价于 总长 - 2×LCS",
+      "两个序列的相似度、diff 思路",
+      "状态是两个下标 (i, j) 的配对，转移看 a[i] 和 b[j] 相等与否"
+    ],
+    "idea": "dp[i][j] = a 前 i 个和 b 前 j 个的 LCS 长度。若 a[i]==b[j]，它俩配对，dp = dp[i-1][j-1]+1；否则继承左边或上边的较大值。只留两行滚动即可。",
+    "template_python": "def lcs(a, b):\n    '''返回 a 和 b 的最长公共子序列长度。'''\n    m, n = len(a), len(b)\n    prev = [0] * (n + 1)\n    for i in range(1, m + 1):\n        cur = [0] * (n + 1)\n        ai = a[i - 1]\n        for j in range(1, n + 1):\n            if ai == b[j - 1]:\n                cur[j] = prev[j - 1] + 1\n            else:\n                cur[j] = prev[j] if prev[j] >= cur[j - 1] else cur[j - 1]\n        prev = cur\n    return prev[n]\n\n\nif __name__ == '__main__':\n    import sys\n    lines = sys.stdin.read().split('\\n')\n    a = lines[0].strip() if len(lines) > 0 else ''\n    b = lines[1].strip() if len(lines) > 1 else ''\n    print(lcs(a, b))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\n// 返回 a 和 b 的最长公共子序列长度\nint lcs(const string &a, const string &b) {\n    int m = a.size(), n = b.size();\n    vector<int> prev(n + 1, 0), cur(n + 1, 0);\n    for (int i = 1; i <= m; ++i) {\n        for (int j = 1; j <= n; ++j) {\n            if (a[i - 1] == b[j - 1]) cur[j] = prev[j - 1] + 1;\n            else cur[j] = max(prev[j], cur[j - 1]);\n        }\n        prev.swap(cur);\n    }\n    return prev[n];\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    string a, b;\n    getline(cin, a);\n    getline(cin, b);\n    cout << lcs(a, b) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(mn)，空间 O(min(m, n))（滚动两行）",
+    "pitfalls": [
+      "下标错位：dp[i][j] 对应 a[i-1] 和 b[j-1]，比较时别用 a[i] 和 b[j]",
+      "“最长公共子串”（要求连续）和“最长公共子序列”转移不同，子串要求失配时清零",
+      "m, n 到 5000 时 O(mn) 内存直接爆，要滚动数组；到 1e5 且字符集是 26 字母时 LCS 没有多项式解法，别硬套",
+      "还原具体方案时要从 dp 表回溯，不能只看长度"
+    ],
+    "confusions": "LCS vs 编辑距离：LCS 只允许删字符（代价隐含在长度差里），编辑距离还允许替换。两个串“最少改几次变一样”用编辑距离；“最长能保留多少”用 LCS。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "1143",
+        "title": "最长公共子序列"
+      },
+      {
+        "source": "luogu",
+        "id": "P1439",
+        "title": "最长公共子序列"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "583",
+        "title": "两个字符串的删除操作"
+      }
+    ],
+    "related": [
+      "dp-edit-distance",
+      "linear-dp"
+    ],
+    "sample_input": "abcde\nace",
+    "sample_output": "3"
+  },
+  {
+    "id": "dp-edit-distance",
+    "title": "编辑距离",
+    "category": "动态规划",
+    "level": "进阶",
+    "signals": [
+      "“最少几次操作把 A 变成 B”，操作是插入/删除/替换",
+      "两个字符串的相似度、拼写纠错",
+      "只允许删除的版本就是 LCS 的变形",
+      "dp[i][j] 定义为“a 前 i 个变成 b 前 j 个的最少操作”"
+    ],
+    "idea": "看 a[i] 和 b[j]：相等则不用操作，继承 dp[i-1][j-1]；不等则三种操作各试一次——删 a[i]（dp[i-1][j]+1）、在 a 里插 b[j]（dp[i][j-1]+1）、替换（dp[i-1][j-1]+1），取最小。",
+    "template_python": "def edit_distance(a, b):\n    '''返回把 a 变成 b 的最少编辑操作数（插入/删除/替换）。'''\n    m, n = len(a), len(b)\n    prev = list(range(n + 1))  # 空串变 b 前 j 个要插 j 次\n    for i in range(1, m + 1):\n        cur = [i] + [0] * n    # a 前 i 个变空串要删 i 次\n        ai = a[i - 1]\n        for j in range(1, n + 1):\n            if ai == b[j - 1]:\n                cur[j] = prev[j - 1]\n            else:\n                cur[j] = 1 + min(prev[j], cur[j - 1], prev[j - 1])\n        prev = cur\n    return prev[n]\n\n\nif __name__ == '__main__':\n    import sys\n    lines = sys.stdin.read().split('\\n')\n    a = lines[0].strip() if len(lines) > 0 else ''\n    b = lines[1].strip() if len(lines) > 1 else ''\n    print(edit_distance(a, b))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\n// 返回把 a 变成 b 的最少编辑操作数（插入/删除/替换）\nint edit_distance(const string &a, const string &b) {\n    int m = a.size(), n = b.size();\n    vector<int> prev(n + 1), cur(n + 1);\n    iota(prev.begin(), prev.end(), 0);\n    for (int i = 1; i <= m; ++i) {\n        cur[0] = i;\n        for (int j = 1; j <= n; ++j) {\n            if (a[i - 1] == b[j - 1]) cur[j] = prev[j - 1];\n            else cur[j] = 1 + min({prev[j], cur[j - 1], prev[j - 1]});\n        }\n        prev.swap(cur);\n    }\n    return prev[n];\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    string a, b;\n    getline(cin, a);\n    getline(cin, b);\n    cout << edit_distance(a, b) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(mn)，空间 O(min(m, n))（滚动两行）",
+    "pitfalls": [
+      "初始化错：prev[j] = j（空串插 j 次），cur[0] = i（删 i 次），别全填 0",
+      "三种操作别漏：删对应 dp[i-1][j]，插对应 dp[i][j-1]，替对应 dp[i-1][j-1]，各 +1",
+      "a[i]==b[j] 时直接继承 dp[i-1][j-1]，不要再 +1",
+      "只允许插入和删除的版本答案是 m + n - 2×LCS，别套三操作模板"
+    ],
+    "confusions": "编辑距离 vs LCS：编辑距离的替换操作是 LCS 没有的。题目说“替换也算一次”就用编辑距离；只说“删除”就用 LCS。先数操作种类，再选模板。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "72",
+        "title": "编辑距离"
+      },
+      {
+        "source": "luogu",
+        "id": "P2758",
+        "title": "编辑距离"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "583",
+        "title": "两个字符串的删除操作"
+      }
+    ],
+    "related": [
+      "dp-lcs",
+      "linear-dp"
+    ],
+    "sample_input": "horse\nros",
+    "sample_output": "3"
+  },
+  {
+    "id": "dp-stock-state",
+    "title": "股票买卖（状态机 DP）",
+    "category": "动态规划",
+    "level": "进阶",
+    "signals": [
+      "买卖股票，同一天不能既买又卖，问最大利润",
+      "“最多交易 k 次”“含冷冻期”“含手续费”",
+      "每天结束时只有两种状态：手里有股 / 手里没股",
+      "状态之间按“买/卖/不动”转移"
+    ],
+    "idea": "每天只有持股和空仓两种状态：持股 = max(昨天持股，昨天空仓-今天买入价)；空仓 = max(昨天空仓，昨天持股+今天卖出价)。k 次交易就再加一维“已完成交易数”。",
+    "template_python": "def max_profit(prices):\n    '''不限交易次数（一次完整买卖算一次），求最大利润。'''\n    hold = -10 ** 18  # 持股状态的最大收益\n    cash = 0          # 空仓状态的最大收益\n    for p in prices:\n        hold = max(hold, -p)      # 买入（此前没买过）\n        cash = max(cash, hold + p)  # 卖出\n    return cash\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n = data[0]\n    prices = data[1:1 + n]\n    print(max_profit(prices))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 不限交易次数，求最大利润\nint64 max_profit(const vector<int64> &prices) {\n    const int64 NEG = (int64)-4e18;\n    int64 hold = NEG, cash = 0;\n    for (int64 p : prices) {\n        hold = max(hold, -p);\n        cash = max(cash, hold + p);\n    }\n    return cash;\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int64> prices(n);\n    for (int i = 0; i < n; ++i) cin >> prices[i];\n    cout << max_profit(prices) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n)，空间 O(1)；k 次交易版时间 O(nk)、空间 O(k)",
+    "pitfalls": [
+      "hold 的初值不能是 0，要设成一个很小的负数，否则第一天“买入”会被 0 盖掉",
+      "更新顺序：同一天先算新的 hold 再算 cash，或者用临时变量，别互相污染",
+      "k 次交易版里“买入”要从 cash[j-1] 转移（完成一次交易计数的是卖出那一下），买和卖的计数别搞反",
+      "冷冻期版本卖出后第二天不能买，转移要从“前天”的 cash 来，多维护一个 pre_cash"
+    ],
+    "confusions": "状态机 DP vs 贪心：不限次数时贪心（所有上涨段都吃）也行，但一旦加了 k 次/冷冻期/手续费限制，贪心失效，必须状态机。先看限制条件，再决定要不要上 DP。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "121",
+        "title": "买卖股票的最佳时机"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "122",
+        "title": "买卖股票的最佳时机 II"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "123",
+        "title": "买卖股票的最佳时机 III"
+      }
+    ],
+    "related": [
+      "linear-dp",
+      "kadane"
+    ],
+    "sample_input": "6\n7 1 5 3 6 4",
+    "sample_output": "5"
+  },
+  {
+    "id": "knapsack-multi",
+    "title": "多重/分组背包",
+    "category": "动态规划",
+    "level": "进阶",
+    "signals": [
+      "每种物品有件数限制（第 i 种最多拿 k_i 件），容量 W 求最大价值",
+      "“多重背包”“有数量限制的背包”",
+      "分组背包：一组里最多选一件",
+      "01 背包的模板超时或语义对不上（物品可重复拿但有限次）"
+    ],
+    "idea": "把 k 件相同的物品按 1, 2, 4, … 做二进制拆分，拆出来的每份当成一件 01 物品。这样任意不超过 k 的数量都能拼出来，问题退化为 01 背包。分组背包则对每组做“选一件”的 01 转移。",
+    "template_python": "def bounded_knapsack(items, W):\n    '''items 是 (重量, 价值, 件数) 列表；二进制拆分转 01 背包。'''\n    objs = []\n    for w, v, k in items:\n        t = 1\n        while k > 0:\n            c = t if t < k else k\n            objs.append((w * c, v * c))\n            k -= c\n            t <<= 1\n    dp = [0] * (W + 1)\n    for w, v in objs:          # 01 背包：容量倒序\n        for j in range(W, w - 1, -1):\n            if dp[j - w] + v > dp[j]:\n                dp[j] = dp[j - w] + v\n    return max(dp)\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n, W = data[0], data[1]\n    items = [(data[2 + 3 * i], data[3 + 3 * i], data[4 + 3 * i]) for i in range(n)]\n    print(bounded_knapsack(items, W))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 多重背包：二进制拆分转 01 背包\nint64 bounded_knapsack(const vector<array<int64, 3>> &items, int64 W) {\n    vector<pair<int64, int64>> objs;\n    for (auto it : items) {\n        int64 w = it[0], v = it[1], k = it[2], t = 1;\n        while (k > 0) {\n            int64 c = min(t, k);\n            objs.emplace_back(w * c, v * c);\n            k -= c;\n            t <<= 1;\n        }\n    }\n    vector<int64> dp(W + 1, 0);\n    for (auto [w, v] : objs)\n        for (int64 j = W; j >= w; --j)\n            dp[j] = max(dp[j], dp[j - w] + v);\n    return *max_element(dp.begin(), dp.end());\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    int64 W;\n    if (!(cin >> n >> W)) return 0;\n    vector<array<int64, 3>> items(n);\n    for (int i = 0; i < n; ++i) cin >> items[i][0] >> items[i][1] >> items[i][2];\n    cout << bounded_knapsack(items, W) << '\\n';\n    return 0;\n}\n",
+    "complexity": "拆分后物品数 O(n log k)，时间 O(W · n log k)，空间 O(W)",
+    "pitfalls": [
+      "拆分后的物品必须按 01 背包倒序遍历容量，正序会变成完全背包（无限拿）",
+      "拆分时最后一块是 k 的余数（比如 k=5 拆成 1,2,2），别写成 1,2,4 超出 k",
+      "分组背包（一组选一件）不能二进制拆分，要对每组做“组内选一件”的转移，组间倒序",
+      "价值和可能很大，dp 数组用 64 位；W 到 1e5 以上考虑单调队列优化"
+    ],
+    "confusions": "多重背包 vs 完全背包：完全背包每种无限拿（正序遍历），多重背包有限次（拆分后倒序遍历）。先看有没有件数限制，有就拆分倒序，没有就正序。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1776",
+        "title": "宝物筛选"
+      },
+      {
+        "source": "luogu",
+        "id": "P1833",
+        "title": "樱花"
+      },
+      {
+        "source": "luogu",
+        "id": "P1064",
+        "title": "金明的预算方案"
+      }
+    ],
+    "related": [
+      "knapsack-01",
+      "knapsack-complete",
+      "linear-dp"
+    ],
+    "sample_input": "2 10\n2 3 4\n3 5 2",
+    "sample_output": "16"
+  },
+  {
+    "id": "dp-counting",
+    "title": "计数 DP（路径数/方案数取模）",
+    "category": "动态规划",
+    "level": "入门",
+    "signals": [
+      "问“有多少种方案/多少条路径”，而不是最大值",
+      "答案很大，题目要求对 1e9+7（或其它数）取模",
+      "每一步的方案数是前面几步方案数的和",
+      "状态转移是加法合并，不是取 max"
+    ],
+    "idea": "dp[i] = 到达状态 i 的方案数 = 所有能转移到 i 的前驱状态的方案数之和。因为只关心数量不关心具体路径，加法天然满足最优子结构；每次加法后取模保证不溢出。",
+    "template_python": "MOD = 10 ** 9 + 7\n\n\ndef count_paths(grid):\n    '''只能向右/向下走，1 是障碍；返回路径数对 1e9+7 取模。'''\n    m, n = len(grid), len(grid[0])\n    dp = [0] * n\n    for i in range(m):\n        for j in range(n):\n            if grid[i][j] == 1:\n                dp[j] = 0\n            elif i == 0 and j == 0:\n                dp[j] = 1\n            elif j == 0:\n                pass  # dp[j] 保持上一行的值\n            else:\n                dp[j] = (dp[j] + dp[j - 1]) % MOD\n    return dp[n - 1]\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    m, n = data[0], data[1]\n    vals = data[2:]\n    grid = [vals[i * n:(i + 1) * n] for i in range(m)]\n    print(count_paths(grid))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\nconst int64 MOD = 1000000007LL;\n// 只能向右/向下走，1 是障碍；返回路径数对 1e9+7 取模\nint64 count_paths(const vector<vector<int>> &g) {\n    int m = g.size(), n = g[0].size();\n    vector<int64> dp(n, 0);\n    for (int i = 0; i < m; ++i)\n        for (int j = 0; j < n; ++j) {\n            if (g[i][j] == 1) dp[j] = 0;\n            else if (i == 0 && j == 0) dp[j] = 1;\n            else if (j == 0) { /* dp[j] 保持上一行的值 */ }\n            else dp[j] = (dp[j] + dp[j - 1]) % MOD;\n        }\n    return dp[n - 1];\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int m, n;\n    if (!(cin >> m >> n)) return 0;\n    vector<vector<int>> g(m, vector<int>(n));\n    for (int i = 0; i < m; ++i)\n        for (int j = 0; j < n; ++j) cin >> g[i][j];\n    cout << count_paths(g) << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(状态数 × 转移数)，空间可滚动压缩到 O(状态的一维)",
+    "pitfalls": [
+      "转移写成取 max：计数 DP 是加法合并，写成 max 就变成最优化 DP 了",
+      "只在最后取一次模：中间加法可能溢出 64 位，每次加完都要取模",
+      "重复计数：同一个方案被两条转移路径算到，要检查转移是否划分了互斥的情况",
+      "初始状态的方案数是 1（空方案/起点本身）不是 0，写成 0 会导致全 0"
+    ],
+    "confusions": "计数 DP vs 最优化 DP：问“多少种”用加法合并，问“最大/最小”用 max/min 合并。先看题目的问法，再决定转移是加还是取大。",
+    "examples": [
+      {
+        "source": "leetcode-cn",
+        "id": "62",
+        "title": "不同路径"
+      },
+      {
+        "source": "luogu",
+        "id": "P1164",
+        "title": "小A点菜"
+      },
+      {
+        "source": "luogu",
+        "id": "P1002",
+        "title": "过河卒"
+      }
+    ],
+    "related": [
+      "dp-grid",
+      "linear-dp",
+      "pitfalls-overflow"
+    ],
+    "sample_input": "3 3\n0 0 0\n0 1 0\n0 0 0",
+    "sample_output": "2"
+  },
+  {
+    "id": "merge-sort-inversions",
+    "title": "归并排序与逆序对",
+    "category": "分治",
+    "level": "进阶",
+    "signals": [
+      "求“逆序对”数量（i < j 但 a[i] > a[j] 的对数）",
+      "n 到 1e5，O(n^2) 枚举超时",
+      "“每个元素右边有多少个比它小的”",
+      "归并排序的过程中顺手统计跨左右两半的贡献"
+    ],
+    "idea": "归并排序把数组分成左右两半：逆序对要么全在左半，要么全在右半（递归解决），要么一个在左一个在右。合并时左右两半各自有序，左半当前元素大于右半当前元素时，左半剩余所有元素都和它构成逆序对，一次加上。",
+    "template_python": "import sys\n\n\ndef sort_count(a):\n    '''返回 (排好序的数组, 逆序对数)。'''\n    n = len(a)\n    if n <= 1:\n        return a, 0\n    mid = n // 2\n    left, cl = sort_count(a[:mid])\n    right, cr = sort_count(a[mid:])\n    merged = []\n    i = j = 0\n    c = cl + cr\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            merged.append(left[i])\n            i += 1\n        else:\n            merged.append(right[j])\n            j += 1\n            c += len(left) - i  # 左半剩余的都比它大\n    merged.extend(left[i:])\n    merged.extend(right[j:])\n    return merged, c\n\n\nif __name__ == '__main__':\n    sys.setrecursionlimit(1000000)\n    data = list(map(int, sys.stdin.read().split()))\n    n = data[0]\n    a = data[1:1 + n]\n    _, c = sort_count(a)\n    print(c)\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 归并排序求逆序对数，返回 {排好序的数组, 逆序对数}\npair<vector<int64>, int64> sort_count(vector<int64> a) {\n    int64 n = (int64)a.size();\n    if (n <= 1) return {a, 0};\n    int64 mid = n / 2;\n    vector<int64> left(a.begin(), a.begin() + mid);\n    vector<int64> right(a.begin() + mid, a.end());\n    auto pl = sort_count(move(left));\n    auto pr = sort_count(move(right));\n    vector<int64> &sl = pl.first, &sr = pr.first;\n    vector<int64> merged;\n    merged.reserve(n);\n    int64 i = 0, j = 0, c = pl.second + pr.second;\n    while (i < (int64)sl.size() && j < (int64)sr.size()) {\n        if (sl[i] <= sr[j]) merged.push_back(sl[i++]);\n        else {\n            merged.push_back(sr[j++]);\n            c += (int64)sl.size() - i;  // 左半剩余的都比它大\n        }\n    }\n    while (i < (int64)sl.size()) merged.push_back(sl[i++]);\n    while (j < (int64)sr.size()) merged.push_back(sr[j++]);\n    return {merged, c};\n}\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n;\n    if (!(cin >> n)) return 0;\n    vector<int64> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    cout << sort_count(a).second << '\\n';\n    return 0;\n}\n",
+    "complexity": "时间 O(n log n)，空间 O(n)",
+    "pitfalls": [
+      "逆序对数最大约 n^2/2，n=1e5 时超 int，必须用 64 位",
+      "统计跨半贡献时加的是 len(left) - i（左半剩余全部），不是只加 1",
+      "相等元素不算逆序对，比较要用 <= 而不是 <，否则相等也被计入",
+      "Python 递归深度默认 1000，n 大时要调高 recursionlimit 或改迭代写法"
+    ],
+    "confusions": "归并统计逆序对 vs 树状数组：两者都是 O(n log n)。归并写法一次过、不需要离散化；树状数组/线段树更灵活（能处理“动态插入+查询”）。静态数组二选一都行，动态用树状数组。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P1908",
+        "title": "逆序对"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "493",
+        "title": "翻转对"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "315",
+        "title": "计算右侧小于当前元素的个数"
+      }
+    ],
+    "related": [
+      "fenwick-intro",
+      "pitfalls-overflow"
+    ],
+    "sample_input": "5\n4 3 2 1 0",
+    "sample_output": "10"
+  },
+  {
+    "id": "segment-tree",
+    "title": "线段树（单点修改+区间查询）",
+    "category": "数据结构",
+    "level": "进阶",
+    "signals": [
+      "数组有单点修改，还要频繁查区间和/区间最值",
+      "n, q 到 1e5，暴力 O(n) 单次查询超时",
+      "“区间修改+区间查询”（懒标记版）是这个的升级",
+      "修改和查询交替出现，不能离线"
+    ],
+    "idea": "把数组建成一棵二叉树：叶子是单个元素，每个内部节点存它管辖区间的聚合值（和/最值）。单点修改只影响从叶子到根的一条链（O(log n) 个节点），区间查询把区间拆成 O(log n) 个不交的节点区间拼起来。",
+    "template_python": "class SegTree:\n    '''单点加、区间求和。下标 0-based，查询区间 [l, r)。'''\n\n    def __init__(self, a):\n        n = len(a)\n        size = 1\n        while size < n:\n            size <<= 1\n        self.n = size\n        self.t = [0] * (2 * size)\n        for i, v in enumerate(a):\n            self.t[size + i] = v\n        for i in range(size - 1, 0, -1):\n            self.t[i] = self.t[i << 1] + self.t[i << 1 | 1]\n\n    def add(self, pos, delta):\n        i = self.n + pos\n        self.t[i] += delta\n        i >>= 1\n        while i:\n            self.t[i] = self.t[i << 1] + self.t[i << 1 | 1]\n            i >>= 1\n\n    def query(self, l, r):\n        l += self.n\n        r += self.n\n        res = 0\n        while l < r:\n            if l & 1:\n                res += self.t[l]\n                l += 1\n            if r & 1:\n                r -= 1\n                res += self.t[r]\n            l >>= 1\n            r >>= 1\n        return res\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n, q = data[0], data[1]\n    a = data[2:2 + n]\n    st = SegTree(a)\n    out = []\n    p = 2 + n\n    for _ in range(q):\n        typ = data[p]\n        if typ == 1:          # 单点加：1 i x 表示 a[i] += x（1-based）\n            st.add(data[p + 1] - 1, data[p + 2])\n            p += 3\n        else:                 # 区间求和：2 l r 表示 sum(a[l..r])（1-based 闭区间）\n            out.append(str(st.query(data[p + 1] - 1, data[p + 2])))\n            p += 3\n    sys.stdout.write('\\n'.join(out))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\nusing int64 = long long;\n// 单点加、区间求和。下标 0-based，查询区间 [l, r)\nstruct SegTree {\n    int n;\n    vector<int64> t;\n    SegTree(const vector<int64> &a = {}) { init(a); }\n    void init(const vector<int64> &a) {\n        int sz = (int)a.size();\n        n = 1;\n        while (n < sz) n <<= 1;\n        t.assign(2 * n, 0);\n        for (int i = 0; i < sz; ++i) t[n + i] = a[i];\n        for (int i = n - 1; i > 0; --i) t[i] = t[i << 1] + t[i << 1 | 1];\n    }\n    void add(int pos, int64 delta) {\n        int i = n + pos;\n        t[i] += delta;\n        for (i >>= 1; i; i >>= 1) t[i] = t[i << 1] + t[i << 1 | 1];\n    }\n    int64 query(int l, int r) {  // [l, r)\n        int64 res = 0;\n        for (l += n, r += n; l < r; l >>= 1, r >>= 1) {\n            if (l & 1) res += t[l++];\n            if (r & 1) res += t[--r];\n        }\n        return res;\n    }\n};\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n, q;\n    if (!(cin >> n >> q)) return 0;\n    vector<int64> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    SegTree st(a);\n    for (int k = 0; k < q; ++k) {\n        int typ;\n        cin >> typ;\n        if (typ == 1) {          // 单点加：1 i x 表示 a[i] += x（1-based）\n            int i;\n            int64 x;\n            cin >> i >> x;\n            st.add(i - 1, x);\n        } else {                 // 区间求和：2 l r（1-based 闭区间）\n            int l, r;\n            cin >> l >> r;\n            cout << st.query(l - 1, r) << '\\n';\n        }\n    }\n    return 0;\n}\n",
+    "complexity": "建树 O(n)，单点修改和区间查询都是 O(log n)，空间 O(n)",
+    "pitfalls": [
+      "查询区间开闭搞混：模板里 query(l, r) 是左闭右开，1-based 闭区间 [l, r] 要转成 query(l-1, r)",
+      "建树时 size 要补到 2 的幂，多出来的叶子填聚合的单位元（求和填 0，求最小值填 INF）",
+      "区间修改（加一个数到整个区间）不能只改叶子，必须上懒标记，否则退化成 O(n)",
+      "递归写法在 n 很大时注意栈深度；迭代写法（上面这种）没有这个问题"
+    ],
+    "confusions": "线段树 vs 树状数组：单点改+区间查两者都行，树状数组代码更短；但区间改+区间查、区间最值、区间赋值这类树状数组搞不定，要用线段树。先看操作种类，再选。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P3372",
+        "title": "线段树 1"
+      },
+      {
+        "source": "luogu",
+        "id": "P3373",
+        "title": "线段树 2"
+      },
+      {
+        "source": "leetcode-cn",
+        "id": "307",
+        "title": "区域和检索-数组可修改"
+      }
+    ],
+    "related": [
+      "fenwick-intro",
+      "sparse-table",
+      "difference-array"
+    ],
+    "sample_input": "5 4\n1 2 3 4 5\n2 1 5\n1 3 10\n2 1 5\n2 2 4",
+    "sample_output": "15\n25\n19"
+  },
+  {
+    "id": "sparse-table",
+    "title": "稀疏表 ST",
+    "category": "数据结构",
+    "level": "进阶",
+    "signals": [
+      "静态数组（建好后不再修改），大量区间最值/区间 GCD 查询",
+      "n, q 到 1e5，线段树 O((n+q) log n) 能过但想更快",
+      "查询操作满足幂等性（max/min/gcd/and/or），区间重叠不影响结果",
+      "“离线 RMQ”"
+    ],
+    "idea": "st[k][i] = 从 i 开始长度为 2^k 的区间的聚合值，由两个 2^(k-1) 段拼出来：st[k][i] = op(st[k-1][i], st[k-1][i+2^(k-1)])。查询 [l, r) 时取 k = floor(log2(len))，用 [l, l+2^k) 和 [r-2^k, r) 两段覆盖（重叠无所谓，因为操作幂等），O(1) 回答。",
+    "template_python": "def build_st(a):\n    '''静态区间最大值。返回 (st, lg)，查询用 query_max(st, lg, l, r)。'''\n    import math\n    n = len(a)\n    LOG = math.floor(math.log2(n)) + 1\n    st = [[0] * n for _ in range(LOG)]\n    st[0] = a[:]\n    for k in range(1, LOG):\n        step = 1 << (k - 1)\n        prev, row = st[k - 1], st[k]\n        for i in range(n - (1 << k) + 1):\n            x, y = prev[i], prev[i + step]\n            row[i] = x if x >= y else y\n    lg = [0] * (n + 1)\n    for i in range(2, n + 1):\n        lg[i] = lg[i >> 1] + 1\n    return st, lg\n\n\ndef query_max(st, lg, l, r):\n    '''[l, r) 0-based 的区间最大值。'''\n    k = lg[r - l]\n    x = st[k][l]\n    y = st[k][r - (1 << k)]\n    return x if x >= y else y\n\n\nif __name__ == '__main__':\n    import sys\n    data = list(map(int, sys.stdin.read().split()))\n    n, q = data[0], data[1]\n    a = data[2:2 + n]\n    st, lg = build_st(a)\n    out = []\n    p = 2 + n\n    for _ in range(q):\n        l, r = data[p], data[p + 1]  # 1-based 闭区间\n        out.append(str(query_max(st, lg, l - 1, r)))\n        p += 2\n    sys.stdout.write('\\n'.join(out))\n",
+    "template_cpp": "#include <bits/stdc++.h>\nusing namespace std;\n// 静态区间最大值：O(n log n) 预处理，O(1) 查询\nstruct SparseTable {\n    int n, LOG;\n    vector<vector<int>> st;\n    vector<int> lg;\n    SparseTable(const vector<int> &a = {}) { init(a); }\n    void init(const vector<int> &a) {\n        n = (int)a.size();\n        LOG = 1;\n        while ((1 << LOG) <= n) ++LOG;\n        st.assign(LOG, vector<int>(n));\n        st[0] = a;\n        for (int k = 1; k < LOG; ++k)\n            for (int i = 0; i + (1 << k) <= n; ++i)\n                st[k][i] = max(st[k - 1][i], st[k - 1][i + (1 << (k - 1))]);\n        lg.assign(n + 1, 0);\n        for (int i = 2; i <= n; ++i) lg[i] = lg[i >> 1] + 1;\n    }\n    int query(int l, int r) const {  // [l, r) 0-based\n        int k = lg[r - l];\n        return max(st[k][l], st[k][r - (1 << k)]);\n    }\n};\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int n, q;\n    if (!(cin >> n >> q)) return 0;\n    vector<int> a(n);\n    for (int i = 0; i < n; ++i) cin >> a[i];\n    SparseTable sp(a);\n    for (int k = 0; k < q; ++k) {\n        int l, r;  // 1-based 闭区间\n        cin >> l >> r;\n        cout << sp.query(l - 1, r) << '\\n';\n    }\n    return 0;\n}\n",
+    "complexity": "预处理 O(n log n)，单次查询 O(1)，空间 O(n log n)",
+    "pitfalls": [
+      "ST 表不支持修改：数组有单点修改就得用线段树/树状数组，ST 建完就定死了",
+      "求和不能用 ST 表：sum 不满足幂等性，重叠的两段会重复计数，静态区间和用前缀和",
+      "lg 数组要预处理到 n，查询时 k = lg[r-l]，别用浮点 log2 现算（精度坑）",
+      "st[k][i] 只对 i + 2^k <= n 有定义，建表循环的上界别写错"
+    ],
+    "confusions": "ST 表 vs 线段树：静态+幂等操作（max/min/gcd）用 ST 表 O(1) 查询；有修改、或操作不幂等（求和）用线段树/树状数组/前缀和。先看数组动不动，再看操作幂不幂等。",
+    "examples": [
+      {
+        "source": "luogu",
+        "id": "P3865",
+        "title": "ST 表"
+      },
+      {
+        "source": "luogu",
+        "id": "P1816",
+        "title": "忠诚"
+      },
+      {
+        "source": "luogu",
+        "id": "P2251",
+        "title": "质量检测"
+      }
+    ],
+    "related": [
+      "segment-tree",
+      "prefix-sum"
+    ],
+    "sample_input": "5 3\n1 5 2 4 3\n1 5\n2 4\n3 5",
+    "sample_output": "5\n5\n4"
+  }
+]
