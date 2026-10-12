@@ -405,19 +405,29 @@ def summarize_items(items: list[dict]) -> dict:
                 response = call_with_retry(lambda: client.chat.completions.create(
                     model=model,
                     messages=_build_ai_messages(items),
-                    max_tokens=2000,
+                    # 带“思考过程”的模型（如 deepseek-v4-pro）的推理 token 也算在这里，
+                    # 给太少会把回答截成空，所以留足余量（和 ai.py 的做法一致）。
+                    max_tokens=16000,
                     response_format={"type": "json_object"},
                 ))
                 note_usage(model, response)
-                content = response.choices[0].message.content or ""
+                choice = response.choices[0]
+                content = choice.message.content or ""
+                finish_reason = getattr(choice, "finish_reason", None)
     except Exception as exc:
         logger.warning("digest ai summarization failed: %s", type(exc).__name__)
         print(f"中文摘要生成失败（{type(exc).__name__}），简报只显示原标题。")
         return {}
 
-    summaries = _validate_summaries(content, {item["id"] for item in items})
+    # 个别模型会无视要求包一层 ```json 围栏，宽容地去掉再校验。
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`").strip()
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
+    summaries = _validate_summaries(stripped, {item["id"] for item in items})
     if not summaries:
-        print("中文摘要输出未通过校验，简报只显示原标题。")
+        print(f"中文摘要输出未通过校验（finish_reason={finish_reason}，输出 {len(content)} 字），简报只显示原标题。")
     return summaries
 
 
@@ -446,9 +456,9 @@ def build_bundle(getter, sleep) -> dict:
     return {"papers": papers, "news": news, "summaries": summaries, "items": items}
 
 
-def get_bundle(day: str, getter, sleep) -> dict:
-    """同一天命中缓存就不再联网、不再调用 AI。"""
-    cached = load_cache(day)
+def get_bundle(day: str, getter, sleep, force: bool = False) -> dict:
+    """同一天命中缓存就不再联网、不再调用 AI；force=True 忽略缓存重新抓（摘要失败后补救用）。"""
+    cached = None if force else load_cache(day)
     if cached is not None:
         print(f"命中当日缓存 {day}，跳过联网与 AI 调用。")
         papers, news = cached["papers"], cached["news"]
@@ -577,6 +587,10 @@ def main(argv=None, post=None, http_get=None, sleep=None):
         help="只抓取并缓存今日简报（给网站的“今日简报”卡片用），不发送给任何人",
     )
     parser.add_argument(
+        "--force", action="store_true",
+        help="和 --cache-only 一起用：忽略当天已有缓存，重新抓取并重新生成摘要",
+    )
+    parser.add_argument(
         "--username", default=None,
         help="只给指定用户名的管理员发送（仍需满足管理员且开启微信提醒的条件）",
     )
@@ -585,7 +599,7 @@ def main(argv=None, post=None, http_get=None, sleep=None):
     getter = http_get if http_get is not None else _http_get
     sleeper = sleep if sleep is not None else time.sleep
     if args.cache_only:
-        bundle = get_bundle(_cache_day(), getter, sleeper)
+        bundle = get_bundle(_cache_day(), getter, sleeper, force=args.force)
         print(f"简报已缓存：论文 {len(bundle['papers'])} 篇，新闻 {len(bundle['news'])} 条。")
         return 0
     if not args.dry_run:

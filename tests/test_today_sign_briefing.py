@@ -86,7 +86,7 @@ def test_cache_only_flag_fetches_and_stores_without_sending(tmp_path, monkeypatc
     monkeypatch.setattr(digest, "_data_dir", lambda: tmp_path)
     called = {}
 
-    def fake_bundle(day, getter, sleep):
+    def fake_bundle(day, getter, sleep, force=False):
         called["day"] = day
         return {"papers": [1, 2], "news": [3], "summaries": {}, "items": []}
 
@@ -94,3 +94,37 @@ def test_cache_only_flag_fetches_and_stores_without_sending(tmp_path, monkeypatc
     assert digest.main(["--cache-only"]) == 0
     assert called["day"] == digest._cache_day()
     assert "论文 2 篇，新闻 1 条" in capsys.readouterr().out
+
+
+def test_summary_survives_a_json_fence_and_reports_why_when_it_fails(monkeypatch, capsys):
+    items = [{"id": 1, "title": "t", "summary": "s", "kind": "paper", "url": "https://a.com/1"}]
+
+    class Msg:
+        content = "```json\n{\"summaries\":[{\"id\":1,\"text\":\"一句话\"}]}\n```"
+
+    class Choice:
+        message = Msg()
+        finish_reason = "stop"
+
+    class Resp:
+        choices = [Choice()]
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    assert kwargs["max_tokens"] >= 8000, "思考型模型需要足够的 token 余量"
+                    return Resp()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "x")
+    monkeypatch.setattr(digest, "OpenAI", FakeClient)
+    assert digest.summarize_items(items) == {1: "一句话"}
+
+    Msg.content = ""
+    Choice.finish_reason = "length"
+    assert digest.summarize_items(items) == {}
+    assert "finish_reason=length" in capsys.readouterr().out
