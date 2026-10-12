@@ -12,16 +12,27 @@
 ### 问题
 “典型失误”“薄弱点”“今日宜忌”等统计都靠**错因标签**，但标签现在是自由输入，同一个意思被写成“边界”“边界没处理”“越界”……统计就空转。另外，算法题最关键的两项信息——**判题类型**（WA/TLE/RE…）和**最小反例**（一个能让原代码出错的小输入）——没有结构化字段，只能混在思路文字里。
 
+### 借鉴了什么（调研结果，不是照抄）
+- **判题类型的定义用 AtCoder 的术语表**（WA 答案错误、TLE 超时、RE 运行错误、MLE 超内存；还有 OLE、IE），不自己发明。（[AtCoder 术语表](https://atcoder.jp/contests/dp/glossary)）
+- **“超时”不是一种错因。** 一项对 1000 份 Codeforces TLE 提交的研究发现，超时来自算法复杂度太高、死循环、数据结构用错、输入输出太慢等不同原因，而 TLE 只给一行提示，几乎没法靠它调试——所以个人记录更重要。（[arXiv：TLE 错误的系统研究](https://arxiv.org/html/2510.14339v1)）→ 词表里把“算法复杂度”和“常数/输入输出慢”分开。
+- **先分“想错了”还是“写错了”。** 斯沃斯莫尔学院算法课讲义把 bug 先分成推理错误和实现错误两大类。（[课程讲义](https://cs.swarthmore.edu/~brody/cs35x/f24/notes/week6.pdf)）→ 词表带一个“大类”字段，统计页能回答“你更多是想错了还是写错了”，这比单看标签更有教学价值。
+- **“本地过、评测机不过”要有专门的位置**（未初始化变量、未定义行为）：Codeforces 社区博客指出未初始化变量在本机可能恰好是 0，评测机上不保证。（[Codeforces 博客](https://codeforces.com/blog/entry/111217)）
+- **录入摩擦要最小。** 一位 Codeforces 用户做了 Chrome 扩展，原因是“用 Excel 手动维护复习表很难坚持”。（[Codeforces 博客](https://codeforces.com/blog/Haziken)）→ 判题类型和错因都是**一次点选**，不要做成长表单。
+- 没有找到“每次失败提交标判题类型 + 根因，再按时间统计模式”的现成工具——这正是我们能做出差异的地方。
+
 ### 要做的
-1. **固定词表（≤12 个，每个有稳定 code、中文名、一句提示）**。建议如下，可微调但总数别超过 12：
-   `boundary` 边界/特例 · `misread` 审题/漏条件 · `wrong_idea` 思路错误 · `complexity` 复杂度/超时 · `overflow` 溢出/精度 · `concept` 概念混淆 · `formula` 公式/模板记错 · `impl` 实现细节（下标、循环、变量） · `careless` 粗心/笔误 · `api` 语法/接口 · `untested` 样例/测试没覆盖 · `other` 其他。
+1. **固定词表（≤14 个，每个有稳定 code、中文名、所属大类、一句提示）**。分 4 个大类，建议如下，可微调但总数别超过 14：
+   - **想错了（reasoning）：** `wrong_idea` 思路错误 · `misread` 审题/漏条件 · `concept` 概念混淆 · `formula` 公式/模板记错
+   - **写错了（implementation）：** `boundary` 边界/特例 · `impl` 实现细节（下标、循环、变量） · `careless` 粗心/笔误 · `api` 语法/接口
+   - **跑得慢（performance）：** `complexity` 算法复杂度 · `perf_io` 常数与输入输出慢 · `overflow` 溢出/精度（也可归实现类，请 Muse 定）
+   - **环境与其他（environment）：** `uninit` 未初始化/本机能过评测机不过 · `untested` 样例/测试没覆盖 · `other` 其他
    词表放一个后端常量里（`tags.py` 旁边或新模块），前端从接口读，不要两边各写一份。
 2. **标签只能从词表里选**：`PUT /api/mistakes/{id}/tags` 和新增记录时的标签，新写入必须在词表内（422 并给出可选项）；**完整记录（非速记、非待补）每条易错点至少选 1 个**。原来的自由文字想法写进“错因描述”（那里本来就是自由文本）。
 3. **迁移 80：把已有的自由标签映射进词表**。提供同义词表（把 `tags.SUGGESTED_TAGS` 和 `REASON_SUGGEST_TAGS` 里已有的写法都映射上，例如“思路错/没思路/思路错误”→`wrong_idea`，“漏条件/没读清题”→`misread`，“公式记错”→`formula`，“语法坑/语法或接口”→`api`，“测试没覆盖”→`untested`，“溢出”→`overflow`……），映射不上的归 `other`；同一条易错点映射后重复的标签要去重；迁移幂等；单元测试覆盖映射表。
 4. **判题类型**：`problems.verdict TEXT NOT NULL DEFAULT ''`，取值 `WA` 答案错误 · `TLE` 超时 · `MLE` 超内存 · `RE` 运行错误 · `CE` 编译错误 · `NOANS` 没做出来/不会 · `''` 未填。完整记录里加一个下拉（算法分区显示，其他分区隐藏）；速记可不填。
 5. **最小反例**：`mistakes.counterexample TEXT NOT NULL DEFAULT ''`（≤1000 字，纯文本，等宽显示）。放在每条易错点上，占位提示“一个能让原代码出错的最小输入，例如：n=1 时输出 0，应为 1”。**复习卡片的背面要把它放在最显眼的位置**（它是最好的回忆线索），后面 B 项还会用它。
 6. **接口**：`GET /api/error-taxonomy` → `{causes:[{code,label,hint}], verdicts:[{code,label}]}`；问题的创建/编辑接受 `verdict`；易错点接受 `counterexample`；校验与长度上限；导出 JSON、数据注销、扩展导入（`routers/plugin_api.py`，不传就空）、导入向导都要照顾新字段。
-7. **统计跟着改**：`typical.py`、薄弱点页、总览里的错因相关统计、`today_sign.py` 里的 `TAG_JI` 都改成基于词表 code；薄弱点页新增两块小图：**判题类型分布**（WA/TLE/RE… 的横向条）和**最常见错因 Top 3**；AI 薄弱点分析的材料里带上 `verdict` 和 `counterexample`（有就带，注意长度截断，不要突破现有的提示词边界保护）。
+7. **统计跟着改**：`typical.py`、薄弱点页、总览里的错因相关统计、`today_sign.py` 里的 `TAG_JI` 都改成基于词表 code；薄弱点页加一句“你的错因里，想错了 X% · 写错了 Y% · 跑得慢 Z%”；薄弱点页新增两块小图：**判题类型分布**（WA/TLE/RE… 的横向条）和**最常见错因 Top 3**；AI 薄弱点分析的材料里带上 `verdict` 和 `counterexample`（有就带，注意长度截断，不要突破现有的提示词边界保护）。
 8. **前端**：新增记录页、编辑题目、易错点编辑处，把标签输入换成**词表小标签（点选）**，并保留“其他”；样式要和现有表单一致且好看（词表小标签用印章/批注风格，不要普通灰色 chips）。
 
 ### 验收
@@ -33,6 +44,12 @@
 
 ### 问题
 算法题的“复习”本质是**重做**，不是回忆。现在的主循环是“看错因 → 自评 0/3/4/5”，自评容易虚高（觉得自己会了，其实写不出来）。
+
+### 借鉴了什么（调研结果，不是照抄）
+- 开源的 **LeetSRS**（[GitHub](https://github.com/mattcdrake/LeetSRS)）：用 FSRS 排期、本地优先、可选同步，但评分仍是“凭感觉打 Again/Hard/Good/Easy”——正是我们要补的短板。
+- 开源的 **Leet Cache**（[GitHub](https://github.com/androoyan/leet-cache)）：复习时先对照自己的笔记，不对就“重新实现一遍来巩固”。这是最接近“重做”的现成思路，但它没有“空白编辑器 + 对照”的步骤——**我们的“默写 + 对照 diff”和“限时重做”是差异点**。
+- 社区经验：失败的题要在**快要忘的时候**重做，而不是越快越好。（[Blind 讨论](https://www.teamblind.com/post/when-to-redo-failed-leetcode-questions-5nykxbta)）→ 和我们现有的间隔复习一致，“重做”只是把“回忆”换成“动手”。
+- 以后可以考虑把排期算法换成 FSRS（不在本任务范围，只记在 REPORT 的“后续建议”里）。
 
 ### 要做的（只增强算法分区，其他分区保持原样）
 1. **三种复习方式**，在“显示错因”之后让用户选（算法分区默认引导到前两种）：
@@ -54,6 +71,12 @@
 ### 现状（我量过）
 - `main.py` 2953 行、123 个函数；各路由里用 `main.<name>` 间接引用共 **928 处**——这是为了让测试里 `monkeypatch.setattr(main, ...)` 生效的权宜之计。
 - `static/app.js` 5838 行、174 个函数，没有构建步骤；约 **52 个测试文件**直接读 `app.js` 源码做字符串断言；每次改静态资源要手动同步一堆 `?v=` 和测试里的版本 pin（我已经为此反复做了很多次）。
+
+### 借鉴了什么（调研结果，不是照抄）
+- **按“领域”分包，而不是按“文件类型”分。** 广泛参考的 FastAPI 最佳实践（[zhanymkanov/fastapi-best-practices](https://github.com/zhanymkanov/fastapi-best-practices)，思路来自 Netflix Dispatch）指出：把所有 routers/models/crud 各放一堆，对有很多业务领域的单体应用不合适；应该每个领域一个包，里面有 `router.py`（路由）、`schemas.py`（输入输出模型）、`service.py`（业务逻辑）、`dependencies.py`、`constants.py`、`exceptions.py`。→ C1 的模块划分请按这个思路：`reviews/`、`problems/`、`roadmap/`、`notes/`、`groups/`、`payments/`、`accounts/` 等领域各一个包，**不要**做成一个巨大的 `core/` 或 `utils/` 杂物间。共享的东西（配置、数据库连接、鉴权、限流）放一个很小的 `core/`。
+- **前端同样按领域分文件夹**（`static/app/<领域>/`），和后端领域一一对应。
+- **共享代码要克制**：纯 JS 项目有个常见经验——共享的 DOM/界面小工具很容易膨胀成一个自制的微型框架。所以 `window.OY` 命名空间里只放真正跨领域的东西（api 调用、会话、消息、路由），其余留在各自领域里。
+- **本次不引入原生 ES Modules。** 它不需要构建，但没有打包器时导入路径必须写完整的相对路径和扩展名，并且把一部分安全保证从构建期挪到运行期；我们已经有严格 CSP 和大量按 `<script defer>` 顺序的约定，先用普通脚本按领域拆开，把风险压到最低。拆完以后如果想上 ES Modules，作为后续建议写在 REPORT 里。
 
 ### 目标（不改任何用户可见行为）
 - `main.py` 只保留应用装配（创建 `app`、中间件、挂载路由、启动初始化）≲ 800 行；业务逻辑和常量进入有明确职责的模块；
