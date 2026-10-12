@@ -12,6 +12,7 @@
 
 import json
 
+import error_taxonomy
 from mastery import AT_RISK_BELOW, load_mistakes, retention_on
 import typical_templates as templates
 
@@ -83,9 +84,14 @@ def _build_items(rows):
         )
         if last_wrong is None:
             last_wrong = max(member["created_at"] for member in members)
+        # tag 存的是词表 code；展示用中文名（未知 code 原样展示），hint 按 code 取。
+        try:
+            name = error_taxonomy.cause_label(tag)
+        except KeyError:
+            name = tag
         items.append({
             "key": tag,
-            "name": tag,
+            "name": name,
             "count": len(members),
             "last_wrong_at": last_wrong,
             "hint": templates.hint_for(tag),

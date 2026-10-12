@@ -108,7 +108,7 @@ def test_cannot_write_other_users_scratch(client, shared_resources):
 def test_cannot_set_other_users_tags(client, shared_resources):
     response = client.put(
         f"/api/mistakes/{shared_resources['mistake_id']}/tags",
-        json={"tags": ["入侵"]},
+        json={"tags": ["boundary"]},
     )
     assert response.status_code == 404
 

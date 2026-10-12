@@ -7,6 +7,8 @@
 import json
 from datetime import datetime, timezone
 
+import error_taxonomy
+
 TAG_MAX_LENGTH = 20
 TAGS_PER_MISTAKE = 8
 TAGS_PER_USER = 60
@@ -48,6 +50,19 @@ def normalize_tags(values):
     if len(result) > TAGS_PER_MISTAKE:
         raise TagError(f"每条易错点最多 {TAGS_PER_MISTAKE} 个标签")
     return result
+
+
+def validate_taxonomy_tags(values):
+    """错因标签必须是固定词表里的 code（error_taxonomy.CAUSES）。
+
+    新写入一律走这个校验；非法时抛 TagError，消息里带上可选项，
+    接口层原样返回 422。去重、个数上限沿用 normalize_tags 的规则。
+    """
+    tags = normalize_tags(values)
+    try:
+        return error_taxonomy.validate_cause_codes(tags)
+    except error_taxonomy.TaxonomyError as error:
+        raise TagError(str(error)) from None
 
 
 def tags_for_mistakes(conn, mistake_ids):

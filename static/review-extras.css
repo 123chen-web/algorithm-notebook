@@ -9,6 +9,32 @@
 .review-recall input { width: 100%; min-width: 0; min-height: 42px; }
 .review-reveal { display: block; width: 100%; min-height: 48px; margin: var(--space-4) 0; border-style: dashed; color: var(--ink); background: var(--surface); }
 .review-reason { overflow-wrap: anywhere; }
+/* 最小反例：背面最显眼的位置，红笔批注气质，等宽显示。 */
+.counterexample {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1.5px solid var(--accent);
+  border-left-width: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--soft);
+}
+.counterexample-label {
+  margin-bottom: var(--space-1);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: .2em;
+}
+.counterexample-body {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .review-grade { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-width: 0; min-height: 64px; }
 #review-grade-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .review-actions .review-grade { color: var(--ink); background: var(--surface); }
@@ -36,4 +62,17 @@
   .focus-open .review-toast { bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-3)); }
   .review-toolbar { gap: var(--space-2); }
   .review-grade { padding-inline: 3px; }
+}
+
+/* 判题结果：题目详情只读视图里的红笔批注。 */
+.problem-verdict {
+  display: inline-block;
+  margin: 0 0 var(--space-2);
+  padding: 2px var(--space-3);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-badge);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  transform: rotate(-.6deg);
 }

@@ -208,6 +208,84 @@ def get_typical_mistakes(user=Depends(main.current_user)):
         return typical_report(conn, user["id"], user["timezone"], main.today_for(user))
 
 
+@router.get("/api/stats/error-profile")
+def get_error_profile(user=Depends(main.current_user)):
+    """错因画像：大类分布、判题类型分布、最常见错因 Top 3。纯统计，不调用 AI。
+
+    标签存的是词表 code，这里按 code 聚合，前端通过 /api/error-taxonomy
+    做 code→中文名 映射（返回里也直接带上中文名，方便直接渲染）。
+    """
+    import error_taxonomy
+
+    with main.connect() as conn:
+        conn.execute("BEGIN")
+        user_id = user["id"]
+        # 大类分布：按错因 code → 大类 聚合。
+        cause_rows = conn.execute(
+            """
+            SELECT t.tag, COUNT(DISTINCT m.id) AS count
+            FROM mistake_tags t
+            JOIN mistakes m ON m.id = t.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE t.user_id = ? AND p.user_id = ?
+            GROUP BY t.tag
+            """,
+            (user_id, user_id),
+        ).fetchall()
+        group_counts = {group: 0 for group, _ in error_taxonomy.CAUSE_GROUPS}
+        top_causes = []
+        total = 0
+        for row in cause_rows:
+            code, count = row[0], row[1]
+            total += count
+            try:
+                group = error_taxonomy.cause_group(code)
+                label = error_taxonomy.cause_label(code)
+            except KeyError:
+                group, label = "environment", code
+            group_counts[group] = group_counts.get(group, 0) + count
+            top_causes.append({"code": code, "label": label, "count": count})
+        top_causes.sort(key=lambda item: (-item["count"], item["code"]))
+        groups = [
+            {
+                "code": group,
+                "label": error_taxonomy.group_label(group),
+                "count": group_counts.get(group, 0),
+                "percent": round(group_counts.get(group, 0) / total * 100) if total else 0,
+            }
+            for group, _ in error_taxonomy.CAUSE_GROUPS
+        ]
+        # 判题类型分布：只统计填了 verdict 的题目。
+        verdict_rows = conn.execute(
+            """
+            SELECT verdict, COUNT(*) AS count FROM problems
+            WHERE user_id = ? AND verdict != ''
+            GROUP BY verdict ORDER BY count DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        verdict_total = sum(row[1] for row in verdict_rows)
+        verdicts = []
+        for row in verdict_rows:
+            code, count = row[0], row[1]
+            try:
+                label = error_taxonomy.verdict_label(code)
+            except KeyError:
+                continue
+            verdicts.append({
+                "code": code,
+                "label": label,
+                "count": count,
+                "percent": round(count / verdict_total * 100) if verdict_total else 0,
+            })
+        return {
+            "groups": groups,
+            "verdicts": verdicts,
+            "top_causes": top_causes[:3],
+            "total_tagged": total,
+        }
+
+
 @router.get("/api/overview")
 def get_overview(user=Depends(main.current_user)):
     # 侧栏角标和"总览"页一次取齐，避免首页并发十几个请求。纯统计，不调用 AI。

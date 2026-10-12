@@ -47,6 +47,7 @@ from pydantic import (
 
 import ai
 import clusters
+import error_taxonomy
 import goal
 import hot_problems
 import mailer
@@ -79,7 +80,7 @@ from anki_export import build_anki_text
 from search import search_all
 from typical import typical_report
 from tags import (
-    SUGGESTED_TAGS, TAG_MAX_LENGTH, TAGS_PER_MISTAKE, TagError, normalize_tags,
+    TAG_MAX_LENGTH, TAGS_PER_MISTAKE, TagError, normalize_tags,
     replace_tags, tags_for_mistakes, user_tag_counts,
 )
 from share_card import render_achievement_card
@@ -406,6 +407,17 @@ class ProblemFields(InputModel):
     correct_code: str = Field(default="", max_length=40000)
     # 可选：题目来源链接（粘贴链接识别时填）。新增时 None 当作空；编辑时 None = 保持不变，"" = 清除。
     source_url: str | None = Field(default=None, max_length=2000)
+    # 判题类型：WA/TLE/MLE/RE/CE/NOANS 或空串（未填）。只在算法分区有意义，
+    # 前端只在算法分区显示下拉；其他分区传了也接受（服务端不强制分区）。
+    verdict: str = Field(default="")
+
+    @field_validator("verdict")
+    @classmethod
+    def valid_verdict(cls, value):
+        try:
+            return error_taxonomy.validate_verdict(value)
+        except error_taxonomy.TaxonomyError as error:
+            raise ValueError(str(error)) from None
 
     @field_validator("source_url")
     @classmethod
@@ -448,8 +460,18 @@ class ProblemFields(InputModel):
         return value
 
 
+class MistakeInput(InputModel):
+    """新增记录时一条易错点的输入：描述 + 可选的最小反例。
+
+    兼容旧客户端：mistakes 数组里仍可以直接放字符串，此时 counterexample 为空。
+    """
+
+    description: MistakeText = ""
+    counterexample: str = Field(default="", max_length=1000)
+
+
 class NewProblem(ProblemFields):
-    mistakes: list[MistakeText] = Field(default_factory=list, max_length=10)
+    mistakes: list[MistakeText | MistakeInput] = Field(default_factory=list, max_length=10)
     # 速记模式：只要求 title 和 zone；code/thinking/mistakes 可省略或为空，
     # 服务端补占位。quick=false 时行为与原来完全一致。
     quick: StrictBool = False
@@ -483,6 +505,8 @@ class ProblemEdit(ProblemFields):
 class MistakeEdit(InputModel):
     description: MistakeText
     version: int = Field(strict=True, ge=0)
+    # 最小反例：纯文本 ≤1000 字，等宽显示。编辑时不传视为清空，前端总是带上当前值。
+    counterexample: str = Field(default="", max_length=1000)
 
 
 class MistakeTags(InputModel):
@@ -1017,7 +1041,7 @@ def require_admin(user):
 
 
 MISTAKE_SELECT = """
-SELECT m.*, p.title, p.zone, p.language, p.code, p.correct_code, p.thinking, p.source_url
+SELECT m.*, p.title, p.zone, p.language, p.code, p.correct_code, p.thinking, p.source_url, p.verdict
 FROM mistakes m
 JOIN problems p ON p.id = m.problem_id
 """
@@ -1834,7 +1858,8 @@ def weakness_analysis_reference(conn, user_id, total_mistakes):
         SELECT m.id AS mistake_id, m.problem_id, substr(p.title, 1, 200) AS title,
                p.zone, substr(m.description, 1, 1000) AS description, p.created_at,
                substr(p.thinking, 1, 600) AS thinking,
-               substr(p.code, 1, 800) AS work_excerpt
+               substr(p.code, 1, 800) AS work_excerpt,
+               p.verdict AS verdict, substr(m.counterexample, 1, 500) AS counterexample
         FROM mistakes m JOIN problems p ON p.id = m.problem_id
         WHERE p.user_id = ?
         ORDER BY p.created_at DESC, m.id DESC LIMIT ?
@@ -1844,6 +1869,11 @@ def weakness_analysis_reference(conn, user_id, total_mistakes):
     mistakes = []
     for row in rows:
         item = dict(row)
+        # 判题类型和最小反例是空就去掉，不占提示词长度。
+        if not item.get("verdict"):
+            item.pop("verdict", None)
+        if not (item.get("counterexample") or "").strip():
+            item.pop("counterexample", None)
         if item["description"].strip():
             item.pop("thinking")
             item.pop("work_excerpt")

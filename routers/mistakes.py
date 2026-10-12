@@ -13,8 +13,6 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import StringConstraints
 from scheduler import today_in_timezone
-from tags import SUGGESTED_TAGS
-from tags import REASON_SUGGEST_TAGS
 from tags import TAGS_PER_MISTAKE
 from tags import TAG_MAX_LENGTH
 from tags import TagError
@@ -22,12 +20,37 @@ from tags import normalize_tags
 from tags import replace_tags
 from tags import tags_for_mistakes
 from tags import user_tag_counts
+from tags import validate_taxonomy_tags
 from typing import Annotated
+import error_taxonomy
 import json
 from fastapi import APIRouter
 
 
 router = APIRouter()
+
+
+@router.get("/api/error-taxonomy")
+def get_error_taxonomy(user=Depends(main.current_user)):
+    """错因固定词表 + 判题类型：前端唯一的事实来源，不要在前端硬编码。"""
+    return {
+        "causes": [
+            {
+                "code": code,
+                "label": label,
+                "group": group,
+                "group_label": error_taxonomy.group_label(group),
+                "hint": hint,
+            }
+            for code, label, group, hint in error_taxonomy.CAUSES
+        ],
+        "groups": [
+            {"code": code, "label": label} for code, label in error_taxonomy.CAUSE_GROUPS
+        ],
+        "verdicts": [
+            {"code": code, "label": label} for code, label in error_taxonomy.VERDICTS
+        ],
+    }
 
 
 @router.get("/api/mistakes")
@@ -88,7 +111,8 @@ def list_tags(user=Depends(main.current_user)):
         counts = user_tag_counts(conn, user["id"])
     return {
         "tags": counts,
-        "suggestions": list(SUGGESTED_TAGS),
+        # 建议现在就是固定词表 code；中文名由前端通过 /api/error-taxonomy 映射。
+        "suggestions": [code for code, _, _, _ in error_taxonomy.CAUSES],
         "limits": {"per_mistake": TAGS_PER_MISTAKE, "length": TAG_MAX_LENGTH},
     }
 
@@ -96,23 +120,27 @@ def list_tags(user=Depends(main.current_user)):
 @router.get("/api/tags/suggest")
 def suggest_tags(user=Depends(main.current_user)):
     # 补原因时的标签建议：用户自己的标签按使用次数降序（最多 12 个），
-    # 再补上内置常用错因（去掉用户已有的，避免重复）。
+    # 再补上固定词表里用户还没用过的（去掉用户已有的，避免重复）。
     with main.connect() as conn:
         counts = user_tag_counts(conn, user["id"])
     mine = counts[:12]
     mine_tags = {item["tag"] for item in mine}
-    builtin = [tag for tag in REASON_SUGGEST_TAGS if tag not in mine_tags]
+    builtin = [code for code, _, _, _ in error_taxonomy.CAUSES if code not in mine_tags]
     return {"mine": mine, "builtin": builtin}
 
 
 @router.put("/api/mistakes/{mistake_id}/tags")
 def set_mistake_tags(mistake_id: int, data: main.MistakeTags, user=Depends(main.current_user)):
+    # 标签只能从固定词表里选；非法时 422 并在错误里给出可选项。
     try:
-        tags = normalize_tags(data.tags)
+        tags = validate_taxonomy_tags(data.tags)
     except TagError as error:
         raise HTTPException(422, str(error)) from None
     with main.connect(write=True) as conn:
-        main.owned_mistake(conn, mistake_id, user["id"])
+        item = main.owned_mistake(conn, mistake_id, user["id"])
+        # 完整记录（非待补）每条易错点至少选 1 个；待补的允许先空着。
+        if not tags and not item["pending_reason"]:
+            raise HTTPException(422, "完整记录请至少选择 1 个错因标签")
         try:
             replace_tags(conn, user["id"], mistake_id, tags)
         except TagError as error:
@@ -154,18 +182,24 @@ def edit_mistake(mistake_id: int, data: main.MistakeEdit, user=Depends(main.curr
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
 
         conn.execute(
-            "UPDATE mistakes SET description = ?, version = version + 1 WHERE id = ?",
-            (data.description, mistake_id),
+            "UPDATE mistakes SET description = ?, counterexample = ?, version = version + 1 WHERE id = ?",
+            (data.description, data.counterexample, mistake_id),
         )
-    return {**item, "description": data.description, "version": item["version"] + 1}
+    return {
+        **item,
+        "description": data.description,
+        "counterexample": data.counterexample,
+        "version": item["version"] + 1,
+    }
 
 
 @router.post("/api/mistakes/{mistake_id}/reason")
 def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depends(main.current_user)):
     # 给"待补原因"的易错点补原因：更新描述、整体替换标签、清待补标记。
     # 调度字段（due_date、间隔、重复次数等）不动；已暂停的记录也允许补。
+    # 标签必须从固定词表里选；补完即为完整记录，至少选 1 个。
     try:
-        tags = normalize_tags(data.tags)
+        tags = validate_taxonomy_tags(data.tags)
     except TagError as error:
         raise HTTPException(422, str(error)) from None
     if len(tags) > 3:
@@ -174,6 +208,8 @@ def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depe
         item = main.owned_mistake(conn, mistake_id, user["id"])
         if item["version"] != data.version:
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
+        if not tags:
+            raise HTTPException(422, "补上原因后请至少选择 1 个错因标签")
         try:
             replace_tags(conn, user["id"], mistake_id, tags)
         except TagError as error:

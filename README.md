@@ -124,4 +124,4 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **77**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记、73 正确代码、74 AI 反馈、75 学习路线、76 新题第一次复习顺延、77 题目链接搬到来源字段），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **80**；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记、73 正确代码、74 AI 反馈、75 学习路线、76 新题第一次复习顺延、77 题目链接搬到来源字段、80 错因固定词表/判题类型/最小反例），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。

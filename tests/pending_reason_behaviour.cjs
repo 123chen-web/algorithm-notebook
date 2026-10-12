@@ -49,16 +49,36 @@ function setup(view = "all") {
   return { env, state, saved, opened, hooks };
 }
 
-async function render(ctx, record = item(), suggestions = { mine: [], builtin: ["边界", "粗心", "溢出", "漏条件"] }) {
+const TAXONOMY = {
+  causes: [
+    { code: "wrong_idea", label: "思路错误", group: "reasoning", group_label: "想错了", hint: "方向想错了" },
+    { code: "misread", label: "审题/漏条件", group: "reasoning", group_label: "想错了", hint: "漏了一句" },
+    { code: "boundary", label: "边界/特例", group: "implementation", group_label: "写错了", hint: "边界" },
+    { code: "careless", label: "粗心/笔误", group: "implementation", group_label: "写错了", hint: "手滑" },
+    { code: "other", label: "其他", group: "environment", group_label: "环境与其他", hint: "其他" },
+  ],
+  groups: [
+    { code: "reasoning", label: "想错了" },
+    { code: "implementation", label: "写错了" },
+    { code: "environment", label: "环境与其他" },
+  ],
+  verdicts: [],
+};
+async function render(ctx, record = item(), taxonomy = TAXONOMY) {
   const form = ctx.env.window.PendingReason.render(record);
   ctx.env.document.body.append(form);
-  assert.equal(ctx.env.calls[0].url, "/api/tags/suggest");
-  ctx.env.respond(ctx.env.calls[0], 200, suggestions);
+  assert.equal(ctx.env.calls[0].url, "/api/error-taxonomy");
+  ctx.env.respond(ctx.env.calls[0], 200, taxonomy);
   await settle();
   return form;
 }
 const q = (form, selector) => form.querySelector(selector);
 function submit(form, text = "循环边界少了等号。") {
+  // 补原因要求至少选 1 个标签：先点第一个词表印章。
+  if (!form.querySelectorAll('[aria-pressed="true"]').length) {
+    const first = form.querySelector(".pending-reason-tag:not([disabled])");
+    if (first) first.click();
+  }
   q(form, "textarea").value = text;
   form.dispatchEvent(new FakeEvent("submit"));
 }
@@ -69,13 +89,13 @@ test("pending reason: ordinary records keep the existing renderer", () => {
   assert.equal(ctx.env.calls.length, 0);
 });
 
-test("pending reason: text is safe, suggestions deduplicate and selection stops at three", async () => {
+test("pending reason: taxonomy chips select and deselect, selection stops at three", async () => {
   const ctx = setup();
-  const form = await render(ctx, item(), { mine: [{ tag: "<img src=x onerror=alert(1)>" }, { tag: "边界" }], builtin: ["边界", "粗心", "溢出", "漏条件"] });
+  const form = await render(ctx);
   assert.equal(q(form, "img"), null);
   assert.equal(form.textContent.includes("（待补：为什么错）"), false);
   const tags = form.querySelectorAll(".pending-reason-tag");
-  assert.equal(tags.length, 4); // oversized remote tag is discarded; duplicate is removed
+  assert.equal(tags.length, 5); // 词表里的 5 个
   for (const index of [0, 1, 2]) form.querySelectorAll(".pending-reason-tag")[index].click();
   assert.equal(form.querySelectorAll(".pending-reason-tag")[3].disabled, true);
   form.querySelectorAll(".pending-reason-tag")[3].click();
@@ -83,17 +103,19 @@ test("pending reason: text is safe, suggestions deduplicate and selection stops 
   assert.equal(q(form, ".pending-reason-count").textContent, "已选 3 / 3 个标签");
   form.querySelectorAll(".pending-reason-tag")[0].click();
   assert.equal(form.querySelectorAll(".pending-reason-tag")[3].disabled, false);
+  // 中文名显示，不是 code。
+  assert.ok(tags[0].textContent.includes("思路错误"));
 });
 
-test("pending reason: existing and custom tags stay as literal text", async () => {
+test("pending reason: existing tags are selected, no custom input", async () => {
   const ctx = setup();
-  const form = await render(ctx, { ...item(), tags: ["<b>标签</b>"] });
-  assert.equal(q(form, ".pending-reason-tag").textContent, "<b>标签</b>");
-  assert.equal(q(form, "b"), null);
-  q(form, ".pending-reason-custom").value = "  漏   条件  ";
-  q(form, ".pending-reason-add").click();
-  assert.equal(form.querySelectorAll('[aria-pressed="true"]').length, 2);
-  assert.ok(form.textContent.includes("漏 条件"));
+  const form = await render(ctx, { ...item(), tags: ["boundary"] });
+  // 已有标签（code）被选中，显示中文名。
+  assert.equal(form.querySelectorAll('[aria-pressed="true"]').length, 1);
+  assert.ok(form.querySelector('[aria-pressed="true"]').textContent.includes("边界/特例"));
+  // 没有自定义输入框：标签只能从词表里选。
+  assert.equal(q(form, ".pending-reason-custom"), null);
+  assert.equal(q(form, ".pending-reason-add"), null);
 });
 
 test("pending reason: empty reason sends nothing and keeps the form", async () => {
@@ -102,6 +124,16 @@ test("pending reason: empty reason sends nothing and keeps the form", async () =
   await settle();
   assert.equal(ctx.env.calls.length, 1);
   assert.match(q(form, ".pending-reason-status").textContent, /一句原因/);
+});
+
+test("pending reason: submitting without a tag prompts to pick at least one", async () => {
+  const ctx = setup(); const form = await render(ctx);
+  // 直接提交，不走 submit helper 的自动选标签。
+  q(form, "textarea").value = "循环边界少了等号。";
+  form.dispatchEvent(new FakeEvent("submit"));
+  await settle();
+  assert.equal(ctx.env.calls.length, 1);
+  assert.match(q(form, ".pending-reason-status").textContent, /至少选择 1 个/);
 });
 
 test("pending reason: submit uses CSRF api, version and at most three tags without scheduling fields", async () => {
@@ -114,8 +146,8 @@ test("pending reason: submit uses CSRF api, version and at most three tags witho
   assert.equal(call.url, "/api/mistakes/11/reason");
   assert.equal(call.init.method, "POST");
   assert.equal(call.init.headers["X-CSRF-Protection"], "1");
-  assert.deepEqual(JSON.parse(call.init.body), { description: "边界少了等号。", tags: ["边界"], version: 7 });
-  ctx.env.respond(call, 200, { id: 11, version: 8, pending_reason: false, description: "边界少了等号。", tags: ["边界"] });
+  assert.deepEqual(JSON.parse(call.init.body), { description: "边界少了等号。", tags: ["wrong_idea"], version: 7 });
+  ctx.env.respond(call, 200, { id: 11, version: 8, pending_reason: false, description: "边界少了等号。", tags: ["wrong_idea"] });
   await settle();
   assert.deepEqual(ctx.saved, [11]);
   assert.equal(record.version, 8);
@@ -126,7 +158,7 @@ test("pending reason: submit uses CSRF api, version and at most three tags witho
 
 test("pending reason: a failed save retains the draft and selection", async () => {
   const ctx = setup(); const form = await render(ctx);
-  q(form, ".pending-reason-tag").click(); submit(form, "保留这句草稿");
+  submit(form, "保留这句草稿");
   ctx.env.respond(ctx.env.calls[1], 422, { detail: "标签过多" }); await settle();
   assert.equal(q(form, "textarea").value, "保留这句草稿");
   assert.equal(form.querySelectorAll('[aria-pressed="true"]').length, 1);
@@ -186,17 +218,18 @@ for (const change of ["epoch", "user", "view", "detail", "detach", "leave-return
 test("pending reason: detached and replaced forms ignore late tag suggestions", async () => {
   const ctx = setup(); const form = ctx.env.window.PendingReason.render(item());
   ctx.env.document.body.append(form); form.remove();
-  ctx.env.respond(ctx.env.calls[0], 200, { mine: [], builtin: ["旧请求"] }); await settle();
-  assert.equal(form.textContent.includes("旧请求"), false);
+  ctx.env.respond(ctx.env.calls[0], 200, TAXONOMY); await settle();
+  assert.equal(form.textContent.includes("思路错误"), false);
 });
 
-test("pending reason: failed suggestions allow a reason with no tag", async () => {
+test("pending reason: failed taxonomy blocks submit until a tag is picked", async () => {
   const ctx = setup(); const form = ctx.env.window.PendingReason.render(item());
   ctx.env.document.body.append(form);
-  ctx.env.respond(ctx.env.calls[0], 503, { detail: "建议暂不可用" }); await settle();
-  submit(form); assert.equal(ctx.env.calls.length, 2);
-  assert.deepEqual(JSON.parse(ctx.env.calls[1].init.body).tags, []);
-  ctx.env.respond(ctx.env.calls[1], 200, { ...item(), pending_reason: false, version: 8 }); await settle();
+  ctx.env.respond(ctx.env.calls[0], 503, { detail: "词表暂不可用" }); await settle();
+  submit(form);
+  await settle();
+  assert.equal(ctx.env.calls.length, 1);
+  assert.match(q(form, ".pending-reason-status").textContent, /至少选择 1 个/);
 });
 
 function home(ctx, count = 2) {

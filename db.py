@@ -1209,6 +1209,43 @@ def _apply_atcoder_recommend(conn):
 
 
 MIGRATIONS.append((78, "今日推荐增加 AtCoder 来源", _apply_atcoder_recommend))
+
+
+def _apply_error_taxonomy(conn):
+    """错因固定词表 + 判题类型 + 最小反例（迁移 80）。
+
+    1. problems 加 verdict 列（TEXT NOT NULL DEFAULT ''），mistakes 加
+       counterexample 列（TEXT NOT NULL DEFAULT ''）。幂等：先查列是否存在。
+    2. 把 mistake_tags 里已有的自由标签映射进词表（error_taxonomy.SYNONYMS），
+       查不到的归 other；同一条易错点映射后重复的去重。
+       幂等：映射后全是词表 code，再跑一次无变化。
+    """
+    import error_taxonomy
+
+    for table, column in (("problems", "verdict"), ("mistakes", "counterexample")):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+
+    rows = conn.execute("SELECT rowid, mistake_id, tag FROM mistake_tags").fetchall()
+    for row in rows:
+        code = error_taxonomy.map_legacy_tag(row["tag"])
+        if code == row["tag"]:
+            continue
+        duplicate = conn.execute(
+            "SELECT 1 FROM mistake_tags WHERE mistake_id = ? AND tag = ?",
+            (row["mistake_id"], code),
+        ).fetchone()
+        if duplicate:
+            conn.execute("DELETE FROM mistake_tags WHERE rowid = ?", (row["rowid"],))
+        else:
+            conn.execute(
+                "UPDATE mistake_tags SET tag = ? WHERE rowid = ?",
+                (code, row["rowid"]),
+            )
+
+
+MIGRATIONS.append((80, "错因固定词表 + 判题类型 + 最小反例", _apply_error_taxonomy))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

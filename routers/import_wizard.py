@@ -75,9 +75,17 @@ def _parse_export(text, zone):
             flag = mistake.get("pending_reason", False)
             if not isinstance(flag, bool):
                 raise ValueError("待补标记需要是布尔值")
-            descriptions.append(main.QUICK_MISTAKE_PLACEHOLDER if flag else mistake["description"])
+            counterexample = mistake.get("counterexample", "")
+            if not isinstance(counterexample, str):
+                raise ValueError("最小反例需要是字符串")
+            if len(counterexample) > 1000:
+                raise ValueError("最小反例最多 1000 个字")
+            descriptions.append(
+                {"description": main.QUICK_MISTAKE_PLACEHOLDER if flag else mistake["description"],
+                 "counterexample": counterexample}
+            )
             pending.append(flag)
-        fields = {key: item.get(key) for key in ("title", "language", "code", "thinking", "correct_code") if key in item}
+        fields = {key: item.get(key) for key in ("title", "language", "code", "thinking", "correct_code", "verdict") if key in item}
         # Ordinary validation protects all limits; no client-supplied scheduling is imported.
         valid = main.NewProblem(**fields, zone=zone, mistakes=descriptions, quick=False)
         record = {**valid.model_dump(exclude={"zone", "quick"}), "fallback": False,

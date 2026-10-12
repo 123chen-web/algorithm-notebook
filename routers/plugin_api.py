@@ -34,6 +34,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+import error_taxonomy
 import tags
 
 
@@ -155,8 +156,18 @@ class ExtensionImport(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=TAGS_MAX_COUNT)
     language: str = Field(default="", max_length=40)
     zone: str = "算法"
+    # 判题类型：不传就空。WA/TLE/MLE/RE/CE/NOANS。
+    verdict: str = Field(default="")
     # 错因一句话（对应速记模式）：可选；有则建题后再建一条错题。
     pending_reason: str | None = Field(default=None, max_length=REASON_MAX_LENGTH)
+
+    @field_validator("verdict")
+    @classmethod
+    def _valid_verdict(cls, value):
+        try:
+            return error_taxonomy.validate_verdict(value)
+        except error_taxonomy.TaxonomyError as error:
+            raise ValueError(str(error)) from None
 
     @field_validator("pending_reason")
     @classmethod
@@ -237,14 +248,14 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
             """
             INSERT INTO problems(
                 user_id, title, zone, language, code, thinking,
-                source, source_url, statement, difficulty, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source, source_url, statement, difficulty, verdict, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["id"], data.title, data.zone, data.language,
                 "", "",
                 data.source, data.source_url, data.content,
-                data.difficulty, main.utc_now(),
+                data.difficulty, data.verdict, main.utc_now(),
             ),
         )
         problem_id = cursor.lastrowid
@@ -256,6 +267,7 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
         "title": data.title,
         "source": data.source,
         "source_url": data.source_url,
+        "verdict": data.verdict,
         "mistake_id": mistake_id,
     }
 

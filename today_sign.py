@@ -13,6 +13,8 @@ import json
 from datetime import date as _date
 from pathlib import Path
 
+import error_taxonomy
+
 WEEKDAYS = "一二三四五六日"
 PATTERN_DATA_PATH = Path(__file__).resolve().parent / "static" / "data" / "patterns.json"
 
@@ -33,18 +35,17 @@ GENERIC_JI = [
     ("复制别人的模板却不理解", "不理解的模板，换个题面就用不上。"),
     ("跳过复杂度估算", "写之前估一下，能省下一次超时。"),
 ]
-# 最近常犯的错因 → 忌什么、为什么
+# 最近常犯的错因（按 error_taxonomy 的 code）→ 忌什么、为什么
 TAG_JI = {
-    "边界": ("想当然的边界", "提交前手造 n=0、n=1、最大值各跑一遍。"),
-    "粗心": ("匆忙提交", "写完先把题面和输出格式再读一遍。"),
-    "概念混淆": ("凭印象套概念", "先用自己的话写一句定义，再用。"),
-    "思路错误": ("没想清楚就动手", "先写下“每一步为什么对”，再写代码。"),
-    "没读清题": ("只读半句题面", "把条件逐条圈出来再开始。"),
-    "复杂度": ("先写了再说", "先估算复杂度，超时就别写。"),
-    "公式记错": ("凭记忆套公式", "推一遍小例子验证公式再用。"),
-    "语法或接口": ("记不清就硬写", "不确定的接口先写个小测试确认。"),
-    "溢出": ("默认 int 够用", "累加、乘法先想想会不会超过 21 亿。"),
-    "漏条件": ("漏掉题面里的一句话", "把限制条件列成清单逐条核对。"),
+    "boundary": ("想当然的边界", "提交前手造 n=0、n=1、最大值各跑一遍。"),
+    "careless": ("匆忙提交", "写完先把题面和输出格式再读一遍。"),
+    "concept": ("凭印象套概念", "先用自己的话写一句定义，再用。"),
+    "wrong_idea": ("没想清楚就动手", "先写下“每一步为什么对”，再写代码。"),
+    "misread": ("只读半句题面", "把条件逐条圈出来再开始。"),
+    "complexity": ("先写了再说", "先估算复杂度，超时就别写。"),
+    "formula": ("凭记忆套公式", "推一遍小例子验证公式再用。"),
+    "api": ("记不清就硬写", "不确定的接口先写个小测试确认。"),
+    "overflow": ("默认 int 够用", "累加、乘法先想想会不会超过 21 亿。"),
 }
 QUOTES = [
     "代码会骗人，样例不会。",
@@ -158,7 +159,11 @@ def build_sign(conn, user_id: int, day: _date) -> dict:
     for tag, count in tag_counts:
         if tag in TAG_JI and len(ji) < 1:
             text, detail = TAG_JI[tag]
-            ji.append({"text": text, "detail": f"你有 {count} 条错因标成了「{tag}」。{detail}", "source": "data"})
+            try:
+                label = error_taxonomy.cause_label(tag)
+            except KeyError:
+                label = tag
+            ji.append({"text": text, "detail": f"你有 {count} 条错因标成了「{label}」。{detail}", "source": "data"})
     for text, detail in _pick(GENERIC_JI, seed >> 3, 2):
         if len(ji) >= 2:
             break

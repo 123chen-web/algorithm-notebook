@@ -41,11 +41,12 @@
       && detailGeneration === hooks.getDetailGeneration?.();
     let busy = false, completed = false, completedElsewhere = false, sequence = 0;
     let tagsSequence = 0;
-    const choices = new Map();
+    // 标签只能从固定词表里选：Map<code, code>。item.tags 里存的是 code。
     const selected = new Map();
+    const taxonomy = { causes: [], groups: [] };
     for (const value of item.tags || []) {
-      const tag = cleanTag(value);
-      if (tag && tag.length <= 20) { choices.set(tag.toLowerCase(), tag); selected.set(tag.toLowerCase(), tag); }
+      const code = cleanTag(value);
+      if (code) selected.set(code.toLowerCase(), code);
     }
     const title = node("h4", "pending-reason-title", "待补 · 现在补一句原因");
     const help = node("p", "pending-reason-help", "回想这次为什么错，写一句就好。补充原因不会改变复习安排。");
@@ -57,21 +58,12 @@
     input.required = true;
     input.placeholder = "例如：循环结束时漏掉了等号。";
     label.append(input);
-    const tagTitle = node("p", "pending-reason-help", "标签建议（可选，最多 3 个）");
+    const tagTitle = node("p", "pending-reason-help", "错因标签（至少选 1 个，最多 3 个）");
     const tagHost = node("div", "pending-reason-tags");
     tagHost.setAttribute("role", "group");
     tagHost.setAttribute("aria-label", "选择错因标签");
     const count = node("p", "pending-reason-count");
-    const customLabel = node("label", "pending-reason-label", "自定义标签");
-    const custom = node("input", "pending-reason-custom");
-    custom.type = "text";
-    custom.maxLength = 20;
-    custom.placeholder = "最多 20 个字";
-    customLabel.append(custom);
-    const add = button("添加标签", "pending-reason-add");
-    const customRow = node("div", "pending-reason-custom-row");
-    customRow.append(customLabel, add);
-    const tagStatus = node("p", "pending-reason-tag-status", "正在读取标签建议…");
+    const tagStatus = node("p", "pending-reason-tag-status", "正在读取错因词表…");
     tagStatus.setAttribute("role", "status");
     const status = node("p", "pending-reason-status");
     status.setAttribute("role", "status");
@@ -86,49 +78,57 @@
     reopen.hidden = true;
     const actions = node("div", "pending-reason-actions");
     actions.append(save, refresh, reopen);
-    form.append(title, help, label, tagTitle, tagHost, count, customRow, tagStatus, status, serverReason, actions);
+    form.append(title, help, label, tagTitle, tagHost, count, tagStatus, status, serverReason, actions);
 
+    function causeLabel(code) {
+      const found = taxonomy.causes.find((cause) => cause.code === code);
+      return found ? found.label : code;
+    }
     function notice(text, error = false) {
       status.textContent = text;
       status.dataset.error = String(error);
     }
     function paintTags() {
       tagHost.replaceChildren();
-      for (const [key, tag] of choices) {
-        const choice = button(tag, "pending-reason-tag");
-        choice.setAttribute("aria-pressed", String(selected.has(key)));
-        choice.disabled = busy || completed || completedElsewhere || (!selected.has(key) && selected.size >= 3);
-        choice.addEventListener("click", () => {
-          if (!live() || choice.disabled) return;
-          if (selected.has(key)) selected.delete(key);
-          else if (selected.size < 3) selected.set(key, tag);
-          paintTags();
-        });
-        tagHost.append(choice);
+      // 按大类分组渲染词表印章。
+      for (const group of taxonomy.groups) {
+        const members = taxonomy.causes.filter((cause) => cause.group === group.code);
+        if (!members.length) continue;
+        const block = node("div", "pending-reason-group");
+        block.append(node("h5", "pending-reason-group-title", group.label));
+        const list = node("div", "pending-reason-tag-list");
+        for (const cause of members) {
+          const key = cause.code.toLowerCase();
+          const choice = button(cause.label, "pending-reason-tag tag-seal");
+          choice.setAttribute("aria-pressed", String(selected.has(key)));
+          choice.title = cause.hint;
+          choice.disabled = busy || completed || completedElsewhere || (!selected.has(key) && selected.size >= 3);
+          choice.addEventListener("click", () => {
+            if (!live() || choice.disabled) return;
+            if (selected.has(key)) selected.delete(key);
+            else if (selected.size < 3) selected.set(key, cause.code);
+            paintTags();
+          });
+          list.append(choice);
+        }
+        block.append(list);
+        tagHost.append(block);
       }
       count.textContent = `已选 ${selected.size} / 3 个标签`;
     }
     function controls() {
       input.readOnly = busy || completed || completedElsewhere;
-      custom.disabled = add.disabled = busy || completed || completedElsewhere;
       save.disabled = busy || completed || completedElsewhere;
       refresh.disabled = reopen.disabled = busy;
       form.setAttribute("aria-busy", String(busy));
       paintTags();
     }
-    add.addEventListener("click", () => {
-      if (!live() || busy || completed || completedElsewhere) return;
-      const tag = cleanTag(custom.value);
-      if (!tag || tag.length > 20) { notice("标签请填写 1–20 个字。", true); return; }
-      const key = tag.toLowerCase();
-      if (!selected.has(key) && selected.size >= 3) { notice("最多选择 3 个标签，先取消一个。", true); return; }
-      choices.set(key, tag); selected.set(key, tag); custom.value = ""; paintTags();
-    });
     form.addEventListener("submit", (event) => { event.preventDefault(); void submit(); });
     async function submit() {
       if (!live() || busy || completed || completedElsewhere) return;
       const description = input.value.trim();
       if (!description || description.length > 2000) { notice("请补一句原因，最多 2000 个字。", true); return; }
+      if (!selected.size) { notice("补上原因后请至少选择 1 个错因标签。", true); return; }
       if (selected.size > 3) { notice("最多选择 3 个标签，先取消多余标签。", true); return; }
       const request = ++sequence;
       busy = true; notice("正在保存…"); controls();
@@ -195,18 +195,15 @@
     async function suggestions() {
       const request = ++tagsSequence;
       try {
-        const data = await hooks.api("/api/tags/suggest");
+        // 错因标签只能从固定词表里选；已有标签是 code，直接对应上。
+        const data = await hooks.api("/api/error-taxonomy");
         if (!live() || request !== tagsSequence) return;
-        const tags = [...(Array.isArray(data.mine) ? data.mine.map((entry) => entry?.tag) : []),
-          ...(Array.isArray(data.builtin) ? data.builtin : [])];
-        for (const value of tags) {
-          const tag = cleanTag(value), key = tag.toLowerCase();
-          if (tag && tag.length <= 20 && !choices.has(key)) choices.set(key, tag);
-        }
-        tagStatus.textContent = "也可以不选标签，先把原因记下来。";
+        taxonomy.causes = Array.isArray(data.causes) ? data.causes : [];
+        taxonomy.groups = Array.isArray(data.groups) ? data.groups : [];
+        tagStatus.textContent = "从固定词表里选，至少选 1 个。";
         paintTags();
       } catch {
-        if (live() && request === tagsSequence) tagStatus.textContent = "标签建议暂时不可用；可以先保存原因，或添加自定义标签。";
+        if (live() && request === tagsSequence) tagStatus.textContent = "错因词表暂时不可用，稍后重试。";
       }
     }
     controls();

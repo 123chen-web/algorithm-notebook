@@ -67,7 +67,7 @@ def export_data(user=Depends(main.current_user)):
         problems = {}
         for row in conn.execute(
             """
-            SELECT id, title, zone, language, code, correct_code, thinking, source_url, created_at
+            SELECT id, title, zone, language, code, correct_code, thinking, source_url, verdict, created_at
             FROM problems WHERE user_id = ? ORDER BY id
             """,
             (user["id"],),
@@ -86,7 +86,7 @@ def export_data(user=Depends(main.current_user)):
         mistakes = {}
         for row in conn.execute(
             """
-            SELECT m.id, m.problem_id, m.description, m.repetitions,
+            SELECT m.id, m.problem_id, m.description, m.counterexample, m.repetitions,
                    m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at,
                    m.pending_reason
             FROM mistakes m JOIN problems p ON p.id = m.problem_id

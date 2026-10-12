@@ -69,8 +69,10 @@
     if (entry.tags.length) {
       const chips = node("div", "problem-card-tags");
       chips.setAttribute("aria-label", "这道题的全部标签");
+      // 标签存的是词表 code，显示中文名。
+      const label = window.TagEditor?.label || ((code) => code);
       const tags = entry.tags.map((tag, index) => {
-        const chip = node("span", "problem-chip", tag);
+        const chip = node("span", "problem-chip", label(tag));
         chip.hidden = index >= 5;
         chips.append(chip);
         return chip;

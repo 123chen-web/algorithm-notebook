@@ -31,14 +31,14 @@ def test_progress_is_shared_by_list_and_detail(client, intervals, last, suspende
 def test_filtered_queue_keeps_all_problem_tags_and_progress(client):
     register(client)
     ids = new_problem(client)
-    client.put(f'/api/mistakes/{ids[0]}/tags', json={'tags': ['边界']})
-    client.put(f'/api/mistakes/{ids[1]}/tags', json={'tags': ['边界', '复杂度']})
+    client.put(f'/api/mistakes/{ids[0]}/tags', json={'tags': ['boundary']})
+    client.put(f'/api/mistakes/{ids[1]}/tags', json={'tags': ['boundary', 'complexity']})
     with connect(write=True) as conn:
         conn.execute('UPDATE mistakes SET interval_days=21, last_reviewed_at=?, due_date=? WHERE id=?',
                      ('2026-09-01', '2026-12-01', ids[1]))
-    item = client.get('/api/review/queue?tag=边界').json()['items'][0]
+    item = client.get('/api/review/queue?tag=boundary').json()['items'][0]
     assert item['progress'] == 50
-    assert item['problem_tags'] == ['复杂度', '边界']
+    assert item['problem_tags'] == ['boundary', 'complexity']
     assert item['problem_due_count'] == 1
     assert len(item['problem_mistakes']) == 2
     preview = client.get('/api/overview').json()['due_preview']
@@ -95,13 +95,13 @@ def test_cached_insight_cards_are_live_without_rewriting_saved_evidence(client):
 def test_problem_metadata_is_owner_scoped(client):
     register(client)
     alice_ids = new_problem(client)
-    client.put(f'/api/mistakes/{alice_ids[0]}/tags', json={'tags': ['私有标签']})
+    client.put(f'/api/mistakes/{alice_ids[0]}/tags', json={'tags': ['boundary']})
     client.post('/api/auth/logout')
     register(client, username='bob')
     bob_ids = new_problem(client)
     items = client.get('/api/mistakes?due_only=false').json()['items']
     assert {i['id'] for i in items} == set(bob_ids)
-    assert all('私有标签' not in i['problem_tags'] for i in items)
+    assert all('boundary' not in i['problem_tags'] for i in items)
     assert all(not (set(alice_ids) & {m['id'] for m in i['problem_mistakes']}) for i in items)
 
 

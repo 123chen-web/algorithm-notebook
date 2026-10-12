@@ -52,13 +52,13 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
         cursor = conn.execute(
             """
             INSERT INTO problems(
-                user_id, title, zone, language, code, thinking, created_at, correct_code, source_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                user_id, title, zone, language, code, thinking, created_at, correct_code, source_url, verdict
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["id"], data.title, data.zone, data.language,
                 data.code, data.thinking, main.utc_now(), data.correct_code,
-                data.source_url or "",
+                data.source_url or "", data.verdict,
             ),
         )
         problem_id = cursor.lastrowid
@@ -75,13 +75,18 @@ def create_problem(data: main.NewProblem, user=Depends(main.current_user)):
             )
             mistake_ids.append(cursor.lastrowid)
         else:
-            for description in data.mistakes:
+            for mistake in data.mistakes:
+                # 兼容旧客户端：字符串直接当描述；对象带最小反例。
+                if isinstance(mistake, str):
+                    description, counterexample = mistake, ""
+                else:
+                    description, counterexample = mistake.description, mistake.counterexample
                 cursor = conn.execute(
                     """
-                    INSERT INTO mistakes(problem_id, description, due_date)
-                    VALUES (?, ?, ?)
+                    INSERT INTO mistakes(problem_id, description, counterexample, due_date)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (problem_id, description, first_review),
+                    (problem_id, description, counterexample, first_review),
                 )
                 mistake_ids.append(cursor.lastrowid)
 
@@ -142,12 +147,12 @@ def edit_problem(problem_id: int, data: main.ProblemEdit, user=Depends(main.curr
             """
             UPDATE problems
             SET title = ?, zone = ?, language = ?, code = ?, thinking = ?,
-                correct_code = ?, source_url = COALESCE(?, source_url)
+                correct_code = ?, source_url = COALESCE(?, source_url), verdict = ?
             WHERE id = ?
             """,
             (
                 data.title, data.zone, data.language,
-                data.code, data.thinking, data.correct_code, data.source_url, problem_id,
+                data.code, data.thinking, data.correct_code, data.source_url, data.verdict, problem_id,
             ),
         )
         main.set_problem_patterns(conn, problem_id, pattern_ids)

@@ -22,8 +22,8 @@ def test_pending_reason_resources_and_host_hooks_are_wired():
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert '/static/pending-reason.css?v=1' in page
-    assert '/static/pending-reason.js?v=1' in page
-    assert page.index('/static/pending-reason.js?v=1') < page.index('/static/app.js?v=')
+    assert '/static/pending-reason.js?v=2' in page
+    assert page.index('/static/pending-reason.js?v=2') < page.index('/static/app.js?v=')
     renderer = app[app.index('function renderMistakeText(item)'):app.index('function renderProblemEditor(item)')]
     assert 'window.PendingReason?.render(item)' in renderer
     assert 'if (pendingReason) return pendingReason;' in renderer

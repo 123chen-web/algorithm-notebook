@@ -32,7 +32,7 @@ def test_sign_uses_the_users_own_data(client):
     register(client)
     pid = client.post("/api/problems", json=body(pattern_ids=["binary-search-basic"])).json()["id"]
     mid = client.get("/api/mistakes?due_only=false").json()["items"][0]["id"]
-    client.put(f"/api/mistakes/{mid}/tags", json={"tags": ["边界", "边界"]})
+    client.put(f"/api/mistakes/{mid}/tags", json={"tags": ["boundary", "boundary"]})
     with main.connect(write=True) as conn:
         conn.execute("UPDATE mistakes SET due_date = '2020-01-01' WHERE problem_id = ?", (pid,))
     sign = client.get("/api/today-sign").json()

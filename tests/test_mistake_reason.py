@@ -2,7 +2,7 @@
 import pytest
 
 import main
-from tags import REASON_SUGGEST_TAGS
+from error_taxonomy import CAUSES
 from test_app import client, new_problem, register
 
 
@@ -28,7 +28,7 @@ def test_reason_success_updates_all_fields(client):
     # 先打两个标签，确认补原因时是整体替换。
     client.put(
         f"/api/mistakes/{mistake_id}/tags",
-        json={"tags": ["旧标签一", "旧标签二"]},
+        json={"tags": ["boundary", "careless"]},
     )
     mid = client.get(f"/api/mistakes/{mistake_id}").json()
 
@@ -36,20 +36,20 @@ def test_reason_success_updates_all_fields(client):
         reason_url(mistake_id),
         json={
             "description": "循环结束条件漏掉 left == right。",
-            "tags": ["边界", "粗心"],
+            "tags": ["boundary", "careless"],
             "version": mid["version"],
         },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["description"] == "循环结束条件漏掉 left == right。"
-    assert body["tags"] == ["边界", "粗心"]
+    assert body["tags"] == ["boundary", "careless"]
     assert body["pending_reason"] is False
     assert body["version"] == mid["version"] + 1
 
     after = client.get(f"/api/mistakes/{mistake_id}").json()
     assert after["description"] == "循环结束条件漏掉 left == right。"
-    assert after["tags"] == ["边界", "粗心"]
+    assert after["tags"] == ["boundary", "careless"]
     assert after["pending_reason"] is False
     # 调度字段不动。
     assert after["due_date"] == mid["due_date"]
@@ -92,7 +92,7 @@ def test_reason_too_many_tags_rejected(client):
         reason_url(mistake_id),
         json={
             "description": "标签太多。",
-            "tags": ["一", "二", "三", "四"],
+            "tags": ["boundary", "careless", "concept", "formula"],
             "version": version,
         },
     )
@@ -110,7 +110,7 @@ def test_reason_tag_normalization_still_applies(client):
     # 超长标签仍被 normalize_tags 拒绝。
     response = client.post(
         reason_url(mistake_id),
-        json={"description": "x", "tags": ["超长" * 20], "version": version},
+        json={"description": "x", "tags": ["boundary" * 20], "version": version},
     )
     assert response.status_code == 422
 
@@ -119,12 +119,12 @@ def test_reason_tag_normalization_still_applies(client):
 def test_reason_empty_description_rejected_without_updates(client, description):
     register(client)
     mistake_id = quick_mistake_id(client)
-    client.put(f"/api/mistakes/{mistake_id}/tags", json={"tags": ["旧标签"]})
+    client.put(f"/api/mistakes/{mistake_id}/tags", json={"tags": ["boundary"]})
     before = client.get(f"/api/mistakes/{mistake_id}").json()
     # 补原因必须真有一句原因；空白不能消除待补提醒或覆盖标签。
     response = client.post(
         reason_url(mistake_id),
-        json={"description": description, "tags": ["新标签"], "version": before["version"]},
+        json={"description": description, "tags": ["careless"], "version": before["version"]},
     )
     assert response.status_code == 422
     assert client.get(f"/api/mistakes/{mistake_id}").json() == before
@@ -153,7 +153,7 @@ def test_reason_allowed_on_suspended_mistake(client):
 
     response = client.post(
         reason_url(mistake_id),
-        json={"description": "暂停中也能补。", "tags": ["没思路"], "version": version + 1},
+        json={"description": "暂停中也能补。", "tags": ["wrong_idea"], "version": version + 1},
     )
     assert response.status_code == 200
     assert response.json()["pending_reason"] is False
@@ -163,7 +163,7 @@ def test_reason_repeated_submission_still_bumps_version(client):
     register(client)
     mistake_id = quick_mistake_id(client)
     version = client.get(f"/api/mistakes/{mistake_id}").json()["version"]
-    payload = {"description": "同样内容。", "tags": ["边界"], "version": version}
+    payload = {"description": "同样内容。", "tags": ["boundary"], "version": version}
     first = client.post(reason_url(mistake_id), json=payload)
     assert first.status_code == 200
     assert first.json()["version"] == version + 1
@@ -175,7 +175,7 @@ def test_reason_repeated_submission_still_bumps_version(client):
     assert second.status_code == 200
     assert second.json()["version"] == version + 2
     assert second.json()["description"] == "同样内容。"
-    assert second.json()["tags"] == ["边界"]
+    assert second.json()["tags"] == ["boundary"]
 
 
 def test_reason_nonexistent_mistake_404(client):
@@ -197,7 +197,7 @@ def test_reason_trial_account_allowed(client):
     version = client.get(f"/api/mistakes/{mistake_id}").json()["version"]
     response = client.post(
         reason_url(mistake_id),
-        json={"description": "体验账号补原因。", "tags": [], "version": version},
+        json={"description": "体验账号补原因。", "tags": ["boundary"], "version": version},
     )
     assert response.status_code == 200
     assert response.json()["pending_reason"] is False
@@ -210,11 +210,11 @@ def test_tags_suggest_order_and_dedup(client):
     # 给标签制造不同的使用次数。
     client.put(
         f"/api/mistakes/{items[0]['id']}/tags",
-        json={"tags": ["自定一", "自定二", "边界"]},
+        json={"tags": ["boundary", "careless", "concept"]},
     )
     client.put(
         f"/api/mistakes/{items[1]['id']}/tags",
-        json={"tags": ["自定一"]},
+        json={"tags": ["boundary"]},
     )
 
     body = client.get("/api/tags/suggest").json()
@@ -222,15 +222,14 @@ def test_tags_suggest_order_and_dedup(client):
     assert len(mine) <= 12
     counts = [item["count"] for item in mine]
     assert counts == sorted(counts, reverse=True)
-    assert mine[0] == {"tag": "自定一", "count": 2}
+    assert mine[0] == {"tag": "boundary", "count": 2}
     mine_tags = {item["tag"] for item in mine}
     # mine 里已有的不在 builtin 重复。
-    assert "边界" not in body["builtin"]
-    assert "自定一" not in body["builtin"]
-    assert "自定二" not in body["builtin"]
+    assert "boundary" not in body["builtin"]
+    assert "careless" not in body["builtin"]
     # builtin 保持内置顺序。
     assert body["builtin"] == [
-        tag for tag in REASON_SUGGEST_TAGS if tag not in mine_tags
+        code for code, _, _, _ in CAUSES if code not in mine_tags
     ]
 
 
@@ -238,4 +237,4 @@ def test_tags_suggest_builtin_when_no_tags(client):
     register(client)
     body = client.get("/api/tags/suggest").json()
     assert body["mine"] == []
-    assert body["builtin"] == list(REASON_SUGGEST_TAGS)
+    assert body["builtin"] == [code for code, _, _, _ in CAUSES]

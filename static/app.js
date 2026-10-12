@@ -787,6 +787,7 @@ async function loadZones() {
   }
 
   applyZoneFieldMode($("#problem-form"), problemZone.value);
+  fillVerdictSelect($("#problem-verdict"));
 }
 
 // 编程类分区要求填写编程语言，"代码"字段就是字面意义的代码；
@@ -799,6 +800,11 @@ function applyZoneFieldMode(form, zoneValue) {
   languageField.hidden = !isCode;
   languageInput.required = isCode;
   if (!isCode) languageInput.value = "";
+  // 判题类型只在算法分区有意义：其他分区隐藏，值清空。
+  const verdictField = form.querySelector("[data-role=verdict-field]");
+  const verdictSelect = form.querySelector("[name=verdict]");
+  if (verdictField) verdictField.hidden = !isCode;
+  if (verdictSelect && !isCode) verdictSelect.value = "";
   codeLabel.textContent = isCode ? "当时的代码" : "当时的解题过程";
   const codeInput = codeLabel.nextElementSibling;
   if (codeInput) {
@@ -806,6 +812,37 @@ function applyZoneFieldMode(form, zoneValue) {
       ? "粘贴当时的代码，保留错误也没关系。"
       : "写下当时的解题过程或演算，保留错误也没关系。";
   }
+}
+
+// 判题类型下拉的选项从词表接口来，不在前端硬编码。
+let verdictOptionsCache = null;
+async function verdictOptions() {
+  if (!verdictOptionsCache) {
+    verdictOptionsCache = (async () => {
+      try {
+        const response = await fetch("/api/error-taxonomy", { credentials: "same-origin", headers: { "X-CSRF-Protection": "1" } });
+        if (!response.ok) return [];
+        return (await response.json()).verdicts || [];
+      } catch { return []; } // 词表加载失败时下拉只留"未填"，不阻塞建档
+    })();
+  }
+  return verdictOptionsCache;
+}
+async function fillVerdictSelect(select, current = "") {
+  const options = await verdictOptions();
+  const keep = select.value || current;
+  select.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "未填";
+  select.append(empty);
+  for (const verdict of options) {
+    const option = document.createElement("option");
+    option.value = verdict.code;
+    option.textContent = `${verdict.code} · ${verdict.label}`;
+    select.append(option);
+  }
+  select.value = keep;
 }
 
 function renderPhotoQuota() {
@@ -1816,6 +1853,64 @@ function renderWeaknessControls() {
   $("#weakness-page").setAttribute("aria-busy", String(weaknessPending));
 }
 
+function renderErrorProfile(profile) {
+  const host = $("#weakness-profile");
+  host.replaceChildren();
+  if (!profile || !profile.total_tagged) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  // 大类统计句：「你的错因里，想错了 X% · 写错了 Y% · 跑得慢 Z%」
+  const byCode = Object.fromEntries(profile.groups.map((group) => [group.code, group]));
+  const sentence = element("p", "", "weakness-profile-sentence");
+  sentence.append(
+    document.createTextNode("你的错因里，"),
+    element("strong", `想错了 ${byCode.reasoning?.percent ?? 0}%`),
+    document.createTextNode(" · "),
+    element("strong", `写错了 ${byCode.implementation?.percent ?? 0}%`),
+    document.createTextNode(" · "),
+    element("strong", `跑得慢 ${byCode.performance?.percent ?? 0}%`),
+  );
+  host.append(sentence);
+
+  // 判题类型分布（横向条）。
+  if (profile.verdicts.length) {
+    host.append(element("h4", "判题类型分布", "weakness-profile-title"));
+    const bars = element("ul", "", "weakness-bars");
+    const max = Math.max(...profile.verdicts.map((item) => item.count));
+    for (const item of profile.verdicts) {
+      const entry = element("li", "", "weakness-bar-row");
+      entry.append(element("span", `${item.code} · ${item.label}`, "weakness-bar-label"));
+      const track = element("span", "", "weakness-bar-track");
+      const fill = element("span", "", "weakness-bar-fill");
+      fill.style.width = `${Math.max(2, Math.round((item.count / max) * 100))}%`;
+      track.append(fill);
+      entry.append(track, element("span", `${item.count} · ${item.percent}%`, "weakness-bar-value"));
+      bars.append(entry);
+    }
+    host.append(bars);
+  }
+
+  // 最常见错因 Top 3。
+  if (profile.top_causes.length) {
+    host.append(element("h4", "最常见的错因", "weakness-profile-title"));
+    const top = element("ol", "", "weakness-top-causes");
+    profile.top_causes.forEach((item, index) => {
+      const entry = element("li");
+      const seal = element("span", String(index + 1), "weakness-rank-seal");
+      seal.setAttribute("aria-hidden", "true");
+      entry.append(
+        seal,
+        element("span", item.label, "weakness-cause-label"),
+        element("span", `${item.count} 条`, "weakness-cause-count")
+      );
+      top.append(entry);
+    });
+    host.append(top);
+  }
+}
+
 function renderWeaknessAnalysis() {
   const insight = weaknessAnalysis?.insight;
   const result = $("#weakness-result");
@@ -1929,10 +2024,11 @@ async function loadWeaknessAnalysis() {
   const status = $("#weakness-status");
   status.classList.remove("error");
   status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
-  const [analysis, profile, growth] = await Promise.allSettled([
+  const [analysis, profile, growth, errorProfile] = await Promise.allSettled([
     api("/api/insights/weakness-analysis"),
     api("/api/me"),
     api("/api/insights/growth"),
+    api("/api/stats/error-profile"),
   ]);
   if (!weaknessRequestCurrent(generation, userId)) return;
   if (profile.status === "fulfilled") {
@@ -1950,6 +2046,8 @@ async function loadWeaknessAnalysis() {
     status.classList.add("error");
     status.textContent = `读取分析失败：${analysis.reason.message || "请检查网络后重试"}。可点击上方“刷新”重新读取。`;
   }
+  // 错因画像：纯统计，失败就隐藏这一节，不影响其他。
+  renderErrorProfile(errorProfile.status === "fulfilled" ? errorProfile.value : null);
   // 独立降级：成长趋势和薄弱点分析是两个互不依赖的接口，一个失败不影响另一个展示。
   growthZones = growth.status === "fulfilled" ? growth.value.zones : null;
   renderGrowthInsights(growth.status === "fulfilled");
@@ -2814,6 +2912,8 @@ function renderMistakeText(item) {
 
   function editForm() {
     const input = textarea(item.description, 2000, 4);
+    const counterexample = textarea(item.counterexample || "", 1000, 3, true);
+    counterexample.placeholder = "最小反例（可选）：一个能让原代码出错的最小输入，例如：n=1 时输出 0，应为 1";
     const save = element("button", "保存修改", "primary");
     save.type = "submit";
     const cancel = element("button", "取消");
@@ -2821,7 +2921,7 @@ function renderMistakeText(item) {
     cancel.addEventListener("click", readOnly);
 
     const form = document.createElement("form");
-    form.append(field("哪里容易错，为什么会错？（可选）", input), save, cancel);
+    form.append(field("哪里容易错，为什么会错？（可选）", input), field("最小反例（可选）", counterexample), save, cancel);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
@@ -2829,6 +2929,7 @@ function renderMistakeText(item) {
           method: "PUT",
           body: JSON.stringify({
             description: input.value,
+            counterexample: counterexample.value,
             version: item.version,
           }),
         });
@@ -2863,8 +2964,13 @@ function renderProblemEditor(item) {
     const editBtn = element("button", "编辑题目、代码和思路");
     editBtn.type = "button";
     editBtn.addEventListener("click", editForm);
+    // 判题类型：填了就显示，中文名从词表来。
+    const verdictRow = item.verdict
+      ? [element("p", `判题结果：${window.TagEditor?.verdictLabel(item.verdict) || item.verdict}`, "problem-verdict")]
+      : [];
     wrap.replaceChildren(
       ...(/^https?:\/\//i.test(item.source_url || "") ? [sourceLinkRow(item.source_url)] : []),
+      ...verdictRow,
       element("h4", "当时的思路"),
       window.Capture ? window.Capture.renderThinking(item.thinking) : element("p", item.thinking, "multiline"),
       element("h4", codeZones.has(item.zone) ? "当时的代码" : "当时的解题过程"),
@@ -2899,6 +3005,14 @@ function renderProblemEditor(item) {
     languageField.dataset.role = "language-field";
     languageField.append(language);
 
+    // 判题类型：只在算法分区显示，其他分区隐藏。
+    const verdictSelect = document.createElement("select");
+    verdictSelect.name = "verdict";
+    const verdictField = element("label", "判题结果", "");
+    verdictField.dataset.role = "verdict-field";
+    verdictField.append(verdictSelect);
+    fillVerdictSelect(verdictSelect, item.verdict || "");
+
     const code = textarea(item.code, 40000, 10, true);
     const codeLabelText = element("span", "当时的代码");
     codeLabelText.dataset.role = "code-label";
@@ -2931,6 +3045,7 @@ function renderProblemEditor(item) {
       field("标题", title),
       field("分区", zoneSelect),
       languageField,
+      verdictField,
       codeField,
       field("正确代码（可选，自己补）", correctCode),
       field("思路", thinking),
@@ -2950,6 +3065,7 @@ function renderProblemEditor(item) {
             code: code.value,
             correct_code: correctCode.value,
             thinking: thinking.value,
+            verdict: verdictSelect.value,
             // 选择器还没插进来时不带这个字段，服务端按"保持不变"处理；
             // 插进来之后以选择器的值为准，传 [] 就是清空。
             ...(patternPicker ? { pattern_ids: patternPicker.values() } : {}),
@@ -3091,10 +3207,16 @@ function renderDetail(item, options = {}) {
   const reason = element("section", "", "review-reason");
   reason.id = "review-reason";
   reason.tabIndex = -1;
-  reason.append(
-    element("h3", "这次需要记住的错因", "section-label"),
-    mistakeTextNode
-  );
+  reason.append(element("h3", "这次需要记住的错因", "section-label"));
+  // 最小反例是最好的回忆线索：放在背面最显眼的位置，等宽显示。
+  if ((item.counterexample || "").trim()) {
+    const counterexampleBlock = element("figure", "", "counterexample");
+    const caption = element("figcaption", "最小反例", "counterexample-label");
+    const body = element("pre", item.counterexample, "code counterexample-body");
+    counterexampleBlock.append(caption, body);
+    reason.append(counterexampleBlock);
+  }
+  reason.append(mistakeTextNode);
   root.append(toolbar, source, heading, recallField, reveal, status, reason);
   state.answers.push(reason);
   if (window.TagEditor) root.append(window.TagEditor.render(item));
@@ -3374,13 +3496,18 @@ function addMistakeInput() {
   input.name = "mistake";
   input.placeholder = "不确定的话可以留空，AI 会从代码和思路里帮你反推错因。";
 
+  const counterexample = textarea("", 1000, 2);
+  counterexample.name = "counterexample";
+  counterexample.classList.add("code");
+  counterexample.placeholder = "最小反例（可选）：一个能让原代码出错的最小输入，例如：n=1 时输出 0，应为 1";
+
   const remove = element("button", "移除这条输入");
   remove.type = "button";
   remove.addEventListener("click", () => {
     if (container.children.length > 1) row.remove();
   });
 
-  row.append(field("哪里容易错，为什么会错？（可选）", input), remove);
+  row.append(field("哪里容易错，为什么会错？（可选）", input), field("最小反例（可选）", counterexample), remove);
   container.append(row);
 }
 
@@ -4162,10 +4289,18 @@ function mountPatternPicker() {
 
 function buildProblemPayload(form, quick) {
   const data = new FormData(form);
-  const mistakes = data.getAll("mistake");
+  const mistakeInputs = [...form.querySelectorAll("textarea[name=mistake]")];
+  const counterexampleInputs = [...form.querySelectorAll("textarea[name=counterexample]")];
+  // 易错点带上可选的最小反例；都为空时退化成字符串，保持旧格式兼容。
+  const mistakes = mistakeInputs.map((input, index) => {
+    const description = input.value;
+    const counterexample = (counterexampleInputs[index]?.value || "").trim();
+    return counterexample ? { description, counterexample } : description;
+  });
   const mode = $("#problem-quick")?.value || "full";
   const skipThinking = mode === "full" && $("#problem-skip-thinking")?.checked;
   const skipMistakes = mode === "full" && $("#problem-skip-mistakes")?.checked;
+  const verdictSelect = form.querySelector("[name=verdict]");
   return {
     title: data.get("title"),
     zone: data.get("zone"),
@@ -4173,6 +4308,7 @@ function buildProblemPayload(form, quick) {
     code: data.get("code"),
     correct_code: mode === "full" ? String(data.get("correct_code") || "") : "",
     source_url: String(data.get("source_url") || ""),
+    verdict: form.querySelector("[name=verdict]")?.value || "",
     thinking: skipThinking ? "" : data.get("thinking"),
     mistakes: !quick || (skipThinking && !skipMistakes) ? mistakes
       : (mode === "sentence" ? [String(data.get("quick_reason") || "").trim()] : []),

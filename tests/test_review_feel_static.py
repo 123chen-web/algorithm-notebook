@@ -26,7 +26,7 @@ def test_review_assets_have_bumped_versions_and_dependency_load_order():
     for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=7", "/static/review-feel.js?v=1", "/static/app.js?v=102"):
         assert scripts.count(src) == 1
     assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=7") < scripts.index("/static/review-feel.js?v=1") < scripts.index("/static/app.js?v=102")
-    assert styles.count("/static/review-extras.css?v=2") == 1
+    assert styles.count("/static/review-extras.css?v=4") == 1
     assert styles.count("/static/focus.css?v=3") == 1
     assert styles.count("/static/review-feel.css?v=1") == 1
 

@@ -54,15 +54,20 @@ def test_editor_saves_the_whole_tag_list_through_the_tags_endpoint(script):
 
 
 def test_editor_is_labelled_and_announces_changes(script):
-    assert 'label.htmlFor = inputId' in script
+    assert 'section.setAttribute("aria-labelledby", titleId)' in script
     assert 'status.setAttribute("aria-live", "polite")' in script
-    assert 'remove.setAttribute("aria-label", `移除标签 ${tag}`)' in script
+    assert 'chip.setAttribute("aria-label", `移除标签 ${cause.label}`)' in script
     assert 'setAttribute("aria-pressed"' in script
+    # 词表点选，没有自由输入框。
+    assert "/api/error-taxonomy" in script
+    assert "tag-input" not in script
 
 
 def test_limits_come_from_the_server_not_from_the_script(script):
-    assert "state.limits.length" in script and "state.limits.per_mistake" in script
+    assert "state.limits.per_mistake" in script
     assert not re.search(r"maxLength = \d+;", script)
+    # 个数上限是服务端 limits，不是写死的数字。
+    assert not re.search(r"tags.length >= \d+", script)
 
 
 def test_filters_use_the_records_filter_event_and_the_list_query(script, app_source):
@@ -78,7 +83,7 @@ def test_detail_and_cards_use_the_widgets_and_stay_in_sync(app_source):
     cards = (STATIC / "problem-cards.js").read_text(encoding="utf-8")
     assert "window.ProblemCards.card(group" in app_source
     assert "metadata.problem_tags" in cards
-    assert 'node("span", "problem-chip", tag)' in cards
+    assert 'node("span", "problem-chip", label(tag))' in cards
     handler = re.search(r'document\.addEventListener\("mistake:tags-changed", \(event\) => \{(?P<body>[\s\S]*?)\n\}\);', app_source)
     assert handler and "rvfRenderCards(" in handler["body"]
     assert "rvfRefreshProblem(item)" in handler["body"]
@@ -88,9 +93,12 @@ def test_stylesheet_follows_the_project_rules(stylesheet):
     assert "!important" not in stylesheet
     assert "backdrop-filter" not in stylesheet
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", stylesheet), "colors must come from theme tokens"
-    # 移除按钮看上去 24px，但点击范围扩到 44px。
-    assert re.search(r"\.tag-remove::after \{ content: \"\"; position: absolute; inset: -10px; \}", stylesheet)
+    # 选中印章看上去还是印章大小，但点击范围扩到 44px。
+    assert re.search(r"\.tag-seal\[aria-pressed=\"true\"\]::after \{ content: \"\"; position: absolute; inset: -6px; \}", stylesheet)
     coarse = re.search(r"@media \(pointer: coarse\) \{(.*?)\n\}", stylesheet, re.S)
-    assert coarse and coarse.group(1).count("min-height: 44px") >= 3
+    assert coarse and coarse.group(1).count("min-height: 44px") >= 2
+    # 印章风格：不用普通灰色 chips。
+    assert ".tag-seal" in stylesheet
+    assert "var(--accent)" in stylesheet
     # 卡片里的 span 默认块级，要显式压回来。
     assert ".record-button .record-tags { display: flex;" in stylesheet

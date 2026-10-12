@@ -281,15 +281,31 @@ def existing_titles(conn, user_id):
 
 
 def insert_record(conn, record, user_id, day, now):
+    import error_taxonomy
+
+    # 判题类型：只接受词表里的值，其他一律按未填处理（导入不中断）。
+    try:
+        verdict = error_taxonomy.validate_verdict(record.get("verdict", ""))
+    except error_taxonomy.TaxonomyError:
+        verdict = ""
     cursor = conn.execute(
-        "INSERT INTO problems(user_id,title,language,code,thinking,created_at,correct_code) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO problems(user_id,title,language,code,thinking,created_at,correct_code,verdict) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         (user_id, record["title"], record["language"], record["code"],
-         record["thinking"], record.get("created_at", now), record.get("correct_code", "")),
+         record["thinking"], record.get("created_at", now), record.get("correct_code", ""), verdict),
     )
+    mistake_rows = []
+    for text in record["mistakes"]:
+        if isinstance(text, dict):
+            description = text.get("description", "")
+            # 超长的最小反例截断，不中断导入。
+            counterexample = str(text.get("counterexample", ""))[:error_taxonomy.COUNTEREXAMPLE_MAX_LENGTH]
+        else:
+            description, counterexample = text, ""
+        mistake_rows.append((cursor.lastrowid, description, counterexample, day))
     conn.executemany(
-        "INSERT INTO mistakes(problem_id,description,due_date) VALUES (?,?,?)",
-        [(cursor.lastrowid, text, day) for text in record["mistakes"]],
+        "INSERT INTO mistakes(problem_id,description,counterexample,due_date) VALUES (?,?,?,?)",
+        mistake_rows,
     )
 
 
