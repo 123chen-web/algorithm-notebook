@@ -6,10 +6,13 @@ from tags import tags_for_mistakes
 
 
 def enrich_problems(conn, user_id, items, today):
-    """单条=min(1, interval_days/21)，未复习为0，暂停不计。
+    """单条：从没复习过为0；复习过至少算 40%，之后随间隔拉长涨到 100%
+    （= 0.4 + 0.6 * min(1, interval_days/21)，21 天沿用成熟卡片口径）；暂停不计。
 
+    以前单条只按 interval_days/21 算，刚复习完间隔才 1 天，只有约 5%，整题平均后常常显示 0%，
+    让人觉得"明明复习了却没进度"。现在"复习过"本身就算进度，间隔拉长再继续涨。
     整题取未暂停条目的平均，按5%四舍五入（非银行家舍入）；全暂停为0。
-    21天沿用成熟卡片口径。标签包含整题所有易错点，不受筛选/上限影响。
+    标签包含整题所有易错点，不受筛选/上限影响。
     """
     ids = sorted({item['problem_id'] for item in items})
     if not ids:
@@ -26,7 +29,7 @@ def enrich_problems(conn, user_id, items, today):
     metadata = {}
     for pid, members in groups.items():
         active = [m for m in members if m['suspended_at'] is None]
-        fractions = [min(1, max(0, m['interval_days']) / 21) if m['last_reviewed_at'] else 0
+        fractions = [0.4 + 0.6 * min(1, max(0, m['interval_days']) / 21) if m['last_reviewed_at'] else 0
                      for m in active]
         progress = floor(sum(fractions) / len(fractions) * 20 + 0.5) * 5 if fractions else 0
         metadata[pid] = {

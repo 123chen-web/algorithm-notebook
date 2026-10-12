@@ -11,8 +11,8 @@ from test_app import client, register, new_problem
     ([21, 21], [None, None], [None, None], 0),
     ([21, 21], ['2026-09-01'] * 2, ['paused', 'paused'], 0),
     ([0, 21], [None, '2026-09-01'], ['paused', None], 100),
-    ([1, 2], ['2026-09-01'] * 2, [None, None], 5),
-    ([10, 11], ['2026-09-01'] * 2, [None, None], 50),
+    ([1, 2], ['2026-09-01'] * 2, [None, None], 45),
+    ([10, 11], ['2026-09-01'] * 2, [None, None], 70),
 ])
 def test_progress_is_shared_by_list_and_detail(client, intervals, last, suspended, expected):
     register(client)
@@ -69,7 +69,7 @@ def test_three_mistakes_filtered_and_capped_still_use_whole_problem(client):
     assert client.put('/api/me/review-settings', json={'daily_review_cap': 5}).status_code == 200
     queue = client.get('/api/review/queue').json()
     assert queue['capped'] and len(queue['items']) == 5
-    assert queue['items'][0]['progress'] == 50  # (0 + 10/21 + 1)/3 = 49.2% -> 50%
+    assert queue['items'][0]['progress'] == 55  # (0 + (0.4+0.6*10/21) + 1)/3 = 56.2% -> 55%
     assert queue['items'][0]['problem_due_count'] == 3
     assert {m['id'] for m in queue['items'][0]['problem_mistakes']} == {*ids, third}
 
@@ -103,3 +103,18 @@ def test_problem_metadata_is_owner_scoped(client):
     assert {i['id'] for i in items} == set(bob_ids)
     assert all('私有标签' not in i['problem_tags'] for i in items)
     assert all(not (set(alice_ids) & {m['id'] for m in i['problem_mistakes']}) for i in items)
+
+
+def test_reviewing_two_of_five_mistakes_is_no_longer_zero_percent(client):
+    """回归：复习了两条、间隔才 1 天，整题进度以前会四舍五入成 0%。"""
+    register(client)
+    ids = new_problem(client)
+    with connect(write=True) as conn:
+        for _ in range(3):
+            conn.execute(
+                "INSERT INTO mistakes(problem_id, description, due_date) "
+                "SELECT problem_id, '另一条', due_date FROM mistakes WHERE id = ?", (ids[0],))
+        conn.execute("UPDATE mistakes SET interval_days=1, last_reviewed_at='2026-09-01' WHERE id IN (?, ?)",
+                     (ids[0], ids[1]))
+    items = client.get('/api/mistakes?due_only=false').json()['items']
+    assert {item['progress'] for item in items} == {15}
