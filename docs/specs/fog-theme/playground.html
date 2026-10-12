@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>欧叶OY 手感试验台</title>
+<style>
+/* 弹簧曲线：Jake Archibald 的 linear() 生成器输出（阻尼弹簧，带一点过冲），纯 CSS，不需要 JS */
+:root {
+  --spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1);
+  --soft: cubic-bezier(.22, .8, .24, 1);
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+body { --bg:#f4f6f8; --card:#ffffff; --line:#e3e8ee; --ink:#171c22; --ink2:#5b6672; --accent:#0e7490; --on:#fff; --glow:14,116,144; --shadow:20,40,60; color-scheme: light; }
+body[data-look="paper"] { --bg:#f6f3ec; --card:#fffdf8; --line:#e8e2d4; --ink:#201e18; --ink2:#665f50; --accent:#3f7d4e; --on:#fff; --glow:63,125,78; --shadow:60,50,20; }
+body[data-look="graphite"] { --bg:#121417; --card:#1a1d21; --line:#2a2f36; --ink:#eceff3; --ink2:#a0a9b5; --accent:#e8a35a; --on:#1c1206; --glow:232,163,90; --shadow:0,0,0; color-scheme: dark; }
+body { background-image: radial-gradient(1200px 520px at 50% -120px, rgba(var(--glow), .07), transparent 70%); background-repeat: no-repeat; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink); font: 15px/1.65 var(--sans); transition: background .8s var(--soft), color .5s; overflow-x: hidden; }
+
+.wrap { position: relative; z-index: 1; max-width: 1040px; margin: 0 auto; padding: 28px 24px 80px; display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; justify-content: space-between; }
+h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .02em; }
+.sub { margin: 2px 0 0; color: var(--ink2); font-size: 13px; }
+.seg { display: inline-flex; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); gap: 2px; position: relative; }
+.seg button { position: relative; z-index: 1; border: 0; background: none; color: var(--ink2); padding: 7px 16px; border-radius: 999px; font: 13px var(--sans); cursor: pointer; transition: color .3s; }
+.seg button[aria-pressed="true"] { color: var(--on); }
+.seg .pill { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: 60px; border-radius: 999px; background: var(--accent); transition: transform .55s var(--spring), width .55s var(--spring); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; }
+.card { position: relative; border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 20px 22px; min-height: 168px; display: grid; align-content: start; gap: 6px; }
+.card h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.card p { margin: 0; color: var(--ink2); font-size: 13.5px; }
+.tag { font: 11px var(--mono); letter-spacing: .12em; color: var(--accent); }
+.reveal { opacity: 0; transform: translateY(18px); animation: rise .9s var(--soft) forwards; animation-delay: calc(var(--i, 0) * 70ms); }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+/* 1 弹簧上浮：抬起、阴影变深变散，松开时有一点回弹 */
+.lift { transition: transform .7s var(--spring), box-shadow .5s var(--soft), border-color .4s; box-shadow: 0 1px 2px rgba(var(--shadow), .12); }
+.lift:hover { transform: translateY(-8px) scale(1.012); border-color: rgba(var(--glow), .45); box-shadow: 0 24px 48px -16px rgba(var(--shadow), .45), 0 0 0 1px rgba(var(--glow), .12); }
+.lift:active { transform: translateY(-3px) scale(.995); transition-duration: .15s; }
+
+/* 2 聚光灯边框：光跟着鼠标，卡片内部也被照亮 */
+.spot { --mx: 50%; --my: 50%; overflow: hidden; }
+.spot::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: radial-gradient(260px circle at var(--mx) var(--my), rgb(var(--glow)), transparent 62%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity .35s; pointer-events: none; }
+.spot::after { content: ""; position: absolute; inset: 0; background: radial-gradient(320px circle at var(--mx) var(--my), rgba(var(--glow), .13), transparent 62%); opacity: 0; transition: opacity .35s; pointer-events: none; }
+.spot:hover::before, .spot:hover::after { opacity: 1; }
+
+/* 3 倾斜 + 反光：JS 里用插值追鼠标，不是瞬移，所以很顺 */
+.tiltwrap { perspective: 900px; }
+.tilt { transform-style: preserve-3d; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); will-change: transform; overflow: hidden; }
+.tilt::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at var(--gx, 50%) var(--gy, 0%), rgba(255,255,255,var(--ga, 0)), transparent 55%); pointer-events: none; mix-blend-mode: soft-light; }
+.tilt .inner { transform: translateZ(34px); }
+
+/* 4 磁吸按钮 */
+.mag { justify-self: start; border: 0; border-radius: 999px; padding: 12px 24px; background: var(--accent); color: var(--on); font: 600 14px var(--sans); cursor: pointer; will-change: transform; }
+.mag span { display: inline-block; will-change: transform; }
+
+/* 5 数字滚动 + 条形图 */
+.num { font: 500 40px/1.1 var(--mono); letter-spacing: -.02em; }
+.bars { display: flex; align-items: flex-end; gap: 5px; height: 64px; }
+.bars i { flex: 1; height: 100%; background: linear-gradient(var(--accent), rgba(var(--glow), .15)); border-radius: 3px 3px 0 0; transform-origin: bottom; transform: scaleY(0); animation: grow .9s var(--spring) forwards; animation-delay: calc(var(--j) * 40ms + .4s); }
+@keyframes grow { to { transform: scaleY(var(--h)); } }
+
+/* 6 列表挪位（FLIP）：点一行，它平滑地飞到最前面 */
+.list { display: grid; gap: 6px; }
+.item { display: flex; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(var(--glow), .05); cursor: pointer; font-size: 13.5px; transition: background .3s; }
+.item:hover { background: rgba(var(--glow), .14); }
+.item em { font: normal 12px var(--mono); color: var(--ink2); }
+
+.hint { color: var(--ink2); font: 12px var(--mono); }
+.panel { display: none; }
+.panel.on { display: grid; gap: 18px; animation: fade .5s var(--soft); }
+@keyframes fade { from { opacity: 0; transform: translateY(10px) scale(.99); } }
+
+/* ====== 更多元素 ====== */
+h2.sec { margin: 14px 0 0; font-size: 15px; font-weight: 600; color: var(--ink2); letter-spacing: .08em; }
+.flipwrap { perspective: 1000px; }
+.flip { position: relative; height: 200px; cursor: pointer; transform-style: preserve-3d; transition: transform .9s var(--spring); }
+.flip.on { transform: rotateY(180deg); }
+.face { position: absolute; inset: 0; backface-visibility: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 18px 20px; display: grid; align-content: space-between; }
+.face.back { transform: rotateY(180deg); }
+.q { font-size: 16px; font-weight: 600; }
+.grades { display: flex; gap: 8px; }
+.grades button, .btn2 { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 7px 14px; font: 13px var(--sans); cursor: pointer; transition: transform .5s var(--spring), background .25s, border-color .25s; }
+.grades button:hover, .btn2:hover { background: rgba(var(--glow), .1); border-color: rgba(var(--glow), .5); transform: translateY(-2px); }
+.grades button:active, .btn2:active { transform: scale(.94); transition-duration: .1s; }
+.swipearea { position: relative; height: 200px; touch-action: none; }
+.sw { position: absolute; inset: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 18px 20px; display: grid; align-content: space-between; cursor: grab; user-select: none; will-change: transform; }
+.sw.drag { cursor: grabbing; }
+.sw .stampL, .sw .stampR { position: absolute; top: 14px; font: 700 14px var(--mono); padding: 2px 10px; border: 2px solid; border-radius: 6px; opacity: 0; letter-spacing: .1em; }
+.sw .stampL { right: 16px; color: #d4483b; transform: rotate(10deg); }
+.sw .stampR { left: 16px; color: #2d9d6b; transform: rotate(-10deg); }
+.sw.back { transform: scale(.94) translateY(10px); opacity: .6; pointer-events: none; }
+.row2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tg { width: 46px; height: 28px; border-radius: 999px; background: var(--line); border: 0; position: relative; cursor: pointer; transition: background .3s; padding: 0; }
+.tg::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .6s var(--spring), width .25s var(--soft); }
+.tg[aria-checked="true"] { background: var(--accent); } .tg[aria-checked="true"]::after { transform: translateX(18px); } .tg:active::after { width: 28px; } .tg[aria-checked="true"]:active::after { transform: translateX(12px); }
+.ck { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.ck input { position: absolute; opacity: 0; }
+.ck .box { width: 22px; height: 22px; border: 1.6px solid var(--line); border-radius: 7px; display: grid; place-items: center; transition: background .25s, border-color .25s, transform .5s var(--spring); }
+.ck:active .box { transform: scale(.88); }
+.ck svg { width: 14px; height: 14px; stroke: var(--on); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 22; stroke-dashoffset: 22; transition: stroke-dashoffset .4s var(--soft) .05s; }
+.ck input:checked + .box { background: var(--accent); border-color: var(--accent); } .ck input:checked + .box svg { stroke-dashoffset: 0; }
+.ck input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 3px; }
+.field { position: relative; margin-top: 4px; }
+.field input { width: 100%; border: 0; border-bottom: 1.5px solid var(--line); background: transparent; padding: 20px 2px 6px; font: 15px var(--sans); color: var(--ink); outline: none; }
+.field label { position: absolute; left: 2px; top: 18px; color: var(--ink2); pointer-events: none; transform-origin: left; transition: transform .45s var(--spring), color .25s; }
+.field::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--accent); transform: scaleX(0); transition: transform .5s var(--soft); }
+.field:focus-within::after { transform: scaleX(1); }
+.field input:focus + label, .field input:not(:placeholder-shown) + label { transform: translateY(-17px) scale(.78); color: var(--accent); }
+.toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 50; }
+.toast { display: flex; align-items: center; gap: 10px; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: 0 12px 30px -10px rgba(var(--shadow), .5); animation: toastin .7s var(--spring) both; position: relative; overflow: hidden; }
+.toast.out { animation: toastout .35s var(--soft) forwards; }
+.toast::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--accent); transform-origin: left; animation: tbar 3s linear forwards; }
+@keyframes toastin { from { opacity: 0; transform: translateY(24px) scale(.9); } }
+@keyframes toastout { to { opacity: 0; transform: translateX(30px); } }
+@keyframes tbar { to { transform: scaleX(0); } }
+.stage { position: relative; height: 120px; display: grid; place-items: center; }
+.seal { width: 86px; height: 86px; border: 4px solid #c8372d; color: #c8372d; border-radius: 12px; display: grid; place-items: center; font: 700 28px/1 var(--sans); letter-spacing: .05em; opacity: 0; transform: rotate(-12deg) scale(2.4); }
+.seal.go { animation: stamp .75s var(--spring) forwards; }
+@keyframes stamp { 0% { opacity: 0; transform: rotate(-12deg) scale(2.4); } 18% { opacity: 1; } 100% { opacity: .92; transform: rotate(-12deg) scale(1); } }
+.stage.shake { animation: shake .3s .16s; } @keyframes shake { 30% { transform: translate(2px, 3px); } 60% { transform: translate(-2px, -1px); } }
+.skel { height: 14px; border-radius: 7px; background: linear-gradient(90deg, var(--line) 25%, rgba(var(--glow), .14) 50%, var(--line) 75%); background-size: 300% 100%; animation: shim 1.4s linear infinite; }
+@keyframes shim { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ring { position: relative; width: 96px; height: 96px; } .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 8; stroke-linecap: round; } .ring .tr { stroke: var(--line); } .ring .pg { stroke: var(--accent); stroke-dasharray: 251.3; stroke-dashoffset: 251.3; transition: stroke-dashoffset 1.4s var(--soft); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 500 20px var(--mono); }
+.tipwrap { position: relative; display: inline-block; }
+.tipwrap .i { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink2); color: var(--ink2); display: grid; place-items: center; font: 12px var(--mono); cursor: help; }
+.tip { position: absolute; left: 50%; bottom: calc(100% + 10px); width: 210px; margin-left: -105px; background: var(--ink); color: var(--bg); border-radius: 10px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; opacity: 0; transform: translateY(8px) scale(.9); transform-origin: bottom; transition: opacity .2s, transform .5s var(--spring); pointer-events: none; }
+.tipwrap:hover .tip, .tipwrap:focus-within .tip { opacity: 1; transform: none; }
+.acc button { width: 100%; display: flex; justify-content: space-between; align-items: center; border: 0; background: none; color: var(--ink); font: 600 14.5px var(--sans); padding: 8px 0; cursor: pointer; }
+.acc .chev { transition: transform .5s var(--spring); } .acc.open .chev { transform: rotate(180deg); }
+.acc .body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .55s var(--soft); } .acc.open .body { grid-template-rows: 1fr; }
+.acc .body > div { overflow: hidden; color: var(--ink2); font-size: 13.5px; }
+.veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(10,16,24,0); pointer-events: none; transition: background .4s, backdrop-filter .4s; }
+.veil.on { background: rgba(10,16,24,.38); backdrop-filter: blur(6px); pointer-events: auto; }
+.modal { width: min(380px, 90vw); background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px; opacity: 0; transform: translateY(24px) scale(.92); transition: opacity .25s, transform .6s var(--spring); display: grid; gap: 10px; }
+.veil.on .modal { opacity: 1; transform: none; }
+.toprog { position: fixed; left: 0; top: 0; height: 3px; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(var(--p, 0)); z-index: 70; }
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .45s; animation-timing-function: var(--soft); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } .blob { animation: none; } }
+</style>
+</head>
+<body data-look="cool">
+<div class="wrap">
+  <header class="reveal">
+    <div><h1>欧叶OY · 手感试验台</h1><p class="sub">鼠标在卡片上移动、悬停、点击。右上角切换三种安静的底色；背景不动，精致感放在卡片和手感上。</p></div>
+    <div class="seg" id="looks" role="group" aria-label="气质">
+      <span class="pill" id="pill"></span>
+      <button data-look="cool" aria-pressed="true">雾白</button>
+      <button data-look="paper" aria-pressed="false">暖纸</button>
+      <button data-look="graphite" aria-pressed="false">石墨</button>
+    </div>
+  </header>
+  <div class="grid">
+    <article class="card lift reveal" style="--i:1"><span class="tag">01 弹簧上浮</span><h3>抬起、变深、回弹</h3><p>鼠标移上来，卡片像被轻轻托起，阴影同时变深变散；移开时带一点回弹。用的是 CSS 弹簧曲线，不用任何库。</p></article>
+    <article class="card spot reveal" style="--i:2"><span class="tag">02 聚光灯</span><h3>光跟着你的鼠标走</h3><p>边框和卡片内部都被一团光照亮，光点就是鼠标位置。Linear、Vercel 一类产品常用的手法。</p></article>
+    <div class="tiltwrap reveal" style="--i:3"><article class="card tilt" id="tilt"><div class="inner"><span class="tag">03 倾斜 + 反光</span><h3>像一块有厚度的玻璃</h3><p>卡片朝着鼠标微微倾斜，表面划过一道光。位置是逐帧追赶的，不会突然跳动。</p></div></article></div>
+  </div>
+  <div class="grid">
+    <article class="card spot lift reveal" style="--i:4"><span class="tag">04 数字与图表</span><div class="num" id="num">0</div><p>条待复习（数字从 0 滚到目标值）</p><div class="bars" id="bars"></div></article>
+    <article class="card spot reveal" style="--i:5"><span class="tag">05 磁吸按钮</span><h3>靠近就被吸过去</h3><p>鼠标靠近按钮时，按钮和里面的字会朝鼠标轻轻靠拢。</p><button class="mag" id="mag"><span>开始复习</span></button></article>
+    <article class="card spot reveal" style="--i:6"><span class="tag">06 列表挪位</span><div class="list" id="list"></div><p class="hint">点任意一行，它会平滑飞到最前</p></article>
+  </div>
+  <div class="card reveal" style="--i:7">
+    <span class="tag">07 页面切换（原生 View Transitions）</span>
+    <div class="seg" id="tabs" style="justify-self:start"><span class="pill" id="pill2"></span><button data-p="a" aria-pressed="true">总览</button><button data-p="b" aria-pressed="false">复习</button><button data-p="c" aria-pressed="false">路线</button></div>
+    <div class="panel on" id="pa"><p>总览页：内容整体淡入并轻轻上浮。</p></div>
+    <div class="panel" id="pb"><p>复习页：切换时旧页面淡出、新页面淡入，不会闪一下。</p></div>
+    <div class="panel" id="pc"><p>路线页：浏览器原生支持的页面过渡，不需要动画库。</p></div>
+  </div>
+
+  <h2 class="sec reveal" style="--i:8">更多元素</h2>
+  <div class="grid">
+    <div class="flipwrap reveal" style="--i:9"><div class="flip" id="flip" tabindex="0" role="button" aria-label="点击翻面">
+      <div class="face"><div><span class="tag">08 翻牌复习</span><p class="q" style="margin-top:6px">二分查找时，边界该写 &lt; 还是 &lt;= ？</p></div><p class="hint">点击翻面看答案</p></div>
+      <div class="face back"><div><span class="tag">答案</span><p style="margin-top:6px">闭区间 [l, r] 用 &lt;=，每次收缩要 ±1；左闭右开 [l, r) 用 &lt;。</p></div><div class="grades"><button type="button" data-g="忘了">忘了</button><button type="button" data-g="模糊">模糊</button><button type="button" data-g="记得">记得</button></div></div>
+    </div></div>
+    <div class="reveal" style="--i:10"><div class="swipearea" id="swipe"></div><p class="hint" style="margin-top:8px">09 拖动评分：向右拖 = 记得，向左拖 = 忘了（没拖过线会弹回）</p></div>
+    <article class="card reveal" style="--i:11"><span class="tag">10 开关、勾选、输入框</span>
+      <div class="row2"><button class="tg" id="tg" role="switch" aria-checked="false" aria-label="每日提醒"></button><span>每日复习提醒</span></div>
+      <label class="ck"><input type="checkbox" id="ck"><span class="box"><svg viewBox="0 0 14 14"><path d="M2.5 7.5l3 3 6-7"/></svg></span>已掌握</label>
+      <div class="field"><input id="in" placeholder=" " autocomplete="off"><label for="in">题目名称</label></div>
+    </article>
+  </div>
+  <div class="grid">
+    <article class="card reveal" style="--i:12"><span class="tag">11 盖章 + 提示条</span>
+      <div class="stage" id="stage"><div class="seal" id="seal">记住</div></div>
+      <div class="row2"><button class="btn2" id="done">完成这条复习</button><span class="tipwrap"><span class="i" tabindex="0">?</span><span class="tip">间隔复习：记得越牢，下次出现得越晚。</span></span></div>
+    </article>
+    <article class="card reveal" style="--i:13"><span class="tag">12 加载骨架 + 进度环</span>
+      <div id="skelbox" style="display:grid;gap:8px"><div class="skel" style="width:70%"></div><div class="skel" style="width:92%"></div><div class="skel" style="width:55%"></div></div>
+      <div class="row2"><button class="btn2" id="load">重新加载</button><div class="ring"><svg viewBox="0 0 96 96"><circle class="tr" cx="48" cy="48" r="40"/><circle class="pg" id="pg" cx="48" cy="48" r="40"/></svg><b id="pgn">0%</b></div></div>
+    </article>
+    <article class="card reveal" style="--i:14"><span class="tag">13 折叠、弹窗</span>
+      <div class="acc" id="acc"><button type="button" aria-expanded="false"><span>什么是间隔复习？</span><span class="chev">⌄</span></button><div class="body"><div><p style="margin:4px 0 8px">在快要忘记的时候复习，记忆会变得更牢。每次记得，间隔就拉长一些。</p></div></div></div>
+      <button class="btn2" id="open" style="justify-self:start">打开一个弹窗</button>
+    </article>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+<div class="veil" id="veil"><div class="modal" role="dialog" aria-label="示例弹窗"><span class="tag">示例</span><h3 style="margin:0">删除这条错题？</h3><p style="margin:0;color:var(--ink2);font-size:14px">弹窗带背景虚化，从下方弹出，松手有回弹。</p><div class="row2" style="justify-content:flex-end"><button class="btn2" id="cancel">取消</button><button class="btn2" id="okm" style="background:var(--accent);color:var(--on);border-color:var(--accent)">确定</button></div></div></div>
+<div class="toprog" id="toprog"></div>
+<script>
+(() => {
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  /* 滑块指示器：弹簧位移到选中的那一项 */
+  function seg(root, pill, onPick) {
+    const move = (btn) => { pill.style.width = btn.offsetWidth + "px"; pill.style.transform = `translateX(${btn.offsetLeft - 4}px)`; };
+    root.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      root.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      move(b); onPick(b);
+    }));
+    move(root.querySelector("[aria-pressed=true]"));
+    addEventListener("resize", () => move(root.querySelector("[aria-pressed=true]")));
+  }
+  seg($("#looks"), $("#pill"), (b) => { document.body.dataset.look = b.dataset.look; });
+  seg($("#tabs"), $("#pill2"), (b) => {
+    const swap = () => { document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("on", p.id === "p" + b.dataset.p)); };
+    document.startViewTransition && !still ? document.startViewTransition(swap) : swap();
+  });
+
+  let mx = innerWidth * .6, my = innerHeight * .3, tx = mx, ty = my;
+  addEventListener("pointermove", (e) => { tx = e.clientX; ty = e.clientY; });
+
+  /* 聚光灯：只写 CSS 变量 */
+  document.querySelectorAll(".spot").forEach((c) => c.addEventListener("pointermove", (e) => {
+    const r = c.getBoundingClientRect(); c.style.setProperty("--mx", e.clientX - r.left + "px"); c.style.setProperty("--my", e.clientY - r.top + "px");
+  }));
+
+  /* 倾斜 + 反光：目标值由鼠标决定，实际值每帧追上去 */
+  const tilt = $("#tilt"); const T = { rx: 0, ry: 0, gx: 50, gy: 0, ga: 0, trx: 0, try_: 0, tgx: 50, tgy: 0, tga: 0 };
+  tilt.addEventListener("pointermove", (e) => {
+    const r = tilt.getBoundingClientRect(), px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    T.try_ = (px - .5) * 14; T.trx = -(py - .5) * 14; T.tgx = px * 100; T.tgy = py * 100; T.tga = .35;
+  });
+  tilt.addEventListener("pointerleave", () => { T.trx = 0; T.try_ = 0; T.tga = 0; });
+
+  /* 磁吸按钮 */
+  const mag = $("#mag"), magIn = $("span", mag); const M = { x: 0, y: 0, tx: 0, ty: 0 };
+  addEventListener("pointermove", (e) => {
+    const r = mag.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, dx = e.clientX - cx, dy = e.clientY - cy, d = Math.hypot(dx, dy);
+    if (d < 130) { M.tx = dx * .35; M.ty = dy * .45; } else { M.tx = 0; M.ty = 0; }
+  });
+
+  /* 数字滚动 */
+  const num = $("#num"); const target = 34; let t0 = performance.now() + 500;
+  const bars = $("#bars"); [3,5,2,6,4,8,5,9,7,6,10,12,9,14,11,8,13,16,12,15].forEach((n, i) => { const b = document.createElement("i"); b.style.setProperty("--h", n / 16); b.style.setProperty("--j", i); bars.append(b); });
+
+  /* 列表 FLIP */
+  const list = $("#list");
+  ["两数之和 · 哈希", "最短路径 · BFS", "背包问题 · DP", "区间合并 · 排序"].forEach((t, i) => { const d = document.createElement("div"); d.className = "item"; d.innerHTML = ""; const a = document.createElement("span"), b = document.createElement("em"); a.textContent = t; b.textContent = "D" + (i + 1); d.append(a, b); list.append(d); });
+  list.addEventListener("click", (e) => {
+    const it = e.target.closest(".item"); if (!it || it === list.firstElementChild) return;
+    const kids = [...list.children], before = new Map(kids.map((k) => [k, k.getBoundingClientRect().top]));
+    list.prepend(it);
+    kids.forEach((k) => { const dy = before.get(k) - k.getBoundingClientRect().top; if (dy) k.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: still ? 1 : 520, easing: "cubic-bezier(.2,.9,.25,1.08)" }); });
+  });
+
+
+  /* ====== 更多元素 ====== */
+  function toast(msg) { const box = $("#toasts"), el = document.createElement("div"); el.className = "toast"; el.textContent = msg; box.append(el);
+    setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 380); }, 3000); }
+  const flip = $("#flip");
+  flip.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { toast("已记录：" + b.dataset.g); setTimeout(() => flip.classList.remove("on"), 500); return; } flip.classList.toggle("on"); });
+  flip.addEventListener("keydown", (e) => { if (e.target === flip && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); flip.classList.toggle("on"); } });
+
+  const QS = ["两数之和：为什么用哈希表？", "最短路：为什么 BFS 不能处理带权图？", "背包：为什么倒序遍历容量？", "区间合并：为什么先按左端点排序？"]; let qi = 0;
+  const sa = $("#swipe");
+  function makeCard(n, back) { const c = document.createElement("div"); c.className = "sw" + (back ? " back" : ""); c.innerHTML = '<div><span class="tag">拖动评分</span><p class="q" style="margin-top:6px"></p></div><p class="hint">← 忘了　记得 →</p><span class="stampL">忘了</span><span class="stampR">记得</span>'; c.querySelector(".q").textContent = QS[n % QS.length]; return c; }
+  function setupSwipe() {
+    sa.replaceChildren(); const back = makeCard(qi + 1, true), top = makeCard(qi, false); sa.append(back, top);
+    let sx = 0, dx = 0, dragging = false;
+    top.addEventListener("pointerdown", (e) => { dragging = true; sx = e.clientX; top.classList.add("drag"); top.style.transition = "none"; top.setPointerCapture(e.pointerId); });
+    top.addEventListener("pointermove", (e) => { if (!dragging) return; dx = e.clientX - sx; top.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+      const k = Math.min(1, Math.abs(dx) / 110); top.querySelector(dx > 0 ? ".stampR" : ".stampL").style.opacity = k; top.querySelector(dx > 0 ? ".stampL" : ".stampR").style.opacity = 0;
+      back.style.transform = `scale(${.94 + .06 * k}) translateY(${10 - 10 * k}px)`; back.style.opacity = .6 + .4 * k; });
+    const end = () => { if (!dragging) return; dragging = false; top.classList.remove("drag");
+      if (Math.abs(dx) > 110) { const dir = dx > 0 ? 1 : -1; top.style.transition = "transform .5s var(--soft), opacity .5s"; top.style.transform = `translateX(${dir * 520}px) rotate(${dir * 24}deg)`; top.style.opacity = 0; toast(dir > 0 ? "记得 ✓" : "忘了，明天再来"); qi++; setTimeout(setupSwipe, 420); }
+      else { top.style.transition = "transform .7s var(--spring)"; top.style.transform = ""; top.querySelectorAll(".stampL,.stampR").forEach((s) => (s.style.opacity = 0)); back.style.transform = ""; back.style.opacity = ""; } dx = 0; };
+    top.addEventListener("pointerup", end); top.addEventListener("pointercancel", end);
+  }
+  setupSwipe();
+
+  const tg = $("#tg"); tg.addEventListener("click", () => tg.setAttribute("aria-checked", String(tg.getAttribute("aria-checked") !== "true")));
+  $("#done").addEventListener("click", () => { const s = $("#seal"), st = $("#stage"); s.classList.remove("go"); st.classList.remove("shake"); void s.offsetWidth; s.classList.add("go"); st.classList.add("shake"); toast("✅ 复习完成，下次在 6 天后"); });
+  function ring(v) { $("#pg").style.strokeDashoffset = String(251.3 * (1 - v / 100)); const from = parseInt($("#pgn").textContent) || 0, t0 = performance.now(); (function s(now) { const k = Math.min(1, (now - t0) / 1300); $("#pgn").textContent = Math.round(lerp(from, v, 1 - Math.pow(1 - k, 3))) + "%"; if (k < 1) requestAnimationFrame(s); })(t0); }
+  $("#load").addEventListener("click", () => { const b = $("#skelbox"); b.innerHTML = '<div class="skel" style="width:70%"></div><div class="skel" style="width:92%"></div><div class="skel" style="width:55%"></div>'; ring(0); setTimeout(() => { b.innerHTML = ""; const p = document.createElement("p"); p.style.cssText = "margin:0;color:var(--ink2);font-size:13.5px"; p.textContent = "加载完成：内容淡入。"; b.append(p); ring(72); }, 1400); });
+  setTimeout(() => ring(72), 900);
+  const acc = $("#acc"); $("button", acc).addEventListener("click", (e) => { const o = acc.classList.toggle("open"); e.currentTarget.setAttribute("aria-expanded", String(o)); });
+  const veil = $("#veil"); const closeM = () => veil.classList.remove("on");
+  $("#open").addEventListener("click", () => veil.classList.add("on")); $("#cancel").addEventListener("click", closeM); $("#okm").addEventListener("click", () => { closeM(); toast("已删除"); });
+  veil.addEventListener("click", (e) => { if (e.target === veil) closeM(); }); addEventListener("keydown", (e) => { if (e.key === "Escape") closeM(); });
+  addEventListener("scroll", () => { const h = document.documentElement; $("#toprog").style.setProperty("--p", (h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)).toFixed(3)); }, { passive: true });
+
+  /* 一个 rAF 循环管所有逐帧的东西 */
+  function frame(now) {
+    mx = lerp(mx, tx, .12); my = lerp(my, ty, .12);
+    for (const k of ["rx", "ry", "gx", "gy", "ga"]) { const goal = k === "rx" ? T.trx : k === "ry" ? T.try_ : k === "gx" ? T.tgx : k === "gy" ? T.tgy : T.tga; T[k] = lerp(T[k], goal, .12); }
+    tilt.style.setProperty("--rx", T.rx.toFixed(2) + "deg"); tilt.style.setProperty("--ry", T.ry.toFixed(2) + "deg"); tilt.style.setProperty("--gx", T.gx.toFixed(1) + "%"); tilt.style.setProperty("--gy", T.gy.toFixed(1) + "%"); tilt.style.setProperty("--ga", T.ga.toFixed(3));
+    M.x = lerp(M.x, M.tx, .14); M.y = lerp(M.y, M.ty, .14); mag.style.transform = `translate(${M.x.toFixed(2)}px, ${M.y.toFixed(2)}px)`; magIn.style.transform = `translate(${(M.x * .4).toFixed(2)}px, ${(M.y * .4).toFixed(2)}px)`;
+    const p = Math.min(1, Math.max(0, (now - t0) / 1100)); num.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
