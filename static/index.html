@@ -28,7 +28,7 @@
   <link rel="stylesheet" href="/static/vendor/editor/oy-editor.css?v=3">
   <link rel="stylesheet" href="/static/notes-editor.css?v=1">
   <link rel="stylesheet" href="/static/draw-host.css?v=202610092">
-  <link rel="stylesheet" href="/static/shell.css?v=3">
+  <link rel="stylesheet" href="/static/shell.css?v=4">
   <link rel="stylesheet" href="/static/overview.css?v=3">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
   <link rel="stylesheet" href="/static/activity.css?v=2">
@@ -85,7 +85,7 @@
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
-  <script defer src="/static/shell.js?v=4"></script>
+  <script defer src="/static/shell.js?v=5"></script>
   <script defer src="/static/overview.js?v=4"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
@@ -215,6 +215,20 @@
         </select>
       </div>
       <button id="app-search-trigger" type="button" class="topbar-search" hidden><svg class="topbar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span class="topbar-search-text">搜索题目、错因，或输入页面名跳转</span><kbd class="topbar-search-key">Ctrl K</kbd></button>
+      <details id="topbar-look" class="topbar-look">
+        <summary class="topbar-look-button" aria-label="换风格和风景" title="换风格和风景"><svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.4-4-8.2-9-8.2z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7.2" r="1"/><circle cx="15" cy="7.2" r="1"/></svg></summary>
+        <div class="topbar-look-panel">
+          <label class="account-preference" for="topbar-theme">风格
+            <select id="topbar-theme" data-theme-select aria-label="页面风格">
+              <option value="ink">水墨红笔</option>
+              <option value="qixi">栖间</option>
+            </select>
+          </label>
+          <label class="account-preference" for="topbar-scene">风景
+            <select id="topbar-scene" data-scene-select aria-label="页面风景"></select>
+          </label>
+        </div>
+      </details>
       <div class="user-meta">
         <div id="my-avatar-wrap" class="my-avatar-wrap" hidden>
           <details class="account-menu">

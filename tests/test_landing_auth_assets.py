@@ -485,8 +485,9 @@ def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document)
         (index, node) for index, node in enumerate(document.elements)
         if "data-theme-select" in node["attrs"]
     ]
-    assert len(selectors) == 2
-    assert {node["attrs"].get("id") for _, node in selectors} == {"welcome-theme", "account-theme"}
+    assert len(selectors) == 3
+    # 欢迎页、账号菜单，以及登录后顶部搜索栏右边的风格快捷面板。
+    assert {node["attrs"].get("id") for _, node in selectors} == {"welcome-theme", "account-theme", "topbar-theme"}
     for index, select in selectors:
         assert select["tag"] == "select"
         assert select["attrs"].get("aria-label")

@@ -53,6 +53,19 @@ html[data-view="app"] {
 .nav-item:hover:not(:disabled), .tab-item:hover:not(:disabled), .more-item:hover:not(:disabled) { transform: none; }
 .nav-item:disabled, .tab-item:disabled, .more-item:disabled, .topbar-search:disabled, .topbar-new:disabled,
 .topbar-icon-button:disabled, .sidebar-zones button:disabled { opacity: 1; }
+
+/* 搜索栏右边的"风格 / 风景"快捷按钮：只在登录后的应用页显示，手机窄屏收起（账号菜单里还有一份）。 */
+.topbar-look { display: none; position: relative; flex: 0 0 auto; }
+html[data-view="app"] .topbar-look { display: block; }
+.topbar-look-button { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: var(--radius-compact); background: var(--surface); color: var(--ink-2); }
+.topbar-look-button::-webkit-details-marker { display: none; }
+.topbar-look-button:hover, .topbar-look[open] > .topbar-look-button { border-color: var(--ink-2); color: var(--ink); }
+.topbar-look-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.topbar-look-button .topbar-icon { width: 20px; height: 20px; }
+.topbar-look-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; display: grid; gap: var(--space-3); min-width: 220px; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-compact); background: var(--surface); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14); }
+.topbar-look-panel .account-preference { display: grid; gap: var(--space-2); margin: 0; }
+.topbar-look-panel .account-preference[hidden] { display: none; }
+@media (max-width: 520px) { html[data-view="app"] .topbar-look { display: none; } }
 .nav-badge {
   min-width: 22px;
   margin-left: auto;

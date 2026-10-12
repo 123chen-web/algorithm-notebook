@@ -187,6 +187,19 @@
       closeMore();
     }
   });
+  // 搜索栏右边的"风格 / 风景"面板：点别处或按 Esc 收起。
+  const look = $("#topbar-look");
+  if (look) {
+    document.addEventListener("click", (event) => {
+      if (look.open && !look.contains(event.target)) look.open = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && look.open) {
+        look.open = false;
+        look.querySelector("summary")?.focus();
+      }
+    });
+  }
   desktop.addEventListener("change", () => { if (desktop.matches) closeMore({ restore: false }); });
   $("#more-refresh")?.addEventListener("click", () => {
     closeMore({ restore: false });
