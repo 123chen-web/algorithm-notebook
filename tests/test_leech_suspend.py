@@ -7,6 +7,7 @@ import pytest
 import main
 from db import connect
 from test_app import client, register
+from core import time
 
 
 NOW = datetime(2026, 9, 19, 4, tzinfo=timezone.utc)
@@ -16,7 +17,7 @@ LEECH_MESSAGE = "这道题连续失败 8 次，已自动暂停，建议换种方
 
 @pytest.fixture(autouse=True)
 def leech_clock(monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
 
 
 def seed(owner, **kwargs):

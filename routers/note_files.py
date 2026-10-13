@@ -30,7 +30,14 @@ from PIL import Image
 from PIL.Image import DecompressionBombError as ImageDecompressionBombError
 from PIL import UnidentifiedImageError
 
-import main
+import logging
+from core import security, time
+from fastapi import concurrency
+import accounts
+import db
+import images
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter
 
 
@@ -73,7 +80,7 @@ def count_attachment_refs(content):
 
 def _decode_image(content):
     # verify() 之后 Image 对象不能再用，必须从同一份字节重新 open 并 load()，
-    # 与 main.decode_uploaded_image 同一套防截断套路；识别失败一律 422。
+    # 与 images.decode_uploaded_image 同一套防截断套路；识别失败一律 422。
     try:
         Image.open(io.BytesIO(content)).verify()
         image = Image.open(io.BytesIO(content))
@@ -137,16 +144,16 @@ def _cleanup_orphan_attachments(conn, user_id, now_iso):
             (row["id"], user_id),
         )
         try:
-            main.note_file_path(user_id, row["id"]).unlink(missing_ok=True)
+            images.note_file_path(user_id, row["id"]).unlink(missing_ok=True)
         except OSError:
-            main.logger.warning(
+            logger.warning(
                 "清理孤儿附件文件失败 attachment_id=%s", row["id"], exc_info=True
             )
 
 
 @router.post("/api/notes/attachments", status_code=201)
 async def upload_attachment(
-    user=Depends(main.current_user), file: UploadFile = File(...)
+    user=Depends(security.current_user), file: UploadFile = File(...)
 ):
     content = await file.read(NOTE_ATTACHMENT_MAX_BYTES + 1)
     if len(content) > NOTE_ATTACHMENT_MAX_BYTES:
@@ -154,13 +161,13 @@ async def upload_attachment(
     if not content:
         raise HTTPException(422, "文件是空的")
 
-    image = await main.run_in_threadpool(_decode_image, content)
-    mime, data = await main.run_in_threadpool(_reencode, image)
+    image = await concurrency.run_in_threadpool(_decode_image, content)
+    mime, data = await concurrency.run_in_threadpool(_reencode, image)
     sha256 = hashlib.sha256(data).hexdigest()
 
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         # 解码期间账号可能已注销，写锁内复查后才落盘。
-        main.recheck_account(conn, user["id"])
+        accounts.recheck_account(conn, user["id"])
         total = conn.execute(
             "SELECT COALESCE(SUM(size_bytes), 0) AS used FROM note_attachments "
             "WHERE user_id = ?",
@@ -168,7 +175,7 @@ async def upload_attachment(
         ).fetchone()["used"]
         if total + len(data) > NOTE_ATTACHMENT_TOTAL_BYTES:
             raise HTTPException(413, "图片附件总容量已达 100MB，请先删除不再使用的图片")
-        now = main.utc_now()
+        now = time.utc_now()
         cursor = conn.execute(
             """
             INSERT INTO note_attachments(user_id, note_id, sha256, mime, size_bytes, created_at)
@@ -177,7 +184,7 @@ async def upload_attachment(
             (user["id"], sha256, mime, len(data), now),
         )
         attachment_id = cursor.lastrowid
-        directory = main.note_files_dir() / str(user["id"])
+        directory = images.note_files_dir() / str(user["id"])
         directory.mkdir(parents=True, exist_ok=True)
         final_path = directory / f"{attachment_id}.bin"
         temp_path = directory / f".{attachment_id}-{secrets.token_hex(8)}.tmp"
@@ -195,15 +202,15 @@ async def upload_attachment(
 
 
 @router.get("/api/notes/attachments/{attachment_id}")
-def get_attachment(attachment_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_attachment(attachment_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         row = conn.execute(
             "SELECT id, mime FROM note_attachments WHERE id = ? AND user_id = ?",
             (attachment_id, user["id"]),
         ).fetchone()
     if row is None:
         raise HTTPException(404, "图片不存在")
-    path = main.note_file_path(user["id"], attachment_id)
+    path = images.note_file_path(user["id"], attachment_id)
     if not path.is_file():
         raise HTTPException(404, "图片不存在")
     return FileResponse(
@@ -217,9 +224,9 @@ def get_attachment(attachment_id: int, user=Depends(main.current_user)):
 
 
 @router.delete("/api/notes/attachments/{attachment_id}")
-def delete_attachment(attachment_id: int, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
+def delete_attachment(attachment_id: int, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
         row = conn.execute(
             "SELECT id FROM note_attachments WHERE id = ? AND user_id = ?",
             (attachment_id, user["id"]),
@@ -231,9 +238,9 @@ def delete_attachment(attachment_id: int, user=Depends(main.current_user)):
             (attachment_id, user["id"]),
         )
     try:
-        main.note_file_path(user["id"], attachment_id).unlink(missing_ok=True)
+        images.note_file_path(user["id"], attachment_id).unlink(missing_ok=True)
     except OSError:
-        main.logger.warning(
+        logger.warning(
             "删除附件文件失败 attachment_id=%s", attachment_id, exc_info=True
         )
     return {"ok": True}

@@ -7,6 +7,9 @@ import pytest
 from PIL import Image
 
 from test_app import client, register  # noqa: F401
+from core import time
+import accounts
+import db
 
 PASSWORD = "a-test-password-123"
 
@@ -316,7 +319,7 @@ def test_account_deletion_removes_rows_and_thumb_files(client):
     assert target.is_file()
 
     with connect(write=True) as conn:
-        main.delete_account_data(conn, owner, main.utc_now())
+        accounts.delete_account_data(conn, owner, time.utc_now())
 
     with connect() as conn:
         assert conn.execute(

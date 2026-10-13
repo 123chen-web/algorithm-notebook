@@ -6,6 +6,7 @@ import re
 import pytest
 
 from test_layout_assets import layout_document
+from static_helpers import versioned_src, app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -34,11 +35,11 @@ def test_capture_ids_exist_once_inside_the_new_record_page(document):
 
 
 def test_capture_assets_are_versioned_and_script_precedes_app(html):
-    assert '<link rel="stylesheet" href="/static/capture.css?v=1">' in html
+    assert f'<link rel="stylesheet" href="{versioned_src("capture.css")}">' in html
     scripts = re.findall(r'<script defer src="(/static/[^"]+)"', html)
-    assert "/static/capture.js?v=3" in scripts
+    assert versioned_src("capture.js") in scripts
     app = next(i for i, src in enumerate(scripts) if src.startswith("/static/app.js"))
-    assert scripts.index("/static/capture.js?v=3") < app, "app.js 启动时就要调用 Capture.intake()"
+    assert scripts.index(versioned_src("capture.js")) < app, "app.js 启动时就要调用 Capture.intake()"
 
 
 def test_capture_markup_has_no_inline_style_script_or_javascript_href(html):
@@ -74,7 +75,7 @@ def test_capture_script_makes_no_requests_and_reads_no_cookie():
 
 
 def test_app_wires_capture_in_the_documented_places():
-    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    app = app_source()
     assert app.count("window.Capture?.intake()") == 2  # 启动时 + hashchange
     assert "window.Capture?.reset()" in app
     assert "window.Capture.renderThinking(item.thinking)" in app

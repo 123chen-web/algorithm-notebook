@@ -9,6 +9,11 @@ import main
 from ai_limits import track_call
 from db import connect
 from test_app import client, new_problem, register
+from core import time
+import accounts
+import ai_limits
+import stats_summary
+from routers import stats as stats_router
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +32,7 @@ def block_real_services(monkeypatch, tmp_path):
 
 def delete_user(user_id):
     with connect(write=True) as conn:
-        main.delete_account_data(conn, user_id, main.utc_now())
+        accounts.delete_account_data(conn, user_id, time.utc_now())
 
 
 def assert_deleted_ai_data(user_id, feature):
@@ -114,9 +119,9 @@ def test_ai_first_write_rejects_account_deleted_after_authentication(client, fea
     delete_user(user_id)
     with pytest.raises(HTTPException) as error:
         if feature == "clusters":
-            clusters.create_clusters(user, main.today_for, main.ai_quota)
+            clusters.create_clusters(user, time.today_for, ai_limits.ai_quota)
         else:
-            main.create_weakness_analysis(user)
+            stats_router.create_weakness_analysis(user)
     assert error.value.status_code == 401
     assert error.value.detail == "登录已过期，请重新登录"
     with connect() as conn:

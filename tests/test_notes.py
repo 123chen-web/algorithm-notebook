@@ -2,6 +2,7 @@
 import pytest
 
 from test_app import client, new_problem, register  # noqa: F401
+from core import time
 
 PASSWORD = "a-test-password-123"
 
@@ -243,7 +244,7 @@ def test_export_notes_including_deleted_and_account_deletion_clears_them(client)
     assert row["created_at"] and row["updated_at"]
     assert next(n for n in exported if n["id"] == deleted["id"])["deleted_at"]
     with connect(write=True) as conn:
-        import main
-        main.delete_account_data(conn, owner, main.utc_now())
+        import accounts
+        accounts.delete_account_data(conn, owner, time.utc_now())
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM notes WHERE user_id=?", (owner,)).fetchone()[0] == 0

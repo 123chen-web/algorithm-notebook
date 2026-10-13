@@ -3,6 +3,7 @@ import pytest
 import main
 import db
 from test_app import client, register, new_problem
+from datetime import date
 
 
 def test_index_html_bypasses_stale_browser_http_cache(client):
@@ -36,7 +37,7 @@ def test_public_card_allowlist_and_privacy(client):
     card = client.get(f"/api/users/{owner['id']}/public").json()
     assert card['display_name'] == '张三'
     assert set(card) == {'user_id', 'display_name', 'avatar_version', 'has_avatar'}
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute('UPDATE users SET public_rank_opt_out = 1 WHERE id = ?', (owner['id'],))
     assert client.get(f"/api/users/{owner['id']}/public").json()['display_name'] != '张三'
 
@@ -54,18 +55,18 @@ def test_rank_name_used_only_in_both_boards_and_card(client):
     owner = register(client)
     first, _ = new_problem(client)
     client.put('/api/me/profile-settings', json={'rank_display_name': '张三'})
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute("INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, 4, '2026-09-19T04:00:00+00:00', '2026-09-20')", (first,))
     assert client.get('/api/leaderboard').json()['entries'][0]['display_name'] == '张三'
-    assert rank_board.compute_board(main.date(2026, 9, 19))['entries'][0]['username'] == '张三'
+    assert rank_board.compute_board(date(2026, 9, 19))['entries'][0]['username'] == '张三'
     client.put('/api/me/public-rank', json={'participate': False})
     assert client.get('/api/leaderboard').json()['entries'] == []
-    assert rank_board.compute_board(main.date(2026, 9, 19))['entries'] == []
+    assert rank_board.compute_board(date(2026, 9, 19))['entries'] == []
 
 
 def test_actual_payment_amount_required_and_mismatch_stays_pending(client):
     owner = register(client)
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute("INSERT INTO plans(id, name, price_cents, period_days, ai_daily_limit, created_at) VALUES (1, '测试套餐', 990, 30, 50, '2026-10-09')")
     body = {'plan_id': 1, 'payer_note': '付款人'}
     assert client.post('/api/manual-claims', json=body).status_code == 422
@@ -74,7 +75,7 @@ def test_actual_payment_amount_required_and_mismatch_stays_pending(client):
     claim = response.json()['claim']
     assert claim['actual_paid_cents'] == 800 and claim['amount_cents'] == 990
     assert claim['status'] == 'pending'
-    with main.connect() as conn:
+    with db.connect() as conn:
         assert conn.execute('SELECT plan_id FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] is None
 
 

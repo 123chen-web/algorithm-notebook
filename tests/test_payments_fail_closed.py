@@ -10,6 +10,8 @@ import payment_channels
 import payments
 from db import connect
 from payment_channels import payments_configured
+from core import time
+from core import security
 
 
 PAYMENT_ENV_VARS = (
@@ -48,16 +50,16 @@ def client(tmp_path, monkeypatch):
             conn.execute(
                 "INSERT INTO users(id, username, password_hash, timezone, created_at) "
                 "VALUES (1, 'alice', 'unused', 'Asia/Shanghai', ?)",
-                (main.utc_now(),),
+                (time.utc_now(),),
             )
             conn.execute(
                 "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, 1, ?)",
-                (main.token_hash("failclosed-session"), 9999999999),
+                (security.token_hash("failclosed-session"), 9999999999),
             )
             conn.execute(
                 "INSERT INTO plans(id, name, period_days, ai_daily_limit, price_cents, "
                 "is_active, created_at) VALUES (1, '月套餐', 30, 20, 990, 1, ?)",
-                (main.utc_now(),),
+                (time.utc_now(),),
             )
         instance.cookies.set("session", "failclosed-session")
         yield instance

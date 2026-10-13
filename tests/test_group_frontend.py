@@ -9,6 +9,7 @@ import subprocess
 import pytest
 
 from test_cursor_fx_assets import function_body
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -165,7 +166,7 @@ def test_group_frontend_timezone_and_level_storage_regressions(scenario):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed for the group frontend behavior checks")
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     functions = []
     for name in (
         "element", "profileAuthor", "timestamp", "formatGroupDate", "groupLevelBadge",

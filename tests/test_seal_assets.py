@@ -2,6 +2,7 @@
 
 from html.parser import HTMLParser
 from pathlib import Path
+from static_helpers import app_source
 import re
 
 import pytest
@@ -21,12 +22,14 @@ class IndexDocument(HTMLParser):
 
 @pytest.fixture(scope="module")
 def sources():
-    return {
+    d = {
         filename: (STATIC / filename).read_text(encoding="utf-8")
         for filename in (
-            "index.html", "app.js", "intro.js", "cursor-fx.js", "style.css", "intro.css",
+            "index.html", "intro.js", "cursor-fx.js", "style.css", "intro.css",
         )
     }
+    d["app.js"] = app_source()  # C2 后 app.js 已拆分
+    return d
 
 
 def css_declarations(source):

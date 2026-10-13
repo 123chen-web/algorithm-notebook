@@ -10,6 +10,7 @@ import pytest
 
 from test_cursor_fx_assets import css_declarations, css_selectors, function_body
 from test_layout_assets import LayoutDocument
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -253,7 +254,7 @@ def test_report_rendering_preserves_control_states_and_data_semantics(document, 
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed for the frontend render behavior checks")
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     functions = []
     for name in (
         "element", "timestamp", "renderWeaknessControls", "resetGrowthInsights",

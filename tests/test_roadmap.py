@@ -15,6 +15,9 @@ import db
 import main
 from db import connect
 from test_app import client, new_problem, register
+from core import config
+from core import ratelimit
+import pattern_match
 
 
 ROADMAP = "/api/roadmap"
@@ -37,13 +40,13 @@ def block_real_ai(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fresh_rate_limits():
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     yield
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
 
 
 def example_key(pattern_id):
-    keys = sorted(main.pattern_example_keys(pattern_id))
+    keys = sorted(pattern_match.pattern_example_keys(pattern_id))
     assert keys, f"{pattern_id} 应该有例题"
     return keys[0]
 
@@ -193,8 +196,8 @@ def test_writes_without_the_csrf_header_are_rejected(client):
 
 def test_status_updates_are_rate_limited(client, monkeypatch):
     register(client)
-    monkeypatch.setattr(main, "ROADMAP_LIMIT", 2)
-    main.reset_rate_limits()
+    monkeypatch.setattr(config, "ROADMAP_LIMIT", 2)
+    ratelimit.reset_rate_limits()
     assert put_status(client, PATTERN_A, "learning").status_code == 200
     assert put_status(client, PATTERN_B, "learning").status_code == 200
     assert put_status(client, PATTERN_C, "learning").status_code == 429
@@ -322,25 +325,25 @@ def test_migration_is_idempotent(client):
 
 
 def test_catalog_is_read_from_the_static_data_file(monkeypatch):
-    catalog = main.load_pattern_catalog()
+    catalog = pattern_match.load_pattern_catalog()
     assert PATTERN_A in catalog and PATTERN_B in catalog
-    assert main.pattern_is_known(PATTERN_A)
-    assert not main.pattern_is_known("nope")
-    assert not main.pattern_is_known(None)
-    assert main.pattern_example_keys(PATTERN_A)
-    assert main.pattern_example_keys("nope") == frozenset()
+    assert pattern_match.pattern_is_known(PATTERN_A)
+    assert not pattern_match.pattern_is_known("nope")
+    assert not pattern_match.pattern_is_known(None)
+    assert pattern_match.pattern_example_keys(PATTERN_A)
+    assert pattern_match.pattern_example_keys("nope") == frozenset()
     # 文件缺失时白名单为空，而不是抛异常打断启动。
-    monkeypatch.setattr(main, "PATTERN_DATA_PATH", main.ROOT / "no" / "such" / "file.json")
-    assert main.load_pattern_catalog(main.ROOT / "no" / "such" / "file.json") == {}
+    monkeypatch.setattr(config, "PATTERN_DATA_PATH", db.ROOT / "no" / "such" / "file.json")
+    assert pattern_match.load_pattern_catalog(db.ROOT / "no" / "such" / "file.json") == {}
 
 
 def test_normalize_pattern_ids_dedupes_and_caps(monkeypatch):
-    assert main.normalize_pattern_ids(None) is None
-    assert main.normalize_pattern_ids([]) == []
-    assert main.normalize_pattern_ids([PATTERN_A, PATTERN_A, PATTERN_B]) == [PATTERN_A, PATTERN_B]
+    assert pattern_match.normalize_pattern_ids(None) is None
+    assert pattern_match.normalize_pattern_ids([]) == []
+    assert pattern_match.normalize_pattern_ids([PATTERN_A, PATTERN_A, PATTERN_B]) == [PATTERN_A, PATTERN_B]
     with pytest.raises(ValueError):
-        main.normalize_pattern_ids([PATTERN_A, PATTERN_B, PATTERN_C, PATTERN_D])
+        pattern_match.normalize_pattern_ids([PATTERN_A, PATTERN_B, PATTERN_C, PATTERN_D])
     with pytest.raises(ValueError):
-        main.normalize_pattern_ids(["nope"])
+        pattern_match.normalize_pattern_ids(["nope"])
     with pytest.raises(ValueError):
-        main.normalize_pattern_ids("nope")
+        pattern_match.normalize_pattern_ids("nope")

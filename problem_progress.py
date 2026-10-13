@@ -1,10 +1,16 @@
 """题目级展示元数据，实时查询，不改变易错点队列或调度。"""
 import json
+import re
+import unicodedata
+
+from fastapi import HTTPException
 from math import floor
 
 from tags import tags_for_mistakes
 
 
+import pattern_match
+from core import config
 def enrich_problems(conn, user_id, items, today):
     """单条：从没复习过为0；复习过至少算 40%，之后随间隔拉长涨到 100%
     （= 0.4 + 0.6 * min(1, interval_days/21)，21 天沿用成熟卡片口径）；暂停不计。
@@ -56,3 +62,46 @@ def enrich_insight(conn, user_id, state, today, kind):
         (user_id, json.dumps(ids)),
     ).fetchall() if ids else []
     return {**state, 'problem_cards': enrich_problems(conn, user_id, [dict(row) for row in rows], today)}
+
+
+def mistake_public(item):
+    """对外 JSON 的易错点通用字段：pending_reason 转为布尔值。
+
+    数据库里存的是 0/1 整数；对外一律给 true/false，保持字段加法兼容。
+    """
+    item["pending_reason"] = bool(item.get("pending_reason", 0))
+    return item
+
+
+def owned_mistake(conn, mistake_id, user_id):
+    row = conn.execute(
+        config.MISTAKE_SELECT + " WHERE m.id = ? AND p.user_id = ?",
+        (mistake_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "记录不存在")
+    return pattern_match.attach_pattern_ids(conn, [mistake_public(dict(row))])[0]
+
+
+def owned_problem(conn, problem_id, user_id):
+    row = conn.execute(
+        "SELECT * FROM problems WHERE id = ? AND user_id = ?",
+        (problem_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "题目不存在")
+    return dict(row)
+
+
+def normalize_math_answer(value: str) -> str:
+    # 尽力而为的近似比较：只统一格式和数字项顺序，不处理分数化简、
+    # 根号等数学等价形式，也不提供浮点误差容忍或符号运算。
+    normalized = unicodedata.normalize("NFKC", value).strip()
+    normalized = re.sub(r"[、，;；]", ",", normalized)
+    try:
+        numbers = sorted(float(part.strip()) for part in normalized.split(","))
+    except ValueError:
+        return "".join(normalized.split()).lower()
+    # 正零与负零数值相同，拼接前统一表示；重复数字仍按原重数保留。
+    return ",".join(str(0.0 if number == 0 else number) for number in numbers)
+

@@ -3,6 +3,7 @@
 面板标记无内联样式/内联脚本。"""
 import re
 from pathlib import Path
+from static_helpers import app_source
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -59,7 +60,7 @@ def test_index_html_wires_draw_assets_with_version_and_order():
 def test_app_does_not_reload_notes_while_card_editor_open():
     # 关闭画板会刷新画板列表并回调 onDrawingsChanged；笔记卡片正在编辑时
     # 重渲染会冲掉未保存正文（含刚插入的画板引用），必须跳过。
-    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    app = app_source()
     assert "onDrawingsChanged" in app
     assert '.notes-edit-content' in app
     assert '!document.querySelector(".notes-edit-content")' in app

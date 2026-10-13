@@ -8,6 +8,12 @@ from fastapi import HTTPException
 
 import main
 import mastery
+from core import time
+import accounts
+import db
+import problem_progress
+from routers import review
+from models import RvbVersionInput
 
 
 NOW = datetime(2026, 10, 4, 4, tzinfo=timezone.utc)
@@ -64,15 +70,15 @@ def undo_probe(monkeypatch):
         ownership_checks.append("mistake")
         return item
 
-    monkeypatch.setattr(main, "connect", fake_connect)
-    monkeypatch.setattr(main, "rvb_account", fake_account)
-    monkeypatch.setattr(main, "owned_mistake", fake_owned_mistake)
-    monkeypatch.setattr(main, "utc_now", lambda: NOW.isoformat())
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(accounts, "rvb_account", fake_account)
+    monkeypatch.setattr(problem_progress, "owned_mistake", fake_owned_mistake)
+    monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
     return review, statements, ownership_checks
 
 
 def attempt_undo():
-    return main.rvb_undo_review(13, main.RvbVersionInput(version=7), user={"id": 11})
+    return review.rvb_undo_review(13, RvbVersionInput(version=7), user={"id": 11})
 
 
 def assert_read_only_rejection(statements, ownership_checks):

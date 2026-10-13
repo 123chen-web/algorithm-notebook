@@ -6,6 +6,8 @@ import pytest
 
 import main
 from test_app import client, new_problem, register
+from core import ratelimit
+from core import security
 
 
 def payload(**changes):
@@ -124,7 +126,7 @@ def test_trial_ban_and_rate_limits_fail_before_runner(client, monkeypatch):
     client.post("/api/logout")
     owner = register(client)
     mistake = new_problem(client)[0]
-    monkeypatch.setattr(main, "rate_limited", lambda *args: True)
+    monkeypatch.setattr(ratelimit, "rate_limited", lambda *args: True)
     assert client.post(f"/api/mistakes/{mistake}/run", json=payload()).status_code == 429
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET is_banned = 1 WHERE id = ?", (owner["id"],))
@@ -197,15 +199,15 @@ def test_authentication_change_before_dispatch_does_not_submit_code(client, monk
     mistake = new_problem(client)[0]
     monkeypatch.setattr(code_runner, "run", lambda *args: pytest.fail("revoked request must not submit source"))
     def revoked(request: Request):
-        user = main.current_user(request)
+        user = security.current_user(request)
         with connect(write=True) as conn:
             if change == "ban":
                 conn.execute("UPDATE users SET is_banned = 1 WHERE id = ?", (owner["id"],))
             else:
                 conn.execute("DELETE FROM sessions WHERE user_id = ?", (owner["id"],))
         return user
-    main.app.dependency_overrides[main.current_user] = revoked
+    main.app.dependency_overrides[security.current_user] = revoked
     try:
         assert client.post(f"/api/mistakes/{mistake}/run", json=payload()).status_code == 401
     finally:
-        main.app.dependency_overrides.pop(main.current_user)
+        main.app.dependency_overrides.pop(security.current_user)

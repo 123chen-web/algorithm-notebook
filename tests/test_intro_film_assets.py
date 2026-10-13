@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 
 import pytest
+from static_helpers import versioned_src, app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -66,15 +67,15 @@ def test_assets_are_versioned_deferred_and_loaded_before_the_router(index):
     styles = [node["attrs"]["href"] for node in index if node["tag"] == "link" and node["attrs"].get("rel") == "stylesheet"]
     scripts = [node["attrs"] for node in index if node["tag"] == "script"]
     sources = [attrs.get("src", "") for attrs in scripts]
-    assert styles.count("/static/intro-film.css?v=2") == 1, "intro-film.css 改过，版本号要加一"
-    assert sources.count("/static/intro-film.js?v=2") == 1, "intro-film.js 改过，版本号要加一"
-    assert sources.count("/static/intro-glyphs.js?v=1") == 1
-    assert sources.count("/static/intro.js?v=13") == 1, "intro.js 改过，版本号要加一"
-    assert sources.count("/static/app.js?v=103") == 1, "app.js 改过，版本号要加一"
-    film = sources.index("/static/intro-film.js?v=2")
-    glyphs = sources.index("/static/intro-glyphs.js?v=1")
+    assert styles.count(versioned_src("intro-film.css")) == 1, "intro-film.css 改过，版本号要加一"
+    assert sources.count(versioned_src("intro-film.js")) == 1, "intro-film.js 改过，版本号要加一"
+    assert sources.count(versioned_src("intro-glyphs.js")) == 1
+    assert sources.count(versioned_src("intro.js")) == 1, "intro.js 改过，版本号要加一"
+    assert sources.count(versioned_src("app.js")) == 1, "app.js 改过，版本号要加一"
+    film = sources.index(versioned_src("intro-film.js"))
+    glyphs = sources.index(versioned_src("intro-glyphs.js"))
     assert "defer" in scripts[film] and "defer" in scripts[glyphs]
-    assert glyphs < film < sources.index("/static/app.js?v=103"), "字形数据要在开场脚本之前加载"
+    assert glyphs < film < sources.index(versioned_src("app.js")), "字形数据要在开场脚本之前加载"
     assert all(attrs.get("src") for attrs in scripts), "CSP 不允许内联脚本"
 
 
@@ -237,7 +238,7 @@ def test_reduced_motion_shows_the_complete_wordmark(stylesheet):
 
 
 def test_router_hands_the_route_to_the_film_after_the_session_check():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     start = source.index("function renderPageRoute()")
     body = source[start:source.index("\n}\n", start)]
     guard = body.index("if (!sessionReady) return;")

@@ -11,6 +11,9 @@ from db import connect
 from group_levels import points_by_user
 from test_app import register
 from test_groups import create_group
+from core import time
+from core import ratelimit
+import groups_lib
 
 
 @pytest.fixture
@@ -20,8 +23,8 @@ def activity_client(tmp_path, monkeypatch):
     monkeypatch.setenv("INVITE_CODE", "test-invite")
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
-    main.reset_rate_limits()
+    monkeypatch.setattr(time, "today_for", lambda user: date(2026, 9, 19))
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -141,7 +144,7 @@ def test_shared_member_activity_streams_once_and_keeps_each_groups_daily_window(
         conn.executemany(
             "INSERT INTO reviews VALUES (1, ?)", [(at,) for at in review_times],
         )
-        members = main.group_members_by_id(conn, tuple(boundaries))
+        members = groups_lib.group_members_by_id(conn, tuple(boundaries))
         reviews = [{"user_id": 1, "reviewed_at": at} for at in review_times]
         problems = [{"user_id": 1, "created_at": at} for at in problem_times]
         expected = {
@@ -164,7 +167,7 @@ def test_shared_member_activity_streams_once_and_keeps_each_groups_daily_window(
         monkeypatch.setattr(group_levels, "_timestamp", counted_timestamp)
         monkeypatch.setattr(group_levels, "today_in_timezone", counted_local_day)
         counting = CountingActivityConnection(conn)
-        assert main.group_points_by_id(counting, members) == expected
+        assert groups_lib.group_points_by_id(counting, members) == expected
         assert len(counting.queries) == 2
         assert counting.read_rows == {
             "reviewed_at": len(review_times), "created_at": len(problem_times),

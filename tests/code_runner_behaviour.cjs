@@ -19,7 +19,11 @@ function setup(item = ITEM, options = {}) {
     const node = env.document.createElement("div"); node.id = id; env.document.body.append(node);
   }
   env.context.$ = (selector) => env.document.querySelector(selector);
-  const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+  const source = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
   const setBusy = source.match(/^function setBusy\(value\) \{[\s\S]*?^\}/m);
   assert.ok(setBusy, "the production global button controller must be present");
   vm.runInContext(setBusy[0], env.context);

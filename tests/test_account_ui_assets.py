@@ -7,6 +7,7 @@ import pytest
 
 from test_cursor_fx_assets import css_declarations, css_selectors
 from test_landing_auth_assets import LandingDocument, function_body
+from static_helpers import app_source as _app_source_impl
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -45,7 +46,7 @@ def account_source():
 
 @pytest.fixture(scope="module")
 def app_source():
-    return (STATIC / "app.js").read_text(encoding="utf-8")
+    return _app_source_impl()
 
 
 def descendants(document, parent_index, tag=None):

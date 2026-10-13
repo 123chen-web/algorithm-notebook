@@ -10,6 +10,9 @@ import main
 from db import connect
 from scheduler import schedule, today_in_timezone
 from test_app import client, register
+from core import time
+from core import security
+import review_lib
 
 
 TODAY = date(2026, 9, 19)
@@ -21,7 +24,7 @@ VERSION_ERROR = "这条记录已更新，请刷新后再操作"
 
 @pytest.fixture(autouse=True)
 def review_clock(monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
 
 
 def seed(owner, *, due=None, interval=6, repetitions=2, ease=2.5,
@@ -127,7 +130,7 @@ def test_preview_and_review_use_the_same_local_day(client, monkeypatch, timezone
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET timezone = ? WHERE id = ?", (timezone_name, owner))
     boundary = datetime(2026, 9, 19, 16, 15, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
+    monkeypatch.setattr(time, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
     mistake = seed(owner, due="2026-09-19")
     preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
     expected = schedule(2, 6, 2.5, 5, today, overdue_days=(today - TODAY).days)
@@ -205,7 +208,7 @@ def test_undo_24_hour_window_includes_the_exact_boundary(client, monkeypatch, el
     mistake = seed(owner)
     assert_ok(rate(client, mistake))
     before, before_logs = stored(mistake), logs(mistake)
-    monkeypatch.setattr(main, "utc_now", lambda: (NOW + timedelta(seconds=elapsed)).isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: (NOW + timedelta(seconds=elapsed)).isoformat())
     response = undo(client, mistake)
     assert response.status_code == expected_status
     if expected_status == 409:
@@ -220,7 +223,7 @@ def test_undo_23_hours_after_rating_restores_scheduler_fields(client, monkeypatc
     mistake = seed(owner, due="2026-09-09", interval=9, repetitions=3, ease=1.9, version=7)
     before = stored(mistake)
     assert_ok(rate(client, mistake, quality=0, version=7))
-    monkeypatch.setattr(main, "utc_now", lambda: (NOW + timedelta(hours=23)).isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: (NOW + timedelta(hours=23)).isoformat())
     restored = assert_ok(undo(client, mistake, version=8))
     fields = ("repetitions", "interval_days", "ease_factor", "due_date", "last_reviewed_at")
     assert {key: restored[key] for key in fields} == {key: before[key] for key in fields}
@@ -232,7 +235,7 @@ def test_undo_25_hours_after_rating_is_rejected(client, monkeypatch):
     mistake = seed(owner)
     assert_ok(rate(client, mistake))
     before, before_logs = stored(mistake), logs(mistake)
-    monkeypatch.setattr(main, "utc_now", lambda: (NOW + timedelta(hours=25)).isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: (NOW + timedelta(hours=25)).isoformat())
     rejected = undo(client, mistake)
     assert rejected.status_code == 409
     assert rejected.json() == {"detail": "超过 24 小时，不能撤销"}
@@ -384,7 +387,7 @@ def test_snooze_rejects_a_stale_version_without_changes(client):
 def test_snooze_uses_the_local_day_at_the_utc_date_boundary(client, monkeypatch):
     owner = register(client)["id"]
     boundary = datetime(2026, 9, 19, 16, 1, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
+    monkeypatch.setattr(time, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
     mistake = seed(owner, due="2026-09-20")
     result = assert_ok(action(client, mistake, "snooze", days=3))
     assert result == {"due_date": "2026-09-23", "version": 1}
@@ -553,7 +556,7 @@ def test_queue_pure_function_prioritizes_overdue_ratio_then_due_date_then_id_wit
         queue_item(8, overdue=9, interval=9),
     ]
     original = [dict(item) for item in items]
-    result = main.rvb_review_queue(items, TODAY, None, 12)
+    result = review_lib.rvb_review_queue(items, TODAY, None, 12)
     assert [item["id"] for item in result["items"]] == [9, 2, 4, 3, 8, 1]
     assert result == {
         "today": TODAY.isoformat(), "cap": None, "done_today": 12,
@@ -566,7 +569,7 @@ def test_queue_pure_function_prioritizes_overdue_ratio_then_due_date_then_id_wit
 @pytest.mark.parametrize("done,remaining", [(0, 5), (3, 2), (5, 0), (6, 0)])
 def test_queue_pure_function_truncates_at_the_remaining_daily_cap(done, remaining):
     items = [queue_item(identity, overdue=identity) for identity in range(1, 8)]
-    result = main.rvb_review_queue(items, TODAY, 5, done)
+    result = review_lib.rvb_review_queue(items, TODAY, 5, done)
     assert result["cap"] == 5 and result["done_today"] == done
     assert result["remaining_today"] == remaining and result["total_due"] == 7
     assert len(result["items"]) == remaining and result["capped"] is True
@@ -576,7 +579,7 @@ def test_queue_pure_function_truncates_at_the_remaining_daily_cap(done, remainin
 @pytest.mark.parametrize("cap,ignore", [(None, False), (5, True)])
 def test_queue_pure_function_unlimited_and_ignore_cap_keep_all_due_items(cap, ignore):
     items = [queue_item(identity, overdue=identity) for identity in range(7)]
-    result = main.rvb_review_queue(items, TODAY, cap, 20, ignore_cap=ignore)
+    result = review_lib.rvb_review_queue(items, TODAY, cap, 20, ignore_cap=ignore)
     assert len(result["items"]) == 7
     assert result["remaining_today"] is None and result["capped"] is False
     assert result["cap"] == cap and result["done_today"] == 20 and result["total_due"] == 7
@@ -584,7 +587,7 @@ def test_queue_pure_function_unlimited_and_ignore_cap_keep_all_due_items(cap, ig
 
 @pytest.mark.parametrize("cap,remaining", [(None, None), (5, 2)])
 def test_queue_pure_function_empty_queue_is_never_capped(cap, remaining):
-    assert main.rvb_review_queue([], TODAY, cap, 3) == {
+    assert review_lib.rvb_review_queue([], TODAY, cap, 3) == {
         "today": TODAY.isoformat(), "cap": cap, "done_today": 3,
         "remaining_today": remaining, "total_due": 0, "capped": False, "items": [],
     }
@@ -775,11 +778,11 @@ def test_review_feel_rechecks_the_account_after_authentication(client, method, p
         else:
             conn.execute("UPDATE users SET is_banned = 1 WHERE id = ?", (owner,))
     # 模拟 current_user 已成功之后账号才失效；各路由必须在自己的事务内重读。
-    main.app.dependency_overrides[main.current_user] = lambda: stale_authenticated_user
+    main.app.dependency_overrides[security.current_user] = lambda: stale_authenticated_user
     try:
         response = client.request(method, path.format(mistake=mistake), json=payload)
     finally:
-        main.app.dependency_overrides.pop(main.current_user, None)
+        main.app.dependency_overrides.pop(security.current_user, None)
     assert response.status_code == 401
     assert isinstance(response.json()["detail"], str)
     assert stored(mistake) == before and logs(mistake) == []
@@ -823,14 +826,14 @@ def test_review_preview_reads_the_latest_timezone_rather_than_the_auth_snapshot(
     mistake = seed(owner, due="2026-09-19")
     stale_authenticated_user = assert_ok(client.get("/api/me"))
     boundary = datetime(2026, 9, 19, 16, 15, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
+    monkeypatch.setattr(time, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET timezone = 'America/Los_Angeles' WHERE id = ?", (owner,))
-    main.app.dependency_overrides[main.current_user] = lambda: stale_authenticated_user
+    main.app.dependency_overrides[security.current_user] = lambda: stale_authenticated_user
     try:
         preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
     finally:
-        main.app.dependency_overrides.pop(main.current_user, None)
+        main.app.dependency_overrides.pop(security.current_user, None)
     expected = schedule(2, 6, 2.5, 5, TODAY, overdue_days=0)
     assert preview["interval_days"] == expected["interval_days"]
     assert preview["due_date"] == expected["due_date"]

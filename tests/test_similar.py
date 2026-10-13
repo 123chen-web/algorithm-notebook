@@ -15,6 +15,10 @@ import routers.mistakes
 import routers.problems
 from db import init_db
 from routers import similar
+from core import time
+from core import security
+import db
+from core import ratelimit
 
 TODAY = date(2026, 9, 19)
 
@@ -56,8 +60,8 @@ def _make_problem(conn, user_id, title, tags=()):
 @pytest.fixture
 def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "similar.db"))
-    monkeypatch.setattr(main, "today_for", lambda user: TODAY)
-    main.reset_rate_limits()
+    monkeypatch.setattr(time, "today_for", lambda user: TODAY)
+    ratelimit.reset_rate_limits()
     init_db()
 
     app = FastAPI()
@@ -65,7 +69,7 @@ def app_client(tmp_path, monkeypatch):
     app.include_router(routers.problems.router)
     app.include_router(routers.mistakes.router)
     state = {"current": None}
-    app.dependency_overrides[main.current_user] = lambda: state["current"]
+    app.dependency_overrides[security.current_user] = lambda: state["current"]
     with TestClient(app) as client:
         yield client, state
 
@@ -89,7 +93,7 @@ def test_other_user_mistake_404(app_client, monkeypatch):
     monkeypatch.setattr(
         similar.recommend_logic, "recommend_for_today", lambda conn, user, today: ([], "")
     )
-    with main.connect() as conn:
+    with db.connect() as conn:
         alice = _make_user(conn, 1, "alice")
         _make_user(conn, 2, "bob")
         _, bob_mid = _make_problem(conn, 2, "bob 的题", tags=("动态规划",))
@@ -111,7 +115,7 @@ def test_site_fillers_when_cf_short(app_client, monkeypatch):
         "recommend_for_today",
         lambda conn, user, today: ([_cf_item("CF DP 题", ["dp"])], ""),
     )
-    with main.connect() as conn:
+    with db.connect() as conn:
         alice = _make_user(conn, 1, "alice")
         _, my_mid = _make_problem(conn, 1, "我的 DP 题", tags=("动态规划",))
         _make_problem(conn, 1, "站内 DP 题 1", tags=("动态规划",))
@@ -146,7 +150,7 @@ def test_quick_add_end_to_end(app_client, monkeypatch):
     monkeypatch.setattr(
         similar.recommend_logic, "recommend_for_today", lambda conn, user, today: ([], "")
     )
-    with main.connect() as conn:
+    with db.connect() as conn:
         alice = _make_user(conn, 1, "alice")
         _, my_mid = _make_problem(conn, 1, "我的 DP 题", tags=("boundary",))
         _make_problem(conn, 1, "站内 DP 题", tags=("boundary",))
@@ -175,7 +179,7 @@ def test_codeforces_add_payload_is_usable_without_test_only_language_repair(app_
     client, state = app_client
     monkeypatch.setattr(similar.recommend_logic, "recommend_for_today",
                         lambda conn, user, today: ([_cf_item("CF DP", ["dp"])], ""))
-    with main.connect() as conn:
+    with db.connect() as conn:
         state["current"] = _make_user(conn, 1, "alice")
         problem, mid = _make_problem(conn, 1, "我的题", tags=("动态规划",))
         conn.execute("UPDATE problems SET language=? WHERE id=?", (language, problem))
@@ -193,7 +197,7 @@ def test_no_tags_no_fillers(app_client, monkeypatch):
     monkeypatch.setattr(
         similar.recommend_logic, "recommend_for_today", lambda conn, user, today: ([], "")
     )
-    with main.connect() as conn:
+    with db.connect() as conn:
         alice = _make_user(conn, 1, "alice")
         _, my_mid = _make_problem(conn, 1, "无标签题")
     state["current"] = alice

@@ -4,7 +4,16 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, security, time
+from models.problems import MistakeEdit
+from models.problems import MistakeReasonInput
+from models.problems import MistakeTags
+from models.review import ScratchPut
+import db
+import pattern_match
+import problem_progress
+import review_lib
+import scratch
 from problem_progress import enrich_problems
 
 from datetime import date
@@ -31,7 +40,7 @@ router = APIRouter()
 
 
 @router.get("/api/error-taxonomy")
-def get_error_taxonomy(user=Depends(main.current_user)):
+def get_error_taxonomy(user=Depends(security.current_user)):
     """错因固定词表 + 判题类型：前端唯一的事实来源，不要在前端硬编码。"""
     return {
         "causes": [
@@ -58,14 +67,14 @@ def list_mistakes(
     due_only: bool = True, zone: str | None = None, created_on: date | None = None,
     tag: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None,
     pending_reason: int | None = None,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
-    if zone is not None and zone not in main.PROBLEM_ZONES:
+    if zone is not None and zone not in config.PROBLEM_ZONES:
         raise HTTPException(400, "分区不存在")
     if pending_reason is not None and pending_reason not in (0, 1):
         raise HTTPException(400, "pending_reason 只能是 0 或 1")
-    day = main.today_for(user).isoformat()
-    sql = main.MISTAKE_SELECT + " WHERE p.user_id = ?"
+    day = time.today_for(user).isoformat()
+    sql = config.MISTAKE_SELECT + " WHERE p.user_id = ?"
     params = [user["id"]]
     if due_only:
         sql += " AND m.suspended_at IS NULL AND m.due_date <= ?"
@@ -80,7 +89,7 @@ def list_mistakes(
         sql += " AND m.pending_reason = ?"
         params.append(pending_reason)
 
-    with main.connect() as conn:
+    with db.connect() as conn:
         if created_on is not None:
             # 侧栏日历按用户本地日筛选"这一天新增的记录"：时区换算只能在 Python 里做。
             problem_ids = [
@@ -88,7 +97,7 @@ def list_mistakes(
                 for row in conn.execute(
                     "SELECT id, created_at FROM problems WHERE user_id = ?", (user["id"],)
                 )
-                if today_in_timezone(user["timezone"], main.datetime.fromisoformat(row["created_at"]))
+                if today_in_timezone(user["timezone"], time.datetime.fromisoformat(row["created_at"]))
                 == created_on
             ]
             sql += " AND p.id IN (SELECT value FROM json_each(?))"
@@ -96,8 +105,8 @@ def list_mistakes(
         sql += " ORDER BY m.due_date ASC, m.id ASC"
         rows = conn.execute(sql, params).fetchall()
         tags_by_id = tags_for_mistakes(conn, [row["id"] for row in rows])
-        items = main.attach_pattern_ids(conn, enrich_problems(conn, user['id'], [
-            main.mistake_public({**dict(row), 'tags': tags_by_id[row['id']]}) for row in rows
+        items = pattern_match.attach_pattern_ids(conn, enrich_problems(conn, user['id'], [
+            problem_progress.mistake_public({**dict(row), 'tags': tags_by_id[row['id']]}) for row in rows
         ], day))
     return {
         "today": day,
@@ -106,8 +115,8 @@ def list_mistakes(
 
 
 @router.get("/api/tags")
-def list_tags(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def list_tags(user=Depends(security.current_user)):
+    with db.connect() as conn:
         counts = user_tag_counts(conn, user["id"])
     return {
         "tags": counts,
@@ -118,10 +127,10 @@ def list_tags(user=Depends(main.current_user)):
 
 
 @router.get("/api/tags/suggest")
-def suggest_tags(user=Depends(main.current_user)):
+def suggest_tags(user=Depends(security.current_user)):
     # 补原因时的标签建议：用户自己的标签按使用次数降序（最多 12 个），
     # 再补上固定词表里用户还没用过的（去掉用户已有的，避免重复）。
-    with main.connect() as conn:
+    with db.connect() as conn:
         counts = user_tag_counts(conn, user["id"])
     mine = counts[:12]
     mine_tags = {item["tag"] for item in mine}
@@ -130,14 +139,14 @@ def suggest_tags(user=Depends(main.current_user)):
 
 
 @router.put("/api/mistakes/{mistake_id}/tags")
-def set_mistake_tags(mistake_id: int, data: main.MistakeTags, user=Depends(main.current_user)):
+def set_mistake_tags(mistake_id: int, data: MistakeTags, user=Depends(security.current_user)):
     # 标签只能从固定词表里选；非法时 422 并在错误里给出可选项。
     try:
         tags = validate_taxonomy_tags(data.tags)
     except TagError as error:
         raise HTTPException(422, str(error)) from None
-    with main.connect(write=True) as conn:
-        item = main.owned_mistake(conn, mistake_id, user["id"])
+    with db.connect(write=True) as conn:
+        item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         # 完整记录（非待补）每条易错点至少选 1 个；待补的允许先空着。
         if not tags and not item["pending_reason"]:
             raise HTTPException(422, "完整记录请至少选择 1 个错因标签")
@@ -149,9 +158,9 @@ def set_mistake_tags(mistake_id: int, data: main.MistakeTags, user=Depends(main.
 
 
 @router.get("/api/mistakes/{mistake_id}")
-def get_mistake(mistake_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
-        item = main.owned_mistake(conn, mistake_id, user["id"])
+def get_mistake(mistake_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
+        item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         item["reviews"] = [
             dict(row)
             for row in conn.execute(
@@ -160,24 +169,24 @@ def get_mistake(mistake_id: int, user=Depends(main.current_user)):
             )
         ]
         item["variants"] = [
-            main.redact_pending_answer(dict(row))
+            review_lib.redact_pending_answer(dict(row))
             for row in conn.execute(
-                main.VARIANT_SELECT + " WHERE v.mistake_id = ? ORDER BY v.id DESC",
+                config.VARIANT_SELECT + " WHERE v.mistake_id = ? ORDER BY v.id DESC",
                 (mistake_id,),
             )
         ]
         item["tags"] = tags_for_mistakes(conn, [mistake_id])[mistake_id]
-        item = main.attach_pattern_ids(
-            conn, enrich_problems(conn, user['id'], [item], main.today_for(user).isoformat())
+        item = pattern_match.attach_pattern_ids(
+            conn, enrich_problems(conn, user['id'], [item], time.today_for(user).isoformat())
         )[0]
-    item["today"] = main.today_for(user).isoformat()
+    item["today"] = time.today_for(user).isoformat()
     return item
 
 
 @router.put("/api/mistakes/{mistake_id}")
-def edit_mistake(mistake_id: int, data: main.MistakeEdit, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        item = main.owned_mistake(conn, mistake_id, user["id"])
+def edit_mistake(mistake_id: int, data: MistakeEdit, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         if item["version"] != data.version:
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
 
@@ -194,7 +203,7 @@ def edit_mistake(mistake_id: int, data: main.MistakeEdit, user=Depends(main.curr
 
 
 @router.post("/api/mistakes/{mistake_id}/reason")
-def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depends(main.current_user)):
+def set_mistake_reason(mistake_id: int, data: MistakeReasonInput, user=Depends(security.current_user)):
     # 给"待补原因"的易错点补原因：更新描述、整体替换标签、清待补标记。
     # 调度字段（due_date、间隔、重复次数等）不动；已暂停的记录也允许补。
     # 标签必须从固定词表里选；补完即为完整记录，至少选 1 个。
@@ -204,8 +213,8 @@ def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depe
         raise HTTPException(422, str(error)) from None
     if len(tags) > 3:
         raise HTTPException(422, "最多选择 3 个标签")
-    with main.connect(write=True) as conn:
-        item = main.owned_mistake(conn, mistake_id, user["id"])
+    with db.connect(write=True) as conn:
+        item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         if item["version"] != data.version:
             raise HTTPException(409, "这条记录已更新，请刷新后再操作")
         if not tags:
@@ -228,37 +237,37 @@ def set_mistake_reason(mistake_id: int, data: main.MistakeReasonInput, user=Depe
 
 
 @router.delete("/api/mistakes/{mistake_id}")
-def delete_mistake(mistake_id: int, user=Depends(main.current_user)):
+def delete_mistake(mistake_id: int, user=Depends(security.current_user)):
     # 只删除这一条易错点；同一题下的其他易错点不受影响。
-    with main.connect(write=True) as conn:
-        main.owned_mistake(conn, mistake_id, user["id"])
+    with db.connect(write=True) as conn:
+        problem_progress.owned_mistake(conn, mistake_id, user["id"])
         conn.execute("DELETE FROM mistakes WHERE id = ?", (mistake_id,))
     return {"ok": True}
 
 
 @router.get("/api/mistakes/{mistake_id}/scratch")
-def get_mistake_scratch(mistake_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
-        main.owned_mistake(conn, mistake_id, user["id"])
-        return main.scratch_state(conn, mistake_id)
+def get_mistake_scratch(mistake_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
+        problem_progress.owned_mistake(conn, mistake_id, user["id"])
+        return scratch.scratch_state(conn, mistake_id)
 
 
 @router.put("/api/mistakes/{mistake_id}/scratch")
-def put_mistake_scratch(mistake_id: int, data: main.ScratchPut,
-                        user=Depends(main.current_user)):
+def put_mistake_scratch(mistake_id: int, data: ScratchPut,
+                        user=Depends(security.current_user)):
     # 纯内容校验放在写事务之前：行数、演算表结构（422），合计大小（413）。
     if (
-        main._scratch_line_count(data.code) > main.SCRATCH_MAX_LINES
-        or main._scratch_line_count(data.fixed) > main.SCRATCH_MAX_LINES
+        scratch._scratch_line_count(data.code) > config.SCRATCH_MAX_LINES
+        or scratch._scratch_line_count(data.fixed) > config.SCRATCH_MAX_LINES
     ):
-        raise HTTPException(422, f"代码草稿和修正代码最多各 {main.SCRATCH_MAX_LINES} 行")
+        raise HTTPException(422, f"代码草稿和修正代码最多各 {config.SCRATCH_MAX_LINES} 行")
     table = None
     if data.table is not None:
-        table = main.normalize_scratch_table(data.table)
+        table = scratch.normalize_scratch_table(data.table)
         if table is None:
             raise HTTPException(422, "演算表结构不合法")
-    if main.scratch_serialized_size(data.code, data.fixed, table) > main.SCRATCH_SIZE_LIMIT:
-        raise HTTPException(413, f"草稿内容合计最多 {main.SCRATCH_SIZE_LIMIT} 字符")
+    if scratch.scratch_serialized_size(data.code, data.fixed, table) > config.SCRATCH_SIZE_LIMIT:
+        raise HTTPException(413, f"草稿内容合计最多 {config.SCRATCH_SIZE_LIMIT} 字符")
     table_json = (
         json.dumps(table, ensure_ascii=False, separators=(",", ":"))
         if table is not None else None
@@ -266,8 +275,8 @@ def put_mistake_scratch(mistake_id: int, data: main.ScratchPut,
 
     # connect(write=True) 已取得 BEGIN IMMEDIATE 写锁；版本比较与写入在同一
     # 事务内，两个同版本并发 PUT 只有先拿到写锁的一个能成功。
-    with main.connect(write=True) as conn:
-        main.owned_mistake(conn, mistake_id, user["id"])
+    with db.connect(write=True) as conn:
+        problem_progress.owned_mistake(conn, mistake_id, user["id"])
         row = conn.execute(
             "SELECT version FROM mistake_scratch WHERE mistake_id = ?",
             (mistake_id,),
@@ -278,10 +287,10 @@ def put_mistake_scratch(mistake_id: int, data: main.ScratchPut,
                 status_code=409,
                 content={
                     "detail": "草稿已在其他窗口被修改，请先选择处理方式",
-                    "current": main.scratch_state(conn, mistake_id),
+                    "current": scratch.scratch_state(conn, mistake_id),
                 },
             )
-        updated_at = main.utc_now()
+        updated_at = time.utc_now()
         next_version = current_version + 1
         if row is None:
             conn.execute(

@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 import main
+import review_lib
 
 
 TODAY = date(2026, 10, 4)
@@ -23,7 +24,7 @@ def candidates():
 def test_queue_orders_by_overdue_ratio_then_date_then_id_without_mutating():
     items = candidates()
     original = deepcopy(items)
-    result = main.rvb_review_queue(items, TODAY, None, 12)
+    result = review_lib.rvb_review_queue(items, TODAY, None, 12)
     assert [item["id"] for item in result["items"]] == [1, 2, 3, 4, 6, 5]
     assert result == {
         "today": "2026-10-04", "cap": None, "done_today": 12,
@@ -35,7 +36,7 @@ def test_queue_orders_by_overdue_ratio_then_date_then_id_without_mutating():
 
 @pytest.mark.parametrize("done,remaining,ids", [(2, 3, [1, 2, 3]), (5, 0, []), (8, 0, [])])
 def test_queue_cap_tracks_completed_reviews(done, remaining, ids):
-    result = main.rvb_review_queue(candidates(), TODAY, 5, done)
+    result = review_lib.rvb_review_queue(candidates(), TODAY, 5, done)
     assert [item["id"] for item in result["items"]] == ids
     assert result["remaining_today"] == remaining
     assert result["total_due"] == 6
@@ -43,12 +44,12 @@ def test_queue_cap_tracks_completed_reviews(done, remaining, ids):
 
 
 def test_queue_ignore_cap_and_empty_candidates():
-    result = main.rvb_review_queue(candidates(), TODAY, 5, 8, ignore_cap=True)
+    result = review_lib.rvb_review_queue(candidates(), TODAY, 5, 8, ignore_cap=True)
     assert len(result["items"]) == 6
     assert result["cap"] == 5
     assert result["remaining_today"] is None
     assert result["capped"] is False
-    empty = main.rvb_review_queue([], TODAY, 5, 2)
+    empty = review_lib.rvb_review_queue([], TODAY, 5, 2)
     assert empty["items"] == []
     assert empty["remaining_today"] == 3
     assert empty["total_due"] == 0

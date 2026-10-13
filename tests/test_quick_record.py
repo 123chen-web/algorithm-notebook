@@ -5,6 +5,7 @@ import pytest
 
 import main
 from test_app import client, new_problem, register
+from core import config
 
 
 def test_quick_create_minimal_fills_placeholders(client):
@@ -21,10 +22,10 @@ def test_quick_create_minimal_fills_placeholders(client):
     response = client.get(f"/api/mistakes/{mistake_id}")
     assert response.status_code == 200
     item = response.json()
-    assert item["description"] == main.QUICK_MISTAKE_PLACEHOLDER
+    assert item["description"] == config.QUICK_MISTAKE_PLACEHOLDER
     assert item["pending_reason"] is True
-    assert item["code"] == main.QUICK_CODE_PLACEHOLDER
-    assert item["thinking"] == main.QUICK_THINKING_PLACEHOLDER
+    assert item["code"] == config.QUICK_CODE_PLACEHOLDER
+    assert item["thinking"] == config.QUICK_THINKING_PLACEHOLDER
     assert item["due_date"] == "2026-09-19"
 
 
@@ -39,18 +40,18 @@ def test_full_record_explicit_skip_payload_preserves_code_and_independent_cause_
     assert response.status_code == 201
     item = client.get(f"/api/mistakes/{response.json()['mistake_ids'][0]}").json()
     assert item["code"] == "print(1)"
-    assert item["thinking"] == (main.QUICK_THINKING_PLACEHOLDER if skip_thinking else "逐个检查输入")
+    assert item["thinking"] == (config.QUICK_THINKING_PLACEHOLDER if skip_thinking else "逐个检查输入")
     assert item["pending_reason"] is skip_causes
-    assert item["description"] == (main.QUICK_MISTAKE_PLACEHOLDER if skip_causes else "边界漏判")
+    assert item["description"] == (config.QUICK_MISTAKE_PLACEHOLDER if skip_causes else "边界漏判")
     assert item["repetitions"] == 0
     assert item["last_reviewed_at"] is None
     assert item["due_date"] == "2026-09-19"
 
 
 def test_quick_placeholders_are_constants(client):
-    assert main.QUICK_CODE_PLACEHOLDER == "（速记：代码待补）"
-    assert main.QUICK_THINKING_PLACEHOLDER == "（速记：思路待补）"
-    assert main.QUICK_MISTAKE_PLACEHOLDER == "（待补：为什么错）"
+    assert config.QUICK_CODE_PLACEHOLDER == "（速记：代码待补）"
+    assert config.QUICK_THINKING_PLACEHOLDER == "（速记：思路待补）"
+    assert config.QUICK_MISTAKE_PLACEHOLDER == "（待补：为什么错）"
 
 
 def test_quick_with_user_mistakes_not_pending(client):
@@ -129,8 +130,8 @@ def test_quick_empty_string_code_thinking_get_placeholders(client):
     )
     assert response.status_code == 201
     item = client.get(f"/api/mistakes/{response.json()['mistake_ids'][0]}").json()
-    assert item["code"] == main.QUICK_CODE_PLACEHOLDER
-    assert item["thinking"] == main.QUICK_THINKING_PLACEHOLDER
+    assert item["code"] == config.QUICK_CODE_PLACEHOLDER
+    assert item["thinking"] == config.QUICK_THINKING_PLACEHOLDER
 
 
 @pytest.mark.parametrize("field", ["code", "thinking"])
@@ -233,8 +234,8 @@ def test_export_json_includes_pending_reason(client):
     assert by_title["二分查找"]["mistakes"][0]["pending_reason"] is False
     assert by_title["二分查找"]["mistakes"][0]["description"] == "循环结束条件漏掉 left == right。"
     assert by_title["速记"]["mistakes"][0]["pending_reason"] is True
-    assert by_title["速记"]["mistakes"][0]["description"] == main.PENDING_REASON_DISPLAY
-    assert main.QUICK_MISTAKE_PLACEHOLDER not in str(problems)
+    assert by_title["速记"]["mistakes"][0]["description"] == config.PENDING_REASON_DISPLAY
+    assert config.QUICK_MISTAKE_PLACEHOLDER not in str(problems)
 
 
 def test_anki_export_masks_pending_reason(client):
@@ -245,4 +246,4 @@ def test_anki_export_masks_pending_reason(client):
     )
     text = client.get("/api/export/anki").text
     assert "（待补）" in text
-    assert main.QUICK_MISTAKE_PLACEHOLDER not in text
+    assert config.QUICK_MISTAKE_PLACEHOLDER not in text

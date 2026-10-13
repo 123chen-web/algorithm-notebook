@@ -9,12 +9,20 @@ from fastapi import HTTPException
 
 import db
 import main
+import images
+from core import ratelimit, security
+from routers import account as account_router
+from models import auth as auth_models
 from db import connect
 from test_app import client, register
 from test_account_security import (
     PASSWORD, NEW_PASSWORD, NOW, add_session, insert_user, login,
     registration_payload, reset_token,
 )
+from core import ratelimit
+from core import security
+import accounts
+import time
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +68,7 @@ def confirm_email_change(client, monkeypatch, email="changed@example.com"):
 
 def test_a_shared_guard_counts_failures_before_hash_without_database(monkeypatch):
     """数据库 I/O 被替换；直接验证实际限流与哈希调用顺序，不创建临时目录。"""
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     conn = Mock()
     conn.execute.return_value.fetchone.return_value = {"password_hash": "stored-hash"}
 
@@ -68,25 +76,26 @@ def test_a_shared_guard_counts_failures_before_hash_without_database(monkeypatch
     def account_lookup(**kwargs):
         yield conn
 
-    monkeypatch.setattr(main, "connect", account_lookup)
+    monkeypatch.setattr(db, "connect", account_lookup)
+    monkeypatch.setattr(security, "connect", account_lookup)
     matches = Mock(return_value=False)
-    monkeypatch.setattr(main, "password_matches", matches)
+    monkeypatch.setattr(security, "password_matches", matches)
     request = SimpleNamespace(client=SimpleNamespace(host="sec-guard-unit-ip"))
     try:
         for _ in range(5):
             with pytest.raises(HTTPException) as failure:
-                main.verify_current_password(42, "wrong-password", request)
+                security.verify_current_password(42, "wrong-password", request)
             assert failure.value.status_code == 400
         with pytest.raises(HTTPException) as blocked:
-            main.verify_current_password(42, "correct-password", request)
+            security.verify_current_password(42, "correct-password", request)
         assert blocked.value.status_code == 429
         assert matches.call_count == 5
         assert conn.execute.call_count == 5
         matches.return_value = True
-        assert main.verify_current_password(43, "correct-password", request) == "stored-hash"
-        assert "sec-password-user:43" not in main._rate_buckets
+        assert security.verify_current_password(43, "correct-password", request) == "stored-hash"
+        assert "sec-password-user:43" not in ratelimit._rate_buckets
     finally:
-        main.reset_rate_limits()
+        ratelimit.reset_rate_limits()
 
 
 @pytest.mark.parametrize("valid_session", [False, True], ids=["revoked", "active"])
@@ -101,14 +110,14 @@ def test_d_revoke_route_rechecks_session_before_writes_without_database(monkeypa
         assert write
         yield conn
 
-    monkeypatch.setattr(main, "connect", transaction)
-    monkeypatch.setattr(main, "recheck_account", lambda conn, uid: {"id": uid})
+    monkeypatch.setattr(db, "connect", transaction)
+    monkeypatch.setattr(accounts, "recheck_account", lambda conn, uid: {"id": uid})
     request = SimpleNamespace(cookies={"session": "inflight-token"})
     if valid_session:
-        assert main.revoke_sessions(request, {"id": 42}) == {"ok": True, "revoked": 2}
+        assert account_router.revoke_sessions(request, {"id": 42}) == {"ok": True, "revoked": 2}
     else:
         with pytest.raises(HTTPException) as revoked:
-            main.revoke_sessions(request, {"id": 42})
+            account_router.revoke_sessions(request, {"id": 42})
         assert revoked.value.status_code == 401
         assert conn.execute.call_count == 1
 
@@ -117,14 +126,14 @@ def test_d_revoke_route_rechecks_session_before_writes_without_database(monkeypa
 def test_a_shared_failure_limit_checks_before_password_hash(client, monkeypatch, surface):
     user = register(client)
     before = account_state(user["id"])
-    original = main.password_matches
+    original = security.password_matches
     calls = []
 
     def counted(password, stored):
         calls.append(password)
         return original(password, stored)
 
-    monkeypatch.setattr(main, "password_matches", counted)
+    monkeypatch.setattr(security, "password_matches", counted)
     # 三个入口共享一个用户的失败预算。
     for entry in ["email", "password", "delete", "email", "password"]:
         assert sensitive_request(client, entry, "incorrect-password").status_code == 400
@@ -138,8 +147,8 @@ def test_a_shared_failure_limit_checks_before_password_hash(client, monkeypatch,
 
 def test_a_success_clears_only_user_failures_and_window_expires(client, monkeypatch):
     user = register(client)
-    now = main.time.time()
-    monkeypatch.setattr(main.time, "time", lambda: now)
+    now = time.time()
+    monkeypatch.setattr(time, "time", lambda: now)
     for _ in range(4):
         assert sensitive_request(client, "delete", "incorrect-password").status_code == 400
     assert sensitive_request(client, "email").status_code == 200
@@ -153,14 +162,14 @@ def test_a_success_clears_only_user_failures_and_window_expires(client, monkeypa
 
 def test_a_ip_budget_counts_successes_across_users_before_hash(client, monkeypatch):
     user = register(client)
-    original = main.password_matches
+    original = security.password_matches
     calls = []
 
     def counted(password, stored):
         calls.append(password)
         return original(password, stored)
 
-    monkeypatch.setattr(main, "password_matches", counted)
+    monkeypatch.setattr(security, "password_matches", counted)
     for _ in range(19):
         assert sensitive_request(client, "email").status_code == 200
     client.post("/api/auth/logout")
@@ -176,7 +185,8 @@ def test_a_ip_budget_counts_successes_across_users_before_hash(client, monkeypat
     assert len(calls) == before_calls
     assert account_state(user["id"]) == before_user
     assert account_state(other["id"]) == before_other
-    monkeypatch.setattr(main, "client_ip", lambda request: "different-test-ip")
+    monkeypatch.setattr(ratelimit, "client_ip", lambda request: "different-test-ip")
+    monkeypatch.setattr(security, "client_ip", lambda request: "different-test-ip")
     assert sensitive_request(client, "email", email="bob-changed@example.com").status_code == 200
 
 
@@ -227,7 +237,7 @@ def test_c_password_rotation_invalidates_old_token_and_keeps_other_user(client):
         add_session(conn, other_id, "unrelated-device")
         add_session(conn, other_id, "unrelated-expired-device")
         conn.execute("UPDATE sessions SET expires_at=1 WHERE token_hash=?", (
-            main.token_hash("unrelated-expired-device"),
+            security.token_hash("unrelated-expired-device"),
         ))
     unrelated = account_state(other_id)
     assert sensitive_request(client, "password").status_code == 200
@@ -237,8 +247,8 @@ def test_c_password_rotation_invalidates_old_token_and_keeps_other_user(client):
     assert client.get("/api/me", headers={"Cookie": f"session={old_token}"}).status_code == 401
     assert client.get("/api/me", headers={"Cookie": "session=other-device"}).status_code == 401
     assert account_state(other_id) == unrelated
-    assert {row[0] for row in account_state(user["id"])[1]} == {main.token_hash(new_token)}
-    assert main.password_matches(NEW_PASSWORD, account_state(user["id"])[0]["password_hash"])
+    assert {row[0] for row in account_state(user["id"])[1]} == {security.token_hash(new_token)}
+    assert security.password_matches(NEW_PASSWORD, account_state(user["id"])[0]["password_hash"])
 
 
 @pytest.mark.parametrize("surface", ["password", "delete", "revoke"])
@@ -252,7 +262,7 @@ def test_d_revoked_inflight_session_is_rechecked_inside_write_transaction(
         add_session(conn, user["id"], "surviving-device")
         other_id = insert_user(conn, "other")
     before_user = account_state(user["id"])[0]
-    original = main.connect
+    original = db.connect
     interleaved = False
 
     @contextmanager
@@ -261,13 +271,13 @@ def test_d_revoked_inflight_session_is_rechecked_inside_write_transaction(
         if kwargs.get("write") and not interleaved:
             interleaved = True
             with original(write=True) as conn:
-                conn.execute("DELETE FROM sessions WHERE token_hash=?", (main.token_hash(request_token),))
+                conn.execute("DELETE FROM sessions WHERE token_hash=?", (security.token_hash(request_token),))
                 if replacement:
                     add_session(conn, other_id, request_token)
         with original(*args, **kwargs) as conn:
             yield conn
 
-    monkeypatch.setattr(main, "connect", revoke_before_write)
+    monkeypatch.setattr(db, "connect", revoke_before_write)
     if surface == "revoke":
         response = client.post("/api/me/sessions/revoke-others")
     else:
@@ -278,7 +288,7 @@ def test_d_revoked_inflight_session_is_rechecked_inside_write_transaction(
     assert account_state(user["id"])[0] == before_user
     with connect() as conn:
         assert conn.execute("SELECT user_id FROM sessions WHERE token_hash=?", (
-            main.token_hash("surviving-device"),
+            security.token_hash("surviving-device"),
         )).fetchone()[0] == user["id"]
 
 
@@ -329,7 +339,7 @@ def test_e_normalizer_rejects_controls_even_before_trimming(character):
 
 
 def test_i_login_input_preserves_legacy_exact_name_before_lookup():
-    assert main.Credentials(username="legacy\t", password=PASSWORD).username == "legacy\t"
+    assert auth_models.Credentials(username="legacy\t", password=PASSWORD).username == "legacy\t"
 
 
 @pytest.mark.parametrize("token_kind", ["missing", "empty", "expired", "at-expiry"])
@@ -337,8 +347,8 @@ def test_f_invalid_reset_tokens_have_machine_code_and_do_not_change_account(clie
     user = register(client)
     if token_kind in ("expired", "at-expiry"):
         reset_token(user["id"], "expired-token")
-        now = int(main.time.time())
-        monkeypatch.setattr(main.time, "time", lambda: now)
+        now = int(time.time())
+        monkeypatch.setattr(time, "time", lambda: now)
         with connect(write=True) as conn:
             conn.execute("UPDATE password_resets SET expires_at=?", (now if token_kind == "at-expiry" else 1,))
     before = account_state(user["id"])
@@ -364,12 +374,12 @@ def test_f_valid_token_weak_password_can_retry_same_link(client, password):
     assert account_state(user["id"]) == before
     assert client.post("/api/auth/reset-password", json={"token": token, "password": NEW_PASSWORD}).status_code == 200
     assert account_state(user["id"])[1:] == ([], [])
-    assert main.password_matches(NEW_PASSWORD, account_state(user["id"])[0]["password_hash"])
+    assert security.password_matches(NEW_PASSWORD, account_state(user["id"])[0]["password_hash"])
 
 
 def test_k_avatar_unlink_failure_is_logged_and_deleted_avatar_stays_private(client, monkeypatch, caplog):
     user = register(client)
-    avatar = main.avatar_path(user["id"])
+    avatar = images.avatar_path(user["id"])
     avatar.write_bytes(b"stand-in-avatar")
     assert client.get(f"/api/users/{user['id']}/avatar").status_code == 200
     original = Path.unlink
@@ -440,13 +450,13 @@ def test_b_email_write_failure_rolls_back_email_and_reset_tokens(client, monkeyp
 
 def test_k_avatar_flag_ignores_leftover_files_for_deleted_and_missing_users(client):
     user = register(client)
-    main.avatar_path(user["id"]).write_bytes(b"avatar")
-    assert main.sec_has_avatar(user["id"]) is True
+    images.avatar_path(user["id"]).write_bytes(b"avatar")
+    assert images.sec_has_avatar(user["id"]) is True
     assert client.get("/api/me").json()["has_avatar"] is True
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET deleted_at=? WHERE id=?", (NOW, user["id"]))
-    assert main.sec_has_avatar(user["id"]) is False
-    assert main.sec_has_avatar(999) is False
+    assert images.sec_has_avatar(user["id"]) is False
+    assert images.sec_has_avatar(999) is False
 
 
 def test_h_existing_admin_survives_application_startup_and_config_changes(client, monkeypatch):

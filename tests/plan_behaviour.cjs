@@ -353,7 +353,11 @@ test("cards: official purchases offer both channels and never offer an amount fi
   assert.equal(e.host.querySelectorAll(".pl-card")[2].querySelector("select"), null);
 });
 
-const APP_SOURCE = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+const APP_SOURCE = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
 function appFunction(name) {
   const start = APP_SOURCE.search(new RegExp(`^(?:async )?function ${name}\\(`, "m"));
   assert.ok(start >= 0, name);

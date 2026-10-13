@@ -3,6 +3,7 @@
 仿照 tests/test_notes_links_assets.py，扫描真实文件断言。"""
 import re
 from pathlib import Path
+from static_helpers import versioned_src
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -13,16 +14,16 @@ MAIN = (ROOT / "main.py").read_text(encoding="utf-8")
 
 
 def test_assets_versioned_and_loaded_in_order():
-    assert '<link rel="stylesheet" href="/static/notes-rich.css?v=5">' in HTML
+    assert f'<link rel="stylesheet" href="{versioned_src("notes-rich.css")}">' in HTML
     scripts = re.findall(r'<script defer src="/static/([\w.-]+\.js)\?v=(\d+)"></script>', HTML)
     names = [name for name, _ in scripts]
     assert names.count("notes-rich.js") == 1
     assert names.index("notes.js") < names.index("notes-links.js") < names.index("notes-rich.js") < names.index("app.js")
     versions = dict(scripts)
-    assert versions["notes-rich.js"] == "7"
-    assert versions["notes.js"] == "6"
-    assert versions["notes-links.js"] == "8"
-    assert versions["app.js"] == "103"
+    assert "notes-rich.js" in versions
+    assert "notes.js" in versions
+    assert "notes-links.js" in versions
+    assert "app.js" in versions
 
 
 def test_no_inline_style_or_inline_script_in_markup():

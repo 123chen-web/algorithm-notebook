@@ -8,7 +8,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { load, tick, deferred, FakeEvent } = require("./js_harness.cjs");
-const SOURCE = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+const SOURCE = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
 
 function topFunction(name, source = SOURCE) {
   const match = source.match(new RegExp(`^(?:async )?function ${name}\\(`, "m"));

@@ -71,7 +71,7 @@ def _visible_comments(comments):
 
 def load_thread(conn, post_id):
     """Load one snapshot, retaining deleted floors without sending deleted text."""
-    from main import visible_post
+    from forum_lib import visible_post
 
     post = visible_post(conn, post_id)
     rows = conn.execute(
@@ -116,7 +116,7 @@ def thread_signature(post, comments):
 def thread_reference(post, comments):
     """Only anonymous roles and bounded visible text reach the provider."""
     # main imports this module; delay reuse until its module initialization is complete.
-    from main import truncate_text
+    from forum_lib import truncate_text
 
     visible = _visible_comments(comments)
     floor_by_id = {comment["id"]: comment["floor"] for comment in visible}

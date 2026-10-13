@@ -1,6 +1,7 @@
 """错因专题页"我的三大典型失误"与考前一页纸的静态契约检查。"""
 from html.parser import HTMLParser
 from pathlib import Path
+from static_helpers import app_source
 import re
 import shutil
 import subprocess
@@ -14,9 +15,11 @@ STATIC = ROOT / "static"
 
 @pytest.fixture(scope="module")
 def assets():
-    return {name: (STATIC / name).read_text(encoding="utf-8") for name in (
-        "index.html", "typical.js", "typical.css", "app.js", "shell.js",
+    d = {name: (STATIC / name).read_text(encoding="utf-8") for name in (
+        "index.html", "typical.js", "typical.css", "shell.js",
     )}
+    d["app.js"] = app_source()  # C2 后 app.js 已拆分
+    return d
 
 
 def test_versioned_assets_load_before_app(assets):

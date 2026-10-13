@@ -4,7 +4,7 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+import db
 
 from db import ROOT
 from db import schema_version
@@ -22,10 +22,10 @@ router = APIRouter()
 def healthz():
     headers = {"Cache-Control": "no-store"}
     try:
-        with main.connect(create=False) as conn:
+        with db.connect(create=False) as conn:
             conn.execute("SELECT 1").fetchone()
             version = schema_version(conn)
-        with main.connect(write=True, create=False):
+        with db.connect(write=True, create=False):
             pass
     except Exception:
         return JSONResponse(status_code=503, content={"status": "error"}, headers=headers)

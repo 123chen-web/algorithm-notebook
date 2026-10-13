@@ -8,6 +8,8 @@ import digest
 import main
 import today_sign
 from test_app import client, register
+from core import time
+import db
 
 
 def body(**extra):
@@ -33,7 +35,7 @@ def test_sign_uses_the_users_own_data(client):
     pid = client.post("/api/problems", json=body(pattern_ids=["binary-search-basic"])).json()["id"]
     mid = client.get("/api/mistakes?due_only=false").json()["items"][0]["id"]
     client.put(f"/api/mistakes/{mid}/tags", json={"tags": ["boundary", "boundary"]})
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute("UPDATE mistakes SET due_date = '2020-01-01' WHERE problem_id = ?", (pid,))
     sign = client.get("/api/today-sign").json()
     assert sign["yi"][0]["source"] == "data" and "二分查找" in sign["yi"][0]["text"]
@@ -64,7 +66,7 @@ def write_cache(tmp_path, monkeypatch, day):
 def test_briefing_reads_the_cache_and_never_goes_online(client, tmp_path, monkeypatch):
     register(client)
     assert client.get("/api/briefing/today").json() == {"date": None, "items": []}
-    day = main.utc_now()[:10]
+    day = time.utc_now()[:10]
     write_cache(tmp_path, monkeypatch, day)
     monkeypatch.setattr(digest, "_http_get", lambda *a, **k: pytest.fail("请求时不能联网"))
     data = client.get("/api/briefing/today").json()
@@ -77,7 +79,7 @@ def test_briefing_reads_the_cache_and_never_goes_online(client, tmp_path, monkey
 def test_briefing_falls_back_to_a_recent_older_cache(client, tmp_path, monkeypatch):
     register(client)
     from datetime import timedelta
-    older = (date.fromisoformat(main.utc_now()[:10]) - timedelta(days=1)).isoformat()
+    older = (date.fromisoformat(time.utc_now()[:10]) - timedelta(days=1)).isoformat()
     write_cache(tmp_path, monkeypatch, older)
     assert client.get("/api/briefing/today").json()["date"] == older
 

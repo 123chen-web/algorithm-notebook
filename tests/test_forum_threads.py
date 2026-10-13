@@ -13,6 +13,12 @@ import main
 from db import connect, init_db
 from test_app import register
 from test_forum import create_post
+from core import time as core_time
+import time
+import db
+from core import ratelimit
+from core import security
+from models import NewComment
 
 
 CREATED_AT = "2026-09-21T10:00:00+00:00"
@@ -33,8 +39,8 @@ def client(tmp_path, monkeypatch):
     # Keep avatar checks away from the developer's real avatar directory.
     monkeypatch.setenv("AVATAR_DIR", str(tmp_path / "avatars"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
-    main.reset_rate_limits()
+    monkeypatch.setattr(core_time, "today_for", lambda user: date(2026, 9, 19))
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -156,7 +162,7 @@ def test_schema_is_nullable_self_reference_and_upgrade_preserves_data(
         assert post["body"] == "保留原文"
         conn.execute(
             "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, 7, ?)",
-            (main.token_hash("legacy-session"), int(time.time()) + 3600),
+            (security.token_hash("legacy-session"), int(time.time()) + 3600),
         )
 
     # Exercise the real API against both the migrated and fresh schemas.
@@ -400,7 +406,7 @@ def test_get_post_uses_one_snapshot_during_physical_comment_delete(client, monke
         with connect(write=write) as conn:
             yield InterleavedConnection(conn)
 
-    monkeypatch.setattr(main, "connect", interleaved_connect)
+    monkeypatch.setattr(db, "connect", interleaved_connect)
     comments = get_comments(client, post["id"])
     assert interleaved
     assert [comment["id"] for comment in comments] == [first["id"], second["id"], third["id"]]
@@ -443,7 +449,7 @@ def test_get_500_comments_has_bounded_sql_and_counts_soft_deleted_floors(client,
             conn.set_trace_callback(statements.append)
             yield conn
 
-    monkeypatch.setattr(main, "connect", traced_connect)
+    monkeypatch.setattr(db, "connect", traced_connect)
     comments = get_comments(client, post["id"])
     assert len(statements) <= 12, statements
     assert len(comments) == 499
@@ -527,12 +533,12 @@ def test_omitted_or_null_reply_keeps_normal_comment_behavior(client, explicit_nu
 @pytest.mark.parametrize("value", [0, -1, True, False, 1.0, 1.5, "1", "", [], {}])
 def test_reply_to_id_model_requires_a_positive_strict_integer(value):
     with pytest.raises(ValidationError):
-        main.NewComment(body="回复", reply_to_id=value)
+        NewComment(body="回复", reply_to_id=value)
 
 
 @pytest.mark.parametrize("value", [None, 1, 2**63, 10**100])
 def test_reply_to_id_model_accepts_null_or_positive_integer_without_id_lookup(value):
-    assert main.NewComment(body="回复", reply_to_id=value).reply_to_id == value
+    assert NewComment(body="回复", reply_to_id=value).reply_to_id == value
 
 
 @pytest.mark.parametrize("value", [0, -1, True, 1.0, "1"])

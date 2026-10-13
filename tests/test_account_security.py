@@ -16,6 +16,12 @@ import send_reminders
 from db import connect
 from legal import TERMS_VERSION
 from test_app import client, new_problem, register
+from core import security
+from core import time as core_time
+import time
+import images
+from core import config
+from static_helpers import versioned_src
 
 
 PASSWORD = "a-test-password-123"
@@ -64,14 +70,14 @@ def insert_user(conn, username, *, password=PASSWORD, deleted_at=None):
     return conn.execute(
         "INSERT INTO users(username, password_hash, timezone, created_at, "
         "deleted_at) VALUES (?, ?, 'Asia/Shanghai', ?, ?)",
-        (username, main.password_hash(password), NOW, deleted_at),
+        (username, security.password_hash(password), NOW, deleted_at),
     ).lastrowid
 
 
 def add_session(conn, user_id, token):
     conn.execute(
         "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-        (main.token_hash(token), user_id, int(main.time.time()) + 3600),
+        (security.token_hash(token), user_id, int(time.time()) + 3600),
     )
 
 
@@ -80,7 +86,7 @@ def reset_token(user_id, token="account-security-reset-token"):
         conn.execute(
             "INSERT INTO password_resets(token_hash, user_id, expires_at) "
             "VALUES (?, ?, ?)",
-            (main.token_hash(token), user_id, int(main.time.time()) + 3600),
+            (security.token_hash(token), user_id, int(time.time()) + 3600),
         )
     return token
 
@@ -89,23 +95,23 @@ def reset_token(user_id, token="account-security-reset-token"):
     "unused", "", "not-hex:abcd", "00:zz", "00:00:00", None,
 ])
 def test_password_matches_rejects_malformed_stored_hash(stored):
-    assert main.password_matches(PASSWORD, stored) is False
+    assert security.password_matches(PASSWORD, stored) is False
 
 
 def test_password_matches_accepts_valid_hash_and_rejects_placeholder():
-    assert main.password_matches(PASSWORD, main.password_hash(PASSWORD)) is True
-    assert main.password_matches(PASSWORD, "00" * 16 + ":" + "00" * 32) is False
+    assert security.password_matches(PASSWORD, security.password_hash(PASSWORD)) is True
+    assert security.password_matches(PASSWORD, "00" * 16 + ":" + "00" * 32) is False
 
 
 def test_new_password_length_boundaries_and_common_list_size():
     password = "abcdefghijk-" * 10 + "12345678"
     assert len(password) == 128
-    assert main.check_new_password(password) is None
+    assert security.check_new_password(password) is None
     with pytest.raises(HTTPException) as error:
-        main.check_new_password(password + "x")
+        security.check_new_password(password + "x")
     assert error.value.status_code == 400
     assert error.value.detail == "密码最多 128 位"
-    assert 80 <= len(main.COMMON_PASSWORDS) <= 150
+    assert 80 <= len(config.COMMON_PASSWORDS) <= 150
 
 
 @pytest.mark.parametrize("surface", ["register", "reset", "change"])
@@ -293,14 +299,14 @@ def test_change_password_revokes_other_sessions_and_rotates_current(client, monk
         add_session(conn, user["id"], "another-device")
         other_id = insert_user(conn, "otheruser")
         add_session(conn, other_id, "unrelated-device")
-    original_hash = main.password_hash
+    original_hash = security.password_hash
 
     def hash_without_write_lock(password):
         with connect(write=True) as conn:
             assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 2
         return original_hash(password)
 
-    monkeypatch.setattr(main, "password_hash", hash_without_write_lock)
+    monkeypatch.setattr(security, "password_hash", hash_without_write_lock)
     changed = client.post("/api/me/password", json={
         "current_password": PASSWORD, "new_password": NEW_PASSWORD,
     })
@@ -311,7 +317,7 @@ def test_change_password_revokes_other_sessions_and_rotates_current(client, monk
     assert new_token and new_token != current_token
     with connect() as conn:
         sessions = {row[0] for row in conn.execute("SELECT token_hash FROM sessions")}
-        assert sessions == {main.token_hash(new_token), main.token_hash("unrelated-device")}
+        assert sessions == {security.token_hash(new_token), security.token_hash("unrelated-device")}
         assert conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0] == 0
     assert client.get("/api/me", headers={"Cookie": "session=other-device"}).status_code == 401
     assert client.get("/api/me", headers={"Cookie": f"session={current_token}"}).status_code == 401
@@ -389,7 +395,7 @@ def test_revoke_other_devices_preserves_current_and_unrelated_sessions(client, t
     assert client.cookies.get("session") == token
     with connect() as conn:
         assert {row[0] for row in conn.execute("SELECT token_hash FROM sessions")} == {
-            main.token_hash(token), main.token_hash("unrelated-device"),
+            security.token_hash(token), security.token_hash("unrelated-device"),
         }
     assert client.post("/api/me/sessions/revoke-others", json={}).json()["revoked"] == 0
 
@@ -398,7 +404,7 @@ def seed_account_data(user_id, other_id):
     with connect(write=True) as conn:
         add_session(conn, user_id, "delete-other-device")
         conn.execute("INSERT INTO password_resets VALUES (?, ?, ?)", (
-            main.token_hash("delete-reset"), user_id, int(main.time.time()) + 3600,
+            security.token_hash("delete-reset"), user_id, int(time.time()) + 3600,
         ))
         problem_id = conn.execute(
             "INSERT INTO problems(user_id,title,language,code,thinking,created_at) "
@@ -492,9 +498,9 @@ def test_delete_account_removes_learning_data_and_preserves_anonymous_records(
     with connect(write=True) as conn:
         other_id = insert_user(conn, "otheruser")
     seeded = seed_account_data(user["id"], other_id)
-    avatar = main.avatar_path(user["id"])
+    avatar = images.avatar_path(user["id"])
     avatar.write_bytes(b"stand-in avatar")
-    monkeypatch.setattr(main, "utc_now", lambda: NOW)
+    monkeypatch.setattr(core_time, "utc_now", lambda: NOW)
     response = client.post("/api/me/delete-account", json={"password": PASSWORD})
     assert response.status_code == 200
     assert response.json() == {"ok": True}
@@ -511,7 +517,7 @@ def test_delete_account_removes_learning_data_and_preserves_anonymous_records(
         assert row["is_admin"] == 0
         assert row["plan_id"] == seeded["plan_id"]
         assert row["plan_expires_at"] == "2099-01-01T00:00:00+00:00"
-        assert main.password_matches(PASSWORD, row["password_hash"]) is False
+        assert security.password_matches(PASSWORD, row["password_hash"]) is False
         for table in ["sessions", "password_resets", "problems", "mistakes", "reviews",
                       "variants", "mistake_tags", "weakness_insights", "mistake_clusters",
                       "ai_usage", "avatar_reports"]:
@@ -577,7 +583,7 @@ def test_creator_with_other_members_cannot_delete_and_nothing_is_changed(
         conn.execute("INSERT INTO study_group_members VALUES (?, ?, ?)", (
             seeded["own_group_id"], other_id, NOW,
         ))
-    avatar = main.avatar_path(user["id"])
+    avatar = images.avatar_path(user["id"])
     avatar.write_bytes(b"stand-in avatar")
     before = database_snapshot()
     response = client.post("/api/me/delete-account", json={"password": PASSWORD})
@@ -595,7 +601,7 @@ def test_delete_transaction_rolls_back_on_midway_database_failure(
     with connect(write=True) as conn:
         other_id = insert_user(conn, "otheruser")
     seed_account_data(user["id"], other_id)
-    avatar = main.avatar_path(user["id"])
+    avatar = images.avatar_path(user["id"])
     avatar.write_bytes(b"stand-in avatar")
     with connect(write=True) as conn:
         conn.execute(
@@ -645,7 +651,7 @@ def test_avatar_upload_rechecks_account_after_image_processing(
     user = register(client)
     content = io.BytesIO()
     Image.new("RGB", (8, 8)).save(content, format="JPEG")
-    original_resize = main.resize_avatar_to_square_jpeg
+    original_resize = images.resize_avatar_to_square_jpeg
 
     def resize_during_account_deletion(image):
         jpeg = original_resize(image)
@@ -654,12 +660,12 @@ def test_avatar_upload_rechecks_account_after_image_processing(
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
         return jpeg
 
-    monkeypatch.setattr(main, "resize_avatar_to_square_jpeg", resize_during_account_deletion)
+    monkeypatch.setattr(images, "resize_avatar_to_square_jpeg", resize_during_account_deletion)
     response = client.post("/api/me/avatar", files={
         "file": ("avatar.jpg", content.getvalue(), "image/jpeg"),
     })
     assert response.status_code == 401
-    assert not main.avatar_path(user["id"]).exists()
+    assert not images.avatar_path(user["id"]).exists()
     with connect() as conn:
         assert conn.execute("SELECT avatar_version FROM users WHERE id = ?", (user["id"],)).fetchone()[0] == 0
 

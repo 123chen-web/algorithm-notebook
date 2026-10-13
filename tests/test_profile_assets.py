@@ -1,5 +1,6 @@
 """Public-profile integration, inert output and theme contrast contracts."""
 from pathlib import Path
+from static_helpers import app_source
 import re
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ STATIC = ROOT / 'static'
 
 def test_profile_resources_and_author_entries():
     page = (STATIC / 'index.html').read_text(encoding='utf-8')
-    app = (STATIC / 'app.js').read_text(encoding='utf-8')
+    app = app_source()  # C2 后 app.js 已拆分
     board = (STATIC / 'board.js').read_text(encoding='utf-8')
     assert '/static/profile.css?v=2' in page
     assert page.index('/static/profile.js?v=3') < page.index('/static/app.js?v=')

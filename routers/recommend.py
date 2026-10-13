@@ -4,7 +4,8 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import ratelimit, security, time
+import db
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -26,31 +27,31 @@ class RecommendSource(BaseModel):
 
 
 @router.get("/api/recommend")
-def get_recommend(user=Depends(main.current_user)):
+def get_recommend(user=Depends(security.current_user)):
     # 登录用户都能看（含体验账号）；纯统计 + 读缓存，不调用 AI、不占额度。
-    if main.rate_limited(f"recommend:{user['id']}", 30, 60):
+    if ratelimit.rate_limited(f"recommend:{user['id']}", 30, 60):
         raise HTTPException(429, "操作过于频繁，请稍后再试")
-    today = main.today_for(user)
-    with main.connect(write=True) as conn:
+    today = time.today_for(user)
+    with db.connect(write=True) as conn:
         items, hint = recommend_logic.recommend_for_today(conn, user, today)
         source = recommend_logic.source_of(conn, user["id"])
     return {"items": items, "hint": hint, "source": source}
 
 
 @router.put("/api/recommend/source")
-def set_recommend_source(data: RecommendSource, user=Depends(main.current_user)):
+def set_recommend_source(data: RecommendSource, user=Depends(security.current_user)):
     if data.source not in recommend_logic.SOURCES:
         raise HTTPException(422, "推荐来源只能是 cf、atcoder 或 both")
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         recommend_logic.set_source(conn, user["id"], data.source)
     return {"ok": True, "source": data.source}
 
 
 @router.post("/api/recommend/atcoder/{problem_id}")
-def set_atcoder_state(problem_id: str, data: RecommendState, user=Depends(main.current_user)):
+def set_atcoder_state(problem_id: str, data: RecommendState, user=Depends(security.current_user)):
     if data.state not in ("done", "dismissed"):
         raise HTTPException(422, "state 只能是 done 或 dismissed")
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE atcoder_recommendations SET state = ? WHERE user_id = ? AND problem_id = ?",
             (data.state, user["id"], problem_id),
@@ -61,12 +62,12 @@ def set_atcoder_state(problem_id: str, data: RecommendState, user=Depends(main.c
 
 
 @router.post("/api/recommend/{contest_id}/{idx}")
-def set_recommend_state(contest_id: int, idx: str, data: RecommendState, user=Depends(main.current_user)):
+def set_recommend_state(contest_id: int, idx: str, data: RecommendState, user=Depends(security.current_user)):
     # 只能改自己的记录；rowcount 为 0 时 404，同时掩盖"记录不存在"和"别人的记录"。
     # X-CSRF-Protection 由全局中间件统一校验。
     if data.state not in ("done", "dismissed"):
         raise HTTPException(422, "state 只能是 done 或 dismissed")
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             """
             UPDATE problem_recommendations SET state = ?

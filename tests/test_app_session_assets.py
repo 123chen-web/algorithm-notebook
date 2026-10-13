@@ -9,6 +9,7 @@ import subprocess
 import pytest
 
 from test_cursor_fx_assets import function_body
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -183,7 +184,7 @@ def run_session_scenario(scenario):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed for session behavior checks")
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     parts = [review_session_support(source)]
     for name in ("user", "sessionReady", "sessionEpoch"):
         declaration = re.search(rf"(?m)^let {name} = [^;]+;", source)

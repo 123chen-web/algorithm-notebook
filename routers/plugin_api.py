@@ -17,7 +17,9 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, ratelimit, security, time
+import accounts
+import db
 
 import re
 from datetime import timedelta
@@ -63,37 +65,37 @@ def _bearer_user(authorization: str | None = Header(default=None)):
     token = authorization[len("Bearer "):].strip()
     if not token:
         raise HTTPException(401, "API token 无效")
-    with main.connect() as conn:
+    with db.connect() as conn:
         row = conn.execute(
             """
             SELECT id, username, timezone, is_banned
             FROM users
             WHERE api_token_hash = ? AND deleted_at IS NULL
             """,
-            (main.token_hash(token),),
+            (security.token_hash(token),),
         ).fetchone()
     if row is None or row["is_banned"]:
         raise HTTPException(401, "API token 无效")
-    return {"id": row["id"], "api_token_hash": main.token_hash(token)}
+    return {"id": row["id"], "api_token_hash": security.token_hash(token)}
 
 
 @router.post("/api/users/api-token")
-def issue_api_token(user=Depends(main.current_user)):
+def issue_api_token(user=Depends(security.current_user)):
     """签发（或轮换）当前登录用户的插件 API token，明文只在本次返回。"""
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         conn.execute(
             "UPDATE users SET api_token_hash = ? WHERE id = ?",
-            (main.token_hash(token), user["id"]),
+            (security.token_hash(token), user["id"]),
         )
     return {"token": token}
 
 
 @router.delete("/api/users/api-token")
-def revoke_api_token(user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+def revoke_api_token(user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         conn.execute("UPDATE users SET api_token_hash = NULL WHERE id = ?", (user["id"],))
     return {"ok": True}
 
@@ -214,7 +216,7 @@ class ExtensionImport(BaseModel):
     @field_validator("zone")
     @classmethod
     def _valid_zone(cls, value):
-        if value not in main.PROBLEM_ZONES:
+        if value not in config.PROBLEM_ZONES:
             raise ValueError("请选择一个有效的题目分区")
         return value
 
@@ -232,7 +234,7 @@ class ExtensionImport(BaseModel):
 @router.post("/api/problems/import-from-extension", status_code=201)
 def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
     """插件一键导入：在用户本题库直接建题，返回题目 id。"""
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         # Revalidate under the write lock: revocation/rotation/ban may have
         # completed after the dependency read and must block this import too.
         fresh = conn.execute(
@@ -242,7 +244,7 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
         ).fetchone()
         if fresh is None:
             raise HTTPException(401, "API token 无效")
-        if main.rate_limited(f"extension-import:{user['id']}", 60, 3600):
+        if ratelimit.rate_limited(f"extension-import:{user['id']}", 60, 3600):
             raise HTTPException(429, "每小时最多从扩展导入 60 道题，请稍后再试")
         cursor = conn.execute(
             """
@@ -255,7 +257,7 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
                 user["id"], data.title, data.zone, data.language,
                 "", "",
                 data.source, data.source_url, data.content,
-                data.difficulty, data.verdict, main.utc_now(),
+                data.difficulty, data.verdict, time.utc_now(),
             ),
         )
         problem_id = cursor.lastrowid
@@ -275,7 +277,7 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
 def _insert_reason(conn, problem_id, reason, user_id):
     """为题目建一条带错因的错题（明天第一次到期），与新增记录里的完整错题同一写法。"""
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    day = (main.today_for(dict(row)) + timedelta(days=main.FIRST_REVIEW_DELAY_DAYS)).isoformat()
+    day = (time.today_for(dict(row)) + timedelta(days=config.FIRST_REVIEW_DELAY_DAYS)).isoformat()
     cursor = conn.execute(
         "INSERT INTO mistakes(problem_id, description, due_date) VALUES (?, ?, ?)",
         (problem_id, reason, day),
@@ -303,9 +305,9 @@ def problem_by_source(source: str, source_id: str, user=Depends(_bearer_user)):
     wanted = normalize_source_id(source, source_id)
     if not wanted or len(wanted) > 200:
         raise HTTPException(422, "source_id 不合法")
-    with main.connect() as conn:
+    with db.connect() as conn:
         _fresh_user(conn, user)
-        if main.rate_limited(f"extension-read:{user['id']}", READ_LIMIT_PER_HOUR, 3600):
+        if ratelimit.rate_limited(f"extension-read:{user['id']}", READ_LIMIT_PER_HOUR, 3600):
             raise HTTPException(429, "请求过于频繁，请稍后再试")
         rows = conn.execute(
             "SELECT id, source_url FROM problems WHERE user_id = ? AND source = ? ORDER BY id",
@@ -333,9 +335,9 @@ class AppendReason(BaseModel):
 @router.post("/api/problems/{problem_id}/mistakes", status_code=201)
 def append_reason(problem_id: int, data: AppendReason, user=Depends(_bearer_user)):
     """给本人已有的题追加一条错因（速记）；不影响该题已有的复习计划。"""
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         _fresh_user(conn, user)
-        if main.rate_limited(f"extension-append:{user['id']}", APPEND_LIMIT_PER_HOUR, 3600):
+        if ratelimit.rate_limited(f"extension-append:{user['id']}", APPEND_LIMIT_PER_HOUR, 3600):
             raise HTTPException(429, "请求过于频繁，请稍后再试")
         owned = conn.execute(
             "SELECT id FROM problems WHERE id = ? AND user_id = ?", (problem_id, user["id"])
@@ -349,11 +351,11 @@ def append_reason(problem_id: int, data: AppendReason, user=Depends(_bearer_user
 @router.get("/api/review/due-count")
 def due_count(user=Depends(_bearer_user)):
     """今天到期且未暂停的易错点数量（只返回数字，不含每日上限折算）。"""
-    with main.connect() as conn:
+    with db.connect() as conn:
         account = _fresh_user(conn, user)
-        if main.rate_limited(f"extension-read:{user['id']}", READ_LIMIT_PER_HOUR, 3600):
+        if ratelimit.rate_limited(f"extension-read:{user['id']}", READ_LIMIT_PER_HOUR, 3600):
             raise HTTPException(429, "请求过于频繁，请稍后再试")
-        today = main.today_for(account).isoformat()
+        today = time.today_for(account).isoformat()
         count = conn.execute(
             """
             SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id

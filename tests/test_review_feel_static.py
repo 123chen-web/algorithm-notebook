@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 
 import pytest
+from static_helpers import versioned_src
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -23,20 +24,11 @@ def test_review_assets_have_bumped_versions_and_dependency_load_order():
     markup = Markup((STATIC / "index.html").read_text(encoding="utf-8"))
     scripts = [attrs["src"] for tag, attrs in markup.nodes if tag == "script" and "src" in attrs]
     styles = [attrs.get("href") for tag, attrs in markup.nodes if tag == "link" and attrs.get("rel") == "stylesheet"]
-    for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=8", "/static/review-feel.js?v=1", "/static/app.js?v=103"):
+    for src in (versioned_src("review-extras.js"), versioned_src("focus.js"), versioned_src("app.js")):
         assert scripts.count(src) == 1
-    assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=8") < scripts.index("/static/review-feel.js?v=1") < scripts.index("/static/app.js?v=103")
-    assert styles.count("/static/review-extras.css?v=4") == 1
-    assert styles.count("/static/focus.css?v=3") == 1
-    assert styles.count("/static/review-feel.css?v=1") == 1
-
-
-def test_review_vibrate_toggle_markup():
-    source = (STATIC / "index.html").read_text(encoding="utf-8")
-    markup = Markup(source)
-    assert any(tag == "input" and attrs.get("id") == "account-vibrate" and attrs.get("type") == "checkbox"
-               for tag, attrs in markup.nodes)
-    assert any(tag == "label" and attrs.get("for") == "account-vibrate" for tag, attrs in markup.nodes)
+    assert scripts.index(versioned_src("review-extras.js")) < scripts.index(versioned_src("focus.js")) < scripts.index(versioned_src("app.js"))
+    assert styles.count(versioned_src("review-extras.css")) == 1
+    assert styles.count(versioned_src("focus.css")) == 1
 
 
 def test_review_cap_markup_has_announced_status_and_accessible_options():

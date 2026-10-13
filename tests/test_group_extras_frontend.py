@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 import pytest
+from static_helpers import versioned_src, app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -177,14 +178,14 @@ def test_group_extras_static_contracts():
         "account-group-today", "account-group-today-label",
     ):
         assert f'id="{element_id}"' in html, f"missing #{element_id} in index.html"
-    assert "/static/group-extras.js?v=2" in html
-    assert "/static/group-extras.css?v=2" in html
+    assert versioned_src("group-extras.js") in html
+    assert versioned_src("group-extras.css") in html
     assert re.search(r"/static/app\.js\?v=\d+", html)
     # group-extras.js 必须在 app.js 之前加载（app.js 调用 window.GroupExtras）。
     assert html.index("group-extras.js?v=2") < html.index("app.js?v=")
 
 
 def test_group_extras_wired_in_app_js():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     assert "window.GroupExtras?.renderAll(group)" in source
     assert "window.GroupExtras?.renderTodayVisibilitySetting()" in source

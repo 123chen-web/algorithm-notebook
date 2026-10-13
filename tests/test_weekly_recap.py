@@ -9,6 +9,7 @@ import main
 from db import connect
 from learning_stats import current_streak
 from test_app import client, register
+import weekly_recap
 
 
 ENDPOINT = "/api/insights/weekly-recap"
@@ -290,7 +291,7 @@ def test_deleted_source_records_disappear_from_recap(client):
 def test_endpoint_reads_all_metrics_from_one_explicit_snapshot(client, monkeypatch):
     user_id = register(client)["id"]
     seed_problem(user_id, timestamp(30))
-    original_recap = main.weekly_recap
+    original_recap = weekly_recap.weekly_recap
     inserted = False
 
     def recap_with_concurrent_insert(conn, *args):
@@ -311,7 +312,7 @@ def test_endpoint_reads_all_metrics_from_one_explicit_snapshot(client, monkeypat
 
         return original_recap(InsertAfterFirstRead(), *args)
 
-    monkeypatch.setattr(main, "weekly_recap", recap_with_concurrent_insert)
+    monkeypatch.setattr(weekly_recap, "weekly_recap", recap_with_concurrent_insert)
     assert payload(client) == EMPTY_RECAP
     assert inserted
     after = payload(client)

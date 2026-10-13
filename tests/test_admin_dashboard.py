@@ -5,6 +5,8 @@ import pytest
 import main
 from db import connect
 from test_app import client, register
+from core import time
+from core import config
 
 
 NOW = "2026-09-28T00:30:00+00:00"
@@ -16,7 +18,7 @@ FUTURE = "2026-09-28T00:30:01+00:00"
 
 @pytest.fixture
 def admin(client, monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW)
+    monkeypatch.setattr(time, "utc_now", lambda: NOW)
     user = register(client)
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user["id"],))
@@ -93,7 +95,7 @@ def test_dashboard_empty_statistics_are_zero(client, admin):
     }
     assert result["zones"] == [
         {"zone": zone, "mistake_count": 0}
-        for zone in sorted(main.PROBLEM_ZONES)
+        for zone in sorted(config.PROBLEM_ZONES)
     ]
 
 
@@ -226,7 +228,7 @@ def test_content_zone_ranking_and_pending_reports_are_sitewide(client, admin):
     ]
     assert result["zones"][4:] == [
         {"zone": zone, "mistake_count": 0}
-        for zone in sorted(set(main.PROBLEM_ZONES) - {"前端", "后端", "算法"})
+        for zone in sorted(set(config.PROBLEM_ZONES) - {"前端", "后端", "算法"})
     ]
 
 

@@ -13,6 +13,7 @@ from db import connect
 from reminders import send_daily_reminders
 from routers import reminder as reminder_router
 from test_app import client, new_problem, register  # noqa: F401  (client 是 fixture)
+from core import time
 
 
 
@@ -160,7 +161,7 @@ def test_timezone_boundary(client):
             pid = conn.execute(
                 "INSERT INTO problems(user_id, title, zone, language, code, thinking, created_at) "
                 "VALUES (?, '时区题', '算法', 'Python', 'code', 'thinking', ?)",
-                (uid, main.utc_now()),
+                (uid, time.utc_now()),
             ).lastrowid
             conn.execute(
                 "INSERT INTO mistakes(problem_id, description, due_date) "

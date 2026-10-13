@@ -4,7 +4,9 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import security, time
+import accounts
+import db
 
 import re
 from fastapi import Depends
@@ -166,7 +168,7 @@ def _reparse_links(conn, note_id, user_id, content):
     kept = tokens[:NOTE_LINK_MAX]
     conn.execute("DELETE FROM note_links WHERE source_note_id = ?", (note_id,))
     seen = set()
-    now = main.utc_now()
+    now = time.utc_now()
     for token in kept:
         dedupe_key = (token["kind"], token["target_text"], token["alias"])
         if dedupe_key in seen:
@@ -227,7 +229,7 @@ def _rename_title_cascade(conn, user_id, note_id, old_title, new_title):
         (user_id, note_id, like, RENAME_CASCADE_MAX + 1),
     ).fetchall()
     truncated = len(rows) > RENAME_CASCADE_MAX
-    now = main.utc_now()
+    now = time.utc_now()
     for row in rows[:RENAME_CASCADE_MAX]:
         new_content = _rewrite_title_links(row["content"], old_title, new_title)
         if new_content == row["content"]:
@@ -315,7 +317,7 @@ def list_notes(
     problem_id: int | None = None,
     limit: int = 20,
     offset: int = 0,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
@@ -341,7 +343,7 @@ def list_notes(
         count_sql += " AND n.problem_id = ?"
         params.append(problem_id)
     sql += " ORDER BY n.pinned DESC, n.updated_at DESC LIMIT ? OFFSET ?"
-    with main.connect() as conn:
+    with db.connect() as conn:
         total = conn.execute(count_sql, params).fetchone()[0]
         rows = conn.execute(sql, params + [limit, offset]).fetchall()
         # N2：回传本人全部附件 id，前端只把这些 id 的 attachment:ID 渲染成 <img>。
@@ -362,12 +364,12 @@ def list_notes(
 def suggest_notes(
     q: str = "",
     limit: int = 20,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
     """供前端输入 [[ 时联想：q 以"题:"开头查本人题目，否则查本人笔记标题；空 q 返回最近更新。"""
     limit = max(1, min(limit, 20))
     q = (q or "").strip()
-    with main.connect() as conn:
+    with db.connect() as conn:
         if q.startswith("题:"):
             keyword = q[2:].strip()
             if keyword:
@@ -412,7 +414,7 @@ def suggest_notes(
 def notes_graph(
     center: int | None = None,
     depth: int = 1,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
     """关系图谱：无参数为全局图；center=笔记id 时为以它为中心 depth(1|2) 层的局部图。
 
@@ -421,7 +423,7 @@ def notes_graph(
     超限时 truncated=true 并给出保留/截断数量。只含本人数据。
     """
     depth = 1 if depth != 2 else 2
-    with main.connect() as conn:
+    with db.connect() as conn:
         if center is not None:
             owned_note(conn, center, user["id"])
         link_rows = conn.execute(
@@ -504,7 +506,7 @@ def notes_graph(
     nodes: list[dict] = []
     if note_node_ids:
         marks = ",".join("?" for _ in note_node_ids)
-        with main.connect() as conn:
+        with db.connect() as conn:
             for row in conn.execute(
                 f"SELECT id, title, content, pinned FROM notes WHERE user_id = ? AND id IN ({marks}) "
                 "AND deleted_at IS NULL",
@@ -519,7 +521,7 @@ def notes_graph(
                     })
     if problem_node_ids:
         marks = ",".join("?" for _ in problem_node_ids)
-        with main.connect() as conn:
+        with db.connect() as conn:
             for row in conn.execute(
                 f"SELECT id, title FROM problems WHERE user_id = ? AND id IN ({marks})",
                 (user["id"], *problem_node_ids),
@@ -531,7 +533,7 @@ def notes_graph(
     if center is not None:
         center_id = f"note:{center}"
         if not any(node["id"] == center_id for node in nodes):
-            with main.connect() as conn:
+            with db.connect() as conn:
                 row = conn.execute(
                     "SELECT id, title, content, pinned FROM notes WHERE user_id = ? AND id = ? AND deleted_at IS NULL",
                     (user["id"], center),
@@ -553,13 +555,13 @@ def notes_graph(
 
 
 @router.post("/api/notes", status_code=201)
-def create_note(data: NoteCreate, user=Depends(main.current_user)):
+def create_note(data: NoteCreate, user=Depends(security.current_user)):
     tags = normalize_note_tags(data.tags)
     if _count_attachment_refs(data.content) > NOTE_REF_PER_NOTE_MAX:
         raise HTTPException(422, f"每篇笔记最多引用 {NOTE_REF_PER_NOTE_MAX} 张图片附件")
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         count = conn.execute("SELECT COUNT(*) FROM notes WHERE user_id = ?", (user["id"],)).fetchone()[0]
         if count >= NOTE_COUNT_MAX:
             raise HTTPException(422, f"每个账号最多保存 {NOTE_COUNT_MAX} 条笔记（含已删除笔记）")
@@ -591,15 +593,15 @@ def create_note(data: NoteCreate, user=Depends(main.current_user)):
 
 
 @router.get("/api/notes/{note_id}")
-def get_note(note_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_note(note_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         return owned_note(conn, note_id, user["id"])
 
 
 @router.get("/api/notes/{note_id}/links")
-def get_note_links(note_id: int, user=Depends(main.current_user)):
+def get_note_links(note_id: int, user=Depends(security.current_user)):
     """出链 outgoing 与反向链接 backlinks；每条附引用处前后 40 字的纯文本 snippet。"""
-    with main.connect() as conn:
+    with db.connect() as conn:
         note = owned_note(conn, note_id, user["id"])
         content = note["content"]
         tokens = _iter_link_tokens(content)
@@ -669,11 +671,11 @@ def get_note_links(note_id: int, user=Depends(main.current_user)):
 
 
 @router.put("/api/notes/{note_id}")
-def update_note(note_id: int, data: NoteUpdate, user=Depends(main.current_user)):
+def update_note(note_id: int, data: NoteUpdate, user=Depends(security.current_user)):
     tags = normalize_note_tags(data.tags) if data.tags is not None else None
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         before = owned_note(conn, note_id, user["id"])
         old_title = (before["title"] or "").strip()
         if data.problem_id is not None:
@@ -716,13 +718,13 @@ def update_note(note_id: int, data: NoteUpdate, user=Depends(main.current_user))
 
 
 @router.delete("/api/notes/{note_id}")
-def delete_note(note_id: int, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+def delete_note(note_id: int, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         owned_note(conn, note_id, user["id"])
         conn.execute(
             "UPDATE notes SET deleted_at = ? WHERE id = ?",
-            (main.utc_now(), note_id),
+            (time.utc_now(), note_id),
         )
         # 软删除：别人笔记里指向它的链接正文保留、target 置空（显示为悬空/未创建）。
         conn.execute(

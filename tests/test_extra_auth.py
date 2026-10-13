@@ -6,6 +6,11 @@ import pytest
 import main
 from db import connect
 from test_app import client, register
+from core import security
+from core import time as core_time
+import time
+import secrets
+import time
 
 
 PASSWORD = "a-test-password-123"
@@ -159,7 +164,7 @@ def test_logout_invalidates_session(client):
 
 def test_forgot_password_always_returns_ok_even_for_unknown_email(client, monkeypatch):
     sent = []
-    monkeypatch.setattr(main, "send_password_reset_email",
+    monkeypatch.setattr(security, "send_password_reset_email",
                         lambda email, username, token: sent.append((email, token)))
     response = client.post(
         "/api/auth/forgot-password", json={"email": "nobody-here@example.com"}
@@ -171,7 +176,7 @@ def test_forgot_password_always_returns_ok_even_for_unknown_email(client, monkey
 
 def test_forgot_password_creates_reset_token_for_real_user(client, monkeypatch):
     sent = []
-    monkeypatch.setattr(main, "send_password_reset_email",
+    monkeypatch.setattr(security, "send_password_reset_email",
                         lambda email, username, token: sent.append((email, token)))
     register(client, "forgotuser", email="forgot@example.com")
     # register() 已建立会话；先登出再走忘记密码流程。
@@ -206,8 +211,8 @@ def test_reset_password_rejects_weak_password_with_weak_password_code(client):
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO password_resets(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-            (main.token_hash("weak-reset-token"), user["id"],
-             int(main.time.time()) + 3600),
+            (security.token_hash("weak-reset-token"), user["id"],
+             int(time.time()) + 3600),
         )
     response = client.post(
         "/api/auth/reset-password",
@@ -223,8 +228,8 @@ def test_reset_password_invalidates_existing_sessions(client):
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO password_resets(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-            (main.token_hash("session-reset-token"), user["id"],
-             int(main.time.time()) + 3600),
+            (security.token_hash("session-reset-token"), user["id"],
+             int(time.time()) + 3600),
         )
     response = client.post(
         "/api/auth/reset-password",
@@ -302,9 +307,9 @@ def test_trial_account_falls_back_to_503_when_usernames_collide(client, monkeypa
         conn.execute(
             "INSERT INTO users(username, password_hash, timezone, created_at, is_trial) "
             "VALUES (?, ?, 'Asia/Shanghai', ?, 1)",
-            (f"trial_{fixed_hex}", main.password_hash("x"), main.utc_now()),
+            (f"trial_{fixed_hex}", security.password_hash("x"), core_time.utc_now()),
         )
-    real_token_hex = main.secrets.token_hex
+    real_token_hex = secrets.token_hex
 
     def fake_token_hex(n):
         # password_hash 也会调 token_hex 取 salt，只拦截建号用的 6 字节调用。
@@ -312,6 +317,6 @@ def test_trial_account_falls_back_to_503_when_usernames_collide(client, monkeypa
             return fixed_hex
         return real_token_hex(n)
 
-    monkeypatch.setattr(main.secrets, "token_hex", fake_token_hex)
+    monkeypatch.setattr(secrets, "token_hex", fake_token_hex)
     response = client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
     assert response.status_code == 503

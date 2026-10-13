@@ -5,6 +5,7 @@ import db
 import hot_problems
 import main
 from test_app import client, register
+import anki_export
 
 
 def body(**extra):
@@ -15,7 +16,7 @@ def body(**extra):
 
 
 def row(problem_id):
-    with main.connect() as conn:
+    with db.connect() as conn:
         return dict(conn.execute("SELECT * FROM problems WHERE id = ?", (problem_id,)).fetchone())
 
 
@@ -52,9 +53,9 @@ def test_mistake_detail_carries_the_link(client):
 
 
 def test_anki_url_prefers_the_field_then_falls_back_to_the_old_thinking_line():
-    assert main.anki_url_from_source("https://a.com/x", "题目链接：https://b.com/y") == "https://a.com/x"
-    assert main.anki_url_from_source("", "题目链接：https://b.com/y\n我的思路") == "https://b.com/y"
-    assert main.anki_url_from_source("javascript:alert(1)", "") == ""
+    assert anki_export.anki_url_from_source("https://a.com/x", "题目链接：https://b.com/y") == "https://a.com/x"
+    assert anki_export.anki_url_from_source("", "题目链接：https://b.com/y\n我的思路") == "https://b.com/y"
+    assert anki_export.anki_url_from_source("javascript:alert(1)", "") == ""
 
 
 def test_hot_problem_link_text_ignores_extension_imports():
@@ -70,7 +71,7 @@ def test_migration_moves_the_old_link_line_out_of_thinking(client):
     b = client.post("/api/problems", json=body(thinking="题目链接：https://leetcode.cn/problems/two-sum/\n")).json()["id"]
     c = client.post("/api/problems", json=body(thinking="我提到了 题目链接：不是单独一行")).json()["id"]
     d = client.post("/api/problems", json=body(thinking="题目链接：https://a.com/1", source_url="https://keep.me/x")).json()["id"]
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         db._apply_move_link_to_source_url(conn)
         db._apply_move_link_to_source_url(conn)  # 重复执行安全
     assert (row(a)["source_url"], row(a)["thinking"]) == ("https://leetcode.cn/problems/two-sum/", "我的思路")

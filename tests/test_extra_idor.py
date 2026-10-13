@@ -4,6 +4,7 @@ import pytest
 import main
 from db import connect
 from test_app import client, new_problem, register
+from core import time
 
 
 @pytest.fixture
@@ -22,7 +23,7 @@ def shared_resources(client):
         variant_id = conn.execute(
             "INSERT INTO variants(mistake_id, description, model, created_at, expected_answer) "
             "VALUES (?, '变体描述', 'mock', ?, '1')",
-            (mistake_id, main.utc_now()),
+            (mistake_id, time.utc_now()),
         ).lastrowid
     group = client.post("/api/groups", json={"name": "爱丽丝的小组"}).json()
     # 切到 bob：同一 client 再注册一次，会话变成 bob。

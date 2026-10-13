@@ -1,4 +1,5 @@
 import base64
+import logging
 import json
 import os
 import re
@@ -15,12 +16,16 @@ from openai import (
 )
 
 from ai_limits import note_usage
+from duck_prompt import build_messages, salvage_reply, validate_reply
+
+logger = logging.getLogger(__name__)
 
 REFUSAL_MARKER = "REFUSED_OFF_TOPIC"
 
 # 只对传输层的临时性错误（超时、连接失败、供应商 5xx）重试一次；
 # 鉴权、请求格式、额度不足和输出解析失败都不重试。整个请求仍只占一个并发名额、只扣一次额度。
 RETRY_DELAY_SECONDS = 2.0
+from core import config
 def call_with_retry(func, sleep=time.sleep):
     try:
         return func()
@@ -816,3 +821,66 @@ def cluster_mistakes(reference: dict) -> dict:
     if not complete or not isinstance(content, str) or not content.strip():
         raise HTTPException(502, CLUSTERS_BAD_RESPONSE)
     return _parse_mistake_clusters(content.strip(), reference)
+
+
+def duck_ai_reply(item, turns, finish):
+    """一次请求内的橡皮鸭对话：只对传输层临时错误重试，输出不合格直接抛 502。
+
+    item 是 owned_mistake() 读出的当前用户记录；turns 已通过 check_turns 校验。
+    回复校验与清理全部复用 duck_prompt.validate_reply，不另起一套。
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    base_url = os.getenv("OPENAI_BASE_URL", "").strip() or None
+    notes = (item["thinking"] or "").strip()
+    if item["description"].strip():
+        notes = (notes + "\n当时的错因记录：" + item["description"].strip()).strip()
+    problem = {
+        "title": item["title"],
+        "zone": item["zone"],
+        "notes": notes,
+        "code": item["code"],
+    }
+    messages = build_messages(problem, turns, finish)
+    try:
+        # 禁止 SDK 自动重试；统一只重试传输层临时错误。
+        with OpenAI(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=0) as client:
+            note_usage(model, None)
+            response = call_with_retry(lambda: client.chat.completions.create(
+                model=model,
+                messages=messages,
+                # 带隐藏推理过程的模型会把推理 token 也算进去，多留余量。
+                max_tokens=4000,
+            ))
+            note_usage(model, response)
+            check_model_refusal(response)
+            try:
+                choice = response.choices[0]
+                content = choice.message.content
+                complete = choice.finish_reason == "stop"
+            except (AttributeError, IndexError, TypeError):
+                content, complete = None, False
+            text = content.strip() if complete and isinstance(content, str) else ""
+            ok, result = validate_reply(text, finish)
+            if ok:
+                return result
+            # 只是太长或带了两个问题时裁成一句合格的话，不让用户看到"没答好"。
+            salvaged = salvage_reply(text, finish)
+            logger.warning(
+                "duck reply rejected (%s, %d chars, model=%s, salvaged=%s)",
+                result, len(text), model, bool(salvaged),
+            )
+            if salvaged:
+                return salvaged
+    except APITimeoutError:
+        raise HTTPException(504, "小黄鸭回复超时，请稍后重试") from None
+    except RateLimitError:
+        raise HTTPException(503, "AI 服务暂时不可用，请检查额度或稍后重试") from None
+    except APIConnectionError:
+        raise HTTPException(502, "暂时无法连接 AI 服务") from None
+    except APIStatusError:
+        raise HTTPException(502, "AI 请求失败，请管理员检查模型和 API 配置") from None
+    raise HTTPException(502, config.DUCK_BAD_REPLY)
+

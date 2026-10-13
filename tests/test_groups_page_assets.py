@@ -7,6 +7,7 @@ import pytest
 
 from test_cursor_fx_assets import css_declarations, css_selectors, function_body
 from test_layout_assets import LayoutDocument
+from static_helpers import versioned_src, app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -37,7 +38,7 @@ def document():
 
 @pytest.fixture(scope="module")
 def group_source():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     # Keep all adjacent group helpers without requiring names for new helpers.
     first = re.search(r"(?m)^(?:async\s+)?function\s+\w*[Gg]roup\w*\s*\(", source)
     assert first, "Missing group page implementation"
@@ -73,7 +74,7 @@ def test_group_stylesheet_is_versioned_and_follows_shared_themes(document, group
     links = [node["attrs"].get("href", "") for node in document
              if node["tag"] == "link" and node["attrs"].get("rel") == "stylesheet"]
     group_links = [href for href in links if href.split("?")[0] == "/static/groups.css"]
-    assert group_links == ["/static/groups.css?v=2"]
+    assert group_links == [versioned_src("groups.css")]
     group_index = links.index(group_links[0])
     for shared in ("style.css", "themes.css"):
         assert next(i for i, href in enumerate(links)
@@ -361,7 +362,7 @@ def test_invite_copy_and_upgrade_seen_storage_have_safe_fallbacks(group_source):
 
 
 def test_group_loaders_keep_stale_response_and_error_guards():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     body = function_body(source, "requestGroups")
     for guard in ("groupsGeneration", "isCurrent", '"aria-busy"', "catch", "finally"):
         assert guard in body

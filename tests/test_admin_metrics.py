@@ -7,6 +7,7 @@ import main
 from admin_metrics import compute_metrics
 from db import connect
 from test_app import client, register
+from core import time
 
 # 2026-09-28 是周一。days=7 时：本周期 09-22 … 09-28，上一周期 09-15 … 09-21。
 NOW = "2026-09-28T12:00:00+00:00"
@@ -23,7 +24,7 @@ def at(day, hour=10):
 
 @pytest.fixture
 def admin(client, monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW)
+    monkeypatch.setattr(time, "utc_now", lambda: NOW)
     user = register(client)
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user["id"],))
@@ -220,7 +221,7 @@ def test_period_boundaries_for_new_users(client, admin):
 
 def test_period_boundaries_follow_the_clock_not_the_user_timezone(client, admin, monkeypatch):
     # UTC 00:30：用户在 +8 时区已是下午，但后台只按 UTC 日切分。
-    monkeypatch.setattr(main, "utc_now", lambda: "2026-09-29T00:30:00+00:00")
+    monkeypatch.setattr(time, "utc_now", lambda: "2026-09-29T00:30:00+00:00")
     with connect(write=True) as conn:
         add_user(conn, "late", "2026-09-28T23:59:00+00:00")
         add_user(conn, "old-edge", "2026-09-22T00:00:00+00:00")  # 此时已是上一周期最后一天

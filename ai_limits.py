@@ -5,7 +5,8 @@ import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import timezone
+from core import time as core_time
 
 from fastapi import HTTPException
 
@@ -122,8 +123,63 @@ def track_call(user_id, feature):
                     (
                         user_id, feature, state["model"], state["prompt_tokens"],
                         state["completion_tokens"], ok, error, duration_ms,
-                        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        core_time.datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     ),
                 )
         except Exception as exc:
             logger.warning("AI 调用记账失败：%s", type(exc).__name__)
+
+
+def ai_limit():
+    return max(1, int(os.getenv("AI_DAILY_LIMIT", "20")))
+
+
+def trial_ai_limit():
+    # 体验账号任何人都能开，额度要远低于正式账号，否则等于把
+    # AI_DAILY_LIMIT 变成"任何人每天可用次数 × 无限个体验账号"。
+    return max(0, int(os.getenv("TRIAL_AI_DAILY_LIMIT", "4")))
+
+
+def ai_quota(conn, user_id, day):
+    # 生成请求必须传入已取得写锁的连接，不能使用鉴权阶段读到的套餐快照。
+    # 单条查询也让 /api/me 的套餐信息和当天已用次数来自同一数据库快照。
+    row = conn.execute(
+        """
+        SELECT u.is_trial, u.plan_id, u.plan_expires_at,
+               p.name AS plan_name, p.ai_daily_limit AS plan_limit,
+               COALESCE(a.attempts, 0) AS ai_daily_used
+        FROM users u
+        LEFT JOIN plans p ON p.id = u.plan_id
+        LEFT JOIN ai_usage a ON a.user_id = u.id AND a.day = ?
+        WHERE u.id = ? AND u.deleted_at IS NULL
+        """,
+        (day, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(401, "登录已过期，请重新登录")
+
+    # 到期时间按 UTC 时刻判断；用户时区只用于 day，不参与套餐有效期判断。
+    now = core_time.datetime.now(timezone.utc)
+    plan_active = bool(
+        not row["is_trial"]
+        and row["plan_id"] is not None
+        and row["plan_expires_at"]
+        and core_time.datetime.fromisoformat(row["plan_expires_at"]) > now
+    )
+    if row["is_trial"]:
+        limit = trial_ai_limit()
+    elif plan_active:
+        limit = row["plan_limit"]
+    else:
+        limit = ai_limit()
+    return {
+        "is_trial": bool(row["is_trial"]),
+        "plan_id": row["plan_id"],
+        "plan_name": row["plan_name"],
+        "plan_expires_at": row["plan_expires_at"],
+        "plan_active": plan_active,
+        "ai_daily_limit": limit,
+        "ai_daily_used": row["ai_daily_used"],
+        "ai_daily_remaining": max(0, limit - row["ai_daily_used"]),
+    }
+

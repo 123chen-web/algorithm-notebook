@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from static_helpers import app_source
 
 import pytest
 
@@ -13,7 +14,7 @@ def test_import_ui_uses_text_tokens_and_valid_host_integration():
     script = (ROOT / "static/import-wizard.js").read_text(encoding="utf-8")
     css = (ROOT / "static/import-wizard.css").read_text(encoding="utf-8")
     html = (ROOT / "static/index.html").read_text(encoding="utf-8")
-    app = (ROOT / "static/app.js").read_text(encoding="utf-8")
+    app = app_source()  # C2 后 app.js 已拆分
     assert "innerHTML" not in script
     assert not re.search(r"\beval\s*\(|\bfetch\s*\(|\.style\b", script)
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b|!important", css)

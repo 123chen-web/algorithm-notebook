@@ -10,6 +10,9 @@ import main
 from db import connect
 from scheduler import today_in_timezone
 from test_app import client, register
+from core import config
+from core import time
+import ai_limits
 
 
 ENDPOINT = "/api/export"
@@ -314,7 +317,7 @@ def test_export_is_read_only_without_ai_quota_or_subscription(
     def unexpected_quota(*args, **kwargs):
         pytest.fail("导出不检查 AI 配额或套餐")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected_quota)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected_quota)
     with connect() as conn:
         before = list(conn.iterdump())
     for _ in range(2):
@@ -339,14 +342,14 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
             ("小明", timezone_name, user_id),
         )
     now = datetime(2026, 9, 19, 16, 30, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "utc_now", lambda: now.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: now.isoformat())
     date_calls = []
 
     def frozen_today(user):
         date_calls.append((user["id"], user["timezone"]))
         return today_in_timezone(user["timezone"], now)
 
-    monkeypatch.setattr(main, "today_for", frozen_today)
+    monkeypatch.setattr(time, "today_for", frozen_today)
     # 普通 <a> 导航只有会话 cookie，不会附加 JS 使用的 CSRF 请求头。
     del client.headers["X-CSRF-Protection"]
     response = export(client)
@@ -368,7 +371,7 @@ def test_download_uses_cookie_utf8_filename_local_date_and_utc_export_time(
 
 
 def test_export_is_rate_limited_per_user(client, monkeypatch):
-    monkeypatch.setattr(main, "EXPORT_LIMIT", 2)
+    monkeypatch.setattr(config, "EXPORT_LIMIT", 2)
     register(client)
     assert client.get(ENDPOINT).status_code == 200
     assert client.get(ENDPOINT).status_code == 200
@@ -387,9 +390,9 @@ def test_export_over_record_cap_is_rejected_not_truncated(client, monkeypatch):
     register(client)
     new_problem(client)
     new_problem(client)
-    monkeypatch.setattr(main, "EXPORT_MAX_RECORDS", 1)
+    monkeypatch.setattr(config, "EXPORT_MAX_RECORDS", 1)
     response = client.get(ENDPOINT)
     assert response.status_code == 413
     assert "记录超过 1 条" in response.json()["detail"]
-    monkeypatch.setattr(main, "EXPORT_MAX_RECORDS", 2)
+    monkeypatch.setattr(config, "EXPORT_MAX_RECORDS", 2)
     assert len(client.get(ENDPOINT).json()["problems"]) == 2

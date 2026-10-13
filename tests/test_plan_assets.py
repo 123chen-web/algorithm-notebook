@@ -1,12 +1,13 @@
 """套餐页重做的静态契约：资源版本、关键 id、CSP 友好、令牌用色、迟到响应守卫仍在。"""
 from pathlib import Path
 import re
+from static_helpers import app_source
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 CSS = (STATIC / "plan.css").read_text(encoding="utf-8")
 JS = (STATIC / "plan.js").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 PAGE = HTML[HTML.index('<section id="plan-page"'):HTML.index("</main>")]
 
 

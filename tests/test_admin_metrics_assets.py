@@ -1,12 +1,13 @@
 """运营概览的静态契约：关键 id、版本号、CSP、令牌与动效约束。"""
 import re
 from pathlib import Path
+from static_helpers import app_source
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 CSS = (STATIC / "admin-metrics.css").read_text(encoding="utf-8")
 JS = (STATIC / "admin-metrics.js").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 
 IDS = (
     "admin-metrics", "admin-metrics-title", "admin-metrics-status", "admin-metrics-retry",

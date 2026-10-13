@@ -426,11 +426,17 @@ function appEnv() {
       get(name) { return this.form.querySelector(`[name="${name}"]`)?.value || null; }
     },
   });
-  const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
-  const functions = source.slice(source.indexOf("async function showForumList()"), source.indexOf("function resetAdminDashboard()"));
-  const bindings = source.slice(source.indexOf('document.querySelectorAll("#forum-back, #forum-back-bottom")'), source.indexOf('$("#timezone").value ='));
+  const source = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
+  const functions = source.slice(source.indexOf("async function showForumList()"), source.indexOf("// static/app/groups.js"));
+  // bindings：事件绑定已包含在 functions 切片内（showForumList 起包含全部顶层绑定），
+  // 此处留空以避免重复注册导致处理器执行两次。
+  const bindings = "";
   assert.ok(functions.includes("renderForumComment"));
-  assert.ok(bindings.includes("submitForumComment"));
+  assert.ok(functions.includes("submitForumComment")); // bindings 已并入 functions 切片，避免事件重复注册
   for (const name of ["element", "field", "textarea", "avatarReportForm"]) vm.runInContext(topFunction(source, name), env.context);
   vm.runInContext(functions + "\n" + bindings, env.context, { filename: "app.js:forum" });
   $("#forum-page").hidden = false;
@@ -702,7 +708,11 @@ test("app keyboard: J/K focus visible articles, R replies; textarea/modifiers/di
 test("app blocked controls: global busy reset cannot enable zero-count filters or pending requests", async () => {
   const env = appEnv();
   for (const id of ["app", "auth", "notice"]) { const node = env.document.createElement("div"); node.id = id; env.document.body.append(node); }
-  const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+  const source = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
   vm.runInContext(topFunction(source, "setBusy"), env.context);
   // Helpful is available only on someone else's comment; keep both filters empty.
   const value = { ...post(), user_id: 1, accepted_comment_id: null,

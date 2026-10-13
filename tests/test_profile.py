@@ -6,6 +6,8 @@ from fastapi import HTTPException
 import db
 import main
 from test_app import client, new_problem, register
+import accounts
+import images
 
 
 def test_profile_requires_login(client):
@@ -31,7 +33,7 @@ def test_bio_rejects_surrogate_strings_without_echo_or_write(client, payload):
     response = client.put('/api/me/bio', content=json.dumps(payload), headers={'Content-Type': 'application/json'})
     assert response.status_code == 422
     assert response.json() == {'detail': '简介内容无效，请填写最多 200 字的文字'}
-    with main.connect() as conn:
+    with db.connect() as conn:
         assert conn.execute('SELECT bio FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] == '旧简介'
 
 
@@ -39,10 +41,10 @@ def test_profile_safe_aggregates_from_other_account(client, monkeypatch):
     owner = register(client)
     first, _ = new_problem(client)
     client.put('/api/me/bio', json={'bio': '<script>hello</script>'})
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute("UPDATE users SET avatar_version = 4, public_rank_opt_out = 1 WHERE id = ?", (owner['id'],))
         conn.execute("INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) VALUES (?, 4, '2026-09-19T04:00:00+00:00', '2026-09-20')", (first,))
-    monkeypatch.setattr(main, 'sec_has_avatar', lambda user_id: False)
+    monkeypatch.setattr(images, "sec_has_avatar", lambda user_id: False)
     client.post('/api/auth/logout')
     register(client, 'bob')
     response = client.get(f"/api/users/{owner['id']}/public")
@@ -65,7 +67,7 @@ def test_inactive_profile_hidden(client, field, value):
     owner = register(client)
     client.post('/api/auth/logout')
     register(client, 'bob')
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute(f'UPDATE users SET {field} = ? WHERE id = ?', (value, owner['id']))
     assert client.get(f"/api/users/{owner['id']}/public").status_code == 404
 
@@ -75,7 +77,7 @@ def test_delete_account_clears_bio(client):
     client.put('/api/me/bio', json={'bio': 'private after deletion'})
     response = client.post('/api/me/delete-account', json={'password': 'a-test-password-123'})
     assert response.status_code == 200
-    with main.connect() as conn:
+    with db.connect() as conn:
         assert conn.execute('SELECT bio FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] == ''
 
 
@@ -83,7 +85,7 @@ def test_bio_write_rechecks_ban_inside_lock(client, monkeypatch):
     register(client)
     def ban(conn, user_id):
         raise HTTPException(401, '账号已被封禁，无法继续使用')
-    monkeypatch.setattr(main, 'rvb_account', ban)
+    monkeypatch.setattr(accounts, "rvb_account", ban)
     assert client.put('/api/me/bio', json={'bio': 'late'}).status_code == 401
 
 

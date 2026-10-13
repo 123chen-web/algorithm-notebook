@@ -28,12 +28,13 @@ sys.path.insert(0, ".")
 import sample_world as sw
 sw.configure_environment()
 import main
+from core import ratelimit
 from fastapi.testclient import TestClient
 
 password = sw.read_password()
 
 def login(name):
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     client = TestClient(main.app, headers={"X-CSRF-Protection": "1"})
     assert client.post("/api/auth/login", json={"username": name, "password": password}).status_code == 200, name
     return client

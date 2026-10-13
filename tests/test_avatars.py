@@ -7,6 +7,8 @@ from PIL import Image
 import main
 from db import connect
 from test_app import client, register
+from core import config
+import images
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +49,7 @@ def test_upload_and_serve_round_trip(client):
     image = Image.open(io.BytesIO(fetched.content))
     image.load()
     assert image.format == "JPEG"
-    assert image.size == (main.AVATAR_SIZE, main.AVATAR_SIZE)
+    assert image.size == (config.AVATAR_SIZE, config.AVATAR_SIZE)
 
 
 def test_non_square_image_is_center_cropped_not_distorted(client):
@@ -57,7 +59,7 @@ def test_non_square_image_is_center_cropped_not_distorted(client):
     me = client.get("/api/me").json()
     fetched = client.get(f"/api/users/{me['id']}/avatar")
     image = Image.open(io.BytesIO(fetched.content))
-    assert image.size == (main.AVATAR_SIZE, main.AVATAR_SIZE)
+    assert image.size == (config.AVATAR_SIZE, config.AVATAR_SIZE)
 
 
 def test_transparent_png_is_composited_onto_white_not_left_black(client):
@@ -71,7 +73,7 @@ def test_transparent_png_is_composited_onto_white_not_left_black(client):
     fetched = client.get(f"/api/users/{me['id']}/avatar")
     image = Image.open(io.BytesIO(fetched.content)).convert("RGB")
     # 全透明区域合成到白底后应该接近纯白，而不是黑色或者原始的 (10,20,30)。
-    pixel = image.getpixel((main.AVATAR_SIZE // 2, main.AVATAR_SIZE // 2))
+    pixel = image.getpixel((config.AVATAR_SIZE // 2, config.AVATAR_SIZE // 2))
     assert all(channel > 240 for channel in pixel)
 
 
@@ -121,11 +123,11 @@ def test_rejects_damaged_png_as_invalid_image(client, damage, endpoint):
     me = client.get("/api/me").json()
     assert me["avatar_version"] == 0
     assert me["ai_daily_used"] == 0
-    assert not main.avatar_path(me["id"]).exists()
+    assert not images.avatar_path(me["id"]).exists()
 
 
 def test_rejects_oversized_upload(client, monkeypatch):
-    monkeypatch.setattr(main, "AVATAR_MAX_BYTES", 100)
+    monkeypatch.setattr(config, "AVATAR_MAX_BYTES", 100)
     register(client)
     response = upload_avatar(client, make_image_bytes(size=(400, 400)))
     assert response.status_code == 413
@@ -217,7 +219,7 @@ def test_reupload_reuses_same_user_scoped_path_no_leftover_files(client, tmp_pat
     register(client)
     upload_avatar(client, make_image_bytes(color=(10, 10, 10)))
     upload_avatar(client, make_image_bytes(color=(200, 200, 200)))
-    avatar_dir = main.avatar_dir()
+    avatar_dir = images.avatar_dir()
     files = [p for p in avatar_dir.iterdir() if p.is_file()]
     assert len(files) == 1
 
@@ -316,7 +318,7 @@ def test_duplicate_pending_avatar_report_rejected(client):
 
 
 def test_avatar_report_rate_limited(client, monkeypatch):
-    monkeypatch.setattr(main, "REPORT_LIMIT", 1)
+    monkeypatch.setattr(config, "REPORT_LIMIT", 1)
     register(client, "alice")
     alice_id = client.get("/api/me").json()["id"]
     client.post("/api/auth/logout")
@@ -398,7 +400,7 @@ def test_admin_clear_avatar_for_unknown_user_leaves_files_alone(client, monkeypa
 
     register(client, "bob")
     become_admin(monkeypatch, "bob")
-    stray = main.avatar_path(987654)
+    stray = images.avatar_path(987654)
     stray.parent.mkdir(parents=True, exist_ok=True)
     stray.write_bytes(b"stray")
     assert client.delete("/api/admin/users/987654/avatar").status_code == 404

@@ -11,6 +11,10 @@ from db import connect
 from test_app import register
 from test_forum import PASSWORD, create_post
 from test_forum_threads import client  # noqa: F401  (pytest fixture)
+from core import config
+from core import ratelimit
+import forum_lib
+import db
 
 
 NOW = datetime.now(timezone.utc)
@@ -52,7 +56,7 @@ class World:
     def add_user(self, name):
         previous = self.client.cookies.get("session")
         self.client.cookies.clear()
-        main.reset_rate_limits()  # 注册按 IP 限流，造多个用户时逐个清掉
+        ratelimit.reset_rate_limits()  # 注册按 IP 限流，造多个用户时逐个清掉
         info = register(self.client, name)
         self.users[name] = {"id": info["id"], "session": self.client.cookies.get("session")}
         self.client.cookies.clear()
@@ -411,23 +415,23 @@ CASES = [
 
 @pytest.mark.parametrize("body,excerpt", CASES)
 def test_excerpt_cases(body, excerpt):
-    assert main.post_excerpt(body) == excerpt
+    assert forum_lib.post_excerpt(body) == excerpt
 
 
 def test_excerpt_truncates_at_140_with_ellipsis():
     exact = "字" * 140
-    assert main.post_excerpt(exact) == exact
-    cut = main.post_excerpt("字" * 141)
+    assert forum_lib.post_excerpt(exact) == exact
+    cut = forum_lib.post_excerpt("字" * 141)
     assert cut == "字" * 140 + "…"
-    assert main.post_excerpt("字" * 5000).endswith("…")
-    assert len(main.post_excerpt("字" * 5000)) == 141
+    assert forum_lib.post_excerpt("字" * 5000).endswith("…")
+    assert len(forum_lib.post_excerpt("字" * 5000)) == 141
 
 
 @pytest.mark.parametrize("tail", [EMOJI_FAMILY, "🇨🇳", "👍🏽", "1\ufe0f\u20e3"])
 def test_excerpt_never_splits_an_emoji(tail):
     for pad in range(0, 4):
         text = "字" * (139 - pad) + tail + "字" * 10
-        excerpt = main.post_excerpt(text)
+        excerpt = forum_lib.post_excerpt(text)
         assert excerpt.endswith("…")
         body = excerpt[:-1]
         assert len(body) <= 140
@@ -679,11 +683,11 @@ def test_create_post_with_zone_variants(world):
 
 
 def test_every_known_zone_can_be_used(world):
-    for zone in main.PROBLEM_ZONES:
+    for zone in config.PROBLEM_ZONES:
         assert world.client.post(
             "/api/posts", json={"title": zone, "body": "x", "zone": zone}
         ).json()["zone"] == zone
-    assert set(world.list(limit=50)["zone_counts"]) == set(main.PROBLEM_ZONES)
+    assert set(world.list(limit=50)["zone_counts"]) == set(config.PROBLEM_ZONES)
 
 
 def test_edit_post_zone_omitted_keeps_null_clears_and_invalid_rejected(world):
@@ -741,7 +745,7 @@ def count_statements(world, monkeypatch, **params):
             yield conn
 
     with monkeypatch.context() as patch:
-        patch.setattr(main, "connect", traced_connect)
+        patch.setattr(db, "connect", traced_connect)
         response = world.client.get("/api/posts", params=params)
     assert response.status_code == 200, response.text
     return len(statements), response.json()
@@ -762,7 +766,7 @@ def test_query_count_does_not_grow_with_the_number_of_posts(world, monkeypatch):
             post_id = conn.execute(
                 "INSERT INTO posts(user_id, title, body, zone, created_at) VALUES (?, ?, ?, ?, ?)",
                 (ids[names[index % 4]], f"大量 {index}", "正文\n```\ncode\n```",
-                 main.PROBLEM_ZONES[index % 8], ago(minutes=index)),
+                 config.PROBLEM_ZONES[index % 8], ago(minutes=index)),
             ).lastrowid
             conn.executemany(
                 "INSERT INTO post_comments(post_id, user_id, body, created_at) VALUES (?, ?, ?, ?)",

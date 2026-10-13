@@ -5,23 +5,26 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import main
 import routers.import_problem as ip
+from core import time
+from core import security
+import db
 
 
 @pytest.fixture
 def app_client(tmp_path, monkeypatch):
     # Only local parsing; no AI configuration or external requests.
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
-    main.init_db()
+    monkeypatch.setattr(time, "today_for", lambda user: date(2026, 9, 19))
+    db.init_db()
 
     app = FastAPI()
     app.include_router(ip.router)
-    app.dependency_overrides[main.current_user] = lambda: {
+    app.dependency_overrides[security.current_user] = lambda: {
         "id": 1,
         "username": "alice",
         "timezone": "Asia/Shanghai",
     }
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         conn.execute(
             "INSERT INTO users (username, password_hash, timezone, created_at)"
             " VALUES ('alice', 'x', 'Asia/Shanghai', '2026-09-19T00:00:00+00:00')"

@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from test_contrast_tokens import THEMES, contrast_ratio, css_declarations
+from static_helpers import app_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +21,7 @@ TEXT_PAIRS = (
 
 def test_pending_reason_resources_and_host_hooks_are_wired():
     page = (STATIC / "index.html").read_text(encoding="utf-8")
-    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    app = app_source()
     assert '/static/pending-reason.css?v=1' in page
     assert '/static/pending-reason.js?v=2' in page
     assert page.index('/static/pending-reason.js?v=2') < page.index('/static/app.js?v=')

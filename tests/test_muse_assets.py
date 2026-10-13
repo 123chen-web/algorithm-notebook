@@ -1,5 +1,6 @@
 """Integrated Muse contracts: host API, inert DOM, theme colors and routing."""
 from pathlib import Path
+from static_helpers import app_source
 import re
 from html.parser import HTMLParser
 
@@ -51,7 +52,7 @@ def test_all_new_production_routes_are_mounted_without_test_side_effects():
 
 
 def test_focus_card_is_revealed_and_prefill_status_does_not_conflict_with_file_import():
-    app = (STATIC / 'app.js').read_text(encoding='utf-8')
+    app = app_source()  # C2 后 app.js 已拆分
     page = (STATIC / 'index.html').read_text(encoding='utf-8')
     assert '$("#ov-focus-card").hidden = false;' in app
     assert 'id="problem-import-status"' in page

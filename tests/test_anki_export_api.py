@@ -14,6 +14,7 @@ import main
 from anki_export import build_anki_text
 from db import connect
 from test_app import client, register
+from core import time
 
 ENDPOINT = "/api/export/anki"
 ANKI_HEADER = "#separator:tab\n#html:true\n#guid column:1\n#tags column:4\n"
@@ -365,7 +366,7 @@ def test_export_over_5000_returns_413_and_zone_export_escapes(client):
 def test_response_headers_use_text_plain_and_utc_filename(client, monkeypatch):
     register(client)
     frozen = datetime(2026, 9, 19, 23, 30, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "utc_now", lambda: frozen.isoformat(timespec="seconds"))
+    monkeypatch.setattr(time, "utc_now", lambda: frozen.isoformat(timespec="seconds"))
     response = anki_get(client)
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/plain; charset=utf-8"

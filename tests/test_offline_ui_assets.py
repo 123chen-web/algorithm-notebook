@@ -1,12 +1,13 @@
 """离线复习界面接线的静态契约：index.html 标签、脚本顺序、版本号、CSP 安全写法、app.js 最小接线。"""
 import re
 from pathlib import Path
+from static_helpers import app_source, versioned_src
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 REVIEW_UI = (STATIC / "offline-review.js").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 SYNC = (STATIC / "offline-sync.js").read_text(encoding="utf-8")
 REGISTER = (STATIC / "pwa-register.js").read_text(encoding="utf-8")
 
@@ -28,28 +29,31 @@ def test_index_declares_manifest_and_theme_color():
 
 
 def test_index_loads_pwa_css_between_plan_and_print():
-    plan_css = INDEX.index('href="/static/plan.css?v=1"')
-    pwa_css = INDEX.index('href="/static/pwa.css?v=1"')
-    print_css = INDEX.index('href="/static/print.css?v=2"')
+    plan_css = INDEX.index('href="' + versioned_src("plan.css") + '"')
+    pwa_css = INDEX.index('href="' + versioned_src("pwa.css") + '"')
+    print_css = INDEX.index('href="' + versioned_src("print.css") + '"')
     assert plan_css < pwa_css < print_css
 
 
 def test_index_loads_offline_scripts_in_fixed_order_before_app_js():
-    queue_js = INDEX.index('src="/static/offline-queue.js?v=1"')
-    register_js = INDEX.index('src="/static/pwa-register.js?v=1"')
-    sync_js = INDEX.index('src="/static/offline-sync.js?v=7"')
-    review_ui_js = INDEX.index('src="/static/offline-review.js?v=4"')
-    plan_js = INDEX.index('src="/static/plan.js?v=4"')
-    app_js = INDEX.index('src="/static/app.js?v=103"')
+    def src(name):
+        return 'src="' + versioned_src(name) + '"'
+    queue_js = INDEX.index(src("offline-queue.js"))
+    register_js = INDEX.index(src("pwa-register.js"))
+    sync_js = INDEX.index(src("offline-sync.js"))
+    review_ui_js = INDEX.index(src("offline-review.js"))
+    plan_js = INDEX.index(src("plan.js"))
+    app_js = INDEX.index(src("app/core-api.js"))
     # offline-queue 必须在 offline-sync 前；UI 编排紧随其后；全部在 app.js 前。
     assert plan_js < queue_js < register_js < sync_js < review_ui_js < app_js
-    assert INDEX.count('src="/static/offline-queue.js?v=1"') == 1
-    assert INDEX.count('src="/static/offline-sync.js?v=7"') == 1
+    assert INDEX.count(src("offline-queue.js")) == 1
+    assert INDEX.count(src("offline-sync.js")) == 1
 
 
 def test_app_js_bumped_to_78():
-    assert 'src="/static/app.js?v=103"' in INDEX
-    assert 'src="/static/app.js?v=103"' not in INDEX
+    # app.js 已拆分：app.js 是启动文件（v102），领域文件在 static/app/ 下（v1）
+    assert 'src="' + versioned_src("app.js") + '"' in INDEX
+    assert 'src="' + versioned_src("app/core-api.js") + '"' in INDEX
 
 def test_app_js_has_the_three_pwa_wiring_points():
     # 启动配置与注册。

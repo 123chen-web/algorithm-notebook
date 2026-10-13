@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 
 import pytest
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -40,15 +41,31 @@ def cursor_source():
 def function_body(source, function_name):
     """Extract a named function using its declaration's indentation boundary."""
     declaration = re.search(
-        rf"(?m)^(?P<indent>[ \t]*)(?:async\s+)?function\s+{re.escape(function_name)}\s*\([^)]*\)\s*\{{",
+        rf"(?m)^(?P<indent>[ \t]*)(?:async\s+)?function\s+{re.escape(function_name)}\s*\(",
         source,
     )
     assert declaration, f"Missing {function_name} function"
+    # 参数表可能含默认值的括号（如 () =>），手动配平找右括号。
+    depth, pos = 0, declaration.end() - 1
+    while pos < len(source):
+        ch = source[pos]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        pos += 1
+    assert depth == 0, f"Unbalanced parens in {function_name} declaration"
+    rest = source[pos + 1:]
+    brace = re.search(r"\{", rest)
+    assert brace, f"Missing body of {function_name} function"
+    body_start = pos + 1 + brace.end()
     end = re.search(
-        rf"(?m)^{re.escape(declaration['indent'])}\}}", source[declaration.end():]
+        rf"(?m)^{re.escape(declaration['indent'])}\}}", source[body_start:]
     )
     assert end, f"Missing end of {function_name} function"
-    return source[declaration.end():declaration.end() + end.start()]
+    return source[body_start:body_start + end.start()]
 
 
 def css_declarations(source):
@@ -157,7 +174,7 @@ def test_cursor_effect_contains_accessibility_and_lifecycle_guards(cursor_source
 
 @pytest.mark.parametrize("function_name", ["showView", "signedOut"])
 def test_view_and_signout_do_not_change_cursor_mode(function_name):
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     assert not re.search(
         r"\bsetMode\s*\(\s*([\"'])ghost\1\s*\)", source, flags=re.IGNORECASE
     )

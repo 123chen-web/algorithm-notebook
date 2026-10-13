@@ -18,6 +18,12 @@ from db import connect
 from test_ai import FakeCompletions, FakeResponse, fake_openai_factory
 from test_app import register
 from test_forum import create_post
+from core import ratelimit
+from core import time
+import accounts
+import db
+import forum_lib
+from routers import forum
 
 
 DAY = "2026-09-19"
@@ -47,8 +53,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "10")
     monkeypatch.delenv("ADMIN_USERNAME", raising=False)
-    monkeypatch.setattr(main, "today_for", lambda user: date.fromisoformat(DAY))
-    main.reset_rate_limits()
+    monkeypatch.setattr(time, "today_for", lambda user: date.fromisoformat(DAY))
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -299,15 +305,15 @@ def test_comment_update_changes_even_in_same_clock_tick(monkeypatch, raw_thread,
         def now(cls, tz=None):
             return fixed
 
-    monkeypatch.setattr(main, "datetime", FixedDatetime)
+    monkeypatch.setattr(time, "datetime", FixedDatetime)
     post, comments = raw_thread
     comments[0]["updated_at"] = previous
     signature = thread_summary.thread_signature(post, comments)
-    updated = main.next_comment_update(previous)
+    updated = forum_lib.next_comment_update(previous)
     assert updated != previous
     comments[0]["updated_at"] = updated
     assert thread_summary.thread_signature(post, comments) != signature
-    repeated = main.next_comment_update(updated)
+    repeated = forum_lib.next_comment_update(updated)
     assert datetime.fromisoformat(repeated) > datetime.fromisoformat(updated)
 
 
@@ -527,7 +533,7 @@ def test_read_marks_changed_signature_stale_without_ai_or_quota(client, thread, 
     else:
         # 模拟遗漏清缓存的旧路径；GET 仍须按签名防守性地识别删除。
         with connect(write=True) as conn:
-            conn.execute("UPDATE post_comments SET deleted_at = ? WHERE id = ?", (main.utc_now(), thread["first"]))
+            conn.execute("UPDATE post_comments SET deleted_at = ? WHERE id = ?", (time.utc_now(), thread["first"]))
     response = client.get(endpoint)
     assert response.status_code == 200 and response.json()["summary"]["stale"] is True
     assert provider.calls == 1 and attempts(thread["op_id"]) == 1
@@ -615,14 +621,14 @@ def test_summary_rate_limit_includes_fresh_cache_and_exact_window(client, thread
     assert response.status_code == 429
     assert response.json() == {"detail": "AI 要点请求太频繁，请稍后再试"}
     assert provider.calls == 1 and attempts(thread["op_id"]) == 1
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     calls = []
 
     def rate_limit(key, count, seconds):
         calls.append((key, count, seconds))
         return False
 
-    monkeypatch.setattr(main, "rate_limited", rate_limit)
+    monkeypatch.setattr(ratelimit, "rate_limited", rate_limit)
     assert client.post(endpoint).status_code == 200
     assert calls == [(f"summary:{thread['op_id']}", 10, 3600)]
 
@@ -709,12 +715,12 @@ def test_deleted_or_anonymized_material_removes_cached_text(client, thread, monk
 def test_deletion_during_generation_cannot_recreate_private_cache(client, thread, monkeypatch, operation, status):
     def remove_material():
         if operation == "comment":
-            main.delete_comment(thread["first"], user={"id": thread["member_id"], "is_trial": False})
+            forum.delete_comment(thread["first"], user={"id": thread["member_id"], "is_trial": False})
         elif operation == "post":
-            main.delete_post(thread["id"], user={"id": thread["op_id"], "is_trial": False})
+            forum.delete_post(thread["id"], user={"id": thread["op_id"], "is_trial": False})
         else:
             with connect(write=True) as conn:
-                main.delete_account_data(conn, thread["member_id"], main.utc_now())
+                accounts.delete_account_data(conn, thread["member_id"], time.utc_now())
 
     provider, _ = install_provider(monkeypatch, callback=remove_material)
     response = client.post(f"/api/posts/{thread['id']}/summary")
@@ -741,7 +747,7 @@ def test_generated_count_is_actual_sixty_comment_sample(client, thread, monkeypa
         for index in range(63):
             conn.execute(
                 "INSERT INTO post_comments(post_id, user_id, body, created_at) VALUES (?, ?, ?, ?)",
-                (thread["id"], thread["member_id"], f"检查边界用例 {index}", main.utc_now()),
+                (thread["id"], thread["member_id"], f"检查边界用例 {index}", time.utc_now()),
             )
     provider, _ = install_provider(monkeypatch)
     response = client.post(f"/api/posts/{thread['id']}/summary")
@@ -777,16 +783,16 @@ def test_fresh_cache_branch_never_enters_slot_provider_or_quota_without_database
     def forbidden(*args, **kwargs):
         pytest.fail("新鲜缓存不可进入并发槽、额度操作或 AI 调用")
 
-    monkeypatch.setattr(main, "connect", fake_connect)
-    monkeypatch.setattr(main, "recheck_account", lambda conn, user_id: {"id": user_id})
-    monkeypatch.setattr(main, "rate_limited", lambda key, count, seconds: False)
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(accounts, "recheck_account", lambda conn, user_id: {"id": user_id})
+    monkeypatch.setattr(ratelimit, "rate_limited", lambda key, count, seconds: False)
     monkeypatch.setattr(thread_summary, "load_thread", lambda conn, post_id: (post, comments))
     monkeypatch.setattr(thread_summary, "thread_reference", forbidden)
     monkeypatch.setattr(thread_summary, "summarize_thread", forbidden)
-    monkeypatch.setattr(main, "ai_quota", forbidden)
-    monkeypatch.setattr(main, "ai_slot", forbidden)
-    monkeypatch.setattr(main, "track_call", forbidden)
-    result = main.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
+    monkeypatch.setattr(ai_limits, "ai_quota", forbidden)
+    monkeypatch.setattr(ai_limits, "ai_slot", forbidden)
+    monkeypatch.setattr(ai_limits, "track_call", forbidden)
+    result = forum.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
     assert result == {"summary": thread_summary.serialize_summary(cached, signature), "cached": True}
 
 
@@ -825,20 +831,20 @@ def test_failed_provider_branch_restores_attempt_without_database(monkeypatch, r
         assert state["active_write"] is False, "调用 AI 时不能持有写事务"
         raise HTTPException(status, "模拟提供方失败或拒答")
 
-    monkeypatch.setattr(main, "connect", fake_connect)
-    monkeypatch.setattr(main, "recheck_account", lambda conn, user_id: {"id": user_id})
-    monkeypatch.setattr(main, "rate_limited", lambda key, count, seconds: False)
-    monkeypatch.setattr(main, "today_for", lambda user: date.fromisoformat(DAY))
-    monkeypatch.setattr(main, "thread_privacy_state", lambda conn, post, comments: ())
-    monkeypatch.setattr(main, "ai_quota", lambda conn, user_id, day: {
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(accounts, "recheck_account", lambda conn, user_id: {"id": user_id})
+    monkeypatch.setattr(ratelimit, "rate_limited", lambda key, count, seconds: False)
+    monkeypatch.setattr(time, "today_for", lambda user: date.fromisoformat(DAY))
+    monkeypatch.setattr(forum_lib, "thread_privacy_state", lambda conn, post, comments: ())
+    monkeypatch.setattr(ai_limits, "ai_quota", lambda conn, user_id, day: {
         "ai_daily_limit": 10, "ai_daily_used": state["attempts"],
     })
-    monkeypatch.setattr(main, "ai_slot", nullcontext)
-    monkeypatch.setattr(main, "track_call", lambda user_id, feature: nullcontext())
+    monkeypatch.setattr(ai_limits, "ai_slot", nullcontext)
+    monkeypatch.setattr(ai_limits, "track_call", lambda user_id, feature: nullcontext())
     monkeypatch.setattr(thread_summary, "load_thread", lambda conn, post_id: (post, comments))
     monkeypatch.setattr(thread_summary, "summarize_thread", fail)
     with pytest.raises(HTTPException) as exc:
-        main.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
+        forum.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
     assert (exc.value.status_code, exc.value.detail) == (status, "模拟提供方失败或拒答")
     assert state["attempts"] == (3 if refund else 4)
     assert state["refunds"] == ([(post["user_id"], DAY)] if refund else [])
@@ -869,19 +875,19 @@ def test_busy_slot_branch_never_deducts_attempt_without_database(monkeypatch, ra
     def forbidden(*args, **kwargs):
         pytest.fail("并发槽满不能进入 AI 调用或记账")
 
-    monkeypatch.setattr(main, "connect", fake_connect)
-    monkeypatch.setattr(main, "recheck_account", lambda conn, user_id: {"id": user_id})
-    monkeypatch.setattr(main, "rate_limited", lambda key, count, seconds: False)
-    monkeypatch.setattr(main, "today_for", lambda user: date.fromisoformat(DAY))
-    monkeypatch.setattr(main, "thread_privacy_state", lambda conn, post, comments: ())
-    monkeypatch.setattr(main, "ai_quota", lambda conn, user_id, day: {
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(accounts, "recheck_account", lambda conn, user_id: {"id": user_id})
+    monkeypatch.setattr(ratelimit, "rate_limited", lambda key, count, seconds: False)
+    monkeypatch.setattr(time, "today_for", lambda user: date.fromisoformat(DAY))
+    monkeypatch.setattr(forum_lib, "thread_privacy_state", lambda conn, post, comments: ())
+    monkeypatch.setattr(ai_limits, "ai_quota", lambda conn, user_id, day: {
         "ai_daily_limit": 10, "ai_daily_used": 0,
     })
-    monkeypatch.setattr(main, "ai_slot", busy_slot)
-    monkeypatch.setattr(main, "track_call", forbidden)
+    monkeypatch.setattr(ai_limits, "ai_slot", busy_slot)
+    monkeypatch.setattr(ai_limits, "track_call", forbidden)
     monkeypatch.setattr(thread_summary, "load_thread", lambda conn, post_id: (post, comments))
     monkeypatch.setattr(thread_summary, "summarize_thread", forbidden)
     with pytest.raises(HTTPException) as exc:
-        main.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
+        forum.create_thread_summary(post["id"], user={"id": post["user_id"], "is_trial": False})
     assert (exc.value.status_code, exc.value.detail) == (429, BUSY)
     assert queries == ["SELECT * FROM post_summaries WHERE post_id = ?"]

@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 
 from test_contrast_tokens import css_declarations, css_selectors
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
 CSS = (STATIC / "overview.css").read_text(encoding="utf-8")
 JS = (STATIC / "overview.js").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 STYLE = (STATIC / "style.css").read_text(encoding="utf-8") + (STATIC / "themes.css").read_text(encoding="utf-8")
 TREND_CSS = CSS[CSS.index("/* ---------- 趋势区"):]
 HEX_COLOR = re.compile(r"#[0-9a-fA-F]{3,8}(?![\w-])")

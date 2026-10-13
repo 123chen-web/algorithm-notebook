@@ -11,6 +11,7 @@ import manual_claims
 from db import connect
 from test_manual_claims import as_user, claim_row, confirmation, make_claim, submit
 from test_redeem_codes import CSRF, NOW, client, subscription, use_user  # noqa: F401
+import accounts
 
 
 def confirm(client, claim_id, **changes):
@@ -81,7 +82,7 @@ def test_receipt_audit_prevents_reuse_after_original_account_deletion(client):
     first = make_claim(client)
     assert confirm(client, first, receipt_reference="alipay:after-delete").status_code == 200
     with connect(write=True) as conn:
-        main.delete_account_data(conn, 2, NOW)
+        accounts.delete_account_data(conn, 2, NOW)
         assert conn.execute("SELECT 1 FROM manual_payment_claims WHERE id = ?", (first,)).fetchone() is None
         assert conn.execute("SELECT code_hash FROM redeem_codes").fetchone()[0] == manual_claims.receipt_hash("alipay:after-delete")
     second = make_claim(client, 3)

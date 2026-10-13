@@ -9,6 +9,8 @@ import main
 from db import connect, init_db, schema_version
 from test_app import register, new_problem
 from test_leaderboard import insert_review
+from core import ratelimit
+import groups_lib
 
 
 @pytest.fixture
@@ -18,7 +20,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
 
     def unexpected_ai(*args, **kwargs):
         pytest.fail("Group extras tests must not call AI")
@@ -77,7 +79,7 @@ def test_weekly_goal_set_and_detail(client):
     assert goal["target"] == 50
     assert goal["total"] == 0
     assert goal["progress"] == 0
-    assert goal["week_start"] == main.group_week_start()
+    assert goal["week_start"] == groups_lib.group_week_start()
 
     detail = client.get(f"/api/groups/{group['id']}").json()
     assert detail["weekly_goal"]["target"] == 50

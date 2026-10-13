@@ -4,7 +4,19 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, ratelimit, security, time
+from models.forum import AcceptedComment
+from models.forum import CommentEdit
+from models.forum import NewComment
+from models.forum import NewPost
+from models.forum import PostEdit
+from models.forum import PostSearchQuery
+from models.forum import ReportInput
+import accounts
+import ai_limits
+import db
+import forum_lib
+import images
 
 from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
@@ -26,20 +38,20 @@ router = APIRouter()
 
 @router.get("/api/posts")
 def list_posts(
-    q: main.PostSearchQuery = "",
+    q: PostSearchQuery = "",
     sort: Literal["activity", "new", "hot"] = "activity",
     filter: Literal["all", "unanswered", "solved", "mine", "participated"] = "all",
     zone: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=main.POST_LIST_MAX_LIMIT)] = main.POST_LIST_DEFAULT_LIMIT,
-    offset: Annotated[int, Query(ge=0, le=main.POST_LIST_MAX_OFFSET)] = 0,
-    user=Depends(main.current_user),
+    limit: Annotated[int, Query(ge=1, le=config.POST_LIST_MAX_LIMIT)] = config.POST_LIST_DEFAULT_LIMIT,
+    offset: Annotated[int, Query(ge=0, le=config.POST_LIST_MAX_OFFSET)] = 0,
+    user=Depends(security.current_user),
 ):
-    if zone is not None and zone != "none" and zone not in main.PROBLEM_ZONES:
+    if zone is not None and zone != "none" and zone not in config.PROBLEM_ZONES:
         raise HTTPException(400, "分区不存在")
     # 体验账号不能发帖也不能评论，“我的 / 参与过”恒为空，is_mine 恒为 false。
     me = None if user["is_trial"] else user["id"]
-    since = (main.datetime.now(timezone.utc) - main.POST_HOT_WINDOW).isoformat(timespec="seconds")
-    conditions = [main.POST_LIST_FILTERS[filter]]
+    since = (time.datetime.now(timezone.utc) - config.POST_HOT_WINDOW).isoformat(timespec="seconds")
+    conditions = [config.POST_LIST_FILTERS[filter]]
     params = {"since": since, "me": me}
     if q:
         # Escape LIKE metacharacters (including the escape character itself).
@@ -53,17 +65,17 @@ def list_posts(
         params["zone"] = zone
         conditions.append("zone = :zone")
     where = " AND ".join(conditions)
-    with main.connect() as conn:
+    with db.connect() as conn:
         # 总数、读数和本页数据共用同一个只读快照。
         conn.execute("BEGIN")
         total = conn.execute(
-            f"{main.POST_BOARD_CTE} SELECT COUNT(*) FROM board WHERE {where}", params
+            f"{config.POST_BOARD_CTE} SELECT COUNT(*) FROM board WHERE {where}", params
         ).fetchone()[0]
         counts = {"all": 0, "unanswered": 0, "solved": 0, "mine": 0}
         zone_counts = {}
         # counts / zone_counts 不受 q / filter / zone 影响：全站可见帖子的口径。
         for row in conn.execute(
-            f"""{main.POST_BOARD_CTE}
+            f"""{config.POST_BOARD_CTE}
             SELECT COALESCE(zone, 'none') AS zone_key, COUNT(*) AS total,
                    SUM(comment_count = 0) AS unanswered, SUM(solved) AS solved,
                    SUM(CASE WHEN user_id = :me THEN 1 ELSE 0 END) AS mine
@@ -77,9 +89,9 @@ def list_posts(
             counts["solved"] += row["solved"]
             counts["mine"] += row["mine"]
         rows = conn.execute(
-            f"""{main.POST_BOARD_CTE}
+            f"""{config.POST_BOARD_CTE}
             SELECT * FROM board WHERE {where}
-            ORDER BY {main.POST_LIST_SORTS[sort]} LIMIT :limit OFFSET :offset
+            ORDER BY {config.POST_LIST_SORTS[sort]} LIMIT :limit OFFSET :offset
             """,
             {**params, "limit": limit, "offset": offset},
         ).fetchall()
@@ -107,14 +119,14 @@ def list_posts(
                 """,
                 ids,
             ):
-                if main.has_fenced_code(item["body"]):
+                if forum_lib.has_fenced_code(item["body"]):
                     coded_posts.add(item["post_id"])
 
     avatars = {}
 
     def person(user_id, username, avatar_version):
         if user_id not in avatars:
-            avatars[user_id] = main.avatar_path(user_id).is_file()
+            avatars[user_id] = images.avatar_path(user_id).is_file()
         return {"user_id": user_id, "username": username,
                 "avatar_version": avatar_version, "has_avatar": avatars[user_id]}
 
@@ -141,16 +153,16 @@ def list_posts(
             "avatar_version": row["avatar_version"],
             "has_avatar": people[0]["has_avatar"],
             "zone": row["zone"],
-            "excerpt": main.post_excerpt(row["body"]),
+            "excerpt": forum_lib.post_excerpt(row["body"]),
             "comment_count": row["comment_count"],
             "last_activity_at": row["last_activity_at"],
             "last_commenter": last_commenter,
-            "participants": people[:main.POST_PARTICIPANT_LIMIT],
+            "participants": people[:config.POST_PARTICIPANT_LIMIT],
             "participant_count": len(people),
-            "has_code": main.has_fenced_code(row["body"]) or row["id"] in coded_posts,
+            "has_code": forum_lib.has_fenced_code(row["body"]) or row["id"] in coded_posts,
             "solved": bool(row["solved"]),
             "helpful_total": row["helpful_total"],
-            "hot": row["hot_score"] >= main.POST_HOT_SCORE,
+            "hot": row["hot_score"] >= config.POST_HOT_SCORE,
             "is_mine": me is not None and row["user_id"] == me,
         })
     return {
@@ -163,14 +175,14 @@ def list_posts(
 
 
 @router.post("/api/posts", status_code=201)
-def create_post(data: main.NewPost, user=Depends(main.current_user)):
-    main.require_not_trial(user, "发帖")
-    zone = main.checked_post_zone(data.zone)
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
+def create_post(data: NewPost, user=Depends(security.current_user)):
+    security.require_not_trial(user, "发帖")
+    zone = forum_lib.checked_post_zone(data.zone)
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
         cursor = conn.execute(
             "INSERT INTO posts(user_id, title, body, zone, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user["id"], data.title, data.body, zone, main.utc_now()),
+            (user["id"], data.title, data.body, zone, time.utc_now()),
         )
         row = conn.execute(
             """
@@ -183,10 +195,10 @@ def create_post(data: main.NewPost, user=Depends(main.current_user)):
 
 
 @router.get("/api/posts/{post_id}")
-def get_post(post_id: int, user=Depends(main.current_user)):
+def get_post(post_id: int, user=Depends(security.current_user)):
     if not -(2**63) <= post_id <= 2**63 - 1:
         raise HTTPException(404, "帖子不存在")
-    with main.connect() as conn:
+    with db.connect() as conn:
         conn.execute("BEGIN")
         row = conn.execute(
             """
@@ -199,7 +211,7 @@ def get_post(post_id: int, user=Depends(main.current_user)):
         ).fetchone()
         if row is None:
             raise HTTPException(404, "帖子不存在")
-        post = {**dict(row), "has_avatar": main.avatar_path(row["user_id"]).is_file()}
+        post = {**dict(row), "has_avatar": images.avatar_path(row["user_id"]).is_file()}
         rows = conn.execute(
             """
             SELECT c.*, u.username, u.avatar_version
@@ -237,9 +249,9 @@ def get_post(post_id: int, user=Depends(main.current_user)):
         for row in comments:
             target, target_floor = by_id.get(row["reply_to_id"], (None, None))
             post["comments"].append(
-                main.comment_response(
+                forum_lib.comment_response(
                     row, post["user_id"], by_id[row["id"]][1],
-                    main.comment_reply_to(target, target_floor),
+                    forum_lib.comment_reply_to(target, target_floor),
                     votes_by_id.get(row["id"]),
                 )
             )
@@ -247,17 +259,17 @@ def get_post(post_id: int, user=Depends(main.current_user)):
 
 
 @router.put("/api/posts/{post_id}")
-def edit_post(post_id: int, data: main.PostEdit, user=Depends(main.current_user)):
-    main.require_not_trial(user, "发帖")
+def edit_post(post_id: int, data: PostEdit, user=Depends(security.current_user)):
+    security.require_not_trial(user, "发帖")
     # 省略 zone 表示不改；显式传 null 表示改回“未分区”。
     change_zone = "zone" in data.model_fields_set
-    zone = main.checked_post_zone(data.zone)
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        post = main.owned_post(conn, post_id, user["id"])
+    zone = forum_lib.checked_post_zone(data.zone)
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        post = forum_lib.owned_post(conn, post_id, user["id"])
         conn.execute(
             "UPDATE posts SET title = ?, body = ?, zone = ?, updated_at = ? WHERE id = ?",
-            (data.title, data.body, zone if change_zone else post["zone"], main.utc_now(), post_id),
+            (data.title, data.body, zone if change_zone else post["zone"], time.utc_now(), post_id),
         )
         row = conn.execute(
             """
@@ -270,28 +282,28 @@ def edit_post(post_id: int, data: main.PostEdit, user=Depends(main.current_user)
 
 
 @router.delete("/api/posts/{post_id}")
-def delete_post(post_id: int, user=Depends(main.current_user)):
-    main.require_not_trial(user, "发帖")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.owned_post(conn, post_id, user["id"])
+def delete_post(post_id: int, user=Depends(security.current_user)):
+    security.require_not_trial(user, "发帖")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.owned_post(conn, post_id, user["id"])
         # 软删除：标记 deleted_at，不物理删除，也不级联标记这个帖子下的
         # 评论——帖子对所有人不可见之后，正常业务路径本来就到达不了
         # 这些评论，不需要逐条标记。
         conn.execute(
             "UPDATE posts SET deleted_at = ? WHERE id = ?",
-            (main.utc_now(), post_id),
+            (time.utc_now(), post_id),
         )
-        main.clear_deleted_thread_state(conn, post_id=post_id)
+        forum_lib.clear_deleted_thread_state(conn, post_id=post_id)
     return {"ok": True}
 
 
 @router.post("/api/posts/{post_id}/comments", status_code=201)
-def create_comment(post_id: int, data: main.NewComment, user=Depends(main.current_user)):
-    main.require_not_trial(user, "评论")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        post = main.visible_post(conn, post_id)
+def create_comment(post_id: int, data: NewComment, user=Depends(security.current_user)):
+    security.require_not_trial(user, "评论")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        post = forum_lib.visible_post(conn, post_id)
         if data.reply_to_id is not None:
             # SQLite IDs are signed 64-bit integers; larger positive IDs are
             # nonexistent targets, rather than binding errors or invalid bodies.
@@ -304,7 +316,7 @@ def create_comment(post_id: int, data: main.NewComment, user=Depends(main.curren
         cursor = conn.execute(
             "INSERT INTO post_comments(post_id, user_id, body, created_at, reply_to_id) "
             "VALUES (?, ?, ?, ?, ?)",
-            (post_id, user["id"], data.body, main.utc_now(), data.reply_to_id),
+            (post_id, user["id"], data.body, time.utc_now(), data.reply_to_id),
         )
         row = conn.execute(
             """
@@ -313,19 +325,19 @@ def create_comment(post_id: int, data: main.NewComment, user=Depends(main.curren
             """,
             (cursor.lastrowid,),
         ).fetchone()
-        comment = main.serialize_comment(conn, row, post["user_id"], user["id"])
+        comment = forum_lib.serialize_comment(conn, row, post["user_id"], user["id"])
     return comment
 
 
 @router.put("/api/comments/{comment_id}")
-def edit_comment(comment_id: int, data: main.CommentEdit, user=Depends(main.current_user)):
-    main.require_not_trial(user, "评论")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        owned = main.owned_comment(conn, comment_id, user["id"])
+def edit_comment(comment_id: int, data: CommentEdit, user=Depends(security.current_user)):
+    security.require_not_trial(user, "评论")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        owned = forum_lib.owned_comment(conn, comment_id, user["id"])
         conn.execute(
             "UPDATE post_comments SET body = ?, updated_at = ? WHERE id = ?",
-            (data.body, main.next_comment_update(owned["updated_at"]), comment_id),
+            (data.body, forum_lib.next_comment_update(owned["updated_at"]), comment_id),
         )
         row = conn.execute(
             """
@@ -337,30 +349,30 @@ def edit_comment(comment_id: int, data: main.CommentEdit, user=Depends(main.curr
         post_author = conn.execute(
             "SELECT user_id FROM posts WHERE id = ?", (owned["post_id"],)
         ).fetchone()
-        comment = main.serialize_comment(conn, row, post_author["user_id"], user["id"])
+        comment = forum_lib.serialize_comment(conn, row, post_author["user_id"], user["id"])
     return comment
 
 
 @router.delete("/api/comments/{comment_id}")
-def delete_comment(comment_id: int, user=Depends(main.current_user)):
-    main.require_not_trial(user, "评论")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.owned_comment(conn, comment_id, user["id"])
+def delete_comment(comment_id: int, user=Depends(security.current_user)):
+    security.require_not_trial(user, "评论")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.owned_comment(conn, comment_id, user["id"])
         conn.execute(
             "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
-            (main.utc_now(), comment_id),
+            (time.utc_now(), comment_id),
         )
-        main.clear_deleted_thread_state(conn, comment_id=comment_id)
+        forum_lib.clear_deleted_thread_state(conn, comment_id=comment_id)
     return {"ok": True}
 
 
 @router.put("/api/posts/{post_id}/accepted")
-def accept_comment(post_id: int, data: main.AcceptedComment, user=Depends(main.current_user)):
-    main.require_not_trial(user, "采纳")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.owned_post(conn, post_id, user["id"])
+def accept_comment(post_id: int, data: AcceptedComment, user=Depends(security.current_user)):
+    security.require_not_trial(user, "采纳")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.owned_post(conn, post_id, user["id"])
         if not -(2**63) <= data.comment_id <= 2**63 - 1:
             raise HTTPException(400, "这条评论不存在或已删除")
         comment = conn.execute(
@@ -380,28 +392,28 @@ def accept_comment(post_id: int, data: main.AcceptedComment, user=Depends(main.c
 
 
 @router.delete("/api/posts/{post_id}/accepted")
-def unaccept_comment(post_id: int, user=Depends(main.current_user)):
-    main.require_not_trial(user, "采纳")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.owned_post(conn, post_id, user["id"])
+def unaccept_comment(post_id: int, user=Depends(security.current_user)):
+    security.require_not_trial(user, "采纳")
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.owned_post(conn, post_id, user["id"])
         conn.execute("UPDATE posts SET accepted_comment_id = NULL WHERE id = ?", (post_id,))
     return {"accepted_comment_id": None}
 
 
 @router.put("/api/comments/{comment_id}/helpful")
-def mark_comment_helpful(comment_id: int, user=Depends(main.current_user)):
-    return main.change_comment_helpful(comment_id, user, helpful=True)
+def mark_comment_helpful(comment_id: int, user=Depends(security.current_user)):
+    return forum_lib.change_comment_helpful(comment_id, user, helpful=True)
 
 
 @router.delete("/api/comments/{comment_id}/helpful")
-def unmark_comment_helpful(comment_id: int, user=Depends(main.current_user)):
-    return main.change_comment_helpful(comment_id, user, helpful=False)
+def unmark_comment_helpful(comment_id: int, user=Depends(security.current_user)):
+    return forum_lib.change_comment_helpful(comment_id, user, helpful=False)
 
 
 @router.get("/api/posts/{post_id}/summary")
-def get_thread_summary(post_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_thread_summary(post_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         conn.execute("BEGIN")
         post, comments = thread_summary.load_thread(conn, post_id)
         row = conn.execute("SELECT * FROM post_summaries WHERE post_id = ?", (post_id,)).fetchone()
@@ -412,30 +424,30 @@ def get_thread_summary(post_id: int, user=Depends(main.current_user)):
 
 
 @router.post("/api/posts/{post_id}/summary")
-def create_thread_summary(post_id: int, user=Depends(main.current_user)):
-    main.require_not_trial(user, " AI 要点")
+def create_thread_summary(post_id: int, user=Depends(security.current_user)):
+    security.require_not_trial(user, " AI 要点")
     with ExitStack() as stack:
-        with main.connect(write=True) as conn:
-            main.recheck_account(conn, user["id"])
+        with db.connect(write=True) as conn:
+            accounts.recheck_account(conn, user["id"])
             post, comments = thread_summary.load_thread(conn, post_id)
             if not os.getenv("OPENAI_API_KEY", "").strip():
                 raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
             if len(comments) < 2:
                 raise HTTPException(400, "回复太少，暂时不需要提炼")
-            if main.rate_limited(f"summary:{user['id']}", 10, 3600):
+            if ratelimit.rate_limited(f"summary:{user['id']}", 10, 3600):
                 raise HTTPException(429, "AI 要点请求太频繁，请稍后再试")
             signature = thread_summary.thread_signature(post, comments)
             row = conn.execute("SELECT * FROM post_summaries WHERE post_id = ?", (post_id,)).fetchone()
             if row is not None and row["signature"] == signature:
                 return {"summary": thread_summary.serialize_summary(row, signature), "cached": True}
             reference = thread_summary.thread_reference(post, comments)
-            privacy_state = main.thread_privacy_state(conn, post, comments)
-            day = main.today_for(user).isoformat()
-            quota = main.ai_quota(conn, user["id"], day)
+            privacy_state = forum_lib.thread_privacy_state(conn, post, comments)
+            day = time.today_for(user).isoformat()
+            quota = ai_limits.ai_quota(conn, user["id"], day)
             limit = quota["ai_daily_limit"]
             if quota["ai_daily_used"] >= limit:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
-            stack.enter_context(main.ai_slot())
+            stack.enter_context(ai_limits.ai_slot())
             cursor = conn.execute(
                 """
                 INSERT INTO ai_usage(user_id, day, attempts)
@@ -449,18 +461,18 @@ def create_thread_summary(post_id: int, user=Depends(main.current_user)):
             if cursor.rowcount != 1:
                 raise HTTPException(429, "今天的 AI 生成次数已用完")
 
-        with refund_on_server_failure(user["id"], day, main.connect):
-            with main.track_call(user["id"], "thread_summary"):
+        with refund_on_server_failure(user["id"], day, db.connect):
+            with ai_limits.track_call(user["id"], "thread_summary"):
                 content = thread_summary.validate_summary(
                     thread_summary.summarize_thread(reference), reference,
                 )
 
-        created_at = main.utc_now()
-        with main.connect(write=True) as conn:
-            main.recheck_account(conn, user["id"])
+        created_at = time.utc_now()
+        with db.connect(write=True) as conn:
+            accounts.recheck_account(conn, user["id"])
             current_post, current_comments = thread_summary.load_thread(conn, post_id)
             if (thread_summary.thread_signature(current_post, current_comments) != signature
-                    or main.thread_privacy_state(conn, current_post, current_comments) != privacy_state):
+                    or forum_lib.thread_privacy_state(conn, current_post, current_comments) != privacy_state):
                 raise HTTPException(409, "讨论内容已变化，请重新提炼")
             conn.execute(
                 """
@@ -479,26 +491,26 @@ def create_thread_summary(post_id: int, user=Depends(main.current_user)):
 
 
 @router.post("/api/posts/{post_id}/report", status_code=201)
-def report_post(post_id: int, data: main.ReportInput, user=Depends(main.current_user)):
-    return main.create_report(user, post_id=post_id, reason=data.reason)
+def report_post(post_id: int, data: ReportInput, user=Depends(security.current_user)):
+    return forum_lib.create_report(user, post_id=post_id, reason=data.reason)
 
 
 @router.post("/api/comments/{comment_id}/report", status_code=201)
-def report_comment(comment_id: int, data: main.ReportInput, user=Depends(main.current_user)):
-    return main.create_report(user, comment_id=comment_id, reason=data.reason)
+def report_comment(comment_id: int, data: ReportInput, user=Depends(security.current_user)):
+    return forum_lib.create_report(user, comment_id=comment_id, reason=data.reason)
 
 
 @router.post("/api/users/{user_id}/avatar/report", status_code=201)
-def report_avatar(user_id: int, data: main.ReportInput, user=Depends(main.current_user)):
-    main.require_not_trial(user, "举报")
+def report_avatar(user_id: int, data: ReportInput, user=Depends(security.current_user)):
+    security.require_not_trial(user, "举报")
     if user_id == user["id"]:
         raise HTTPException(400, "不能举报自己的头像")
     # 复用和帖子/评论举报同一个限流计数：同一个人短时间内狂发举报，
     # 不管举报的是什么内容，都是同一类滥用。
-    if main.rate_limited(f"report:{user['id']}", main.REPORT_LIMIT, main.REPORT_WINDOW_SECONDS):
+    if ratelimit.rate_limited(f"report:{user['id']}", config.REPORT_LIMIT, config.REPORT_WINDOW_SECONDS):
         raise HTTPException(429, "举报过于频繁，请稍后再试")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
         target = conn.execute(
             "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)
         ).fetchone()
@@ -511,7 +523,7 @@ def report_avatar(user_id: int, data: main.ReportInput, user=Depends(main.curren
                     reporter_user_id, avatar_owner_id, reason, created_at
                 ) VALUES (?, ?, ?, ?)
                 """,
-                (user["id"], user_id, data.reason, main.utc_now()),
+                (user["id"], user_id, data.reason, time.utc_now()),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, "你已经举报过这个头像，管理员正在处理") from None

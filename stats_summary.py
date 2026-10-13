@@ -9,10 +9,13 @@ due_condition() / overdue_condition() 拼条件；以后哪些易错点不参与
 （例如已暂停的），只改 review_pool() 这一处。
 """
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+import json
 
 from learning_stats import current_streak
+from scheduler import today_in_timezone
 
 ALLOWED_DAYS = (7, 30, 90)
 FORECAST_DAYS = 14
@@ -22,6 +25,7 @@ PASSING_QUALITY = 3
 STREAK_CHUNK_DAYS = 366
 
 
+from core import config, time
 def review_pool(alias="m"):
     """只有未暂停的易错点参与「到期 / 逾期 / 预测」，历史复习统计不受影响。"""
     return f"{alias}.suspended_at IS NULL"
@@ -221,3 +225,217 @@ def summary(conn, user_id, timezone_name, today, days):
             for day in (current_first + timedelta(days=offset) for offset in range(days))
         ],
     }
+
+
+def weakness_analysis_state(conn, user_id):
+    count = conn.execute(
+        "SELECT COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+        "WHERE p.user_id = ?",
+        (user_id,),
+    ).fetchone()[0]
+    row = conn.execute(
+        "SELECT content, created_at FROM weakness_insights WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    insight = (
+        {"content": json.loads(row["content"]), "created_at": row["created_at"]}
+        if row else None
+    )
+    if count < config.WEAKNESS_MIN_MISTAKES:
+        status = "insufficient_data"
+        message = (
+            f"再积累几条错题就能看出真正的规律了。当前有 {count} 条易错点，"
+            f"还差 {config.WEAKNESS_MIN_MISTAKES - count} 条；本次不会调用 AI，也不消耗额度。"
+        )
+    elif insight is None:
+        status = "not_analyzed"
+        message = "还没有分析过。让 AI 结合错题和复习历史，找出反复卡住你的根本原因。"
+    else:
+        status, message = "ready", None
+    return {
+        "status": status,
+        "message": message,
+        "minimum_mistakes": config.WEAKNESS_MIN_MISTAKES,
+        "mistake_count": count,
+        "insight": insight,
+    }
+
+
+def weakness_analysis_reference(conn, user_id, total_mistakes):
+    # 最近的题目优先；同题下的易错点也按 ID 确定顺序，避免 LIMIT 不稳定。
+    # 在 SQL 层限制文本长度，空错因才补充原始思路/解法片段，不修改原记录。
+    rows = conn.execute(
+        """
+        SELECT m.id AS mistake_id, m.problem_id, substr(p.title, 1, 200) AS title,
+               p.zone, substr(m.description, 1, 1000) AS description, p.created_at,
+               substr(p.thinking, 1, 600) AS thinking,
+               substr(p.code, 1, 800) AS work_excerpt,
+               p.verdict AS verdict, substr(m.counterexample, 1, 500) AS counterexample
+        FROM mistakes m JOIN problems p ON p.id = m.problem_id
+        WHERE p.user_id = ?
+        ORDER BY p.created_at DESC, m.id DESC LIMIT ?
+        """,
+        (user_id, config.WEAKNESS_MAX_MISTAKES),
+    ).fetchall()
+    mistakes = []
+    for row in rows:
+        item = dict(row)
+        # 判题类型和最小反例是空就去掉，不占提示词长度。
+        if not item.get("verdict"):
+            item.pop("verdict", None)
+        if not (item.get("counterexample") or "").strip():
+            item.pop("counterexample", None)
+        if item["description"].strip():
+            item.pop("thinking")
+            item.pop("work_excerpt")
+        item.update(review_count=0, failed_review_count=0, recent_reviews=[])
+        mistakes.append(item)
+    by_id = {item["mistake_id"]: item for item in mistakes}
+    placeholders = ",".join("?" for _ in by_id)
+    # 聚合完整复习历史，但只发送最近几次明细，兼顾反复低分与近期改善。
+    # 仅查询当前用户名下已经选中的错点 ID，不读取其他用户的复习记录。
+    reviews = conn.execute(
+        f"""
+        WITH ranked AS (
+            SELECT id, mistake_id, quality, reviewed_at,
+                   COUNT(*) OVER (PARTITION BY mistake_id) AS review_count,
+                   SUM(CASE WHEN quality < 3 THEN 1 ELSE 0 END)
+                       OVER (PARTITION BY mistake_id) AS failed_review_count,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY mistake_id ORDER BY reviewed_at DESC, id DESC
+                   ) AS recent_rank
+            FROM reviews WHERE mistake_id IN ({placeholders})
+        )
+        SELECT * FROM ranked WHERE recent_rank <= ?
+        ORDER BY reviewed_at, id
+        """,
+        (*by_id, config.WEAKNESS_RECENT_REVIEWS),
+    ).fetchall()
+    for row in reviews:
+        item = by_id[row["mistake_id"]]
+        item["review_count"] = row["review_count"]
+        item["failed_review_count"] = row["failed_review_count"]
+        item["recent_reviews"].append({
+            "quality": row["quality"], "reviewed_at": row["reviewed_at"],
+        })
+    sample = {
+        "mistake_count": len(mistakes),
+        "problem_count": len({item["problem_id"] for item in mistakes}),
+        "review_count": sum(item["review_count"] for item in mistakes),
+        "period_start": min(item["created_at"] for item in mistakes),
+        "period_end": max(item["created_at"] for item in mistakes),
+    }
+    return {"total_mistakes": total_mistakes, "sample": sample, "mistakes": mistakes}
+
+
+def growth_by_zone(conn, user_id, today):
+    # 不用 SQL 日期函数：created_at 是 UTC 时间戳，"今天"要按用户自己的
+    # 时区算，两者混在一条 SQL 里容易出偏差；取出来后在 Python 里统一按
+    # 日期比较，跟 current_streak() 的思路一致。mistakes 本身没有
+    # created_at，用所属 problem 的记录时间代表这条易错点的录入时间——
+    # 这跟"薄弱点分析"里 period_start/period_end 的口径一致。
+    rows = conn.execute(
+        "SELECT p.zone, p.created_at FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+        "WHERE p.user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+    by_zone = {}
+    for row in rows:
+        created_date = datetime.fromisoformat(row["created_at"]).date()
+        by_zone.setdefault(row["zone"], []).append(created_date)
+
+    zones = []
+    for zone, dates in by_zone.items():
+        most_recent = max(dates)
+        days_since_last = (today - most_recent).days
+        recent = sum(
+            1 for created_date in dates
+            if 0 <= (today - created_date).days < config.GROWTH_RECENT_WINDOW_DAYS
+        )
+        prior = sum(
+            1 for created_date in dates
+            if config.GROWTH_RECENT_WINDOW_DAYS <= (today - created_date).days < 2 * config.GROWTH_RECENT_WINDOW_DAYS
+        )
+        zones.append({
+            "zone": zone,
+            "total_mistakes": len(dates),
+            "days_since_last_mistake": days_since_last,
+            "recent_30_days": recent,
+            "prior_30_days": prior,
+            "quiet_streak": recent == 0 and days_since_last >= config.GROWTH_QUIET_THRESHOLD_DAYS,
+        })
+
+    zones.sort(key=lambda item: item["zone"])
+    return zones
+
+
+def weakness_by_zone(conn, user_ids=None, min_cohort=config.COMMUNITY_MIN_COHORT):
+    # 聚合只返回分区计数，不带用户名或错题内容。体验数据不代表真实学习
+    # 信号，因此全站和小组都排除；这不影响体验账号加入小组和展示打卡天数。
+    # None 表示全站；空集合表示没有成员，不能退回全站统计。
+    params = ()
+    user_filter = ""
+    if user_ids is not None:
+        params = tuple(set(user_ids))
+        if not params:
+            return {}
+        user_filter = f" AND u.id IN ({','.join('?' for _ in params)})"
+    rows = conn.execute(
+        f"""
+        SELECT p.zone, COUNT(*) AS mistake_count
+        FROM mistakes m
+        JOIN problems p ON p.id = m.problem_id
+        JOIN users u ON u.id = p.user_id
+        WHERE u.is_trial = 0 AND u.deleted_at IS NULL{user_filter}
+        GROUP BY p.zone, p.user_id
+        """,
+        params,
+    ).fetchall()
+    by_zone = {}
+    for row in rows:
+        stats = by_zone.setdefault(row["zone"], {"total_users": 0, "struggling_users": 0})
+        stats["total_users"] += 1
+        if row["mistake_count"] >= config.COMMUNITY_STRUGGLING_THRESHOLD:
+            stats["struggling_users"] += 1
+
+    result = {}
+    for zone, stats in by_zone.items():
+        total = stats["total_users"]
+        result[zone] = {
+            "sample_size": total,
+            "struggling_ratio": (
+                round(stats["struggling_users"] / total, 4)
+                if total >= min_cohort else None
+            ),
+        }
+    return result
+
+
+def community_weakness_by_zone(conn):
+    return weakness_by_zone(conn)
+
+
+def window_total(counter, first, last):
+    return sum(count for day, count in counter.items() if first <= day <= last)
+
+
+def review_streaks_by_user(users, review_rows):
+    # 全站排行榜和小组共用：每个人的复习日期和今天都按自己的时区计算。
+    timezones = {row["id"]: row["timezone"] for row in users}
+    review_dates = defaultdict(set)
+    for row in review_rows:
+        tz = timezones.get(row["user_id"])
+        if tz is None:
+            continue
+        reviewed_at = datetime.fromisoformat(row["reviewed_at"])
+        review_dates[row["user_id"]].add(today_in_timezone(tz, reviewed_at))
+
+    streaks = {}
+    for row in users:
+        streaks[row["id"]] = current_streak(
+            review_dates.get(row["id"], set()),
+            time.today_for(row),
+        )
+    return streaks
+

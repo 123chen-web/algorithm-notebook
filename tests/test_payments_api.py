@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 import main
 from db import connect
 from payment_channels import MockChannel
+from core import time as core_time
+import time
+from core import security
 
 
 MOCK_SECRET = "payment-api-test-secret"
@@ -30,7 +33,7 @@ def client(tmp_path, monkeypatch):
                         id, username, password_hash, timezone, created_at
                     ) VALUES (?, ?, ?, ?, ?)
                     """,
-                    (user_id, username, "unused", "Asia/Shanghai", main.utc_now()),
+                    (user_id, username, "unused", "Asia/Shanghai", core_time.utc_now()),
                 )
                 conn.execute(
                     """
@@ -38,7 +41,7 @@ def client(tmp_path, monkeypatch):
                     VALUES (?, ?, ?)
                     """,
                     (
-                        main.token_hash(f"payment-session-{username}"),
+                        security.token_hash(f"payment-session-{username}"),
                         user_id,
                         int(time.time()) + 3600,
                     ),
@@ -51,8 +54,8 @@ def client(tmp_path, monkeypatch):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
-                    (1, "月套餐", 30, 20, 990, 1, main.utc_now()),
-                    (2, "已停用套餐", 60, 40, 1990, 0, main.utc_now()),
+                    (1, "月套餐", 30, 20, 990, 1, core_time.utc_now()),
+                    (2, "已停用套餐", 60, 40, 1990, 0, core_time.utc_now()),
                 ],
             )
             # 展示中但暂不能购买：is_active = 1（GET /api/plans 会返回它），
@@ -64,7 +67,7 @@ def client(tmp_path, monkeypatch):
                     price_cents, is_active, purchasable, created_at
                 ) VALUES (3, '即将上线套餐', 30, 30, 1990, 1, 0, ?)
                 """,
-                (main.utc_now(),),
+                (core_time.utc_now(),),
             )
         instance.cookies.set("session", "payment-session-alice")
         yield instance

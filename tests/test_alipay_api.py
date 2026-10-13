@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 import main
 from db import connect
 from payment_channels import MockChannel
+import payments
+from core import security
 
 
 CALLBACK_PATH = "/api/payments/alipay/callback"
@@ -33,7 +35,7 @@ def test_public_callback_passes_original_form_to_business_layer(
         received.append((channel, body, headers["content-type"], user_id))
         return {"status": "paid"}
 
-    monkeypatch.setattr(main.payments, "handle_callback", handle_callback)
+    monkeypatch.setattr(payments, "handle_callback", handle_callback)
     response = client.post(
         CALLBACK_PATH,
         content=raw_body,
@@ -55,7 +57,7 @@ def test_callback_failure_returns_plain_text_without_acknowledging_payment(
     def reject(*args, **kwargs):
         raise HTTPException(status_code, "internal verification or order detail")
 
-    monkeypatch.setattr(main.payments, "handle_callback", reject)
+    monkeypatch.setattr(payments, "handle_callback", reject)
     response = client.post(CALLBACK_PATH, content=b"sign=invalid")
     assert response.status_code == status_code
     assert response.text == "failure"
@@ -77,7 +79,7 @@ def test_public_callback_is_disabled_in_mock_mode(client, monkeypatch):
     def must_not_handle(*args, **kwargs):
         pytest.fail("公开通知入口不能进入 mock 支付处理")
 
-    monkeypatch.setattr(main.payments, "handle_callback", must_not_handle)
+    monkeypatch.setattr(payments, "handle_callback", must_not_handle)
     response = client.post(
         CALLBACK_PATH,
         content=body,
@@ -135,7 +137,7 @@ def test_mock_callback_still_requires_login(client, monkeypatch):
 @pytest.fixture
 def alipay_database(client, alipay_env, monkeypatch):
     now = "2026-09-21T10:00:00+00:00"
-    monkeypatch.setattr(main.payments, "utc_now", lambda: now)
+    monkeypatch.setattr(payments, "utc_now", lambda: now)
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO users(id, username, password_hash, timezone, created_at) "
@@ -162,7 +164,7 @@ def alipay_order(alipay_database, monkeypatch):
             "qr_code": "https://qr.alipay.com/test-order",
         },
     )
-    return main.payments.create_order(1, 1, "alipay")["order"]
+    return payments.create_order(1, 1, "alipay")["order"]
 
 
 @pytest.fixture
@@ -171,7 +173,7 @@ def authenticated_alipay_client(client, alipay_database):
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, 1, ?)",
-            (main.token_hash(token), int(time.time()) + 3600),
+            (security.token_hash(token), int(time.time()) + 3600),
         )
     client.cookies.set("session", token)
     client.headers["X-CSRF-Protection"] = "1"

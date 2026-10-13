@@ -3,6 +3,7 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -146,7 +147,7 @@ def test_account_menu_panel_has_an_opaque_surface_background():
 
 
 def test_account_menu_escape_closes_and_restores_summary_focus():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     declaration = re.search(
         r"(?m)^(?P<indent>[ \t]*)function\s+initAccountMenu\s*\([^)]*\)\s*\{",
         source,

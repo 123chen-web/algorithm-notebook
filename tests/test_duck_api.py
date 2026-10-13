@@ -13,6 +13,10 @@ import ai
 import main
 from db import connect
 from test_ai import FakeResponse, fake_openai_factory
+import ai_limits
+from core import time
+from core import config
+from core import ratelimit
 
 
 @pytest.fixture
@@ -23,7 +27,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
     monkeypatch.setenv("DUCK_DAILY_LIMIT", "2")
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -77,7 +81,7 @@ class QueueCompletions:
 
 def fake_ai(monkeypatch, *items):
     provider = QueueCompletions(*items)
-    monkeypatch.setattr(main, "OpenAI", fake_openai_factory(provider))
+    monkeypatch.setattr(ai, "OpenAI", fake_openai_factory(provider))
     return provider
 
 
@@ -112,7 +116,7 @@ def test_duck_quota_is_independent_even_when_normal_ai_is_exhausted(client, monk
     fake_ai(monkeypatch, GOOD)
     owner = register(client)
     mistake_id = new_mistake(client)
-    day = main.today_for({'timezone': 'Asia/Shanghai'}).isoformat()
+    day = time.today_for({'timezone': 'Asia/Shanghai'}).isoformat()
     with connect(write=True) as conn:
         conn.execute('INSERT INTO ai_usage VALUES (?, ?, 2)', (owner['id'], day))
     assert duck(client, mistake_id, [USER]).status_code == 200
@@ -363,7 +367,7 @@ def test_invalid_reply_is_not_retried_and_refunds_the_attempt(client, monkeypatc
     mistake_id = new_mistake(client)
     response = duck(client, mistake_id, [USER])
     assert response.status_code == 502
-    assert response.json()["detail"] == main.DUCK_BAD_REPLY
+    assert response.json()["detail"] == config.DUCK_BAD_REPLY
     assert len(provider.requests) == 1
     assert attempts() == 0
     assert duck(client, mistake_id, [USER]).status_code == 200
@@ -444,7 +448,7 @@ def test_transient_retry_holds_one_slot_and_one_charge(client, monkeypatch, kind
         assert attempts(user_id) == 1
         return create(**kwargs)
 
-    monkeypatch.setattr(main, "ai_slot", slot)
+    monkeypatch.setattr(ai_limits, "ai_slot", slot)
     monkeypatch.setattr(provider, "create", checked_create)
     response = duck(client, mistake_id, [USER])
     assert response.status_code == 200

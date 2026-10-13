@@ -14,6 +14,7 @@ import main
 import manual_claims
 from db import connect
 from test_redeem_codes import CSRF, NOW, client, generate, subscription, use_user  # noqa: F401
+import accounts
 
 PAYLOAD = {"actual_paid_cents": 990, "plan_id": 1, "payer_note": "支付宝尾号 1234", "contact": "wx-alice"}
 
@@ -419,7 +420,7 @@ def test_account_deletion_removes_claims(client):
     make_claim(client, 2)
     keep = make_claim(client, 3)
     with connect(write=True) as conn:
-        main.delete_account_data(conn, 2, NOW)
+        accounts.delete_account_data(conn, 2, NOW)
     assert count_claims() == 1 and claim_row(keep)["user_id"] == 3
 
 

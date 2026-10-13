@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from test_contrast_tokens import THEMES, contrast_ratio, css_declarations, css_selectors
+from static_helpers import app_source
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 JS = (STATIC / "manual-claims.js").read_text(encoding="utf-8")
@@ -43,7 +44,7 @@ def test_manual_claims_js_has_late_response_guards():
     assert "request.sequence === listSeq" in JS
     assert "container?.isConnected" in JS
     assert "pending.has(id)" in JS, "管理端处理中防重复点击"
-    assert "sessionEpoch" in (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "sessionEpoch" in app_source()
 
 
 def test_manual_claims_status_is_never_color_only():

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from test_landing_auth_assets import LandingDocument
+from static_helpers import app_source as _app_source_impl
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -31,7 +32,7 @@ def style_source():
 
 @pytest.fixture(scope="module")
 def app_source():
-    return (STATIC / "app.js").read_text(encoding="utf-8")
+    return _app_source_impl()
 
 
 def test_anki_entry_lives_next_to_json_export_inside_account_panel(document):

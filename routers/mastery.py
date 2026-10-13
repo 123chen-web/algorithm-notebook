@@ -3,7 +3,7 @@
 只读聚合，不写库、不调用 AI。公式固定（详见模块注释与 GROWTH_REPORT.md）：
 
 - 对/错：reviews.quality >= 3 记为"对"(1)，< 3 记为"错"(0)，
-  与 main.mastery_signal 的口径一致。
+  与 review_lib.mastery_signal 的口径一致。
 - 题分：取该题最近 ≤3 次复习结果（最近的排第一），按权重 [0.5, 0.3, 0.2]
   加权求和。不到 3 次时缺的项按 0 计（不做归一化——只答对一次不足以
   证明掌握，最多只能拿到 0.5）；一次复习都没有的题不参与均值。
@@ -17,7 +17,9 @@
 main 命名空间下的名字一律用 main.<name> 在调用时取属性，
 沿用 routers/rank.py 的写法，方便测试 monkeypatch。
 """
-import main
+from core import security, time
+import db
+import review_lib
 
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -30,7 +32,7 @@ router = APIRouter()
 
 # 题分权重：第 1/2/3 近的一次复习的权重。
 WEIGHTS = (0.5, 0.3, 0.2)
-# quality >= CORRECT_QUALITY 记为答对；与 main.mastery_signal 一致。
+# quality >= CORRECT_QUALITY 记为答对；与 review_lib.mastery_signal 一致。
 CORRECT_QUALITY = 3
 # 下周主攻：标签至少要有这么多道错题才参与评选。
 FOCUS_MIN_MISTAKES = 5
@@ -138,12 +140,12 @@ def _results(reviews):
 @router.get("/api/mastery/heatmap")
 def mastery_heatmap(
     weeks: int = Query(default=8, ge=1, le=26),
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
-    today = main.today_for(user)
+    today = time.today_for(user)
     starts = _week_starts(today, weeks)
     zone = user["timezone"]
-    with main.connect() as conn:
+    with db.connect() as conn:
         mistakes = _load_mistakes(conn, user["id"])
         reviews = _load_reviews(conn, list(mistakes))
 
@@ -197,8 +199,8 @@ def mastery_heatmap(
 
 
 @router.get("/api/mastery/focus")
-def mastery_focus(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def mastery_focus(user=Depends(security.current_user)):
+    with db.connect() as conn:
         mistakes = _load_mistakes(conn, user["id"])
         reviews = _load_reviews(conn, list(mistakes))
 

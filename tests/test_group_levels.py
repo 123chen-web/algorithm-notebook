@@ -18,6 +18,8 @@ from group_levels import (
 )
 from test_app import register
 from test_groups import client, create_group, login
+import groups_lib
+import images
 
 
 EXPECTED_LEVELS = [
@@ -266,7 +268,7 @@ def test_group_detail_and_list_include_points_creators_and_real_avatar_presence(
     with connect(write=True) as conn:
         conn.execute("UPDATE users SET avatar_version = 2 WHERE id = ?", (alice["id"],))
         conn.execute("UPDATE users SET avatar_version = 9 WHERE id = ?", (bob_id,))
-    main.avatar_path(alice["id"]).write_bytes(b"avatar-exists")
+    images.avatar_path(alice["id"]).write_bytes(b"avatar-exists")
     observed = detail(group_client, group["id"])
     assert observed["member_limit"] == 10
     assert observed["points"] == 30
@@ -286,7 +288,7 @@ def test_group_detail_and_list_include_points_creators_and_real_avatar_presence(
     ]
     assert "invite_code" not in listed
     assert "weakness_by_zone" not in listed
-    main.avatar_path(alice["id"]).unlink()
+    images.avatar_path(alice["id"]).unlink()
     assert detail(group_client, group["id"])["members"][0]["has_avatar"] is False
     assert group_client.get("/api/groups").json()["groups"][0]["members_preview"][0] == {
         "id": alice["id"], "username": "alice", "avatar_version": 2, "has_avatar": False,
@@ -459,12 +461,12 @@ def test_group_points_queries_batch_groups_and_keep_membership_windows():
         """)
         queries = []
         conn.set_trace_callback(queries.append)
-        members = main.group_members_by_id(conn, (1, 2))
-        points = main.group_points_by_id(conn, members)
+        members = groups_lib.group_members_by_id(conn, (1, 2))
+        points = groups_lib.group_points_by_id(conn, members)
         assert points == {1: {1: 15, 2: 0}, 2: {1: 9}}
         selects = [query for query in queries if query.lstrip().upper().startswith("SELECT")]
         assert len(selects) == 3  # one members query, one reviews query, one records query.
-        assert main.group_points_by_id(conn, {}) == {}
+        assert groups_lib.group_points_by_id(conn, {}) == {}
         assert len(queries) == 3
     finally:
         conn.close()

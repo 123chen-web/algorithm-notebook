@@ -18,7 +18,11 @@ from pydantic import Field, StrictInt, ValidationError
 from starlette.datastructures import UploadFile
 
 import import_notes
-import main
+from core import config, security, time as core_time
+from models.problems import NewProblem
+import accounts
+import db
+from models import InputModel
 
 router = APIRouter()
 IMPORT_MAX_BYTES = 2 * 1024 * 1024
@@ -30,7 +34,7 @@ PREVIEWS_TOTAL = 200
 IMPORT_MAX_REQUEST_BYTES = IMPORT_MAX_BYTES + 64 * 1024
 
 
-class ImportConfirm(main.InputModel):
+class ImportConfirm(InputModel):
     preview_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     indices: list[StrictInt] = Field(min_length=1, max_length=IMPORT_MAX_RECORDS)
 
@@ -81,13 +85,13 @@ def _parse_export(text, zone):
             if len(counterexample) > 1000:
                 raise ValueError("最小反例最多 1000 个字")
             descriptions.append(
-                {"description": main.QUICK_MISTAKE_PLACEHOLDER if flag else mistake["description"],
+                {"description": config.QUICK_MISTAKE_PLACEHOLDER if flag else mistake["description"],
                  "counterexample": counterexample}
             )
             pending.append(flag)
         fields = {key: item.get(key) for key in ("title", "language", "code", "thinking", "correct_code", "verdict") if key in item}
         # Ordinary validation protects all limits; no client-supplied scheduling is imported.
-        valid = main.NewProblem(**fields, zone=zone, mistakes=descriptions, quick=False)
+        valid = NewProblem(**fields, zone=zone, mistakes=descriptions, quick=False)
         record = {**valid.model_dump(exclude={"zone", "quick"}), "fallback": False,
                   "pending": pending}
         if "created_at" in item:
@@ -137,9 +141,9 @@ async def _read_form(request):
 
 
 @router.post("/api/import/preview")
-async def preview_import(request: Request, user=Depends(main.current_user)):
+async def preview_import(request: Request, user=Depends(security.current_user)):
     filename, zone, content = await _read_form(request)
-    if zone not in main.PROBLEM_ZONES:
+    if zone not in config.PROBLEM_ZONES:
         raise HTTPException(422, "请选择一个有效的题目分区")
     suffix = Path(filename or "").suffix.lower()
     if suffix not in {".md", ".markdown", ".json"}:
@@ -160,8 +164,8 @@ async def preview_import(request: Request, user=Depends(main.current_user)):
         raise HTTPException(422, f"解析失败：{message}") from exc
 
     token, now = secrets.token_urlsafe(32), int(time.time())
-    with main.connect(write=True) as conn:
-        main.sec_recheck_session(conn, user["id"], request)
+    with db.connect(write=True) as conn:
+        accounts.sec_recheck_session(conn, user["id"], request)
         conn.execute("DELETE FROM import_previews WHERE expires_at <= ?", (now,))
         if conn.execute("SELECT COUNT(*) FROM import_previews WHERE user_id = ? AND result IS NULL", (user["id"],)).fetchone()[0] >= PREVIEWS_PER_USER:
             raise HTTPException(429, "已有 3 份未确认预览，请完成导入或稍后再试")
@@ -189,11 +193,11 @@ async def preview_import(request: Request, user=Depends(main.current_user)):
 
 
 @router.post("/api/import/confirm")
-def confirm_import(data: ImportConfirm, request: Request, user=Depends(main.current_user)):
+def confirm_import(data: ImportConfirm, request: Request, user=Depends(security.current_user)):
     indices = sorted(set(data.indices))
     try:
-        with main.connect(write=True) as conn:
-            main.sec_recheck_session(conn, user["id"], request)
+        with db.connect(write=True) as conn:
+            accounts.sec_recheck_session(conn, user["id"], request)
             entry = conn.execute("SELECT * FROM import_previews WHERE token = ? AND user_id = ? AND expires_at > ?",
                                  (data.preview_id, user["id"], int(time.time()))).fetchone()
             if entry is None:
@@ -207,7 +211,7 @@ def confirm_import(data: ImportConfirm, request: Request, user=Depends(main.curr
                 raise HTTPException(422, "条目序号越界")
             existing = import_notes.existing_titles(conn, user["id"])
             result = {"imported": 0, "duplicates": [], "failed": []}
-            now, day = main.utc_now(), main.today_for(user).isoformat()
+            now, day = core_time.utc_now(), core_time.today_for(user).isoformat()
             for index in indices:
                 record = records[index]
                 if record["title"] in existing:

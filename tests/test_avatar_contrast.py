@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from test_cursor_fx_assets import function_body
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -41,7 +42,7 @@ def avatar_rows():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is needed to run the avatar colour function")
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     function = "function avatarBackground(hue) {" + function_body(source, "avatarBackground") + "}"
     result = subprocess.run(
         [node, "-e", HARNESS], input=json.dumps({"source": function}), text=True,
@@ -70,6 +71,6 @@ def test_only_the_bright_hues_are_darkened_and_never_below_the_floor():
 
 
 def test_the_fallback_avatar_uses_that_function():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     assert "fallback.style.background = avatarBackground(avatarHue(username || \"\"));" in source
     assert "55%, 45%" not in source.replace("\r\n", "\n").split("function avatarBackground")[0], "no hard-coded 45% left"

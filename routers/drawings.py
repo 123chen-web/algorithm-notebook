@@ -18,7 +18,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from PIL import Image, UnidentifiedImageError
 
-import main
+from core import security, time
+import db
 from db import ROOT
 
 
@@ -160,13 +161,13 @@ class DrawingRename(BaseModel):
 # ---------------------------------------------------------------- 接口
 
 @router.post("/api/drawings", status_code=201)
-def create_drawing(body: DrawingCreate, user=Depends(main.current_user)):
+def create_drawing(body: DrawingCreate, user=Depends(security.current_user)):
     title = normalize_title(body.title)
     note_id = body.note_id
     if note_id is not None and (not isinstance(note_id, int) or isinstance(note_id, bool)):
         raise HTTPException(422, "关联笔记编号不正确")
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
         count = conn.execute(
             "SELECT COUNT(*) FROM note_drawings WHERE user_id = ? AND deleted_at IS NULL",
             (user["id"],),
@@ -194,9 +195,9 @@ def create_drawing(body: DrawingCreate, user=Depends(main.current_user)):
 def list_drawings(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
-    with main.connect() as conn:
+    with db.connect() as conn:
         total = conn.execute(
             "SELECT COUNT(*) FROM note_drawings WHERE user_id = ? AND deleted_at IS NULL",
             (user["id"],),
@@ -219,19 +220,19 @@ def list_drawings(
 
 
 @router.get("/api/drawings/{drawing_id}")
-def get_drawing(drawing_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_drawing(drawing_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         row = get_owned_drawing(conn, drawing_id, user["id"])
     return drawing_payload(row, with_scene=True)
 
 
 @router.patch("/api/drawings/{drawing_id}")
-def rename_drawing(drawing_id: int, body: DrawingRename, user=Depends(main.current_user)):
+def rename_drawing(drawing_id: int, body: DrawingRename, user=Depends(security.current_user)):
     title = normalize_title(body.title)
     if not title:
         raise HTTPException(422, "画板标题不能为空")
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
         get_owned_drawing(conn, drawing_id, user["id"])
         conn.execute(
             "UPDATE note_drawings SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?",
@@ -244,13 +245,13 @@ def rename_drawing(drawing_id: int, body: DrawingRename, user=Depends(main.curre
 
 
 @router.put("/api/drawings/{drawing_id}")
-def update_drawing(drawing_id: int, body: DrawingUpdate, user=Depends(main.current_user)):
+def update_drawing(drawing_id: int, body: DrawingUpdate, user=Depends(security.current_user)):
     version = body.version
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise HTTPException(422, "版本号必须是不小于 1 的整数")
     scene_json = validate_scene(body.scene)
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
         row = get_owned_drawing(conn, drawing_id, user["id"])
         if row["version"] != version:
             raise HTTPException(409, "这张画板已在别处被修改，请刷新后再保存")
@@ -267,7 +268,7 @@ def update_drawing(drawing_id: int, body: DrawingUpdate, user=Depends(main.curre
 
 
 @router.put("/api/drawings/{drawing_id}/thumb")
-async def upload_thumb(request: Request, drawing_id: int, user=Depends(main.current_user)):
+async def upload_thumb(request: Request, drawing_id: int, user=Depends(security.current_user)):
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > DRAWING_THUMB_MAX_BYTES:
         raise HTTPException(413, "缩略图太大，最多 300KB")
@@ -289,7 +290,7 @@ async def upload_thumb(request: Request, drawing_id: int, user=Depends(main.curr
     if encoded is None:
         raise HTTPException(422, "缩略图重新编码后仍超过 300KB，请减少画面内容")
 
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         get_owned_drawing(conn, drawing_id, user["id"])
         target = drawing_thumb_path(user["id"], drawing_id)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -328,8 +329,8 @@ def reencode_thumb(image: Image.Image) -> Optional[bytes]:
 
 
 @router.get("/api/drawings/{drawing_id}/thumb")
-def get_thumb(drawing_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_thumb(drawing_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         row = get_owned_drawing(conn, drawing_id, user["id"])
         rel = row["thumb_path"]
     if not rel:
@@ -348,9 +349,9 @@ def get_thumb(drawing_id: int, user=Depends(main.current_user)):
 
 
 @router.delete("/api/drawings/{drawing_id}")
-def delete_drawing(drawing_id: int, user=Depends(main.current_user)):
-    now = main.utc_now()
-    with main.connect(write=True) as conn:
+def delete_drawing(drawing_id: int, user=Depends(security.current_user)):
+    now = time.utc_now()
+    with db.connect(write=True) as conn:
         get_owned_drawing(conn, drawing_id, user["id"])
         conn.execute(
             "UPDATE note_drawings SET deleted_at = ? WHERE id = ? AND user_id = ?",

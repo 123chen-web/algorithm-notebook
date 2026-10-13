@@ -6,6 +6,7 @@
 5. CSP 维持严格 self，不引入 unsafe-inline / unsafe-eval，页面无内联脚本/样式。"""
 import re
 from pathlib import Path
+from static_helpers import versioned_src
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -54,10 +55,10 @@ def test_vendor_bundle_table_cell_serialization_patch_present():
 
 
 def test_index_loads_editor_assets_versioned_and_in_order():
-    assert '<script defer src="/static/vendor/editor/oy-editor.js?v=3"></script>' in HTML
-    assert '<link rel="stylesheet" href="/static/vendor/editor/oy-editor.css?v=3">' in HTML
-    assert '<script defer src="/static/notes-editor.js?v=3"></script>' in HTML
-    assert '<link rel="stylesheet" href="/static/notes-editor.css?v=1">' in HTML
+    assert f'<script defer src="{versioned_src("vendor/editor/oy-editor.js")}"></script>' in HTML
+    assert f'<link rel="stylesheet" href="{versioned_src("vendor/editor/oy-editor.css")}">' in HTML
+    assert f'<script defer src="{versioned_src("notes-editor.js")}"></script>' in HTML
+    assert f'<link rel="stylesheet" href="{versioned_src("notes-editor.css")}">' in HTML
 
     def pos(token):
         index = HTML.find(token)
@@ -66,7 +67,7 @@ def test_index_loads_editor_assets_versioned_and_in_order():
 
     # 编辑器产物必须在笔记脚本之前；适配层在富渲染/画板之后、app.js 之前。
     assert pos("vendor/editor/oy-editor.js?v=3") < pos("notes.js?v=6")
-    assert pos("notes-rich.js?v=7") < pos("draw-host.js?v=") < pos("notes-editor.js?v=3") < pos("app.js?v=103")
+    assert pos("notes-rich.js?v=7") < pos("draw-host.js?v=") < pos("notes-editor.js?v=3") < pos("app.js?v=102")
 
 
 def test_index_has_no_inline_script_or_style():

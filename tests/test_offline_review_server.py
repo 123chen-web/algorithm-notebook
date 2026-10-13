@@ -20,6 +20,9 @@ import main
 from db import connect
 from scheduler import schedule
 from test_app import client, register  # noqa: F401  (client 是 pytest fixture)
+from core import time
+import scheduler
+import db
 
 NOW = datetime(2026, 9, 19, 4, tzinfo=timezone.utc)  # 上海 2026-09-19 12:00
 TODAY = date(2026, 9, 19)
@@ -30,7 +33,7 @@ RESPONSE_KEYS = {"repetitions", "interval_days", "ease_factor", "due_date", "ver
 
 @pytest.fixture(autouse=True)
 def review_clock(monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
 
 
 def stamp(moment):
@@ -149,7 +152,7 @@ def test_op_ids_are_scoped_per_user(client):
 
 def test_concurrent_duplicates_take_effect_once(client, monkeypatch):
     mistake = seed(register(client)["id"])
-    real_schedule = main.schedule
+    real_schedule = scheduler.schedule
     gate = threading.Barrier(8)
 
     def slow_schedule(*args, **kwargs):
@@ -157,7 +160,7 @@ def test_concurrent_duplicates_take_effect_once(client, monkeypatch):
         threading.Event().wait(0.05)
         return real_schedule(*args, **kwargs)
 
-    monkeypatch.setattr(main, "schedule", slow_schedule)
+    monkeypatch.setattr(scheduler, "schedule", slow_schedule)
 
     def submit(_):
         gate.wait()
@@ -527,7 +530,7 @@ def test_other_users_mistakes_are_not_found_and_leave_no_record(client):
 # ---------------------------------------------------------------- /sw.js 与 manifest
 
 def test_service_worker_is_served_from_the_root_with_the_right_headers(client):
-    expected = (main.ROOT / "static" / "sw.js").read_bytes()
+    expected = (db.ROOT / "static" / "sw.js").read_bytes()
     for path in ("/sw.js", "/sw.js?v=3"):
         response = client.get(path)  # 无需登录
         assert response.status_code == 200
@@ -539,7 +542,7 @@ def test_service_worker_is_served_from_the_root_with_the_right_headers(client):
 
 
 def test_manifest_is_served_with_the_manifest_media_type(client):
-    path = main.ROOT / "static" / "manifest.webmanifest"
+    path = db.ROOT / "static" / "manifest.webmanifest"
     response = client.get("/manifest.webmanifest")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/manifest+json"

@@ -1,6 +1,6 @@
 """针对 GET /api/leaderboard 连续打卡排行榜的测试。
 
-client fixture 把 main.today_for 整体 mock 成固定返回 2026-09-19（见
+client fixture 把 time.today_for 整体 mock 成固定返回 2026-09-19（见
 test_app.py），所以这里的"今天"锚点是确定的；但 reviews.reviewed_at 到
 当地日期的换算走的是真实的 today_in_timezone/zoneinfo，不受这个 mock
 影响，可以用来验证跨时区边界是否算对。
@@ -8,6 +8,8 @@ test_app.py），所以这里的"今天"锚点是确定的；但 reviews.reviewe
 import main
 from db import connect
 from test_app import client, new_problem, register
+from core import config
+from core import time
 
 
 def insert_review(mistake_id, reviewed_at, quality=4):
@@ -116,7 +118,7 @@ def test_zero_streak_user_excluded_but_sees_own_zero(client):
 
 
 def test_banned_user_does_not_occupy_rank_slot(client, monkeypatch):
-    monkeypatch.setattr(main, "LEADERBOARD_SIZE", 1)
+    monkeypatch.setattr(config, "LEADERBOARD_SIZE", 1)
     banned = register(client, "banned")
     first = new_problem(client)[0]
     insert_review(first, "2026-09-19T04:00:00+00:00")
@@ -172,7 +174,7 @@ def test_ranking_orders_by_streak_desc_then_user_id_asc_on_ties(client):
 def test_leaderboard_truncates_and_still_reports_own_rank_beyond_cutoff(
     client, monkeypatch
 ):
-    monkeypatch.setattr(main, "LEADERBOARD_SIZE", 2)
+    monkeypatch.setattr(config, "LEADERBOARD_SIZE", 2)
     ids = []
     for index, name in enumerate(("usera", "userb", "userc")):
         user = register(client, name)

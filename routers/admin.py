@@ -4,7 +4,19 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, security, time
+from fastapi import concurrency
+from models.payments import ManualGrant
+from models.payments import ManualPaymentSettings
+from models.payments import NewRedeemCodes
+from models.payments import RejectManualClaim
+from pydantic import Field, StrictBool, field_validator
+import accounts
+import db
+import forum_lib
+import images
+import payments
+from models import InputModel
 
 from admin_metrics import PERIOD_CHOICES
 from admin_metrics import compute_metrics as compute_admin_metrics
@@ -35,19 +47,19 @@ router = APIRouter()
 
 
 @router.post("/api/admin/redeem-codes", status_code=201)
-def generate_redeem_codes(data: main.NewRedeemCodes, user=Depends(main.current_user)):
-    main.require_admin(user)
+def generate_redeem_codes(data: NewRedeemCodes, user=Depends(security.current_user)):
+    security.require_admin(user)
     codes = []
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
-        plan = main.manual_plan(conn, data.plan_id)
-        now = main.utc_now()
-        expires = ((main.datetime.fromisoformat(now) + timedelta(days=data.expires_in_days))
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
+        plan = payments.manual_plan(conn, data.plan_id)
+        now = time.utc_now()
+        expires = ((time.datetime.fromisoformat(now) + timedelta(days=data.expires_in_days))
                    .isoformat(timespec="seconds")) if data.expires_in_days else None
         for _ in range(data.count):
             # 碰撞时重试；明文从不落库、不写日志，仅在这次响应返回。
             for attempt in range(10):
-                raw = "".join(secrets.choice(main.REDEEM_ALPHABET) for _ in range(16))
+                raw = "".join(secrets.choice(config.REDEEM_ALPHABET) for _ in range(16))
                 try:
                     conn.execute(
                         """
@@ -55,7 +67,7 @@ def generate_redeem_codes(data: main.NewRedeemCodes, user=Depends(main.current_u
                             note, created_by, created_at, expires_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (main.redeem_code_hash(raw), raw[-4:], data.plan_id,
+                        (payments.redeem_code_hash(raw), raw[-4:], data.plan_id,
                          data.days if data.days is not None else plan["period_days"],
                          data.note, user["id"], now, expires),
                     )
@@ -72,16 +84,16 @@ def generate_redeem_codes(data: main.NewRedeemCodes, user=Depends(main.current_u
 def list_redeem_codes(
     status: Literal["all", "unused", "redeemed", "revoked"] = "all",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
-    main.require_admin(user)
+    security.require_admin(user)
     filters = {
         "all": "1 = 1",
         "unused": "c.redeemed_by IS NULL AND c.revoked_at IS NULL",
         "redeemed": "c.redeemed_by IS NOT NULL",
         "revoked": "c.revoked_at IS NOT NULL",
     }
-    with main.connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             """
             SELECT c.id, c.code_hint AS hint, p.name AS plan_name, c.period_days,
@@ -98,14 +110,14 @@ def list_redeem_codes(
 
 
 @router.post("/api/admin/redeem-codes/{code_id}/revoke")
-def revoke_redeem_code(code_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+def revoke_redeem_code(code_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         cursor = conn.execute(
             "UPDATE redeem_codes SET revoked_at = ? "
             "WHERE id = ? AND redeemed_by IS NULL AND revoked_at IS NULL",
-            (main.utc_now(), code_id),
+            (time.utc_now(), code_id),
         )
         if cursor.rowcount != 1:
             raise HTTPException(409, "只能撤销未使用的兑换码")
@@ -113,14 +125,14 @@ def revoke_redeem_code(code_id: int, user=Depends(main.current_user)):
 
 
 @router.post("/api/admin/manual-grant")
-def manual_grant(data: main.ManualGrant, user=Depends(main.current_user)):
-    main.require_admin(user)
+def manual_grant(data: ManualGrant, user=Depends(security.current_user)):
+    security.require_admin(user)
     try:
         username = normalize_username(data.username)
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         target = conn.execute(
             "SELECT * FROM users WHERE username = ? AND deleted_at IS NULL", (username,)
         ).fetchone()
@@ -131,13 +143,13 @@ def manual_grant(data: main.ManualGrant, user=Depends(main.current_user)):
             ).fetchone()
         if target is None:
             raise HTTPException(404, "用户不存在")
-        main.recheck_manual_account(conn, target["id"])
+        payments.recheck_manual_account(conn, target["id"])
         if target["is_trial"]:
             raise HTTPException(403, "体验账号不能开通，请先注册正式账号")
-        plan = main.manual_plan(conn, data.plan_id)
+        plan = payments.manual_plan(conn, data.plan_id)
         days = data.days if data.days is not None else plan["period_days"]
-        now = main.utc_now()
-        expiry = main.activate_plan(conn, target["id"], data.plan_id, days, now)
+        now = time.utc_now()
+        expiry = payments.activate_plan(conn, target["id"], data.plan_id, days, now)
         # 此哈希没有对应的16位兑换码，同时已占用，用作直接开通的审计记录。
         conn.execute(
             """
@@ -154,18 +166,18 @@ def manual_grant(data: main.ManualGrant, user=Depends(main.current_user)):
 
 @router.put("/api/admin/manual-payment/qr/{channel}")
 async def upload_manual_payment_qr(
-    channel: str, user=Depends(main.current_user), file: UploadFile = File(...),
+    channel: str, user=Depends(security.current_user), file: UploadFile = File(...),
 ):
-    main.require_admin(user)
-    path = main.pay_qr_path(channel)
+    security.require_admin(user)
+    path = payments.pay_qr_path(channel)
     if file.content_type not in ("image/png", "image/jpeg"):
         raise HTTPException(400, "只支持 PNG 或 JPEG 格式的图片")
-    content = await file.read(main.PAY_QR_MAX_BYTES + 1)
-    if len(content) > main.PAY_QR_MAX_BYTES:
+    content = await file.read(config.PAY_QR_MAX_BYTES + 1)
+    if len(content) > config.PAY_QR_MAX_BYTES:
         raise HTTPException(413, "图片太大，最多 2MB")
-    png = await main.run_in_threadpool(main.encode_pay_qr, content)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+    png = await concurrency.run_in_threadpool(payments.encode_pay_qr, content)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.parent / f".{channel}-{secrets.token_hex(8)}.tmp"
         try:
@@ -177,20 +189,20 @@ async def upload_manual_payment_qr(
 
 
 @router.delete("/api/admin/manual-payment/qr/{channel}")
-def delete_manual_payment_qr(channel: str, user=Depends(main.current_user)):
-    main.require_admin(user)
-    path = main.pay_qr_path(channel)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+def delete_manual_payment_qr(channel: str, user=Depends(security.current_user)):
+    security.require_admin(user)
+    path = payments.pay_qr_path(channel)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         path.unlink(missing_ok=True)
     return {"ok": True}
 
 
 @router.put("/api/admin/manual-payment/settings")
-def update_manual_payment_settings(data: main.ManualPaymentSettings, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+def update_manual_payment_settings(data: ManualPaymentSettings, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         conn.executemany(
             "INSERT INTO app_settings(key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -204,28 +216,28 @@ def update_manual_payment_settings(data: main.ManualPaymentSettings, user=Depend
 def admin_list_manual_claims(
     status: Literal["pending", "confirmed", "rejected", "all"] = "pending",
     page: Annotated[int, Query(ge=1, le=100000)] = 1,
-    user=Depends(main.current_user),
+    user=Depends(security.current_user),
 ):
-    main.require_admin(user)
-    with main.connect() as conn:
+    security.require_admin(user)
+    with db.connect() as conn:
         return manual_claims.list_admin_claims(conn, status, page)
 
 
-class ConfirmManualClaim(main.InputModel):
-    verified_amount_cents: int = main.Field(strict=True, gt=0, le=2**63 - 1)
-    receipt_reference: str = main.Field(strict=True, min_length=1, max_length=128)
-    legacy_reviewed: bool = main.Field(default=False, strict=True)
-    legacy_period_days: int | None = main.Field(default=None, strict=True, ge=1, le=3650)
+class ConfirmManualClaim(InputModel):
+    verified_amount_cents: int = Field(strict=True, gt=0, le=2**63 - 1)
+    receipt_reference: str = Field(strict=True, min_length=1, max_length=128)
+    legacy_reviewed: bool = Field(default=False, strict=True)
+    legacy_period_days: int | None = Field(default=None, strict=True, ge=1, le=3650)
 
-    @main.field_validator("receipt_reference")
+    @field_validator("receipt_reference")
     @classmethod
     def receipt(cls, value):
         return manual_claims.normalize_receipt_reference(value)
 
 
-def manual_claim_admin(user=Depends(main.current_user)):
+def manual_claim_admin(user=Depends(security.current_user)):
     # 鉴权依赖先于请求体报错，未登录 / 非管理员仍分别是 401 / 403。
-    main.require_admin(user)
+    security.require_admin(user)
     return user
 
 
@@ -234,19 +246,19 @@ def admin_confirm_manual_claim(
     claim_id: int, data: ConfirmManualClaim, background_tasks: BackgroundTasks,
     user=Depends(manual_claim_admin),
 ):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         try:
             claim, mail_info = manual_claims.confirm_claim(
-                conn, claim_id, user["id"], main.utc_now(),
+                conn, claim_id, user["id"], time.utc_now(),
                 verified_amount_cents=data.verified_amount_cents,
                 receipt_reference=data.receipt_reference,
                 legacy_reviewed=data.legacy_reviewed,
                 legacy_period_days=data.legacy_period_days,
             )
         except manual_claims.ClaimError as error:
-            raise main.claim_http_error(error) from None
+            raise payments.claim_http_error(error) from None
     # 事务提交后才发邮件；SMTP 慢或失败都不影响确认。
     background_tasks.add_task(manual_claims.send_confirmation_email, mail_info)
     return {"claim": claim, "plan_expires_at": mail_info["plan_expires_at"]}
@@ -254,51 +266,51 @@ def admin_confirm_manual_claim(
 
 @router.post("/api/admin/manual-claims/{claim_id}/reject")
 def admin_reject_manual_claim(
-    claim_id: int, data: main.RejectManualClaim, user=Depends(main.current_user)
+    claim_id: int, data: RejectManualClaim, user=Depends(security.current_user)
 ):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
         try:
-            claim = manual_claims.reject_claim(conn, claim_id, user["id"], data.reason, main.utc_now())
+            claim = manual_claims.reject_claim(conn, claim_id, user["id"], data.reason, time.utc_now())
         except manual_claims.ClaimError as error:
-            raise main.claim_http_error(error) from None
+            raise payments.claim_http_error(error) from None
     return {"claim": claim}
 
 
 @router.get("/api/admin/daily-notices")
-def admin_list_daily_notices(user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect() as conn:
+def admin_list_daily_notices(user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect() as conn:
         today = rank_board.beijing_today()
         return {"today": today.isoformat(), "notices": rank_notice.list_notices(conn, today)}
 
 
 @router.post("/api/admin/daily-notices", status_code=201)
-def admin_create_daily_notice(data: rank_notice.NoticeInput, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
-        notice_id = rank_notice.create_notice(conn, data, user["id"], main.utc_now())
+def admin_create_daily_notice(data: rank_notice.NoticeInput, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
+        notice_id = rank_notice.create_notice(conn, data, user["id"], time.utc_now())
     return {"id": notice_id}
 
 
 @router.put("/api/admin/daily-notices/{notice_id}")
 def admin_update_daily_notice(
-    notice_id: int, data: rank_notice.NoticeInput, user=Depends(main.current_user)
+    notice_id: int, data: rank_notice.NoticeInput, user=Depends(security.current_user)
 ):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_manual_account(conn, user["id"], admin=True)
-        if rank_notice.update_notice(conn, notice_id, data, main.utc_now()) != 1:
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        payments.recheck_manual_account(conn, user["id"], admin=True)
+        if rank_notice.update_notice(conn, notice_id, data, time.utc_now()) != 1:
             raise HTTPException(404, "这条记录不存在")
     return {"ok": True}
 
 
 @router.get("/api/admin/dashboard")
-def admin_dashboard(user=Depends(main.current_user)):
-    main.require_admin(user)
-    now = main.datetime.fromisoformat(main.utc_now()).astimezone(timezone.utc)
+def admin_dashboard(user=Depends(security.current_user)):
+    security.require_admin(user)
+    now = time.datetime.fromisoformat(time.utc_now()).astimezone(timezone.utc)
     # 运营看板统一用 UTC；时间戳按过去 N × 24 小时，AI 日汇总按含今天的 7 天。
     bounds = {
         "now": now.isoformat(),
@@ -307,7 +319,7 @@ def admin_dashboard(user=Depends(main.current_user)):
         "today": now.date().isoformat(),
         "first_ai_day": (now.date() - timedelta(days=6)).isoformat(),
     }
-    with main.connect() as conn:
+    with db.connect() as conn:
         # 多个聚合读取同一个快照，避免并发写入让总数和分区明细对不上。
         conn.execute("BEGIN")
         users = dict(conn.execute(
@@ -361,7 +373,7 @@ def admin_dashboard(user=Depends(main.current_user)):
                        AS pending_reports
             """
         ).fetchone())
-        zone_counts = dict.fromkeys(main.PROBLEM_ZONES, 0)
+        zone_counts = dict.fromkeys(config.PROBLEM_ZONES, 0)
         zone_counts.update({
             row["zone"]: row["mistake_count"]
             for row in conn.execute(
@@ -397,19 +409,19 @@ def admin_dashboard(user=Depends(main.current_user)):
 
 
 @router.get("/api/admin/metrics")
-def admin_metrics_overview(days: int = 7, user=Depends(main.current_user)):
-    main.require_admin(user)
+def admin_metrics_overview(days: int = 7, user=Depends(security.current_user)):
+    security.require_admin(user)
     if days not in PERIOD_CHOICES:
         raise HTTPException(422, "days 只能是 7 或 30")
-    now = main.datetime.fromisoformat(main.utc_now()).astimezone(timezone.utc)
-    with main.connect() as conn:
+    now = time.datetime.fromisoformat(time.utc_now()).astimezone(timezone.utc)
+    with db.connect() as conn:
         return compute_admin_metrics(conn, days, now)
 
 
 @router.get("/api/admin/reports")
-def list_reports(user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect() as conn:
+def list_reports(user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect() as conn:
         rows = conn.execute(
             """
             SELECT
@@ -453,7 +465,7 @@ def list_reports(user=Depends(main.current_user)):
         {
             "type": "avatar",
             **dict(row),
-            "avatar_owner_has_avatar": main.avatar_path(row["avatar_owner_id"]).is_file(),
+            "avatar_owner_has_avatar": images.avatar_path(row["avatar_owner_id"]).is_file(),
         }
         for row in avatar_rows
     ]
@@ -462,12 +474,12 @@ def list_reports(user=Depends(main.current_user)):
 
 
 @router.post("/api/admin/reports/{report_id}/resolve")
-def admin_resolve_report(report_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
+def admin_resolve_report(report_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE reports SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL",
-            (main.utc_now(), report_id),
+            (time.utc_now(), report_id),
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "举报不存在或已处理")
@@ -475,12 +487,12 @@ def admin_resolve_report(report_id: int, user=Depends(main.current_user)):
 
 
 @router.post("/api/admin/avatar-reports/{report_id}/resolve")
-def admin_resolve_avatar_report(report_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
+def admin_resolve_avatar_report(report_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE avatar_reports SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL",
-            (main.utc_now(), report_id),
+            (time.utc_now(), report_id),
         )
         if cursor.rowcount != 1:
             raise HTTPException(404, "举报不存在或已处理")
@@ -488,38 +500,38 @@ def admin_resolve_avatar_report(report_id: int, user=Depends(main.current_user))
 
 
 @router.delete("/api/admin/posts/{post_id}")
-def admin_delete_post(post_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.visible_post(conn, post_id)
+def admin_delete_post(post_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.visible_post(conn, post_id)
         conn.execute(
-            "UPDATE posts SET deleted_at = ? WHERE id = ?", (main.utc_now(), post_id)
+            "UPDATE posts SET deleted_at = ? WHERE id = ?", (time.utc_now(), post_id)
         )
-        main.clear_deleted_thread_state(conn, post_id=post_id)
-        main.resolve_reports_for(conn, post_id=post_id)
+        forum_lib.clear_deleted_thread_state(conn, post_id=post_id)
+        forum_lib.resolve_reports_for(conn, post_id=post_id)
     return {"ok": True}
 
 
 @router.delete("/api/admin/comments/{comment_id}")
-def admin_delete_comment(comment_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.visible_comment(conn, comment_id)
+def admin_delete_comment(comment_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        forum_lib.visible_comment(conn, comment_id)
         conn.execute(
             "UPDATE post_comments SET deleted_at = ? WHERE id = ?",
-            (main.utc_now(), comment_id),
+            (time.utc_now(), comment_id),
         )
-        main.clear_deleted_thread_state(conn, comment_id=comment_id)
-        main.resolve_reports_for(conn, comment_id=comment_id)
+        forum_lib.clear_deleted_thread_state(conn, comment_id=comment_id)
+        forum_lib.resolve_reports_for(conn, comment_id=comment_id)
     return {"ok": True}
 
 
 @router.delete("/api/admin/users/{user_id}/avatar")
-def admin_clear_avatar(user_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
+def admin_clear_avatar(user_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET avatar_version = avatar_version + 1 WHERE id = ? AND deleted_at IS NULL",
             (user_id,),
@@ -531,19 +543,19 @@ def admin_clear_avatar(user_id: int, user=Depends(main.current_user)):
             UPDATE avatar_reports SET resolved_at = ?
             WHERE avatar_owner_id = ? AND resolved_at IS NULL
             """,
-            (main.utc_now(), user_id),
+            (time.utc_now(), user_id),
         )
     # 用户存在且数据库更新已提交后才删文件，不存在的用户 id 不会触碰磁盘。
-    main.avatar_path(user_id).unlink(missing_ok=True)
+    images.avatar_path(user_id).unlink(missing_ok=True)
     return {"ok": True, "has_avatar": False}
 
 
 @router.post("/api/admin/users/{user_id}/ban")
-def admin_ban_user(user_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
+def admin_ban_user(user_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
     if user_id == user["id"]:
         raise HTTPException(400, "不能封禁自己")
-    with main.connect(write=True) as conn:
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET is_banned = 1 WHERE id = ? AND deleted_at IS NULL", (user_id,)
         )
@@ -554,9 +566,9 @@ def admin_ban_user(user_id: int, user=Depends(main.current_user)):
 
 
 @router.post("/api/admin/users/{user_id}/unban")
-def admin_unban_user(user_id: int, user=Depends(main.current_user)):
-    main.require_admin(user)
-    with main.connect(write=True) as conn:
+def admin_unban_user(user_id: int, user=Depends(security.current_user)):
+    security.require_admin(user)
+    with db.connect(write=True) as conn:
         cursor = conn.execute(
             "UPDATE users SET is_banned = 0 WHERE id = ? AND deleted_at IS NULL", (user_id,)
         )

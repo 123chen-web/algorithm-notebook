@@ -4,7 +4,14 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, security, time
+from models.groups import PublicRankSetting
+import accounts
+import achievements
+import db
+import learning_stats
+import share_card
+import stats_summary
 
 from fastapi import Depends
 from fastapi import Response
@@ -19,29 +26,29 @@ router = APIRouter()
 
 
 @router.get("/api/achievements")
-def get_achievements(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_achievements(user=Depends(security.current_user)):
+    with db.connect() as conn:
         # 多项统计共享只读快照，避免生成/删除记录时跨查询读到不同版本。
         conn.execute("BEGIN")
-        metrics = main.learning_metrics(conn, user["id"], user["timezone"], main.today_for(user))
-    return {"metrics": metrics, "achievements": main.evaluate_achievements(metrics)}
+        metrics = learning_stats.learning_metrics(conn, user["id"], user["timezone"], time.today_for(user))
+    return {"metrics": metrics, "achievements": achievements.evaluate_achievements(metrics)}
 
 
 @router.get("/api/achievements/share-card")
-def get_achievement_share_card(user=Depends(main.current_user)):
-    today = main.today_for(user)
-    with main.connect() as conn:
+def get_achievement_share_card(user=Depends(security.current_user)):
+    today = time.today_for(user)
+    with db.connect() as conn:
         # 与成就徽章一致，在同一只读快照内汇总所有指标。
         conn.execute("BEGIN")
-        metrics = main.learning_metrics(conn, user["id"], user["timezone"], today)
-    achievements = main.evaluate_achievements(metrics)
-    png_bytes = main.render_achievement_card(user["username"], metrics, achievements, today)
+        metrics = learning_stats.learning_metrics(conn, user["id"], user["timezone"], today)
+    achieved = achievements.evaluate_achievements(metrics)
+    png_bytes = share_card.render_achievement_card(user["username"], metrics, achieved, today)
     return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get("/api/leaderboard")
-def leaderboard(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def leaderboard(user=Depends(security.current_user)):
+    with db.connect() as conn:
         users = conn.execute(
             "SELECT id, username, rank_display_name, timezone, is_trial, public_rank_opt_out FROM users "
             "WHERE deleted_at IS NULL AND is_banned = 0"
@@ -55,7 +62,7 @@ def leaderboard(user=Depends(main.current_user)):
             """
         ).fetchall()
 
-    streaks = main.review_streaks_by_user(users, review_rows)
+    streaks = stats_summary.review_streaks_by_user(users, review_rows)
 
     # 体验账号不参与排行榜——跟体验账号能看 /api/plans 但不能真的下单是
     # 同一种"能看不能上榜"的模式；已排除的账号不占用前 LEADERBOARD_SIZE 名额。
@@ -75,7 +82,7 @@ def leaderboard(user=Depends(main.current_user)):
             "display_name": row["rank_display_name"] or row["username"],
             "streak_days": streaks[row["id"]],
         }
-        for index, row in enumerate(eligible[:main.LEADERBOARD_SIZE])
+        for index, row in enumerate(eligible[:config.LEADERBOARD_SIZE])
     ]
 
     my_rank = None
@@ -87,7 +94,7 @@ def leaderboard(user=Depends(main.current_user)):
 
     return {
         "entries": entries,
-        "leaderboard_size": main.LEADERBOARD_SIZE,
+        "leaderboard_size": config.LEADERBOARD_SIZE,
         "me": {
             "streak_days": streaks[user["id"]],
             "rank": my_rank,
@@ -97,9 +104,9 @@ def leaderboard(user=Depends(main.current_user)):
 
 
 @router.put("/api/me/public-rank")
-def update_public_rank(data: main.PublicRankSetting, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
+def update_public_rank(data: PublicRankSetting, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
         conn.execute(
             "UPDATE users SET public_rank_opt_out = ? WHERE id = ?",
             (0 if data.participate else 1, user["id"]),
@@ -109,16 +116,16 @@ def update_public_rank(data: main.PublicRankSetting, user=Depends(main.current_u
 
 
 @router.get("/api/rank/yesterday")
-def rank_yesterday(user=Depends(main.current_user)):
+def rank_yesterday(user=Depends(security.current_user)):
     return rank_board.yesterday_response(user)
 
 
 @router.get("/api/rank/hot-problems")
-def rank_hot_problems(user=Depends(main.current_user)):
+def rank_hot_problems(user=Depends(security.current_user)):
     return hot_problems.hot_problems_response()
 
 
 @router.get("/api/rank/notice")
-def rank_notice_today(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def rank_notice_today(user=Depends(security.current_user)):
+    with db.connect() as conn:
         return {"notice": rank_notice.current_notice(conn, rank_board.beijing_today())}

@@ -11,6 +11,7 @@ import main
 from db import connect
 from routers import note_files
 from test_app import client, register
+import images
 
 
 def image_bytes(fmt="PNG", size=(8, 8), color=(200, 30, 30), **kwargs):
@@ -116,7 +117,7 @@ def test_upload_strips_exif(client):
     image.save(buf, format="JPEG", exif=exif)
     response = upload(client, buf.getvalue(), name="with-exif.jpg")
     assert response.status_code == 201, response.text
-    stored = Image.open(main.note_file_path(1, response.json()["id"]))
+    stored = Image.open(images.note_file_path(1, response.json()["id"]))
     assert stored.getexif().get(271) in (None, "")
 
 
@@ -124,7 +125,7 @@ def test_animated_gif_keeps_only_first_frame(client):
     register(client)
     response = upload(client, animated_gif_bytes(), name="ani.gif")
     assert response.status_code == 201, response.text
-    stored = Image.open(main.note_file_path(1, response.json()["id"]))
+    stored = Image.open(images.note_file_path(1, response.json()["id"]))
     assert stored.n_frames == 1
 
 
@@ -180,7 +181,7 @@ def test_get_attachment_headers_and_body(client):
 def test_delete_attachment(client):
     register(client)
     body = upload(client, image_bytes()).json()
-    path = main.note_file_path(1, body["id"])
+    path = images.note_file_path(1, body["id"])
     assert path.is_file()
     deleted = client.delete(body["url"])
     assert deleted.status_code == 200
@@ -212,8 +213,8 @@ def test_orphan_older_than_24h_without_reference_is_cleaned(client):
     # 新一次上传触发清理：orphan 应被删行删文件，keep 因被引用保留。
     trigger = upload(client, image_bytes(color=(3, 3, 3)))
     assert trigger.status_code == 201
-    assert not main.note_file_path(1, orphan["id"]).exists()
-    assert main.note_file_path(1, keep["id"]).exists()
+    assert not images.note_file_path(1, orphan["id"]).exists()
+    assert images.note_file_path(1, keep["id"]).exists()
     with connect() as conn:
         rows = {r["id"] for r in conn.execute("SELECT id FROM note_attachments")}
     assert orphan["id"] not in rows
@@ -225,7 +226,7 @@ def test_fresh_attachment_is_never_cleaned(client):
     fresh = upload(client, image_bytes()).json()
     trigger = upload(client, image_bytes())
     assert trigger.status_code == 201
-    assert main.note_file_path(1, fresh["id"]).exists()
+    assert images.note_file_path(1, fresh["id"]).exists()
 
 
 # ── 注销账号清理 ──
@@ -233,7 +234,7 @@ def test_fresh_attachment_is_never_cleaned(client):
 def test_account_deletion_removes_rows_and_files(client):
     register(client)
     body = upload(client, image_bytes()).json()
-    path = main.note_file_path(1, body["id"])
+    path = images.note_file_path(1, body["id"])
     assert path.is_file()
     response = client.post("/api/me/delete-account", json={"password": "a-test-password-123"})
     assert response.status_code == 200
@@ -257,5 +258,5 @@ def test_export_lists_attachments_without_binary(client):
         "id": image["id"],
         "filename": f"attachment-{image['id']}.jpg",
         "mime": "image/jpeg",
-        "size_bytes": len(main.note_file_path(1, image["id"]).read_bytes()),
+        "size_bytes": len(images.note_file_path(1, image["id"]).read_bytes()),
     }]

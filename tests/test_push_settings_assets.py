@@ -1,7 +1,9 @@
 """微信提醒卡片的静态契约：文件存在且被 index.html / app.js 接线，
 只用主题令牌，无内联样式 / HTML 注入面，密钥只走密码框、文字只走 textContent。"""
 from pathlib import Path
+from static_helpers import app_source
 import re
+from static_helpers import versioned_src
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -21,8 +23,8 @@ def test_push_files_exist_and_stay_small():
 
 def test_index_html_loads_the_card_assets_and_hosts_the_card():
     html = read("index.html")
-    assert 'href="/static/push-settings.css?v=1"' in html
-    assert 'src="/static/push-settings.js?v=1"' in html
+    assert f'href="{versioned_src("push-settings.css")}"' in html
+    assert f'src="{versioned_src("push-settings.js")}"' in html
     assert 'id="push-settings-host"' in html
     # 卡片挂在账号菜单面板里。
     host_pos = html.index('id="push-settings-host"')
@@ -32,7 +34,7 @@ def test_index_html_loads_the_card_assets_and_hosts_the_card():
 
 
 def test_app_js_configures_mounts_and_resets_the_card():
-    source = read("app.js")
+    source = app_source()  # C2 后 app.js 已拆分
     assert "window.PushSettings?.configure(" in source
     assert 'window.PushSettings?.mount($("#push-settings-host"))' in source
     assert "window.PushSettings?.reset()" in source

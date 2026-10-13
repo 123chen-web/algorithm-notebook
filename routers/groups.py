@@ -4,7 +4,12 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import config, ratelimit, security, time
+from models.groups import JoinGroup
+from models.groups import NewGroup
+import accounts
+import db
+import groups_lib
 
 from fastapi import Depends
 from fastapi import HTTPException
@@ -20,12 +25,12 @@ router = APIRouter()
 
 
 @router.post("/api/groups", status_code=201)
-def create_group(data: main.NewGroup, user=Depends(main.current_user)):
+def create_group(data: NewGroup, user=Depends(security.current_user)):
     # 限额检查、建组和加入在同一写事务中，避免并发请求突破限额或留下空组。
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
-        main.require_group_capacity_for_user(conn, user["id"])
-        created_at = main.utc_now()
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
+        groups_lib.require_group_capacity_for_user(conn, user["id"])
+        created_at = time.utc_now()
         for _ in range(2):
             try:
                 group_id = conn.execute(
@@ -33,7 +38,7 @@ def create_group(data: main.NewGroup, user=Depends(main.current_user)):
                     INSERT INTO study_groups(name, invite_code, created_by, created_at)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (data.name, main.generate_group_invite_code(), user["id"], created_at),
+                    (data.name, groups_lib.generate_group_invite_code(), user["id"], created_at),
                 ).lastrowid
                 break
             except sqlite3.IntegrityError as exc:
@@ -45,12 +50,12 @@ def create_group(data: main.NewGroup, user=Depends(main.current_user)):
             "INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
             (group_id, user["id"], created_at),
         )
-        return main.group_detail(conn, group_id, user["id"])
+        return groups_lib.group_detail(conn, group_id, user["id"])
 
 
 @router.get("/api/groups")
-def list_groups(user=Depends(main.current_user)):
-    with main.connect() as conn:
+def list_groups(user=Depends(security.current_user)):
+    with db.connect() as conn:
         conn.execute("BEGIN")
         groups = conn.execute(
             """
@@ -66,21 +71,21 @@ def list_groups(user=Depends(main.current_user)):
             """,
             (user["id"],),
         ).fetchall()
-        members_by_group = main.group_members_by_id(
+        members_by_group = groups_lib.group_members_by_id(
             conn, tuple(group["id"] for group in groups)
         )
-        points_by_group = main.group_points_by_id(conn, members_by_group)
+        points_by_group = groups_lib.group_points_by_id(conn, members_by_group)
     return {"groups": [
         {
             "id": group["id"],
             "name": group["name"],
             "member_count": group["member_count"],
-            "member_limit": main.GROUP_MAX_MEMBERS,
+            "member_limit": config.GROUP_MAX_MEMBERS,
             "is_creator": group["created_by"] == user["id"],
             "created_at": group["created_at"],
             "level": level_summary(sum(points_by_group[group["id"]].values())),
             "members_preview": [
-                main.group_member_avatar(member)
+                groups_lib.group_member_avatar(member)
                 for member in members_by_group[group["id"]][:5]
             ],
         }
@@ -89,22 +94,22 @@ def list_groups(user=Depends(main.current_user)):
 
 
 @router.get("/api/group-levels")
-def get_group_levels(user=Depends(main.current_user)):
+def get_group_levels(user=Depends(security.current_user)):
     return {
-        "member_limit": main.GROUP_MAX_MEMBERS,
+        "member_limit": config.GROUP_MAX_MEMBERS,
         "levels": [dict(level) for level in LEVELS],
         "rules": [dict(rule) for rule in RULES],
     }
 
 
 @router.post("/api/groups/join")
-def join_group(data: main.JoinGroup, request: Request, user=Depends(main.current_user)):
-    if main.rate_limited(
-        f"group_join:{main.client_ip(request)}", main.GROUP_JOIN_LIMIT, main.GROUP_JOIN_WINDOW_SECONDS
+def join_group(data: JoinGroup, request: Request, user=Depends(security.current_user)):
+    if ratelimit.rate_limited(
+        f"group_join:{ratelimit.client_ip(request)}", config.GROUP_JOIN_LIMIT, config.GROUP_JOIN_WINDOW_SECONDS
     ):
         raise HTTPException(429, "加入尝试次数过多，请稍后再试")
-    with main.connect(write=True) as conn:
-        main.recheck_account(conn, user["id"])
+    with db.connect(write=True) as conn:
+        accounts.recheck_account(conn, user["id"])
         group = conn.execute(
             "SELECT id FROM study_groups WHERE invite_code = ?", (data.invite_code,)
         ).fetchone()
@@ -119,28 +124,28 @@ def join_group(data: main.JoinGroup, request: Request, user=Depends(main.current
         member_count = conn.execute(
             "SELECT COUNT(*) FROM study_group_members WHERE group_id = ?", (group_id,)
         ).fetchone()[0]
-        if member_count >= main.GROUP_MAX_MEMBERS:
-            raise HTTPException(403, f"小组已达到 {main.GROUP_MAX_MEMBERS} 人上限")
-        main.require_group_capacity_for_user(conn, user["id"])
+        if member_count >= config.GROUP_MAX_MEMBERS:
+            raise HTTPException(403, f"小组已达到 {config.GROUP_MAX_MEMBERS} 人上限")
+        groups_lib.require_group_capacity_for_user(conn, user["id"])
         conn.execute(
             "INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)",
-            (group_id, user["id"], main.utc_now()),
+            (group_id, user["id"], time.utc_now()),
         )
-        return main.group_detail(conn, group_id, user["id"])
+        return groups_lib.group_detail(conn, group_id, user["id"])
 
 
 @router.get("/api/groups/{group_id}")
-def get_group(group_id: int, user=Depends(main.current_user)):
-    with main.connect() as conn:
+def get_group(group_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
         # 权限、成员和统计共享只读快照，不混用退出/加入前后的成员集合。
         conn.execute("BEGIN")
-        return main.group_detail(conn, group_id, user["id"])
+        return groups_lib.group_detail(conn, group_id, user["id"])
 
 
 @router.post("/api/groups/{group_id}/leave")
-def leave_group(group_id: int, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.member_group(conn, group_id, user["id"])
+def leave_group(group_id: int, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        groups_lib.member_group(conn, group_id, user["id"])
         conn.execute(
             "DELETE FROM study_group_members WHERE group_id = ? AND user_id = ?",
             (group_id, user["id"]),
@@ -153,9 +158,9 @@ def leave_group(group_id: int, user=Depends(main.current_user)):
 
 
 @router.delete("/api/groups/{group_id}/members/{user_id}")
-def remove_group_member(group_id: int, user_id: int, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        group = main.member_group(conn, group_id, user["id"])
+def remove_group_member(group_id: int, user_id: int, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        group = groups_lib.member_group(conn, group_id, user["id"])
         if group["created_by"] != user["id"]:
             raise HTTPException(403, "只有创建者可以移除成员")
         if user_id == user["id"]:
@@ -173,9 +178,9 @@ def remove_group_member(group_id: int, user_id: int, user=Depends(main.current_u
 
 
 @router.delete("/api/groups/{group_id}")
-def delete_group(group_id: int, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        group = main.member_group(conn, group_id, user["id"])
+def delete_group(group_id: int, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        group = groups_lib.member_group(conn, group_id, user["id"])
         if group["created_by"] != user["id"]:
             raise HTTPException(403, "只有创建者可以解散小组")
         # 成员关系由外键 ON DELETE CASCADE 一并清除。

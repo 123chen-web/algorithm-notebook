@@ -6,6 +6,7 @@ import pytest
 import main
 from db import connect
 from test_app import client, new_problem, register
+from core import time
 
 
 TODAY = date(2026, 9, 19)
@@ -14,7 +15,7 @@ NOW = datetime(2026, 9, 19, 4, tzinfo=timezone.utc)
 
 @pytest.fixture(autouse=True)
 def fixed_clock(monkeypatch):
-    monkeypatch.setattr(main, "utc_now", lambda: NOW.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
 
 
 def review(client, mistake_id, quality=4, version=0, **extra):
@@ -164,7 +165,7 @@ def test_undo_after_24h_window_is_rejected(client, monkeypatch):
     review(client, mistake_id, quality=4, version=0)
     # 把"现在"拨到 25 小时之后。
     later = NOW + timedelta(hours=25)
-    monkeypatch.setattr(main, "utc_now", lambda: later.isoformat())
+    monkeypatch.setattr(time, "utc_now", lambda: later.isoformat())
     response = client.post(
         f"/api/mistakes/{mistake_id}/review/undo", json={"version": 1}
     )

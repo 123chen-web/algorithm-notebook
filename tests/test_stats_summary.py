@@ -13,6 +13,8 @@ import main
 import stats_summary
 from db import connect
 from test_app import client, register  # noqa: F401  (client 是 pytest 夹具)
+from core import time as core_time
+import time
 
 
 TODAY = date(2026, 9, 19)  # 星期六；与 test_app.client 冻结的用户本地日期一致（用户时区 Asia/Shanghai）。
@@ -224,7 +226,7 @@ def test_day_buckets_match_the_python_reference_across_dst(client, me, monkeypat
     set_timezone(me, zone_name)
     zone = ZoneInfo(zone_name)
     today = date(2026, 11, 8)  # 窗口覆盖美、欧、澳多个夏令时切换日
-    monkeypatch.setattr(main, "today_for", lambda user: today)
+    monkeypatch.setattr(core_time, "today_for", lambda user: today)
     rng = random.Random(zone_name)
     first = today - timedelta(days=89)
     start = int(datetime(first.year, first.month, first.day, tzinfo=timezone.utc).timestamp()) - 86400
@@ -415,7 +417,7 @@ def test_overdue_counts_only_past_due_dates(client, me):
 def test_due_uses_the_users_local_today(client, me, monkeypatch):
     seed_mistakes(me, count=2, due_date="2026-09-20")
     assert summary(client)["due"]["today"] == 0
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 20))
+    monkeypatch.setattr(core_time, "today_for", lambda user: date(2026, 9, 20))
     data = summary(client)
     assert data["due"] == {"today": 2, "overdue": 0}
     assert data["forecast"][0] == {"date": "2026-09-20", "due": 2}

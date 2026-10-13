@@ -16,6 +16,12 @@ from PIL import Image, PngImagePlugin
 import main
 import payments
 from db import connect
+from core import time as core_time
+import time
+import accounts
+from core import ratelimit
+from core import security
+import ai_limits
 
 
 NOW = "2099-01-01T10:00:00+00:00"
@@ -34,10 +40,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_USERNAME", "")
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
-    monkeypatch.setattr(main, "utc_now", lambda: NOW)
+    monkeypatch.setattr(core_time, "utc_now", lambda: NOW)
     monkeypatch.setattr(payments, "utc_now", lambda: NOW)
-    monkeypatch.setattr(main, "today_for", lambda user: date(2099, 1, 1))
-    main.reset_rate_limits()
+    monkeypatch.setattr(core_time, "today_for", lambda user: date(2099, 1, 1))
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers=CSRF) as instance:
         with connect(write=True) as conn:
             for user_id, username in USER_NAMES.items():
@@ -50,7 +56,7 @@ def client(tmp_path, monkeypatch):
                 )
                 conn.execute(
                     "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-                    (main.token_hash(f"redeem-session-{username}"), user_id, int(time.time()) + 3600),
+                    (security.token_hash(f"redeem-session-{username}"), user_id, int(time.time()) + 3600),
                 )
             conn.executemany(
                 "INSERT INTO plans(id, name, period_days, ai_daily_limit, price_cents, "
@@ -61,7 +67,7 @@ def client(tmp_path, monkeypatch):
             )
         use_user(instance, 1)
         yield instance
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
 
 
 def use_user(client, user_id):
@@ -196,7 +202,7 @@ def test_me_and_ai_quota_immediately_use_new_limit_without_resetting_usage(clien
     assert client.post("/api/redeem", json={"code": code}).status_code == 200
     me = client.get("/api/me").json()
     with connect() as conn:
-        quota = main.ai_quota(conn, 2, NOW[:10])
+        quota = ai_limits.ai_quota(conn, 2, NOW[:10])
     for result in (me, quota):
         assert result["plan_id"] == 2
         assert result["plan_name"] == "季套餐"
@@ -294,19 +300,19 @@ def test_inactive_plan_is_still_redeemable(client):
 def test_activation_failure_rolls_back_code_claim_and_subscription(client, monkeypatch):
     code = generate(client)[0]
     use_user(client, 2)
-    original = main.activate_plan
+    original = payments.activate_plan
 
     def fail_after_update(conn, user_id, plan_id, period_days, now=None):
         original(conn, user_id, plan_id, period_days, now=now)
         raise RuntimeError("simulated activation failure")
 
-    monkeypatch.setattr(main, "activate_plan", fail_after_update)
+    monkeypatch.setattr(payments, "activate_plan", fail_after_update)
     with pytest.raises(RuntimeError, match="simulated activation failure"):
         client.post("/api/redeem", json={"code": code})
     assert stored_code(code)["redeemed_by"] is None
     assert stored_code(code)["redeemed_at"] is None
     assert subscription() == {"plan_id": None, "plan_expires_at": None}
-    monkeypatch.setattr(main, "activate_plan", original)
+    monkeypatch.setattr(payments, "activate_plan", original)
     assert client.post("/api/redeem", json={"code": code}).status_code == 200
 
 
@@ -350,7 +356,7 @@ def test_ip_rate_limit_counts_multiple_users_at_the_login_client_ip(client):
     response = client.post("/api/redeem", json={"code": "invalid"})
     assert response.status_code == 429
     assert response.json()["detail"] == "尝试次数过多，请稍后再试"
-    assert "redeem-ip:testclient" in main._rate_buckets
+    assert "redeem-ip:testclient" in ratelimit._rate_buckets
 
 
 def test_codes_and_inputs_do_not_appear_in_logs(client, caplog):
@@ -429,7 +435,7 @@ def test_every_new_write_rechecks_account_inside_transaction(client, monkeypatch
         calls.append(user_id)
         raise HTTPException(401, "登录已过期，请重新登录")
 
-    monkeypatch.setattr(main, "recheck_account", account_disappeared)
+    monkeypatch.setattr(accounts, "recheck_account", account_disappeared)
     if kind == "redeem":
         use_user(client, 2)
         response = client.post("/api/redeem", json={"code": code})
@@ -459,14 +465,14 @@ def test_every_new_write_rechecks_account_inside_transaction(client, monkeypatch
 def test_redeem_rechecks_changes_after_authentication(client, monkeypatch, change, status, message):
     code = generate(client)[0]
     use_user(client, 2)
-    original = main.recheck_account
+    original = accounts.recheck_account
 
     def changed_after_snapshot(conn, user_id, expected_hash=None):
         # Simulate a concurrent status change between current_user and the write.
         conn.execute(f"UPDATE users SET {change} WHERE id = ?", (user_id,))
         return original(conn, user_id, expected_hash)
 
-    monkeypatch.setattr(main, "recheck_account", changed_after_snapshot)
+    monkeypatch.setattr(accounts, "recheck_account", changed_after_snapshot)
     response = client.post("/api/redeem", json={"code": code})
     assert response.status_code == status
     assert response.json()["detail"] == message
@@ -476,13 +482,13 @@ def test_redeem_rechecks_changes_after_authentication(client, monkeypatch, chang
 
 @pytest.mark.parametrize("change,status", [("is_admin = 0", 403), ("is_banned = 1", 401)])
 def test_admin_write_rechecks_revoked_permissions_and_ban(client, monkeypatch, change, status):
-    original = main.recheck_account
+    original = accounts.recheck_account
 
     def changed_after_snapshot(conn, user_id, expected_hash=None):
         conn.execute(f"UPDATE users SET {change} WHERE id = ?", (user_id,))
         return original(conn, user_id, expected_hash)
 
-    monkeypatch.setattr(main, "recheck_account", changed_after_snapshot)
+    monkeypatch.setattr(accounts, "recheck_account", changed_after_snapshot)
     response = client.post("/api/admin/redeem-codes", json={"plan_id": 1, "count": 1})
     assert response.status_code == status
     with connect() as conn:

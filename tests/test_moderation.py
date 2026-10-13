@@ -3,6 +3,7 @@ import main
 from db import connect
 from test_app import client, register
 from test_forum import create_comment, create_post
+from core import config
 
 
 def report_post(client, post_id, reason="内容不合适"):
@@ -74,7 +75,7 @@ def test_duplicate_pending_report_rejected(client):
 
 
 def test_report_rate_limited(client, monkeypatch):
-    monkeypatch.setattr(main, "REPORT_LIMIT", 1)
+    monkeypatch.setattr(config, "REPORT_LIMIT", 1)
     register(client, "alice")
     first = create_post(client, "第一条")
     second = create_post(client, "第二条")

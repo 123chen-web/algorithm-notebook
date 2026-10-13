@@ -4,6 +4,8 @@ import pytest
 import main
 from db import connect
 from test_plugin_api import auth_headers, client, import_payload, import_problem, issue_token, register  # noqa: F401
+from core import time
+from core import ratelimit
 
 
 def luogu_payload(**overrides):
@@ -154,7 +156,7 @@ def test_due_count_counts_due_unsuspended_mistakes_only(client):
     client.post(f"/api/problems/{problem['id']}/mistakes", json={"reason": "三"}, headers=auth_headers(token))
     assert client.get("/api/review/due-count", headers=auth_headers(token)).json() == {"due_count": 3}
     with connect(write=True) as conn:
-        conn.execute("UPDATE mistakes SET suspended_at = ? WHERE id = ?", (main.utc_now(), problem["mistake_id"]))
+        conn.execute("UPDATE mistakes SET suspended_at = ? WHERE id = ?", (time.utc_now(), problem["mistake_id"]))
         conn.execute("UPDATE mistakes SET due_date = '2999-01-01' WHERE description = '二'")
     assert client.get("/api/review/due-count", headers=auth_headers(token)).json() == {"due_count": 1}
 
@@ -180,7 +182,7 @@ def test_new_endpoints_are_rate_limited(client, monkeypatch):
     token = issue_token(client)
     monkeypatch.setattr("routers.plugin_api.READ_LIMIT_PER_HOUR", 2)
     monkeypatch.setattr("routers.plugin_api.APPEND_LIMIT_PER_HOUR", 2)
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     problem = post_import(client, token, luogu_payload()).json()
     assert [client.get("/api/review/due-count", headers=auth_headers(token)).status_code for _ in range(3)] == [200, 200, 429]
     url = f"/api/problems/{problem['id']}/mistakes"

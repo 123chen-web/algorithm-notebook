@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 import pytest
+from static_helpers import app_source, versioned_src
 
 from test_contrast_tokens import (
     contrast_ratio,
@@ -22,7 +23,7 @@ FOCUS_JS = (STATIC / "nav-focus.js").read_text(encoding="utf-8")
 FOCUS_CSS = (STATIC / "nav-focus.css").read_text(encoding="utf-8")
 RANK_JS = (STATIC / "rank.js").read_text(encoding="utf-8")
 RANK_CSS = (STATIC / "rank.css").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 PALETTE_JS = (STATIC / "palette.js").read_text(encoding="utf-8")
 README = (STATIC.parent / "README.md").read_text(encoding="utf-8")
 
@@ -68,17 +69,17 @@ def text_around(elements, element_id):
 
 def test_assets_are_served_once_and_before_app():
     assert INDEX.count('/static/nav-focus.css?v=1"') == 1
-    assert INDEX.count("/static/nav-focus.js?v=8") == 1
+    assert INDEX.count(versioned_src("nav-focus.js")) == 1
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
     assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=8") < INDEX.index("app.js?v=103")
+    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=102")
 
 
 def test_changed_assets_bump_their_cache_busting_version():
     assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
     assert re.search(r'<script defer src="/static/rank\.js\?v=2"></script>', INDEX)
-    assert re.search(r'<script defer src="/static/app\.js\?v=103"></script>', INDEX)
+    assert re.search(r'<script defer src="/static/app\.js\?v=102"></script>', INDEX)
 
 
 def test_two_keyboard_operable_toggles_are_buttons_with_aria_pressed():

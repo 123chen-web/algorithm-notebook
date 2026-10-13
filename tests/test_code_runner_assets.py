@@ -5,6 +5,7 @@ import shutil
 import subprocess
 
 import pytest
+from static_helpers import app_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +37,7 @@ def test_runner_styles_use_tokens_and_accessible_focus():
 
 
 def test_runner_mount_and_cleanup_follow_review_lifecycle():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     assert "window.CodeRunner?.unmount();" in source
     assert "window.CodeRunner?.reset();" in source
     assert "window.CodeRunner?.mount(runnerHost, item, { offline });" in source

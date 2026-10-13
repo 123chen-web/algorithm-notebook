@@ -163,7 +163,9 @@ class Builder:
         from db import connect
         from fastapi.testclient import TestClient
 
+        from core import ratelimit
         self.main, self.connect, self.password = main, connect, password
+        self.ratelimit = ratelimit
         self.http = lambda: TestClient(main.app, headers={"X-CSRF-Protection": "1"})
         self.now = datetime.now(timezone.utc).replace(microsecond=0)
         self.clients, self.user_ids, self.first_mistake = {}, {}, {}
@@ -179,7 +181,7 @@ class Builder:
         return (self.now - timedelta(days=days, hours=hours, minutes=minutes)).isoformat()
 
     def register(self, name):
-        self.main.reset_rate_limits()
+        self.ratelimit.reset_rate_limits()
         client = self.http()
         response = client.post("/api/auth/register", json={
             "username": name, "password": self.password, "invite_code": INVITE_CODE,
@@ -270,7 +272,7 @@ class Builder:
         assert response.status_code in (200, 201), (name, response.text)
         group = response.json()
         for member in members:
-            self.main.reset_rate_limits()
+            self.ratelimit.reset_rate_limits()
             joined = self.clients[member].post("/api/groups/join", json={"invite_code": group["invite_code"]})
             assert joined.status_code == 200, (name, member, joined.text)
         with self.connect(write=True) as conn:
@@ -299,7 +301,7 @@ def build(password):
     # 公开注册一律创建普通用户；仅在隔离的样本数据库中显式授予样本管理员。
     with world.connect(write=True) as conn:
         conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (world.user_ids[ADMIN],))
-    world.main.reset_rate_limits()
+    world.ratelimit.reset_rate_limits()
 
     # ---- the main account: plenty of mistakes with varied review histories -----------------------
     main_problem_ids, main_mistakes = {}, {}

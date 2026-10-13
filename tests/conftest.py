@@ -3,6 +3,7 @@ import os
 from urllib.parse import urlencode
 
 import pytest
+from core import config
 
 
 # 端到端冒烟测试（tests/e2e）需要 playwright 与真实浏览器，默认不收集；
@@ -14,7 +15,7 @@ def first_review_same_day_by_default(monkeypatch):
     # 线上默认"刚记下的完整错题明天才第一次到期"；绝大多数既有测试是"记下就立刻复习"的流程，
     # 所以测试里默认当天到期，专门测试新行为的用例自己再把它改成 1（见 tests/test_first_review_delay.py）。
     import main
-    monkeypatch.setattr(main, "FIRST_REVIEW_DELAY_DAYS", 0)
+    monkeypatch.setattr(config, "FIRST_REVIEW_DELAY_DAYS", 0)
 
 
 @pytest.fixture(autouse=True)

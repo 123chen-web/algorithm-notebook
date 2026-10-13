@@ -10,6 +10,13 @@ import mailer
 import main
 from db import connect
 from scheduler import schedule, today_in_timezone
+from core import security
+from core import time as core_time
+import time
+import secrets
+from core import config
+from core import ratelimit
+import review_lib
 
 
 @pytest.fixture
@@ -19,10 +26,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
-    monkeypatch.setattr(
-        main, "today_for", lambda user: date(2026, 9, 19)
+    monkeypatch.setattr(core_time, "today_for", lambda user: date(2026, 9, 19)
     )
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
 
     # 所有 AI 测试都会替换 ai.generate，不会发起真实 API 请求。
     with TestClient(
@@ -68,7 +74,7 @@ def new_problem(client, zone="算法"):
 
 
 def mock_generated_practice(item):
-    if item["zone"] in main.CODE_ZONES:
+    if item["zone"] in config.CODE_ZONES:
         questions = [
             {
                 "question": "在有序数组中查找第一个不小于目标值的位置。",
@@ -252,7 +258,7 @@ def test_mastery_signal_reads_recent_reviews(client, qualities, expected):
         insert_review(mistake_id, quality, f"2026-09-{10 + index:02d}T00:00:00+00:00")
 
     with connect() as conn:
-        assert main.mastery_signal(conn, mistake_id) == expected
+        assert review_lib.mastery_signal(conn, mistake_id) == expected
 
 
 def test_mastery_signal_only_considers_the_three_most_recent_reviews(client):
@@ -265,7 +271,7 @@ def test_mastery_signal_only_considers_the_three_most_recent_reviews(client):
         insert_review(mistake_id, quality, f"2026-09-{20 + index:02d}T00:00:00+00:00")
 
     with connect() as conn:
-        assert main.mastery_signal(conn, mistake_id) == "mastering"
+        assert review_lib.mastery_signal(conn, mistake_id) == "mastering"
 
 
 def test_create_variant_passes_mastery_signal_into_generate(client, monkeypatch):
@@ -301,7 +307,7 @@ def test_create_variant_passes_none_signal_without_review_history(client, monkey
     assert captured["mastery_signal"] is None
 
 
-@pytest.mark.parametrize("zone", main.PROBLEM_ZONES)
+@pytest.mark.parametrize("zone", config.PROBLEM_ZONES)
 def test_generation_stores_two_questions_with_zone_specific_answers(
     client, monkeypatch, zone
 ):
@@ -332,7 +338,7 @@ def test_generation_stores_two_questions_with_zone_specific_answers(
         assert variant["result"] == "unattempted"
         assert variant["answer"] == ""
         assert "notes" not in variant
-        if zone in main.CODE_ZONES:
+        if zone in config.CODE_ZONES:
             assert variant["description"] == (
                 f"{question['question']}\n\n【样例】\n{question['answer']}"
             )
@@ -699,8 +705,8 @@ def test_zones_endpoint_lists_fixed_zones(client):
     response = client.get("/api/zones")
     assert response.status_code == 200
     assert response.json() == {
-        "zones": list(main.PROBLEM_ZONES),
-        "code_zones": list(main.CODE_ZONES),
+        "zones": list(config.PROBLEM_ZONES),
+        "code_zones": list(config.CODE_ZONES),
     }
 
 
@@ -836,7 +842,7 @@ def test_zones_endpoint_marks_math_zones_as_non_code(client):
 
 
 def test_register_is_rate_limited(client):
-    for index in range(main.REGISTER_LIMIT):
+    for index in range(config.REGISTER_LIMIT):
         client.post(
             "/api/auth/register",
             json={
@@ -868,7 +874,7 @@ def test_login_is_rate_limited(client):
     register(client)
     client.post("/api/auth/logout")
 
-    for _ in range(main.LOGIN_LIMIT):
+    for _ in range(config.LOGIN_LIMIT):
         client.post(
             "/api/auth/login",
             json={"username": "alice", "password": "wrong-password"},
@@ -959,7 +965,7 @@ def test_reset_email_runs_after_token_commit(client, monkeypatch, smtp_fails):
         with connect(write=True) as conn:
             row = conn.execute(
                 "SELECT token_hash FROM password_resets WHERE token_hash = ?",
-                (main.token_hash(token),),
+                (security.token_hash(token),),
             ).fetchone()
             observed.append(row["token_hash"] if row else None)
         if smtp_fails:
@@ -980,7 +986,7 @@ def test_reset_email_runs_after_token_commit(client, monkeypatch, smtp_fails):
 
 def test_forgot_password_rechecks_email_before_issuing_token(client, monkeypatch):
     register(client, "alice")
-    original_token = main.secrets.token_urlsafe
+    original_token = secrets.token_urlsafe
     sent = []
 
     def change_email(size):
@@ -992,7 +998,7 @@ def test_forgot_password_rechecks_email_before_issuing_token(client, monkeypatch
             )
         return original_token(size)
 
-    monkeypatch.setattr(main.secrets, "token_urlsafe", change_email)
+    monkeypatch.setattr(secrets, "token_urlsafe", change_email)
     monkeypatch.setattr(mailer, "send_email", lambda *args: sent.append(args))
     response = client.post(
         "/api/auth/forgot-password", json={"email": "alice@example.com"}
@@ -1016,7 +1022,7 @@ def test_reset_password_rejects_bad_token(client, expired):
             conn.execute(
                 "INSERT INTO password_resets(token_hash, user_id, expires_at) "
                 "VALUES (?, ?, ?)",
-                (main.token_hash(token), user_id, int(main.time.time()) - 1),
+                (security.token_hash(token), user_id, int(time.time()) - 1),
             )
     with connect(write=True):
         response = client.post(
@@ -1037,9 +1043,9 @@ def test_reset_rechecks_token_after_hashing(client, monkeypatch, change):
         conn.execute(
             "INSERT INTO password_resets(token_hash, user_id, expires_at) "
             "VALUES (?, ?, ?)",
-            (main.token_hash(token), user["id"], int(main.time.time()) + 300),
+            (security.token_hash(token), user["id"], int(time.time()) + 300),
         )
-    original_hash = main.password_hash
+    original_hash = security.password_hash
 
     def hash_with_concurrent_change(password):
         # 哈希期间不持有写锁；另一个请求可使刚校验过的 token 失效。
@@ -1050,11 +1056,11 @@ def test_reset_rechecks_token_after_hashing(client, monkeypatch, change):
             else:
                 conn.execute(
                     "UPDATE password_resets SET expires_at = ? WHERE user_id = ?",
-                    (int(main.time.time()) - 1, user["id"]),
+                    (int(time.time()) - 1, user["id"]),
                 )
         return original_hash(password)
 
-    monkeypatch.setattr(main, "password_hash", hash_with_concurrent_change)
+    monkeypatch.setattr(security, "password_hash", hash_with_concurrent_change)
     response = client.post(
         "/api/auth/reset-password",
         json={"token": token, "password": "a-new-password-456"},
@@ -1250,7 +1256,7 @@ def test_renaming_away_from_admin_username_keeps_admin_and_reserves_name(client,
 
 
 def test_forgot_password_is_rate_limited(client):
-    for _ in range(main.FORGOT_PASSWORD_LIMIT):
+    for _ in range(config.FORGOT_PASSWORD_LIMIT):
         client.post(
             "/api/auth/forgot-password", json={"email": "nobody@example.com"}
         )
@@ -1261,7 +1267,7 @@ def test_forgot_password_is_rate_limited(client):
 
 
 def test_reset_password_is_rate_limited(client):
-    for _ in range(main.RESET_PASSWORD_LIMIT):
+    for _ in range(config.RESET_PASSWORD_LIMIT):
         client.post(
             "/api/auth/reset-password",
             json={"token": "whatever", "password": "a-test-password-123"},
@@ -1290,7 +1296,7 @@ def test_trial_account_signs_in_without_invite_code(client):
 
 
 def test_trial_account_is_rate_limited(client):
-    for _ in range(main.TRIAL_LIMIT):
+    for _ in range(config.TRIAL_LIMIT):
         client.post("/api/auth/trial", json={"timezone": "Asia/Shanghai"})
 
     blocked = client.post(
@@ -1327,7 +1333,7 @@ def quota_environment(monkeypatch):
                 return AI_QUOTA_NOW.replace(tzinfo=None)
             return AI_QUOTA_NOW.astimezone(tz)
 
-    monkeypatch.setattr(main, "datetime", FrozenDatetime)
+    monkeypatch.setattr(core_time, "datetime", FrozenDatetime)
     monkeypatch.setenv("TRIAL_AI_DAILY_LIMIT", "1")
     calls = []
 

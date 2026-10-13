@@ -1,5 +1,6 @@
 """手动收款 UI 的 CSP、版本、可访问性与主题静态契约。"""
 from pathlib import Path
+from static_helpers import app_source
 import re
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -43,7 +44,7 @@ def test_redeem_ui_obeys_csp_and_plain_text_contract():
     assert '"X-CSRF-Protection": "1"' in JS
     assert 'POST /api/orders' not in JS
     assert '"/api/orders"' not in JS
-    assert 'sessionEpoch' in (STATIC / 'app.js').read_text(encoding='utf-8')
+    assert 'sessionEpoch' in app_source()  # C2 后 app.js 已拆分
     assert 'request.epoch === hooks.getEpoch()' in JS
 
 

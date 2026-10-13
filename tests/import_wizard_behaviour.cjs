@@ -5,7 +5,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { load, tick, FakeEvent, deferred } = require("./js_harness.cjs");
-const APP = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+const APP = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
 const settle = async () => { await tick(); await tick(); };
 class Multipart {
   constructor() { this.values = []; }

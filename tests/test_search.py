@@ -7,6 +7,7 @@ import main
 from db import connect
 from search import like_pattern, snippet_around
 from test_app import client, register
+from core import time
 
 
 ENDPOINT = "/api/search"
@@ -45,7 +46,7 @@ def make_post(owner_id, title, body="正文", deleted=False):
     with connect(write=True) as conn:
         return conn.execute(
             "INSERT INTO posts(user_id, title, body, created_at, deleted_at) VALUES (?, ?, ?, ?, ?)",
-            (owner_id, title, body, main.utc_now(), main.utc_now() if deleted else None),
+            (owner_id, title, body, time.utc_now(), time.utc_now() if deleted else None),
         ).lastrowid
 
 
@@ -162,7 +163,7 @@ def test_posts_skip_deleted_ones_count_only_visible_comments_and_prefer_title_ma
         for index in range(3):
             conn.execute(
                 "INSERT INTO post_comments(post_id, user_id, body, created_at, deleted_at) VALUES (?, ?, '评论', ?, ?)",
-                (title_hit, owner, main.utc_now(), main.utc_now() if index == 0 else None),
+                (title_hit, owner, time.utc_now(), time.utc_now() if index == 0 else None),
             )
     posts = search(client, "二分")["posts"]
     assert [item["id"] for item in posts] == [title_hit, body_only]

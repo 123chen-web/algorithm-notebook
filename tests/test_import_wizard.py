@@ -10,6 +10,9 @@ import main
 from db import connect
 from test_app import client, register
 from test_import_cuoti import cuoti
+from core import time
+from core import config
+import accounts
 
 
 def question(title="二分边界"):
@@ -130,7 +133,7 @@ def test_preview_limit_per_user_and_account_erasure(client):
         assert preview(client).status_code == 200
     assert preview(client).status_code == 429
     with connect(write=True) as conn:
-        main.delete_account_data(conn, user["id"], main.utc_now())
+        accounts.delete_account_data(conn, user["id"], time.utc_now())
         assert conn.execute("SELECT COUNT(*) FROM import_previews").fetchone()[0] == 0
 
 
@@ -227,7 +230,7 @@ def test_export_json_retains_pending_flag_and_resets_schedule(client):
     assert confirm(client, token).json()["imported"] == 1
     with connect() as conn:
         row = dict(conn.execute("SELECT description,pending_reason,repetitions,interval_days,due_date FROM mistakes").fetchone())
-        assert row == {"description": main.QUICK_MISTAKE_PLACEHOLDER, "pending_reason": 1,
+        assert row == {"description": config.QUICK_MISTAKE_PLACEHOLDER, "pending_reason": 1,
                        "repetitions": 0, "interval_days": 0, "due_date": "2026-09-19"}
 
 

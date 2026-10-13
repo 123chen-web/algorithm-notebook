@@ -16,6 +16,10 @@ from db import connect
 from learning_stats import learning_metrics
 from share_card import render_achievement_card
 from test_app import client, register
+from core import time
+import achievements
+import ai_limits
+import learning_stats
 
 
 ENDPOINT = "/api/achievements/share-card"
@@ -202,7 +206,7 @@ def test_share_card_is_read_only_and_available_without_ai_quota(
     def unexpected_quota(*args, **kwargs):
         pytest.fail("分享卡片不检查 AI 配额或套餐")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected_quota)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected_quota)
     with connect() as conn:
         before = list(conn.iterdump())
     first = card(client)
@@ -253,10 +257,10 @@ def test_endpoint_reuses_metrics_badges_and_one_user_local_date(
         assert today == local_today
         return render_achievement_card(username, metrics, achievements, today)
 
-    monkeypatch.setattr(main, "today_for", frozen_today)
-    monkeypatch.setattr(main, "learning_metrics", capture_metrics)
-    monkeypatch.setattr(main, "evaluate_achievements", capture_badges)
-    monkeypatch.setattr(main, "render_achievement_card", capture_render)
+    monkeypatch.setattr(time, "today_for", frozen_today)
+    monkeypatch.setattr(learning_stats, "learning_metrics", capture_metrics)
+    monkeypatch.setattr(achievements, "evaluate_achievements", capture_badges)
+    monkeypatch.setattr(share_card, "render_achievement_card", capture_render)
     content = card(client)
     assert date_calls == [timezone_name]
     assert observed["metrics"] == expected
@@ -288,7 +292,7 @@ def test_endpoint_uses_one_explicit_read_snapshot(client, monkeypatch):
 
         return learning_metrics(InsertAfterFirstRead(), *args)
 
-    monkeypatch.setattr(main, "learning_metrics", metrics_with_concurrent_insert)
+    monkeypatch.setattr(learning_stats, "learning_metrics", metrics_with_concurrent_insert)
     first = card(client)
     assert inserted
     assert first == render_achievement_card(

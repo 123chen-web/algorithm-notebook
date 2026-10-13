@@ -12,11 +12,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
 
+from fastapi import HTTPException
+
 PATTERN_DATA_PATH = Path(__file__).resolve().parent / "static" / "data" / "patterns.json"
+
+logger = logging.getLogger(__name__)
 MIN_SCORE = 40
 MAX_SUGGESTIONS = 3
 SUGGEST_ZONES = ("算法",)
@@ -77,6 +82,8 @@ ALIASES = {
 }
 
 _LINK_LUOGU = re.compile(r"luogu\.com\.cn/problem/([A-Za-z]{1,4}\d+[A-Za-z0-9_]*)", re.IGNORECASE)
+
+from core import config
 
 
 @lru_cache(maxsize=1)
@@ -179,3 +186,115 @@ def suggest(title="", thinking="", source_url="", zone="算法", tags=(), code="
             })
     scored.sort(key=lambda item: (-item["score"], item["pattern_id"]))
     return scored[:MAX_SUGGESTIONS]
+
+
+def load_pattern_catalog(path=PATTERN_DATA_PATH):
+    """返回 {pattern_id: {"title": ..., "example_keys": frozenset("<source>:<id>")}}。"""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("套路数据读取失败，学习路线白名单为空：%s", path, exc_info=True)
+        return {}
+    catalog = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        pattern_id = entry.get("id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            continue
+        keys = set()
+        for example in entry.get("examples") or []:
+            if isinstance(example, dict) and example.get("source") and example.get("id"):
+                keys.add(f"{example['source']}:{example['id']}")
+        catalog[pattern_id] = {
+            "title": str(entry.get("title") or pattern_id),
+            "example_keys": frozenset(keys),
+        }
+    return catalog
+
+
+PATTERN_CATALOG = load_pattern_catalog()
+
+
+def pattern_is_known(pattern_id):
+    """pattern_id 是否是清单里真实存在的套路。"""
+    return isinstance(pattern_id, str) and pattern_id in PATTERN_CATALOG
+
+
+def pattern_example_keys(pattern_id):
+    """该套路全部例题的 key（<source>:<id>）集合；未知套路返回空集合。"""
+    entry = PATTERN_CATALOG.get(pattern_id)
+    return entry["example_keys"] if entry else frozenset()
+
+
+def normalize_pattern_ids(values):
+    """校验并去重（保持原顺序）。
+
+    None 表示"调用方没有传"（编辑题目时代表保持不变）；空列表代表清空。
+    未知 pattern_id 或去重后超过 MAX_PATTERNS_PER_PROBLEM 都抛 ValueError。
+    """
+    if values is None:
+        return None
+    if not isinstance(values, list):
+        raise ValueError("套路格式不正确")
+    result = []
+    for value in values:
+        if not isinstance(value, str) or not pattern_is_known(value):
+            raise ValueError("请选择一个有效的套路")
+        if value not in result:
+            result.append(value)
+    if len(result) > config.MAX_PATTERNS_PER_PROBLEM:
+        raise ValueError(f"一道题最多关联 {config.MAX_PATTERNS_PER_PROBLEM} 个套路")
+    return result
+
+
+def validated_pattern_ids(values):
+    """接口层用：校验失败转成 422，错误消息直接给用户看。"""
+    try:
+        return normalize_pattern_ids(values)
+    except ValueError as error:
+        raise HTTPException(422, str(error))
+
+
+def set_problem_patterns(conn, problem_id, pattern_ids):
+    """全量替换这道题的套路关联。
+
+    pattern_ids 为 None 表示"调用方没传"（编辑时保持不变），此时什么都不做并
+    返回 None；传 [] 表示清空。
+    """
+    if pattern_ids is None:
+        return None
+    conn.execute("DELETE FROM problem_patterns WHERE problem_id = ?", (problem_id,))
+    for pattern_id in pattern_ids:
+        conn.execute(
+            "INSERT OR IGNORE INTO problem_patterns(problem_id, pattern_id) VALUES (?, ?)",
+            (problem_id, pattern_id),
+        )
+    return pattern_ids
+
+
+def attach_pattern_ids(conn, items):
+    """给错题列表补上 pattern_ids（题目 → 套路），编辑表单要用它的初始值。
+
+   就地改 items 并返回；没有关联的题目给空列表（前端据此判断"还没挂过套路"）。
+    """
+    mapping = problem_pattern_ids(conn, [item.get("problem_id") for item in items])
+    for item in items:
+        item["pattern_ids"] = mapping.get(item.get("problem_id"), [])
+    return items
+
+
+def problem_pattern_ids(conn, problem_ids):
+    """{problem_id: [pattern_id, ...]}，按 rowid 顺序；没有关联的题目不出现在结果里。"""
+    result = {}
+    if not problem_ids:
+        return result
+    placeholders = ",".join("?" for _ in problem_ids)
+    for row in conn.execute(
+        f"SELECT problem_id, pattern_id FROM problem_patterns "
+        f"WHERE problem_id IN ({placeholders}) ORDER BY rowid",
+        list(problem_ids),
+    ):
+        result.setdefault(row["problem_id"], []).append(row["pattern_id"])
+    return result
+

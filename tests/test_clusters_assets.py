@@ -17,15 +17,19 @@ from test_app_session_assets import (
 )
 
 
+from static_helpers import app_source
+
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 
 
 @pytest.fixture(scope="module")
 def assets():
-    return {name: (STATIC / name).read_text(encoding="utf-8") for name in (
-        "index.html", "clusters.js", "clusters.css", "app.js", "shell.js", "practice.js",
+    d = {name: (STATIC / name).read_text(encoding="utf-8") for name in (
+        "index.html", "clusters.js", "clusters.css", "shell.js", "practice.js",
     )}
+    d["app.js"] = app_source()  # C2 后 app.js 已拆分，用拼接后的应用域源码
+    return d
 
 
 def test_versioned_assets_load_before_app(assets):

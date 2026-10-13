@@ -10,6 +10,7 @@ import ai
 import main
 from db import connect
 from test_app import client, register
+from core import config
 
 
 def make_image_bytes(fmt="JPEG", size=(400, 300), color=(200, 100, 50), mode="RGB"):
@@ -98,7 +99,7 @@ def test_rejects_disallowed_but_valid_image_format(client):
 
 
 def test_rejects_oversized_upload(client, monkeypatch):
-    monkeypatch.setattr(main, "PHOTO_MAX_BYTES", 100)
+    monkeypatch.setattr(config, "PHOTO_MAX_BYTES", 100)
     register(client)
     response = upload_photo(client, make_image_bytes(size=(400, 400)))
     assert response.status_code == 413
@@ -123,7 +124,7 @@ def test_large_photo_is_downscaled_but_keeps_aspect_ratio(client, monkeypatch):
     upload_photo(client, make_image_bytes(size=(4000, 2000)))
 
     width, height = captured["image"].size
-    assert max(width, height) == main.PHOTO_MAX_DIMENSION
+    assert max(width, height) == config.PHOTO_MAX_DIMENSION
     assert abs(width / height - 2) < 0.01
 
 

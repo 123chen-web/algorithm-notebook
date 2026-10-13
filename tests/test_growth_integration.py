@@ -6,6 +6,9 @@ import pytest
 import main
 from db import connect
 from test_app import client, register  # noqa: F401
+from core import time
+import ai
+import os
 
 
 NOW = "2026-09-19T04:00:00+00:00"
@@ -16,16 +19,16 @@ PASSWORD = "a-test-password-123"
 @pytest.fixture
 def growth_client(client, monkeypatch):
     monkeypatch.setenv("AI_DAILY_LIMIT", "20")
-    monkeypatch.setattr(main, "utc_now", lambda: NOW)
-    monkeypatch.setattr(main, "today_for", lambda user: DAY)
-    for name in list(main.os.environ):
+    monkeypatch.setattr(time, "utc_now", lambda: NOW)
+    monkeypatch.setattr(time, "today_for", lambda user: DAY)
+    for name in list(os.environ):
         if name.startswith("SMTP_"):
             monkeypatch.delenv(name, raising=False)
 
     def forbidden_ai(*args, **kwargs):
         pytest.fail("Growth integration tests must never initialize a real AI client")
 
-    monkeypatch.setattr(main, "OpenAI", forbidden_ai)
+    monkeypatch.setattr(ai, "OpenAI", forbidden_ai)
     return client
 
 

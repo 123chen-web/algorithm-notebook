@@ -1,5 +1,9 @@
 """Authenticated public profiles; account helpers stay in main's namespace."""
-import main
+from core import security
+import accounts
+import db
+import images
+from models import InputModel
 import re
 import unicodedata
 import rank_cache
@@ -12,11 +16,11 @@ from pydantic import StrictBool, field_validator
 router = APIRouter()
 
 
-class BioUpdate(main.InputModel):
+class BioUpdate(InputModel):
     bio: str = Field(max_length=200)
 
 
-class ProfileSettings(main.InputModel):
+class ProfileSettings(InputModel):
     rank_display_name: str | None = Field(default=None, max_length=12)
     profile_public_bio: StrictBool | None = None
     profile_public_count: StrictBool | None = None
@@ -36,12 +40,12 @@ class ProfileSettings(main.InputModel):
 
 
 @router.put('/api/me/profile-settings')
-def update_profile_settings(data: ProfileSettings, user=Depends(main.current_user)):
+def update_profile_settings(data: ProfileSettings, user=Depends(security.current_user)):
     values = data.model_dump(exclude_unset=True)
     if any(value is None for value in values.values()):
         raise HTTPException(422, '公开设置不能为 null')
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user['id'])
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user['id'])
         if values:
             conn.execute('UPDATE users SET ' + ', '.join(f'{key} = ?' for key in values) + ' WHERE id = ?',
                          (*values.values(), user['id']))
@@ -51,18 +55,18 @@ def update_profile_settings(data: ProfileSettings, user=Depends(main.current_use
 
 
 @router.put('/api/me/bio')
-def update_my_bio(data: BioUpdate, user=Depends(main.current_user)):
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user['id'])
+def update_my_bio(data: BioUpdate, user=Depends(security.current_user)):
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user['id'])
         conn.execute('UPDATE users SET bio = ? WHERE id = ?', (data.bio, user['id']))
     return {'bio': data.bio}
 
 
 @router.get('/api/users/{user_id}/public')
-def get_public_profile(user_id: int, user=Depends(main.current_user)):
+def get_public_profile(user_id: int, user=Depends(security.current_user)):
     if not 1 <= user_id <= 9223372036854775807:
         raise HTTPException(404, '用户不存在')
-    with main.connect() as conn:
+    with db.connect() as conn:
         conn.execute('BEGIN')
         target = conn.execute(
             'SELECT id, username, avatar_version, bio, lifetime_problem_count, created_at, '
@@ -74,7 +78,7 @@ def get_public_profile(user_id: int, user=Depends(main.current_user)):
     card = {
         'user_id': user_id,
         'display_name': (target['rank_display_name'] if not target['public_rank_opt_out'] else '') or target['username'],
-        'avatar_version': target['avatar_version'], 'has_avatar': main.sec_has_avatar(user_id),
+        'avatar_version': target['avatar_version'], 'has_avatar': images.sec_has_avatar(user_id),
     }
     for flag, public_field, source in [('bio', 'bio', 'bio'), ('count', 'lifetime_problem_count', 'lifetime_problem_count'), ('joined', 'joined_at', 'created_at')]:
         if target[f'profile_public_{flag}']:

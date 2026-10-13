@@ -4,7 +4,9 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
-import main
+from core import ratelimit, security, time
+import accounts
+import db
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -133,13 +135,13 @@ def _site_fillers(conn, user_id, exclude_problem_id, cn_tags, need):
 
 
 @router.get("/api/review/similar")
-def get_review_similar(mistake_id: int, user=Depends(main.current_user)):
+def get_review_similar(mistake_id: int, user=Depends(security.current_user)):
     # 先取 CF 推荐（走 recommend 的当天稳定缓存与落库去重），不足 3 道再用站内题补齐。
-    if main.rate_limited(f"similar:{user['id']}", SIMILAR_RATE_LIMIT, SIMILAR_RATE_WINDOW):
+    if ratelimit.rate_limited(f"similar:{user['id']}", SIMILAR_RATE_LIMIT, SIMILAR_RATE_WINDOW):
         raise HTTPException(429, "操作过于频繁，请稍后再试")
-    today = main.today_for(user)
-    with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
+    today = time.today_for(user)
+    with db.connect(write=True) as conn:
+        accounts.rvb_account(conn, user["id"])
         mistake = _owned_mistake(conn, mistake_id, user["id"])
         cn_tags = _mistake_tags(conn, mistake_id, user["id"])
         cf_items = _cf_items_for_tags(conn, user, today, cn_tags)

@@ -21,6 +21,8 @@ from test_app import client, mock_generated_practice, register
 from test_clusters import cluster_result, seed_mistakes
 from test_photo_recognition import FAKE_RECOGNITION, make_image_bytes, upload_photo
 from test_weakness_insights import analysis_result
+from fastapi import concurrency
+from routers import problems
 
 
 BUSY = "AI 现在比较忙，请稍后再试；这次没有消耗额度。"
@@ -324,7 +326,7 @@ def test_cancelled_async_photo_request_releases_slot(client, monkeypatch):
     user = register(client)
     monkeypatch.setenv("AI_MAX_CONCURRENCY", "1")
     mock_ai(monkeypatch, "photo")
-    original_threadpool = main.run_in_threadpool
+    original_threadpool = concurrency.run_in_threadpool
 
     async def exercise():
         entered = asyncio.Event()
@@ -335,9 +337,9 @@ def test_cancelled_async_photo_request_releases_slot(client, monkeypatch):
                 await asyncio.Event().wait()
             return func(*args)
 
-        monkeypatch.setattr(main, "run_in_threadpool", wait_in_worker)
+        monkeypatch.setattr(concurrency, "run_in_threadpool", wait_in_worker)
         upload = UploadFile(file=io.BytesIO(make_image_bytes()), filename="photo.jpg")
-        pending = asyncio.create_task(main.recognize_problem_photo(user=user, file=upload))
+        pending = asyncio.create_task(problems.recognize_problem_photo(user=user, file=upload))
         try:
             await asyncio.wait_for(entered.wait(), timeout=5)
             pending.cancel()
@@ -355,7 +357,7 @@ def test_cancelled_async_photo_request_releases_slot(client, monkeypatch):
             pass
 
     asyncio.run(exercise())
-    monkeypatch.setattr(main, "run_in_threadpool", original_threadpool)
+    monkeypatch.setattr(concurrency, "run_in_threadpool", original_threadpool)
     assert attempts(user["id"]) == 1
     assert upload_photo(client, make_image_bytes()).status_code == 200
     assert call_rows()[-1]["ok"] == 1

@@ -9,21 +9,23 @@ from fastapi.testclient import TestClient
 import db
 import main
 import routers.problems as problems_router
+from core import time
+from core import security
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 10, 10))
-    main.init_db()
-    with main.connect(write=True) as conn:
+    monkeypatch.setattr(time, "today_for", lambda user: date(2026, 10, 10))
+    db.init_db()
+    with db.connect(write=True) as conn:
         conn.execute(
             "INSERT INTO users (username, password_hash, timezone, created_at)"
             " VALUES ('alice', 'x', 'Asia/Shanghai', '2026-10-10T00:00:00+00:00')"
         )
     app = FastAPI()
     app.include_router(problems_router.router)
-    app.dependency_overrides[main.current_user] = lambda: {
+    app.dependency_overrides[security.current_user] = lambda: {
         "id": 1, "username": "alice", "timezone": "Asia/Shanghai", "is_admin": 0,
     }
     return TestClient(app)
@@ -40,7 +42,7 @@ def test_create_and_edit_keep_correct_code(client):
     created = client.post("/api/problems", json=_body(correct_code="print(2)\n"))
     assert created.status_code == 201
     pid = created.json()["id"]
-    with main.connect() as conn:
+    with db.connect() as conn:
         row = conn.execute("SELECT correct_code FROM problems WHERE id = ?", (pid,)).fetchone()
     assert row["correct_code"] == "print(2)\n"
 
@@ -53,7 +55,7 @@ def test_create_and_edit_keep_correct_code(client):
 def test_correct_code_is_optional_and_capped(client):
     created = client.post("/api/problems", json=_body())
     assert created.status_code == 201
-    with main.connect() as conn:
+    with db.connect() as conn:
         assert conn.execute("SELECT correct_code FROM problems").fetchone()[0] == ""
     too_long = client.post("/api/problems", json=_body(correct_code="x" * 40001))
     assert too_long.status_code == 422

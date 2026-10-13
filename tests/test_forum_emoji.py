@@ -2,6 +2,7 @@
 import pytest
 
 from test_app import client, register
+from forum_lib import truncate_text
 
 
 # 带变体选择符（❤️）、零宽连接符（👨‍💻）、肤色（👍🏽）、国旗和键帽的复合表情。
@@ -79,7 +80,7 @@ def test_long_quote_excerpt_of_plain_emoji_is_cut_at_sixty_characters(client):
     ("👩‍" + "💻", 58),            # 连接符落在边界上：连同前面的表情一起留给后面
 ])
 def test_quote_excerpt_never_splits_a_composite_emoji_or_combining_mark(client, tail, kept):
-    from main import truncate_text
+    
 
     text = "a" * kept + tail
     assert len(text) > 60
@@ -93,7 +94,7 @@ def test_quote_excerpt_never_splits_a_composite_emoji_or_combining_mark(client, 
 
 
 def test_truncate_text_leaves_short_and_plain_text_alone():
-    from main import truncate_text
+    
 
     assert truncate_text("短文本", 60) == ("短文本", False)
     assert truncate_text("a" * 60, 60) == ("a" * 60, False)

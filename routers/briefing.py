@@ -4,7 +4,8 @@
 - GET /api/briefing/today：只读服务器每天凌晨抓好的简报缓存（digest.py --cache-only），
   请求时不联网、不调用 AI；没有缓存就返回空列表，前端把卡片藏起来。
 """
-import main
+from core import ratelimit, security, time
+import db
 
 import digest
 import today_sign
@@ -20,16 +21,16 @@ LOOKBACK_DAYS = 3  # 服务器时区和 UTC 日期可能错开，往前找最近
 
 
 @router.get("/api/today-sign")
-def get_today_sign(user=Depends(main.current_user)):
-    if main.rate_limited(f"today-sign:{user['id']}", 60, 60):
+def get_today_sign(user=Depends(security.current_user)):
+    if ratelimit.rate_limited(f"today-sign:{user['id']}", 60, 60):
         raise HTTPException(429, "请求太频繁，请稍后再试")
-    day = main.today_for(user)
-    with main.connect() as conn:
+    day = time.today_for(user)
+    with db.connect() as conn:
         return today_sign.build_sign(conn, user["id"], day)
 
 
 def _latest_bundle():
-    day = date.fromisoformat(main.utc_now()[:10])
+    day = date.fromisoformat(time.utc_now()[:10])
     for back in range(LOOKBACK_DAYS):
         candidate = (day - timedelta(days=back)).isoformat()
         cached = digest.load_cache(candidate)
@@ -39,8 +40,8 @@ def _latest_bundle():
 
 
 @router.get("/api/briefing/today")
-def get_today_briefing(user=Depends(main.current_user)):
-    if main.rate_limited(f"briefing:{user['id']}", 60, 60):
+def get_today_briefing(user=Depends(security.current_user)):
+    if ratelimit.rate_limited(f"briefing:{user['id']}", 60, 60):
         raise HTTPException(429, "请求太频繁，请稍后再试")
     day, cached = _latest_bundle()
     if cached is None:

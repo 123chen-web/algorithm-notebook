@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import db
 
 ROOT = Path(__file__).resolve().parents[1]
 SSH_HARDEN = ROOT / "deploy" / "bin" / "ssh-harden.sh"

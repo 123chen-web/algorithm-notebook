@@ -1,6 +1,7 @@
 import main
 from db import SCHEMA_VERSION, connect
 from test_app import client
+import db
 
 
 def test_healthz_without_login_or_headers(client):
@@ -18,7 +19,7 @@ def test_healthz_hides_database_errors(client, monkeypatch):
     def unavailable(*args, **kwargs):
         raise RuntimeError("private database path and failure details")
 
-    monkeypatch.setattr(main, "connect", unavailable)
+    monkeypatch.setattr(db, "connect", unavailable)
     response = client.get("/healthz")
     assert response.status_code == 503
     assert response.json() == {"status": "error"}
@@ -27,7 +28,7 @@ def test_healthz_hides_database_errors(client, monkeypatch):
 
 
 def test_healthz_checks_write_access(client, monkeypatch):
-    original = main.connect
+    original = db.connect
     calls = []
 
     def unavailable_for_write(write=False, **kwargs):
@@ -36,7 +37,7 @@ def test_healthz_checks_write_access(client, monkeypatch):
             raise RuntimeError("private write failure")
         return original(write=write, **kwargs)
 
-    monkeypatch.setattr(main, "connect", unavailable_for_write)
+    monkeypatch.setattr(db, "connect", unavailable_for_write)
     response = client.get("/healthz")
     assert response.status_code == 503
     assert response.json() == {"status": "error"}

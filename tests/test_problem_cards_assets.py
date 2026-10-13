@@ -2,15 +2,17 @@
 from pathlib import Path
 import re
 
+from static_helpers import app_source
+
 STATIC = Path(__file__).resolve().parents[1] / 'static'
 
 
 def test_problem_cards_assets_and_load_order():
     index = (STATIC / 'index.html').read_text(encoding='utf-8')
     assert index.count('/static/problem-cards.css?v=1') == 1
-    assert index.count('/static/problem-cards.js?v=3') == 1
-    assert index.index('problem-cards.js?v=3') < index.index('focus.js?v=8') < index.index('app.js?v=103')
-    for file, version in [('overview.js', 7), ('clusters.js', 7), ('app.js', 103)]:
+    assert index.count('/static/problem-cards.js?v=2') == 1
+    assert index.index('problem-cards.js?v=2') < index.index('focus.js?v=5') < index.index('app.js?v=102')
+    for file, version in [('overview.js', 5), ('clusters.js', 7), ('app.js', 102)]:
         assert f'/static/{file}?v={version}' in index
 
 
@@ -36,12 +38,14 @@ def test_progress_css_buckets_theme_tokens_and_mobile():
 
 
 def test_all_list_views_use_problem_cards_and_detail_remains_independent():
-    for file in ['app.js', 'overview.js', 'clusters.js']:
-        source = (STATIC / file).read_text(encoding='utf-8')
-        assert 'ProblemCards.group' in source and 'ProblemCards.card' in source
+    # C2 后 app.js 已拆分：用 app_source() 覆盖全部应用域文件。
+    app_domain = app_source()
+    for name, source in [('app domain', app_domain),
+                         ('overview.js', (STATIC / 'overview.js').read_text(encoding='utf-8')),
+                         ('clusters.js', (STATIC / 'clusters.js').read_text(encoding='utf-8'))]:
+        assert 'ProblemCards.group' in source and 'ProblemCards.card' in source, name
     focus = (STATIC / 'focus.js').read_text(encoding='utf-8')
     assert 'ProblemCards?.position' in focus
     assert 'active.order = items.map((item) => item.id)' in focus
-    app = (STATIC / 'app.js').read_text(encoding='utf-8')
-    assert 'ProblemCards.navigation' in app
-    assert '/api/mistakes/${item.id}/review' in app
+    assert 'ProblemCards.navigation' in app_domain
+    assert '/api/mistakes/${item.id}/review' in app_domain

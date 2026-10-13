@@ -33,14 +33,14 @@ def test_lifetime_counter_rolls_back_and_is_erased_on_account_deletion(client):
     owner = register(client)
     create_quick(client, '计数题')
     with pytest.raises(RuntimeError, match='rollback'):
-        with main.connect(write=True) as conn:
+        with db.connect(write=True) as conn:
             conn.execute('INSERT INTO problems(user_id, title, zone, language, code, thinking, created_at) '
                          'VALUES (?, ?, ?, ?, ?, ?, ?)',
                          (owner['id'], '未提交', '算法', 'Python', '', '', '2026-10-08'))
             raise RuntimeError('rollback')
     assert client.get(f"/api/users/{owner['id']}/public").json()['lifetime_problem_count'] == 1
     assert client.post('/api/me/delete-account', json={'password': 'a-test-password-123'}).status_code == 200
-    with main.connect() as conn:
+    with db.connect() as conn:
         assert conn.execute('SELECT lifetime_problem_count FROM users WHERE id = ?', (owner['id'],)).fetchone()[0] == 0
 
 

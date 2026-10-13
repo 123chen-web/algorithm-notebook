@@ -9,6 +9,9 @@ import ai
 import main
 from db import connect, init_db
 from test_app import client, register
+import ai_limits
+from core import security
+from core import time
 
 
 ENDPOINT = "/api/insights/weakness-analysis"
@@ -91,7 +94,7 @@ def test_insufficient_history_never_checks_ai_or_spends_quota(client, monkeypatc
     def unexpected_quota(*args):
         pytest.fail("样本不足时应先返回友好提示")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected_quota)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected_quota)
     response = client.post(ENDPOINT)
     assert response.status_code == 200
     payload = response.json()
@@ -179,7 +182,7 @@ def test_query_is_free_and_regeneration_replaces_the_single_saved_result(client,
         pytest.fail("查询历史分析不应调用 AI 或配额计算")
 
     monkeypatch.setattr(ai, "analyze_weaknesses", unexpected_call)
-    monkeypatch.setattr(main, "ai_quota", unexpected_call)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected_call)
     fetched = client.get(ENDPOINT)
     assert fetched.status_code == 200
     assert fetched.json()["insight"] == latest
@@ -317,7 +320,7 @@ def test_insights_require_authentication(client, method):
 def test_quota_is_reserved_under_write_lock_but_ai_runs_after_commit(client, monkeypatch):
     user_id = register(client)["id"]
     seed_mistakes(user_id)
-    quota_read = main.ai_quota
+    quota_read = ai_limits.ai_quota
     checks = []
 
     def read_while_locked(conn, queried_user_id, day):
@@ -342,7 +345,7 @@ def test_quota_is_reserved_under_write_lock_but_ai_runs_after_commit(client, mon
         checks.append("committed")
         return analysis_result(reference)
 
-    monkeypatch.setattr(main, "ai_quota", read_while_locked)
+    monkeypatch.setattr(ai_limits, "ai_quota", read_while_locked)
     monkeypatch.setattr(ai, "analyze_weaknesses", analyze_after_commit)
     assert client.post(ENDPOINT).status_code == 200
     assert checks == ["locked", "committed"]
@@ -354,14 +357,14 @@ def test_analysis_reloads_subscription_after_authentication(client, monkeypatch)
     with connect(write=True) as conn:
         plan_id = conn.execute(
             """INSERT INTO plans(name, period_days, ai_daily_limit, price_cents, created_at)
-               VALUES ('新套餐', 30, 3, 990, ?)""", (main.utc_now(),),
+               VALUES ('新套餐', 30, 3, 990, ?)""", (time.utc_now(),),
         ).lastrowid
         conn.execute(
             "INSERT INTO ai_usage(user_id, day, attempts) VALUES (?, ?, 2)", (user_id, DAY),
         )
 
     def authenticate_then_upgrade(request: Request):
-        user = main.current_user(request)
+        user = security.current_user(request)
         with connect(write=True) as conn:
             conn.execute(
                 "UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
@@ -370,11 +373,11 @@ def test_analysis_reloads_subscription_after_authentication(client, monkeypatch)
         return user
 
     monkeypatch.setattr(ai, "analyze_weaknesses", analysis_result)
-    main.app.dependency_overrides[main.current_user] = authenticate_then_upgrade
+    main.app.dependency_overrides[security.current_user] = authenticate_then_upgrade
     try:
         assert client.post(ENDPOINT).status_code == 200
     finally:
-        main.app.dependency_overrides.pop(main.current_user)
+        main.app.dependency_overrides.pop(security.current_user)
     assert attempts(user_id) == 3
 
 
@@ -388,7 +391,7 @@ def test_insight_table_migrates_idempotently_and_cascades_on_user_delete(client)
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)",
-            (user_id, '{"summary":"保留已有结果"}', main.utc_now()),
+            (user_id, '{"summary":"保留已有结果"}', time.utc_now()),
         )
     init_db()
     with connect(write=True) as conn:
@@ -396,7 +399,7 @@ def test_insight_table_migrates_idempotently_and_cascades_on_user_delete(client)
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, '{}', ?)",
-                (user_id, main.utc_now()),
+                (user_id, time.utc_now()),
             )
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         assert conn.execute("SELECT COUNT(*) FROM weakness_insights").fetchone()[0] == 0

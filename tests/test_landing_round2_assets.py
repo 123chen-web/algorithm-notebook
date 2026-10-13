@@ -3,6 +3,7 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
+from static_helpers import app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -45,7 +46,7 @@ def test_trial_status_is_one_account_badge_with_the_retention_explanation():
 
 
 def test_trial_signin_does_not_repeat_the_account_status_in_a_notice():
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = app_source()
     trial = re.search(r"(?m)^function startTrial\(\) \{([\s\S]*?)^\}", source)
     assert trial
     assert "await enterApp()" in trial[1]

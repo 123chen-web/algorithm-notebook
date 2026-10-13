@@ -7,6 +7,8 @@ import ai
 import main
 from db import connect
 from test_app import client, mock_generated_practice, new_problem, register
+from core import time
+from core import config
 
 
 ENDPOINT = "/api/achievements"
@@ -87,7 +89,7 @@ def seed_problem(user_id, mistake_count=1, zone="算法"):
                 user_id, title, zone, language, code, thinking, created_at
             ) VALUES (?, '二分边界', ?, 'Python', '', '', ?)
             """,
-            (user_id, zone, main.utc_now()),
+            (user_id, zone, time.utc_now()),
         ).lastrowid
         ids = [
             conn.execute(
@@ -135,7 +137,7 @@ def seed_analysis(user_id, content="{}"):
         conn.execute(
             "INSERT INTO weakness_insights(user_id, content, created_at) "
             "VALUES (?, ?, ?)",
-            (user_id, content, main.utc_now()),
+            (user_id, content, time.utc_now()),
         )
 
 
@@ -196,9 +198,9 @@ def test_mistake_thresholds_count_points_not_problems(client, target, offset):
 def test_zone_thresholds_use_distinct_recorded_problem_zones(client, target, offset):
     user_id = register(client)["id"]
     count = target + offset
-    for zone in main.PROBLEM_ZONES[:count]:
+    for zone in config.PROBLEM_ZONES[:count]:
         seed_problem(user_id, mistake_count=0, zone=zone)
-    seed_problem(user_id, mistake_count=5, zone=main.PROBLEM_ZONES[0])
+    seed_problem(user_id, mistake_count=5, zone=config.PROBLEM_ZONES[0])
 
     data = payload(client)
     assert data["metrics"]["recorded_zone_count"] == count
@@ -237,7 +239,7 @@ def test_metrics_and_badges_are_isolated_between_users(client):
 
     bob_id = register(client, "bob")["id"]
     bob_mistake = seed_problem(bob_id, mistake_count=100)[0]
-    for zone in main.PROBLEM_ZONES[1:5]:
+    for zone in config.PROBLEM_ZONES[1:5]:
         seed_problem(bob_id, mistake_count=0, zone=zone)
     seed_streak(bob_mistake, 100)
     seed_practice(bob_mistake, 100)
@@ -287,7 +289,7 @@ def test_failed_ai_attempt_does_not_count_as_generated_practice(client, monkeypa
 def test_successful_generations_in_same_second_are_not_deduplicated(client, monkeypatch):
     register(client)
     mistake_id = new_problem(client)[0]
-    monkeypatch.setattr(main, "utc_now", lambda: "2026-09-19T00:00:00+00:00")
+    monkeypatch.setattr(time, "utc_now", lambda: "2026-09-19T00:00:00+00:00")
     monkeypatch.setattr(ai, "generate", mock_generated_practice)
     for _ in range(2):
         response = client.post(f"/api/mistakes/{mistake_id}/variants")
@@ -327,10 +329,10 @@ def test_streak_keeps_yesterday_grace_then_relocks_after_a_gap(client, monkeypat
     seed_streak(mistake_id, 7)
     assert_family(payload(client), "streak", 7)
 
-    monkeypatch.setattr(main, "today_for", lambda user: TODAY + timedelta(days=1))
+    monkeypatch.setattr(time, "today_for", lambda user: TODAY + timedelta(days=1))
     assert_family(payload(client), "streak", 7)
 
-    monkeypatch.setattr(main, "today_for", lambda user: TODAY + timedelta(days=2))
+    monkeypatch.setattr(time, "today_for", lambda user: TODAY + timedelta(days=2))
     data = payload(client)
     assert data["metrics"]["current_streak_days"] == 0
     assert_family(data, "streak", 0)

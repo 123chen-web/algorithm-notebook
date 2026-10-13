@@ -1,10 +1,17 @@
-import secrets
+import hashlib
+import io
 import logging
+import os
+import secrets
+import unicodedata
+import warnings
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
+from PIL import Image
 
-from db import connect
+from db import ROOT, connect
 from payment_channels import (
     CallbackVerificationError,
     PaymentChannelError,
@@ -15,6 +22,9 @@ from payment_channels import (
 sec_payment_logger = logging.getLogger(__name__)
 
 
+import accounts
+import images
+from core import security
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -269,3 +279,82 @@ def handle_callback(channel, raw_body, headers, *, user_id=None):
         return dict(conn.execute(
             "SELECT * FROM orders WHERE id = ?", (order["id"],)
         ).fetchone())
+
+
+def normalize_redeem_code(value):
+    value = unicodedata.normalize("NFKC", value).upper()
+    return "".join(char for char in value if not char.isspace() and char != "-")
+
+
+def redeem_code_hash(value):
+    return hashlib.sha256(normalize_redeem_code(value).encode("utf-8")).hexdigest()
+
+
+def recheck_manual_account(conn, user_id, *, admin=False):
+    fresh = accounts.recheck_account(conn, user_id)
+    if fresh["is_banned"]:
+        raise HTTPException(401, "账号已被封禁，无法继续使用")
+    if admin:
+        security.require_admin(fresh)
+    return fresh
+
+
+def manual_plan(conn, plan_id):
+    # 已发行的码与已有订单一致，不因套餐停用而失效。
+    plan = conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+    if plan is None:
+        raise HTTPException(404, "套餐不存在")
+    return plan
+
+
+def pay_qr_path(channel):
+    if channel not in ("alipay", "wechat"):
+        raise HTTPException(404, "收款码不存在")
+    directory = Path(os.getenv("PAY_QR_DIR", "data/pay-qr")).expanduser()
+    if not directory.is_absolute():
+        directory = ROOT / directory
+    # 路径只取白名单渠道，不读取上传文件名；读取时不创建目录。
+    return directory / f"{channel}.png"
+
+
+def manual_payment_settings(conn):
+    settings = dict(conn.execute(
+        "SELECT key, value FROM app_settings WHERE key IN (?, ?)",
+        ("manual_payment_enabled", "manual_payment_contact"),
+    ).fetchall())
+    return {
+        "enabled": settings.get("manual_payment_enabled", "0") == "1",
+        "contact": settings.get("manual_payment_contact", ""),
+    }
+
+
+def encode_pay_qr(content):
+    # warning 级别的炸弹也拒绝，复用头像的 verify + 完整 decode 校验。
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        try:
+            image = images.decode_uploaded_image(content)
+        except Image.DecompressionBombWarning:
+            raise HTTPException(400, "文件不是有效的图片") from None
+    if image.format not in ("PNG", "JPEG"):
+        image.close()
+        raise HTTPException(400, "只支持 PNG 或 JPEG 格式的图片")
+    try:
+        image.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
+        converted = image.convert("RGBA" if "A" in image.getbands() or
+                                  "transparency" in image.info else "RGB")
+        # 创建纯像素图片，丢弃 EXIF、PNG 文本、ICC 等上传元数据。
+        clean = Image.new(converted.mode, converted.size)
+        clean.paste(converted)
+        buffer = io.BytesIO()
+        clean.save(buffer, format="PNG")
+        clean.close()
+        converted.close()
+        return buffer.getvalue()
+    finally:
+        image.close()
+
+
+def claim_http_error(error):
+    return HTTPException(error.status_code, error.detail)
+

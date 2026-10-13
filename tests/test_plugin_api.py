@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 
 import main
 from db import SCHEMA_VERSION, connect, schema_version
+import time
+from core import ratelimit
+from core import security
 
 
 @pytest.fixture
@@ -18,7 +21,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("INVITE_CODE", "test-invite")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     monkeypatch.setenv("COOKIE_SECURE", "0")
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -85,7 +88,7 @@ def test_issue_token_returns_plaintext_once_and_stores_only_hash(client):
         ).fetchone()
     assert row["api_token_hash"] is not None
     assert row["api_token_hash"] != token
-    assert row["api_token_hash"] == main.token_hash(token)
+    assert row["api_token_hash"] == security.token_hash(token)
     # 明文只在签发时返回：再查一次用户信息接口也不应泄露。
     me = client.get("/api/me")
     assert token not in me.text
@@ -237,7 +240,7 @@ def test_limit_is_per_user_and_per_hour_even_across_token_rotation(client, monke
     owner = register(client)["id"]
     token = issue_token(client)
     clock = [1000.0]
-    monkeypatch.setattr(main.time, "time", lambda: clock[0])
+    monkeypatch.setattr(time, "time", lambda: clock[0])
     for _ in range(60):
         assert import_problem(client, token).status_code == 201
     assert import_problem(client, token).status_code == 429

@@ -12,7 +12,11 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { load, tick, FakeEvent } = require("./js_harness.cjs");
 
-const appSource = fs.readFileSync(path.join(__dirname, "..", "static", "app.js"), "utf8");
+const appSource = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "..", "static", "app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "..", "static", "app.js"), "utf8");
+})();
 function between(start, end) {
   const from = appSource.indexOf(start);
   const to = appSource.indexOf(end, from);
@@ -20,7 +24,7 @@ function between(start, end) {
   return appSource.slice(from, to);
 }
 // 速记函数块：isQuickMode / applyQuickMode / buildProblemPayload / resetQuickMode / 开关监听。
-const quickSource = between("/* ---- 速记模式（E2 事项一）", '$("#problem-form").addEventListener("submit", (event) => {');
+const quickSource = between("function isQuickMode() {", '$("#problem-form").addEventListener("submit", (event) => {');
 // 建题 submit 监听（含成功后 resetQuickMode）。
 const submitSource = between('$("#problem-form").addEventListener("submit", (event) => {', "async function showForumList() {");
 
@@ -110,6 +114,7 @@ function environment({ failApi = false } = {}) {
   vm.runInContext(`
     const $ = (selector) => document.querySelector(selector);
     let photoRecognition = null; let sessionEpoch = 1; let user = { id: 1 };
+    const QUICK_MISTAKE_HINT = "速记模式下将自动创建一条待补原因的易错点";
     function sealAnchorPoint() { return {}; }
     function stampSeal() {}
     function notifyDataChanged() {}

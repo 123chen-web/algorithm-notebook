@@ -1,5 +1,5 @@
 """F1 本地链接解析：预填标题与来源，由用户补充题面，不联网。"""
-import main
+from core import security
 
 import re
 from urllib.parse import urlparse
@@ -63,7 +63,7 @@ def _parse_problem_url(url: str):
 
 
 @router.post("/api/problems/fetch-from-url")
-def fetch_from_url(data: FetchUrlInput, user=Depends(main.current_user)):
+def fetch_from_url(data: FetchUrlInput, user=Depends(security.current_user)):
     """本地解析 LeetCode / Codeforces / 洛谷链接，只做预填，不建题。"""
     url = (data.url or "").strip()
     if not url:

@@ -15,6 +15,12 @@ from test_growth_insights import (
 )
 from test_leaderboard import insert_review
 from group_levels import level_summary
+from core import config
+from core import time
+import groups_lib
+from core import ratelimit
+import stats_summary
+from core import time as core_time
 
 
 @pytest.fixture
@@ -24,8 +30,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("COOKIE_SECURE", "0")
     monkeypatch.setenv("AI_DAILY_LIMIT", "2")
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 9, 19))
-    main.reset_rate_limits()
+    monkeypatch.setattr(time, "today_for", lambda user: date(2026, 9, 19))
+    ratelimit.reset_rate_limits()
 
     def unexpected_ai(*args, **kwargs):
         pytest.fail("Group tests must not call AI")
@@ -144,7 +150,7 @@ def test_group_name_accepts_length_boundaries(client):
 def test_invite_code_collision_retries_without_partial_group(client, monkeypatch):
     register(client)
     codes = iter(("ABCDEFGH", "ABCDEFGH", "HJKLMNPQ"))
-    monkeypatch.setattr(main, "generate_group_invite_code", lambda: next(codes))
+    monkeypatch.setattr(groups_lib, "generate_group_invite_code", lambda: next(codes))
     first = create_group(client, "第一组")
     second = create_group(client, "第二组")
     assert first["invite_code"] == "ABCDEFGH"
@@ -217,7 +223,7 @@ def test_group_list_contains_only_own_groups_and_no_private_details(client):
 
 
 def test_join_rejects_full_group_without_adding_membership(client, monkeypatch):
-    monkeypatch.setattr(main, "GROUP_MAX_MEMBERS", 1)
+    monkeypatch.setattr(config, "GROUP_MAX_MEMBERS", 1)
     register(client)
     group = create_group(client)
     assert group["member_limit"] == 1
@@ -271,7 +277,7 @@ def test_legacy_twelve_member_group_accepts_join_only_after_reaching_nine(client
 
 
 def test_personal_group_limit_applies_to_creating_and_joining(client, monkeypatch):
-    monkeypatch.setattr(main, "GROUP_MAX_PER_USER", 1)
+    monkeypatch.setattr(config, "GROUP_MAX_PER_USER", 1)
     register(client)
     invited = create_group(client, "alice 的小组")
     client.post("/api/auth/logout")
@@ -290,10 +296,10 @@ def test_personal_group_limit_applies_to_creating_and_joining(client, monkeypatc
 
 
 def test_join_rate_limit_counts_invalid_codes_and_is_shared_by_client_ip(client, monkeypatch):
-    monkeypatch.setattr(main, "GROUP_JOIN_LIMIT", 2)
+    monkeypatch.setattr(config, "GROUP_JOIN_LIMIT", 2)
     register(client)
     group = create_group(client)
-    for _ in range(main.GROUP_JOIN_LIMIT):
+    for _ in range(config.GROUP_JOIN_LIMIT):
         assert client.post(
             "/api/groups/join", json={"invite_code": "00000000"}
         ).status_code == 404
@@ -370,7 +376,7 @@ def test_each_member_uses_own_local_today_even_when_requester_has_next_day(clien
     ).status_code == 200
     frozen_now = datetime(2026, 9, 19, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        main, "today_for",
+        core_time, "today_for",
         lambda user: today_in_timezone(user["timezone"], frozen_now),
     )
     login(client)
@@ -547,7 +553,7 @@ def test_creator_can_leave_but_cannot_delete_after_leaving_and_last_member_remov
 def test_creator_rejoin_refreshes_joined_at_and_restores_creator_flags(client, monkeypatch):
     alice = register(client)
     first_join = "2026-09-19T00:00:00+00:00"
-    monkeypatch.setattr(main, "utc_now", lambda: first_join)
+    monkeypatch.setattr(time, "utc_now", lambda: first_join)
     group = create_group(client)
     client.post("/api/auth/logout")
     bob = register(client, "bob")
@@ -576,7 +582,7 @@ def test_creator_rejoin_refreshes_joined_at_and_restores_creator_flags(client, m
 
     login(client)
     rejoined_at = "2026-09-20T00:00:00+00:00"
-    monkeypatch.setattr(main, "utc_now", lambda: rejoined_at)
+    monkeypatch.setattr(time, "utc_now", lambda: rejoined_at)
     response = client.post(
         "/api/groups/join", json={"invite_code": group["invite_code"]}
     )
@@ -639,7 +645,7 @@ def test_trial_account_can_create_a_group_and_is_a_normal_member(client):
 
 
 def test_group_weakness_excludes_trial_data_and_outsiders_but_keeps_trial_streak(client):
-    assert main.GROUP_WEAKNESS_MIN_COHORT == 3
+    assert config.GROUP_WEAKNESS_MIN_COHORT == 3
     register(client)
     add_mistake_on(client, "算法", days_ago=0)
     group = create_group(client)
@@ -694,10 +700,10 @@ def test_empty_user_filter_is_not_the_whole_community_and_default_wrapper_is_unc
     for username in ("bob", "carol", "dave", "eve"):
         create_background_user_with_mistakes(username, "算法", mistake_count=3)
     with connect() as conn:
-        assert main.weakness_by_zone(conn, user_ids=set(), min_cohort=3) == {}
-        assert main.weakness_by_zone(conn, user_ids={alice["id"]}, min_cohort=1) == {
+        assert stats_summary.weakness_by_zone(conn, user_ids=set(), min_cohort=3) == {}
+        assert stats_summary.weakness_by_zone(conn, user_ids={alice["id"]}, min_cohort=1) == {
             "算法": {"sample_size": 1, "struggling_ratio": 0.0},
         }
         expected = {"算法": {"sample_size": 5, "struggling_ratio": 0.8}}
-        assert main.weakness_by_zone(conn) == expected
-        assert main.community_weakness_by_zone(conn) == expected
+        assert stats_summary.weakness_by_zone(conn) == expected
+        assert stats_summary.community_weakness_by_zone(conn) == expected

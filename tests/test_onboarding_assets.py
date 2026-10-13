@@ -10,6 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+from core import time
+from core import ratelimit
+from static_helpers import app_source, versioned_src
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +20,7 @@ STATIC = ROOT / "static"
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 SCRIPT = (STATIC / "onboarding.js").read_text(encoding="utf-8")
 STYLE = (STATIC / "onboarding.css").read_text(encoding="utf-8")
-APP = (STATIC / "app.js").read_text(encoding="utf-8")
+APP = app_source()
 
 
 def script_sources():
@@ -25,26 +28,25 @@ def script_sources():
 
 
 def test_assets_are_versioned_and_loaded_before_app():
-    assert INDEX.count('<link rel="stylesheet" href="/static/onboarding.css?v=1">') == 1
+    assert INDEX.count(f'<link rel="stylesheet" href="{versioned_src("onboarding.css")}">') == 1
     sources = script_sources()
-    assert sources.count("/static/onboarding.js?v=1") == 1
+    assert sources.count(versioned_src("onboarding.js")) == 1
     app = [index for index, src in enumerate(sources) if src.startswith("/static/app.js")]
-    assert len(app) == 1 and sources.index("/static/onboarding.js?v=1") < app[0]
+    assert len(app) == 1 and sources.index(versioned_src("onboarding.js")) < app[0]
 
 
 def test_changed_assets_had_their_versions_bumped():
     # 基线：app.js=58、mastery.js=2、clusters.js=4；改过的都加一。
     # 整合后：app.js 每个分支加一（此处 66），mastery.js / clusters.js 被 AN 与 ON 各改一次（4 / 6）。
-    assert "/static/app.js?v=103" in script_sources()
-    assert "/static/mastery.js?v=4" in script_sources()
-    assert "/static/clusters.js?v=7" in script_sources()
+    assert versioned_src("app.js") in script_sources()
+    assert versioned_src("mastery.js") in script_sources()
+    assert versioned_src("clusters.js") in script_sources()
 
 
 def test_overview_files_were_not_touched_by_this_task():
-    # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们；
-    # 墨点任务（inkdot）把 overview.css 升到 4；手感层又把 overview.js 升到 6。
-    assert "/static/overview.js?v=7" in script_sources()
-    assert 'href="/static/overview.css?v=4"' in INDEX
+    # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们，版本是 3。
+    assert versioned_src("overview.js") in script_sources()
+    assert f'href="{versioned_src("overview.css")}"' in INDEX
 
 
 @pytest.mark.parametrize("source,name", [(SCRIPT, "onboarding.js"), (STYLE, "onboarding.css")], ids=["onboarding.js", "onboarding.css"])
@@ -106,8 +108,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("INVITE_CODE", "test-invite")
     monkeypatch.setenv("COOKIE_SECURE", "0")
-    monkeypatch.setattr(main, "today_for", lambda user: date(2026, 10, 2))
-    main.reset_rate_limits()
+    monkeypatch.setattr(time, "today_for", lambda user: date(2026, 10, 2))
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 

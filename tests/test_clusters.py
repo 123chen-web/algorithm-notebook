@@ -15,6 +15,9 @@ import main
 from db import connect, init_db
 from test_ai import FakeCompletions, FakeResponse, fake_openai_factory
 from test_app import client, register
+from core import time
+import ai_limits
+from core import security
 
 
 ENDPOINT = "/api/insights/clusters"
@@ -65,7 +68,7 @@ def seed_api_problems(client, monkeypatch, count=6):
         (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=index)).isoformat()
         for index in range(count + 1)
     )
-    monkeypatch.setattr(main, "utc_now", lambda: next(stamps))
+    monkeypatch.setattr(time, "utc_now", lambda: next(stamps))
     return [create_api_problem(client, f"原始错题 {index + 1}") for index in range(count)]
 
 
@@ -100,7 +103,7 @@ def test_api_insufficient_data_does_not_check_key_or_quota(client, monkeypatch, 
     def unexpected(*args):
         pytest.fail("不足六条时不能检查配额或调用 AI")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected)
     monkeypatch.setattr(ai, "cluster_mistakes", unexpected)
     for method in (client.get, client.post):
         response = method(ENDPOINT)
@@ -124,7 +127,7 @@ def test_api_missing_key_returns_503_without_spending_quota(client, monkeypatch)
     def unexpected(*args):
         pytest.fail("未配置 key 时不能读取配额或调用 AI")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected)
     monkeypatch.setattr(ai, "cluster_mistakes", unexpected)
     response = client.post(ENDPOINT)
     assert response.status_code == 503
@@ -199,7 +202,7 @@ def test_api_get_is_free_and_regeneration_replaces_single_snapshot(client, monke
     def unexpected(*args):
         pytest.fail("读取快照不能检查配额或调用 AI")
 
-    monkeypatch.setattr(main, "ai_quota", unexpected)
+    monkeypatch.setattr(ai_limits, "ai_quota", unexpected)
     monkeypatch.setattr(ai, "cluster_mistakes", unexpected)
     assert client.get(ENDPOINT).json()["insight"] == latest
     assert attempts(user_id) == 2
@@ -441,7 +444,7 @@ def test_api_completion_refreshes_today_without_moving_reserved_allowance(client
     user_id = register(client)["id"]
     seed_mistakes(user_id)
     current_day = date.fromisoformat(DAY)
-    monkeypatch.setattr(main, "today_for", lambda user: current_day)
+    monkeypatch.setattr(time, "today_for", lambda user: current_day)
 
     def generate(reference):
         nonlocal current_day
@@ -535,7 +538,7 @@ def test_api_trial_allowance_matches_weakness_and_get_is_allowed(client, monkeyp
 def test_api_reserves_under_write_lock_and_releases_before_provider(client, monkeypatch):
     user_id = register(client)["id"]
     seed_mistakes(user_id)
-    quota_reader = main.ai_quota
+    quota_reader = ai_limits.ai_quota
     checks = []
 
     def check_lock(conn, current_id, day):
@@ -554,7 +557,7 @@ def test_api_reserves_under_write_lock_and_releases_before_provider(client, monk
         checks.append("committed")
         return cluster_result(reference)
 
-    monkeypatch.setattr(main, "ai_quota", check_lock)
+    monkeypatch.setattr(ai_limits, "ai_quota", check_lock)
     monkeypatch.setattr(ai, "cluster_mistakes", generate)
     assert client.post(ENDPOINT).status_code == 200
     assert checks == ["locked", "committed"]
@@ -566,22 +569,22 @@ def test_api_reloads_changed_subscription_after_auth(client, monkeypatch):
     with connect(write=True) as conn:
         plan_id = conn.execute(
             "INSERT INTO plans(name, period_days, ai_daily_limit, price_cents, created_at) VALUES ('新套餐', 30, 3, 990, ?)",
-            (main.utc_now(),),
+            (time.utc_now(),),
         ).lastrowid
         conn.execute("INSERT INTO ai_usage VALUES (?, ?, 2)", (user_id, DAY))
 
     def authenticate_then_upgrade(request: Request):
-        user = main.current_user(request)
+        user = security.current_user(request)
         with connect(write=True) as conn:
             conn.execute("UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?", (plan_id, "2099-01-01T00:00:00+00:00", user_id))
         return user
 
-    main.app.dependency_overrides[main.current_user] = authenticate_then_upgrade
+    main.app.dependency_overrides[security.current_user] = authenticate_then_upgrade
     monkeypatch.setattr(ai, "cluster_mistakes", cluster_result)
     try:
         assert client.post(ENDPOINT).status_code == 200
     finally:
-        main.app.dependency_overrides.pop(main.current_user)
+        main.app.dependency_overrides.pop(security.current_user)
     assert attempts(user_id) == 3
 
 
@@ -597,12 +600,12 @@ def test_api_table_migration_is_idempotent_and_user_delete_cascades(client):
     init_db()
     init_db()
     with connect(write=True) as conn:
-        conn.execute("INSERT INTO mistake_clusters VALUES (?, '{}', ?)", (user_id, main.utc_now()))
+        conn.execute("INSERT INTO mistake_clusters VALUES (?, '{}', ?)", (user_id, time.utc_now()))
     init_db()
     with connect(write=True) as conn:
         assert conn.execute("SELECT COUNT(*) FROM mistake_clusters").fetchone()[0] == 1
         with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("INSERT INTO mistake_clusters VALUES (?, '{}', ?)", (user_id, main.utc_now()))
+            conn.execute("INSERT INTO mistake_clusters VALUES (?, '{}', ?)", (user_id, time.utc_now()))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         assert conn.execute("SELECT COUNT(*) FROM mistake_clusters").fetchone()[0] == 0
 

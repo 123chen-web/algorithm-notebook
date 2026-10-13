@@ -5,7 +5,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { load, tick, FakeEvent } = require("./js_harness.cjs");
-const source = fs.readFileSync(path.join(__dirname, "..", "static", "app.js"), "utf8");
+const source = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "..", "static", "app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "..", "static", "app.js"), "utf8");
+})();
 function between(start, end) {
   const from = source.indexOf(start), to = source.indexOf(end, from);
   assert.ok(from >= 0 && to > from, `real app section exists: ${start}`);
@@ -48,7 +52,7 @@ function environment() {
   vm.runInContext(between("async function api(path, options = {}) {", "\nasync function uploadAvatarFile"), context);
   vm.runInContext(between("async function run(action) {", "\nfunction formObject"), context);
   vm.runInContext(between('$("#login-form").addEventListener', "// 找回密码：提交成功后"), context);
-  vm.runInContext(between('$("#reset-form").addEventListener', "// 侧栏、底栏"), context);
+  vm.runInContext(between('$("#reset-form").addEventListener', "// ---- 认证区事件绑定结束"), context);
   env.get = (id) => document.querySelector(`#${id}`);
   env.submit = (id) => env.get(id).dispatchEvent(new FakeEvent("submit"));
   env.state = (expression) => vm.runInContext(expression, context);

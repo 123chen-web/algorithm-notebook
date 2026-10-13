@@ -1,5 +1,6 @@
 """The reduced growth scope must leave no optional AI or battle surface."""
 from pathlib import Path
+from static_helpers import app_source
 
 import db
 import main
@@ -22,7 +23,7 @@ def test_reduced_growth_schema_and_routes(tmp_path, monkeypatch):
 def test_reduced_growth_has_no_frontend_entries():
     root = Path(__file__).resolve().parents[1]
     page = (root / "static/index.html").read_text(encoding="utf-8")
-    app = (root / "static/app.js").read_text(encoding="utf-8")
+    app = app_source()  # C2 后 app.js 已拆分，检查全部应用域
     for token in ("boss", "explain.js", "import-screenshot"):
         assert token not in page
     for token in ("window.Boss", "window.Explain", "parseScreenshot", "#import-screenshot"):

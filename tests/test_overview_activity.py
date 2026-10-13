@@ -10,6 +10,9 @@ import main
 from activity import activity_summary
 from db import connect
 from test_app import client, new_problem, register
+from routers import groups
+from core import time
+from core import config
 
 
 TODAY = date(2026, 9, 19)  # 星期六；跟 test_app.client 冻结的用户本地日期一致。
@@ -360,7 +363,7 @@ def test_groups_preview_is_limited_to_three_and_sorted_by_level_points(client):
     first = data["groups_preview"][0]
     assert set(first) == {"id", "name", "member_count", "member_limit", "level"}
     assert first["member_count"] == 1
-    assert first["member_limit"] == main.GROUP_MAX_MEMBERS
+    assert first["member_limit"] == config.GROUP_MAX_MEMBERS
     assert first["level"]["points"] == 0
 
 
@@ -374,7 +377,7 @@ def test_groups_with_more_points_come_first_and_ties_follow_the_id(client, monke
             "level": {"level": 1, "points": points}, "members_preview": [],
         }
 
-    monkeypatch.setattr(main, "list_groups", lambda user: {"groups": [
+    monkeypatch.setattr(groups, "list_groups", lambda user: {"groups": [
         fake_group(4, 10), fake_group(3, 40), fake_group(9, 40), fake_group(1, 5),
     ]})
     data = overview(client)
@@ -393,7 +396,7 @@ def seed_insight(owner_id, patterns):
     with connect(write=True) as conn:
         conn.execute(
             "INSERT INTO weakness_insights(user_id, content, created_at) VALUES (?, ?, ?)",
-            (owner_id, json.dumps({"summary": "总结", "patterns": patterns}), main.utc_now()),
+            (owner_id, json.dumps({"summary": "总结", "patterns": patterns}), time.utc_now()),
         )
 
 
@@ -437,8 +440,8 @@ def make_post(owner_id, title, created_at=None, deleted=False):
         return conn.execute(
             "INSERT INTO posts(user_id, title, body, created_at, deleted_at) "
             "VALUES (?, ?, '正文', ?, ?)",
-            (owner_id, title, created_at or main.utc_now(),
-             main.utc_now() if deleted else None),
+            (owner_id, title, created_at or time.utc_now(),
+             time.utc_now() if deleted else None),
         ).lastrowid
 
 
@@ -448,8 +451,8 @@ def make_comments(post_id, owner_id, count, deleted=0):
             conn.execute(
                 "INSERT INTO post_comments(post_id, user_id, body, created_at, deleted_at) "
                 "VALUES (?, ?, '评论', ?, ?)",
-                (post_id, owner_id, main.utc_now(),
-                 main.utc_now() if index < deleted else None),
+                (post_id, owner_id, time.utc_now(),
+                 time.utc_now() if index < deleted else None),
             )
 
 
@@ -491,7 +494,7 @@ def test_hot_post_ties_go_to_the_newer_post_and_ignore_deleted_content(client):
         conn.execute(
             "UPDATE post_comments SET deleted_at = ? WHERE id = "
             "(SELECT MIN(id) FROM post_comments WHERE post_id = ?)",
-            (main.utc_now(), newer),
+            (time.utc_now(), newer),
         )
     assert overview(client)["hot_post"]["id"] == older
 

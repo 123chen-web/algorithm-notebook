@@ -6,6 +6,7 @@ import re
 from xml.etree import ElementTree
 
 import pytest
+from static_helpers import app_source as _app_source_impl
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -63,7 +64,7 @@ def document():
 
 @pytest.fixture(scope="module")
 def app_source():
-    return (STATIC / "app.js").read_text(encoding="utf-8")
+    return _app_source_impl()
 
 
 def function_body(source, name):

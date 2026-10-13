@@ -44,9 +44,9 @@ def test_shared_activation_preserves_payment_expiry_rule(expiry, expected):
 def test_code_normalization_and_hash():
     raw = "ABCD-EFGH-JKMN-PQRS"
     tolerant = " ａｂｃｄ－ｅｆｇｈ　ｊｋｍｎ\nｐｑｒｓ "
-    assert main.normalize_redeem_code(tolerant) == "ABCDEFGHJKMNPQRS"
-    assert main.redeem_code_hash(raw) == main.redeem_code_hash(tolerant)
-    assert len(main.redeem_code_hash(raw)) == 64
+    assert payments.normalize_redeem_code(tolerant) == "ABCDEFGHJKMNPQRS"
+    assert payments.redeem_code_hash(raw) == payments.redeem_code_hash(tolerant)
+    assert len(payments.redeem_code_hash(raw)) == 64
 
 
 @pytest.mark.parametrize("file_format", ["PNG", "JPEG"])
@@ -56,7 +56,7 @@ def test_qr_reencode_shrinks_and_removes_metadata(file_format):
     metadata = PngImagePlugin.PngInfo()
     metadata.add_text("private", "must disappear")
     image.save(buffer, format=file_format, pnginfo=metadata)
-    png = main.encode_pay_qr(buffer.getvalue())
+    png = payments.encode_pay_qr(buffer.getvalue())
     with Image.open(io.BytesIO(png)) as decoded:
         assert decoded.format == "PNG"
         assert decoded.size == (2000, 1000)
@@ -68,6 +68,6 @@ def test_qr_rejects_decompression_bomb_warning(monkeypatch):
     Image.new("RGB", (20, 20)).save(buffer, format="PNG")
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 300)
     with pytest.raises(HTTPException) as error:
-        main.encode_pay_qr(buffer.getvalue())
+        payments.encode_pay_qr(buffer.getvalue())
     assert error.value.status_code == 400
     assert error.value.detail == "文件不是有效的图片"

@@ -4,6 +4,8 @@ import pytest
 
 import db
 from test_app import client, register  # noqa: F401
+from core import time
+import accounts
 
 PASSWORD = "a-test-password-123"
 CREATED_AT = "2026-09-21T10:00:00+00:00"
@@ -311,7 +313,7 @@ def test_account_delete_clears_note_links(client):
         assert conn.execute("SELECT COUNT(*) FROM note_links WHERE user_id=?", (user_id,)).fetchone()[0] >= 1
     with connect(write=True) as conn:
         import main
-        main.delete_account_data(conn, user_id, main.utc_now())
+        accounts.delete_account_data(conn, user_id, time.utc_now())
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM note_links WHERE user_id=?", (user_id,)).fetchone()[0] == 0
 

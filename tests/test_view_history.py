@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from static_helpers import versioned_src
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
@@ -23,7 +24,7 @@ def test_view_history_behaviour():
 def test_script_is_loaded_right_after_app_js():
     scripts = re.findall(r'<script defer src="(/static/[^"]+)"', INDEX)
     app = next(i for i, src in enumerate(scripts) if src.startswith("/static/app.js"))
-    assert scripts[app + 1] == "/static/view-history.js?v=1"
+    assert scripts[app + 1] == versioned_src("view-history.js")
 
 
 def test_script_uses_only_safe_apis():

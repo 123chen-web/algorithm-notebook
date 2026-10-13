@@ -7,6 +7,7 @@ import pytest
 
 from test_cursor_fx_assets import css_declarations, css_selectors, function_body
 from test_layout_assets import LayoutDocument
+from static_helpers import versioned_src, app_source
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -21,7 +22,7 @@ def stylesheet():
 
 @pytest.fixture(scope="module")
 def source():
-    return (STATIC / "app.js").read_text(encoding="utf-8")
+    return app_source()
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +61,7 @@ def test_forum_stylesheet_is_versioned_and_loaded_after_shared_styles(document, 
     ]
     assert len(matches) == 1
     forum_index, attrs = matches[0]
-    assert attrs["href"] == "/static/forum.css?v=7"
+    assert attrs["href"] == versioned_src("forum.css")
     shared_indices = [
         index for index, attrs in enumerate(links)
         if attrs.get("href", "").split("?", 1)[0] in (
@@ -335,11 +336,11 @@ def test_forum_has_visible_keyboard_focus_and_responsive_floor_layout(stylesheet
 
 def test_thread_script_is_versioned_external_and_loaded_before_app(document):
     scripts = [node["attrs"].get("src", "") for node in document if node["tag"] == "script"]
-    assert scripts.count("/static/thread.js?v=1") == 1
-    thread_index = scripts.index("/static/thread.js?v=1")
+    assert scripts.count(versioned_src("thread.js")) == 1
+    thread_index = scripts.index(versioned_src("thread.js"))
     app_indices = [index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js"]
     assert len(app_indices) == 1 and thread_index < app_indices[0]
-    assert scripts[app_indices[0]] == "/static/app.js?v=103"
+    assert scripts[app_indices[0]] == versioned_src("app.js")
 
 
 def test_thread_markup_uses_external_csp_safe_controls_and_shared_renderer(document, source):
@@ -419,10 +420,10 @@ def test_board_keeps_the_ids_the_app_depends_on_and_the_search_landmark(document
 
 def test_board_script_is_versioned_external_and_loaded_before_app(document):
     scripts = [node["attrs"].get("src", "") for node in document if node["tag"] == "script"]
-    assert scripts.count("/static/board.js?v=3") == 1
-    board_index = scripts.index("/static/board.js?v=3")
+    assert scripts.count(versioned_src("board.js")) == 1
+    board_index = scripts.index(versioned_src("board.js"))
     app_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/app.js")
-    thread_index = scripts.index("/static/thread.js?v=1")
+    thread_index = scripts.index(versioned_src("thread.js"))
     emoji_index = next(index for index, src in enumerate(scripts) if src.split("?", 1)[0] == "/static/emoji.js")
     assert max(thread_index, emoji_index) < board_index < app_index
 

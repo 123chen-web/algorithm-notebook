@@ -7,14 +7,17 @@ import ai
 import main
 from db import connect
 from test_app import client, mock_generated_practice, new_problem, register
+import ai_limits
+from core import security
+from core import time
 
 
 @pytest.mark.parametrize("is_trial,limit", [(False, 20), (True, 4)])
 def test_default_quota_is_reported_and_enforced(client, monkeypatch, is_trial, limit):
     monkeypatch.delenv("AI_DAILY_LIMIT", raising=False)
     monkeypatch.delenv("TRIAL_AI_DAILY_LIMIT", raising=False)
-    assert main.ai_limit() == 20
-    assert main.trial_ai_limit() == 4
+    assert ai_limits.ai_limit() == 20
+    assert ai_limits.trial_ai_limit() == 4
     user_id = register(client)["id"]
     mistake_id = new_problem(client)[0]
     with connect(write=True) as conn:
@@ -40,7 +43,7 @@ def add_plan(conn, limit=3):
         INSERT INTO plans(name, period_days, ai_daily_limit, price_cents, created_at)
         VALUES ('配额套餐', 30, ?, 990, ?)
         """,
-        (limit, main.utc_now()),
+        (limit, time.utc_now()),
     ).lastrowid
 
 
@@ -71,7 +74,7 @@ def test_generation_reloads_subscription_after_authentication(
             )
 
     def authenticate_then_change_subscription(request: Request):
-        user = main.current_user(request)
+        user = security.current_user(request)
         # 模拟鉴权后、扣额前发生的支付成功或账号状态变更。
         with connect(write=True) as conn:
             if change == "upgrade":
@@ -85,11 +88,11 @@ def test_generation_reloads_subscription_after_authentication(
                 conn.execute("UPDATE users SET is_trial = 1 WHERE id = ?", (user_id,))
         return user
 
-    main.app.dependency_overrides[main.current_user] = authenticate_then_change_subscription
+    main.app.dependency_overrides[security.current_user] = authenticate_then_change_subscription
     try:
         response = client.post(f"/api/mistakes/{mistake_id}/variants")
     finally:
-        main.app.dependency_overrides.pop(main.current_user)
+        main.app.dependency_overrides.pop(security.current_user)
     assert response.status_code == (201 if change == "upgrade" else 429)
     assert calls == ([mistake_id] if change == "upgrade" else [])
     if change == "upgrade":
@@ -111,7 +114,7 @@ def test_quota_read_and_reservation_hold_write_lock_until_commit(client, monkeyp
             "UPDATE users SET plan_id = ?, plan_expires_at = ? WHERE id = ?",
             (plan_id, "2099-01-01T00:00:00+00:00", user_id),
         )
-    quota_read = main.ai_quota
+    quota_read = ai_limits.ai_quota
     checks = []
 
     def competing_writer_is_blocked(conn, queried_user_id, day):
@@ -140,7 +143,7 @@ def test_quota_read_and_reservation_hold_write_lock_until_commit(client, monkeyp
         checks.append("committed")
         return mock_generated_practice(item)
 
-    monkeypatch.setattr(main, "ai_quota", competing_writer_is_blocked)
+    monkeypatch.setattr(ai_limits, "ai_quota", competing_writer_is_blocked)
     monkeypatch.setattr(ai, "generate", generate_after_commit)
     response = client.post(f"/api/mistakes/{mistake_id}/variants")
     assert response.status_code == 201

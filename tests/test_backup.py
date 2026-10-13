@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 import backup
+import db
 
 
 @pytest.fixture

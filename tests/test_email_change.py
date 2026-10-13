@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 import mailer
 import main
 from db import connect
+from core import config
+from core import ratelimit
 
 PASSWORD = "a-test-password-123"
 
@@ -17,7 +19,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("INVITE_CODE", "test-invite")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
     monkeypatch.setenv("COOKIE_SECURE", "0")
-    main.reset_rate_limits()
+    ratelimit.reset_rate_limits()
     with TestClient(main.app, headers={"X-CSRF-Protection": "1"}) as instance:
         yield instance
 
@@ -143,7 +145,7 @@ def test_old_address_missing_skips_notice(client, sent):
 
 def test_forgot_password_per_email_limit_keeps_response_and_old_token(client, sent, monkeypatch):
     # IP 级限流放宽，单独验证按邮箱的限流。
-    monkeypatch.setattr(main, "FORGOT_PASSWORD_LIMIT", 100)
+    monkeypatch.setattr(config, "FORGOT_PASSWORD_LIMIT", 100)
     register(client)
     client.post("/api/auth/logout")
     results = []

@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 
 import pytest
+from static_helpers import app_source as _app_source_impl
 
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -25,7 +26,7 @@ def stylesheet():
 
 @pytest.fixture(scope="module")
 def app_source():
-    return (STATIC / "app.js").read_text(encoding="utf-8")
+    return _app_source_impl()
 
 
 def test_assets_are_versioned_and_the_print_rules_load_after_the_shell(index_html):

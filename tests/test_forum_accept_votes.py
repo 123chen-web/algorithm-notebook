@@ -13,6 +13,14 @@ from db import connect
 from test_app import register
 from test_forum import PASSWORD, create_comment, create_post
 from test_forum_threads import client
+from core import ratelimit
+import accounts
+import db
+import time
+from fastapi.exceptions import RequestValidationError
+from routers import forum as forum_router
+import forum_lib
+from models import AcceptedComment
 
 
 NOW = "2026-10-03T08:00:00+00:00"
@@ -338,9 +346,9 @@ def test_helpful_hides_invisible_comments_and_posts(client, forum, method, hidde
 
 
 def test_helpful_limit_is_per_user_shared_between_put_and_delete(client, forum, monkeypatch):
-    current_time = main.time.time()
-    monkeypatch.setattr(main.time, "time", lambda: current_time)
-    main.reset_rate_limits()
+    current_time = time.time()
+    monkeypatch.setattr(time, "time", lambda: current_time)
+    ratelimit.reset_rate_limits()
     url = helpful_url(forum["first"])
     for index in range(60):
         response = client.request("PUT" if index % 2 == 0 else "DELETE", url)
@@ -391,7 +399,7 @@ def test_new_writes_recheck_account_inside_write_transaction(client, forum, monk
         calls.append(user_id)
         raise HTTPException(401, "登录已过期，请重新登录")
 
-    monkeypatch.setattr(main, "recheck_account", account_deleted_after_authentication)
+    monkeypatch.setattr(accounts, "recheck_account", account_deleted_after_authentication)
     if endpoint == "accepted":
         kwargs = {"json": {"comment_id": forum["first"]["id"]}} if method == "PUT" else {}
         url = accepted_url(forum)
@@ -420,7 +428,7 @@ def test_get_post_uses_one_grouped_vote_query_with_bounded_sql(client, forum, mo
             conn.set_trace_callback(statements.append)
             yield conn
 
-    monkeypatch.setattr(main, "connect", traced_connect)
+    monkeypatch.setattr(db, "connect", traced_connect)
     small = client.get(f"/api/posts/{post_id}")
     assert small.status_code == 200
     small_statements = statements[:]
@@ -466,7 +474,7 @@ def test_list_posts_computes_solved_in_one_query(client, forum, monkeypatch):
             conn.set_trace_callback(statements.append)
             yield conn
 
-    monkeypatch.setattr(main, "connect", traced_connect)
+    monkeypatch.setattr(db, "connect", traced_connect)
     response = client.get("/api/posts")
     assert response.status_code == 200
     assert response.json()["posts"][0]["solved"] is True
@@ -511,8 +519,8 @@ def unit_write_connection(monkeypatch, *, post_author_id=1, comment_author_id=2)
         assert write is True
         yield conn
 
-    monkeypatch.setattr(main, "connect", fake_connect)
-    monkeypatch.setattr(main, "recheck_account", lambda connection, user_id: {"id": user_id})
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(accounts, "recheck_account", lambda connection, user_id: {"id": user_id})
     return conn
 
 
@@ -521,9 +529,9 @@ def test_unit_accept_rejects_non_author_without_database(monkeypatch, method):
     unit_write_connection(monkeypatch, post_author_id=2)
     with pytest.raises(HTTPException) as error:
         if method == "PUT":
-            main.accept_comment(10, main.AcceptedComment(comment_id=20), {"id": 1, "is_trial": False})
+            forum_router.accept_comment(10, AcceptedComment(comment_id=20), {"id": 1, "is_trial": False})
         else:
-            main.unaccept_comment(10, {"id": 1, "is_trial": False})
+            forum_router.unaccept_comment(10, {"id": 1, "is_trial": False})
     assert error.value.status_code == 404
     assert error.value.detail == "帖子不存在"
 
@@ -531,7 +539,7 @@ def test_unit_accept_rejects_non_author_without_database(monkeypatch, method):
 def test_unit_accept_rejects_own_comment_without_database(monkeypatch):
     unit_write_connection(monkeypatch, comment_author_id=1)
     with pytest.raises(HTTPException) as error:
-        main.accept_comment(10, main.AcceptedComment(comment_id=20), {"id": 1, "is_trial": False})
+        forum_router.accept_comment(10, AcceptedComment(comment_id=20), {"id": 1, "is_trial": False})
     assert error.value.status_code == 400
     assert error.value.detail == "不能采纳自己的评论"
 
@@ -540,7 +548,7 @@ def test_unit_accept_rejects_own_comment_without_database(monkeypatch):
 def test_unit_helpful_rejects_self_vote_without_database(monkeypatch, helpful):
     unit_write_connection(monkeypatch, comment_author_id=1)
     with pytest.raises(HTTPException) as error:
-        main.change_comment_helpful(20, {"id": 1, "is_trial": False}, helpful=helpful)
+        forum_lib.change_comment_helpful(20, {"id": 1, "is_trial": False}, helpful=helpful)
     assert error.value.status_code == 400
     assert error.value.detail == "不能给自己的评论点有用"
 
@@ -550,15 +558,15 @@ def test_unit_new_writes_reject_trial_before_database(monkeypatch, endpoint):
     def unexpected_connection(*args, **kwargs):
         pytest.fail("体验账号不能进入数据库写流程")
 
-    monkeypatch.setattr(main, "connect", unexpected_connection)
+    monkeypatch.setattr(db, "connect", unexpected_connection)
     user = {"id": 1, "is_trial": True}
     with pytest.raises(HTTPException) as error:
         if endpoint == "accept":
-            main.accept_comment(10, main.AcceptedComment(comment_id=20), user)
+            forum_router.accept_comment(10, AcceptedComment(comment_id=20), user)
         elif endpoint == "unaccept":
-            main.unaccept_comment(10, user)
+            forum_router.unaccept_comment(10, user)
         else:
-            main.change_comment_helpful(20, user, helpful=endpoint == "helpful")
+            forum_lib.change_comment_helpful(20, user, helpful=endpoint == "helpful")
     assert error.value.status_code == 403
     action = "采纳" if endpoint in ("accept", "unaccept") else "点有用"
     assert error.value.detail == f"体验账号不支持{action}"
@@ -568,7 +576,7 @@ def test_unit_new_writes_reject_trial_before_database(monkeypatch, endpoint):
 def test_unit_accept_overflow_is_missing_without_database(monkeypatch, comment_id):
     conn = unit_write_connection(monkeypatch)
     with pytest.raises(HTTPException) as error:
-        main.accept_comment(10, main.AcceptedComment(comment_id=comment_id), {"id": 1, "is_trial": False})
+        forum_router.accept_comment(10, AcceptedComment(comment_id=comment_id), {"id": 1, "is_trial": False})
     assert error.value.status_code == 400
     assert error.value.detail == "这条评论不存在或已删除"
     assert len(conn.statements) == 1
@@ -583,9 +591,9 @@ def test_unit_helpful_rate_limit_exact_contract_without_database(monkeypatch, he
         calls.append((key, limit, seconds))
         return True
 
-    monkeypatch.setattr(main, "rate_limited", limited)
+    monkeypatch.setattr(ratelimit, "rate_limited", limited)
     with pytest.raises(HTTPException) as error:
-        main.change_comment_helpful(20, {"id": 1, "is_trial": False}, helpful=helpful)
+        forum_lib.change_comment_helpful(20, {"id": 1, "is_trial": False}, helpful=helpful)
     assert error.value.status_code == 429
     assert error.value.detail == "操作过于频繁，请稍后再试"
     assert calls == [("helpful:1", 60, 60)]
@@ -598,7 +606,7 @@ def test_unit_helpful_rate_limit_exact_contract_without_database(monkeypatch, he
 def test_unit_new_route_validation_errors_are_chinese_without_database(path):
     request = SimpleNamespace(url=SimpleNamespace(path=path))
     response = asyncio.run(main.forum_action_validation_error(
-        request, main.RequestValidationError([]),
+        request, RequestValidationError([]),
     ))
     assert response.status_code == 422
     assert json.loads(response.body) == {"detail": "请求参数不正确，请检查后重试"}

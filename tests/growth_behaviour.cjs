@@ -94,7 +94,11 @@ for (const stale of [false, true]) {
       prompt: () => "https://leetcode.com/problems/two-sum/",
       run: (action) => { actionPromise = action(); actionPromise.catch(() => {}); },
     });
-    const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+    const source = (() => {
+  const order = ["core-api.js","core-session.js","core-ui.js","overview-growth.js","overview-home.js","overview-insights.js","review-list.js","review-detail.js","review-grade.js","problem-form.js","forum-board.js","forum-post.js","forum-comments.js","forum-map.js","groups.js","rank.js","account.js","admin.js","payments.js","ai.js"];
+  return order.map(f => fs.readFileSync(path.join(__dirname, "../static/app", f), "utf8")).join("\n")
+    + "\n" + fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
+})();
     const start = source.indexOf('$("#import-from-url-btn")');
     vm.runInContext(source.slice(start, source.indexOf("/* ---- ", start)), scope);
     button.click();
