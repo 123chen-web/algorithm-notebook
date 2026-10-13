@@ -224,7 +224,7 @@ test("quick: 普通请求体带 quick:false，易错点原样提交（含空串�
   const env = environment();
   const body = env.payload(false);
   assert.equal(body.quick, false);
-  assert.deepEqual(body.mistakes, ["", "边界条件没考虑"], "普通模式字段与原来一字不差");
+  assert.deepEqual(JSON.parse(JSON.stringify(body.mistakes)), ["", "边界条件没考虑"], "普通模式字段与原来一字不差");
 });
 
 /* ---------------- 提交与复位 ---------------- */
@@ -239,7 +239,7 @@ test("quick: 速记提交发 quick:true，成功后开关复位、界面恢复�
   assert.equal(env.requests[0].path, "/api/problems");
   const body = lastBody(env);
   assert.equal(body.quick, true);
-  assert.deepEqual(body.mistakes, []);
+  assert.deepEqual(JSON.parse(JSON.stringify(body.mistakes)), []);
 
   assert.equal(env.toggle.value, "full", "开关复位");
   assert.equal(env.isQuick(), false);
@@ -259,7 +259,7 @@ test("quick: 普通提交发 quick:false，校验与原来一致，不碰界面"
   assert.equal(env.requests.length, 1);
   const body = lastBody(env);
   assert.equal(body.quick, false);
-  assert.deepEqual(body.mistakes, ["", "边界条件没考虑"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(body.mistakes)), ["", "边界条件没考虑"]);
 
   assert.equal(env.toggle.value, "full");
   assert.ok(env.code.hasAttribute("required"));
@@ -323,7 +323,7 @@ test("full skips: thinking is optional only after an explicit choice and its dra
   assert.equal(env.thinking.hasAttribute("required"), false); assert.equal(env.thinkingLabel.hidden, true);
   const body = env.payload(env.isQuick());
   assert.equal(body.quick, true); assert.equal(body.code, "print(1)"); assert.equal(body.thinking, "");
-  assert.deepEqual(body.mistakes, ["", "边界条件没考虑"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(body.mistakes)), ["", "边界条件没考虑"]);
   assert.equal(env.thinking.value, "未整理好的思路");
   env.skip("skipThinking", false);
   assert.equal(env.isQuick(), false); assert.equal(env.thinking.hasAttribute("required"), true);
@@ -340,7 +340,7 @@ test("full skips: skipping causes submits a pending reason without dropping code
   assert.equal(env.mistakeInputs.hidden, true); assert.match(env.hint.textContent, /待补原因/);
   env.skip("skipMistakes", false);
   assert.equal(env.mistakeInputs.hidden, false); assert.equal(env.hint.textContent, HINT_ORIGINAL);
-  assert.deepEqual(env.payload(false).mistakes, ["", "边界条件没考虑"]);
+  assert.deepEqual(Array.from(env.payload(false).mistakes), ["", "边界条件没考虑"]);
 });
 
 test("full skips: switching record modes retains explicit skip choices and drafts", () => {
@@ -357,7 +357,7 @@ test("full skips: switching record modes retains explicit skip choices and draft
 test("full skips: failed creation keeps the chosen skip state and drafts for retry", async () => {
   const env = environment({ failApi: true }); env.code.value = "代码草稿"; env.thinking.value = "思路草稿";
   env.skip("skipThinking", true); env.skip("skipMistakes", true); env.submit(); await settle();
-  assert.equal(lastBody(env).quick, true); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.equal(lastBody(env).quick, true); assert.deepEqual(Array.from(lastBody(env).mistakes), []);
   assert.equal(env.skipThinking.checked, true); assert.equal(env.skipMistakes.checked, true);
   assert.equal(env.code.value, "代码草稿"); assert.equal(env.thinking.value, "思路草稿");
 });
@@ -366,7 +366,7 @@ test("full skips: successful creation clears skip choices and restores full requ
   const env = environment(); env.code.value = "print(1)"; env.thinking.value = "草稿";
   env.skip("skipThinking", true); env.skip("skipMistakes", true); env.submit(); await settle();
   assert.equal(lastBody(env).quick, true); assert.equal(lastBody(env).code, "print(1)");
-  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(Array.from(lastBody(env).mistakes), []);
   assert.equal(env.skipThinking.checked, false); assert.equal(env.skipMistakes.checked, false);
   assert.equal(env.code.hasAttribute("required"), true); assert.equal(env.thinking.hasAttribute("required"), true);
   assert.equal(env.thinkingLabel.hidden, false); assert.equal(env.mistakeInputs.hidden, false);
@@ -380,7 +380,7 @@ test("full skips: skip choices are captured before a pending request and never a
   env.skip("skipThinking", false); env.skip("skipMistakes", false);
   env.probe.resolveApi(); await settle();
   assert.equal(env.requests.length, 1, "explicitly deferred content must not trigger an automatic AI request");
-  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(lastBody(env).mistakes, []);
+  assert.equal(lastBody(env).thinking, ""); assert.deepEqual(Array.from(lastBody(env).mistakes), []);
   assert.match(env.probe.messages[0], /暂时跳过/);
 });
 
