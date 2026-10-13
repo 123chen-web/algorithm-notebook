@@ -56,3 +56,36 @@ def test_ci_covers_tests_syntax_and_container_health_without_secrets():
 
 def test_compose_persists_data_on_host():
     assert "./data:/app/data" in source("docker-compose.yml")
+
+
+def test_image_contains_every_local_package_the_app_imports(tmp_path):
+    """回归：领域拆分新增了 core/、models/ 两个包，Dockerfile 没跟着 COPY，镜像里 import main 就报
+    “No module named 'core'”，更新后网站起不来。这里按 Dockerfile 的 COPY 规则搭一份最小镜像目录，
+    在里面真的 import 一遍 main。"""
+    import shutil
+    import subprocess
+    import sys
+
+    dockerfile = source("Dockerfile")
+    copied_dirs = set(re.findall(r"(?m)^COPY\s+([A-Za-z0-9_\-]+)/\s+\./\1/\s*$", dockerfile))
+    # 应用代码里 import 到的、仓库里真实存在的本地目录，必须都被 COPY。
+    local_dirs = {
+        path.name for path in ROOT.iterdir()
+        if path.is_dir() and path.name not in {"tests", "tools", "docs", "deploy", "static", "assets", "data"}
+        and not path.name.startswith(".") and any(path.glob("*.py"))
+    }
+    assert local_dirs <= copied_dirs, f"Dockerfile 没有 COPY 这些包：{sorted(local_dirs - copied_dirs)}"
+
+    image = tmp_path / "app"
+    image.mkdir()
+    for module in ROOT.glob("*.py"):
+        shutil.copy(module, image / module.name)
+    for name in copied_dirs - {"static", "assets"}:  # 静态资源很大，镜像里放个空目录就够 import 了
+        shutil.copytree(ROOT / name, image / name, ignore=shutil.ignore_patterns("__pycache__"))
+    for name in ("static", "assets"):
+        (image / name).mkdir(exist_ok=True)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", "import main"], cwd=image, capture_output=True, text=True, timeout=120,
+        env={"PATH": "", "PYTHONUTF8": "1", "DATABASE_PATH": str(tmp_path / "t.db"), "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", "")},
+    )
+    assert result.returncode == 0, result.stderr[-1500:]
