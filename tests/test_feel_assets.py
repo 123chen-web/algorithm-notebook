@@ -18,7 +18,7 @@ def test_assets_are_wired_with_versions():
     assert '<link rel="stylesheet" href="/static/feel.css?v=2">' in INDEX
     assert '<script defer src="/static/feel.js?v=2"></script>' in INDEX
     # feel.css 要排在组件样式之后，才能覆盖它们的 transition。
-    assert INDEX.index("feel.css") > INDEX.index("roadmap.css") > INDEX.index("overview.css")
+    assert INDEX.index("/static/feel.css") > INDEX.index("roadmap.css") > INDEX.index("overview.css")
 
 
 def test_hover_effects_only_for_fine_pointer_with_motion_allowed():
