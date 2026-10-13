@@ -753,6 +753,7 @@ function updateUserInfo() {
   window.Reminder?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   $("#reminder-settings-host") && window.Reminder?.mount($("#reminder-settings-host"));
   window.Roadmap?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  window.Inbox?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   mountPatternPicker();
 
   $("#my-avatar-wrap").hidden = false;
@@ -935,6 +936,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   $("#weekly-recap-page").hidden = view !== "weekly-recap";
   $("#mastery-page").hidden = view !== "mastery";
   $("#roadmap-page").hidden = view !== "roadmap";
+  $("#inbox-page").hidden = view !== "inbox";
   $("#heatmap-page").hidden = view !== "heatmap";
   $("#clusters-page").hidden = view !== "clusters";
   $("#print-page").hidden = view !== "print";
@@ -968,6 +970,7 @@ async function showView(nextView, { refreshUser = true } = {}) {
   else if (view === "weekly-recap") await loadWeeklyRecap();
   else if (view === "mastery") await window.Mastery.load();
   else if (view === "roadmap") await window.Roadmap.load();
+  else if (view === "inbox") await window.Inbox.load();
   else if (view === "heatmap") await window.Heatmap.loadHeatmap($("#heatmap-grid"), 8);
   else if (view === "clusters") {
     await window.Clusters.load();
@@ -4019,7 +4022,16 @@ function applyQuickMode(on) {
 
 // 简写模式只提交当前可见的错因；完整模式的字段及空错因语义沿用原行为。
 // 「属于哪个套路」选择器：新增记录页常驻一个，编辑题目弹窗各自新建一个。
+// 新增记录页现在是“一行小标签”：「可能属于：滑动窗口 · 双指针」（输入题名/链接后
+// 防抖 400ms 调 /api/roadmap/suggest，点一下加入，最多 3 个，已选的可点掉），
+// 旁边一个很小的“手动选择”折叠入口，里面放原来的搜索选择器。不选不影响保存。
 let newRecordPicker = null;
+let suggestTimer = null;
+let suggestSeq = 0;
+
+function patternTitleOf(id) {
+  return window.PatternPicker?.titleOf?.(id) || id;
+}
 
 function mountPatternPicker() {
   const host = $("#problem-patterns");
@@ -4027,7 +4039,113 @@ function mountPatternPicker() {
   window.PatternPicker.load().then(() => {
     if (newRecordPicker || !host.isConnected) return;
     newRecordPicker = window.PatternPicker.create({});
-    host.replaceChildren(newRecordPicker.el);
+
+    const suggestRow = element("div", "", "pattern-suggest-row");
+    suggestRow.hidden = true;
+    const suggestLabel = element("span", "可能属于：", "pattern-suggest-label");
+    const suggestChips = element("span", "", "pattern-suggest-chips");
+    suggestRow.append(suggestLabel, suggestChips);
+
+    const pickedRow = element("div", "", "pattern-picked-row");
+    pickedRow.hidden = true;
+    pickedRow.append(element("span", "已选：", "pattern-suggest-label"));
+    const pickedChips = element("span", "", "pattern-picked-chips");
+    pickedRow.append(pickedChips);
+
+    const manual = document.createElement("details");
+    manual.className = "pattern-manual";
+    const summary = document.createElement("summary");
+    summary.textContent = "手动选择";
+    manual.append(summary, newRecordPicker.el);
+    manual.addEventListener("toggle", () => paintPickedChips());
+
+    host.replaceChildren(suggestRow, pickedRow, manual);
+    paintPickedChips();
+    bindSuggestInputs(suggestRow, suggestChips);
+    // 手动选择器里点的选项也要同步到“已选”一行。
+    newRecordPicker.el.addEventListener("click", () => {
+      setTimeout(paintPickedChips, 0);
+    });
+
+    function paintPickedChips() {
+      const values = newRecordPicker.values();
+      pickedChips.replaceChildren();
+      pickedRow.hidden = values.length === 0;
+      for (const id of values) {
+        const chip = element("button", "", "pattern-picked-chip");
+        chip.type = "button";
+        chip.append(element("span", patternTitleOf(id), ""));
+        const remove = element("span", "×", "pattern-picked-x");
+        remove.setAttribute("aria-hidden", "true");
+        chip.append(remove);
+        chip.setAttribute("aria-label", `去掉${patternTitleOf(id)}`);
+        chip.addEventListener("click", () => {
+          newRecordPicker.setValues(newRecordPicker.values().filter((v) => v !== id));
+          paintPickedChips();
+        });
+        pickedChips.append(chip);
+      }
+    }
+
+    function bindSuggestInputs(row, chips) {
+      const form = $("#problem-form");
+      if (!form) return;
+      const titleInput = form.querySelector('input[name="title"]');
+      const urlInput = form.querySelector('input[name="source_url"]');
+      const zoneSelect = $("#problem-zone");
+      const schedule = () => {
+        if (suggestTimer) clearTimeout(suggestTimer);
+        suggestTimer = setTimeout(() => { void fetchSuggest(row, chips); }, 400);
+      };
+      titleInput?.addEventListener("input", schedule);
+      urlInput?.addEventListener("input", schedule);
+      zoneSelect?.addEventListener("change", schedule);
+    }
+
+    async function fetchSuggest(row, chips) {
+      const form = $("#problem-form");
+      if (!form || !user) return;
+      const title = form.querySelector('input[name="title"]')?.value.trim() || "";
+      const sourceUrl = form.querySelector('input[name="source_url"]')?.value.trim() || "";
+      const zone = $("#problem-zone")?.value || "算法";
+      if (title.length < 2 && sourceUrl.length < 8) {
+        row.hidden = true;
+        chips.replaceChildren();
+        return;
+      }
+      const mine = ++suggestSeq;
+      const epoch = sessionEpoch;
+      const userId = user.id;
+      let suggestions = [];
+      try {
+        const data = await api("/api/roadmap/suggest", {
+          method: "POST",
+          body: JSON.stringify({ title, source_url: sourceUrl, zone }),
+        });
+        suggestions = data.suggestions || [];
+      } catch {
+        return; // 失败就当没这回事，不打断新增记录。
+      }
+      if (mine !== suggestSeq || epoch !== sessionEpoch || !user || user.id !== userId) return;
+      chips.replaceChildren();
+      const picked = new Set(newRecordPicker.values());
+      const fresh = suggestions.filter((s) => !picked.has(s.pattern_id)).slice(0, 3);
+      row.hidden = fresh.length === 0;
+      for (const suggestion of fresh) {
+        const chip = element("button", suggestion.title, "pattern-suggest-chip");
+        chip.type = "button";
+        chip.title = suggestion.reason || "";
+        chip.addEventListener("click", () => {
+          const values = newRecordPicker.values();
+          if (values.length >= 3 || values.includes(suggestion.pattern_id)) return;
+          newRecordPicker.setValues([...values, suggestion.pattern_id]);
+          paintPickedChips();
+          chip.remove();
+          if (!chips.children.length) row.hidden = true;
+        });
+        chips.append(chip);
+      }
+    }
   }).catch(() => {
     // 加载失败只是少了这个功能，不阻断新增记录。
   });

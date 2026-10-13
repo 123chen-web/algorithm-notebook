@@ -214,6 +214,21 @@ def classification_inbox(
     return {"total": total, "items": items}
 
 
+@router.get("/api/roadmap/patterns/{pattern_id}/problems")
+def pattern_classified_problems(pattern_id: str, user=Depends(main.current_user)):
+    """某个套路\"已归类好的题\"（学习路线卡片上的\"你记过 N 道错题\"徽标点进去的列表）。只读本人数据。"""
+    checked = main.validated_pattern_ids([pattern_id])[0]
+    with main.connect() as conn:
+        rows = conn.execute(
+            "SELECT p.id, p.title FROM problems p "
+            "JOIN problem_patterns pp ON pp.problem_id = p.id "
+            "WHERE p.user_id = ? AND pp.pattern_id = ? ORDER BY p.id DESC LIMIT 100",
+            (user["id"], checked),
+        ).fetchall()
+    return {"pattern_id": checked, "problems": [
+        {"problem_id": row[0], "title": row[1]} for row in rows]}
+
+
 @router.put("/api/problems/{problem_id}/patterns")
 def set_problem_patterns_route(problem_id: int, data: PatternsInput, user=Depends(main.current_user)):
     """把一道题归到 0–3 个套路（全量替换；传 [] 就是移出分类）。别人的题一律 404。"""

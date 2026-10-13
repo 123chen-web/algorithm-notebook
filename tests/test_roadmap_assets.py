@@ -105,7 +105,8 @@ def test_dynamic_text_is_never_concatenated_as_markup():
 
 def test_roadmap_only_talks_to_its_own_endpoints():
     urls = set(re.findall(r'"/api/roadmap[^"`]*"', ROADMAP_JS))
-    assert urls == {'"/api/roadmap"'}
+    # 待分类箱入口读未分类数（?limit=1 只取总数）。
+    assert urls == {'"/api/roadmap"', '"/api/roadmap/inbox?limit=1&offset=0"'}
     # 套路清单是静态资源，和登录无关。
     assert re.findall(r'fetch\("([^"]+)"', ROADMAP_JS) == ["/static/data/patterns.json"]
     assert re.findall(r'fetch\("([^"]+)"', PICKER_JS) == ["/static/data/patterns.json"]

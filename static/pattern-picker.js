@@ -134,5 +134,11 @@
     };
   }
 
-  window.PatternPicker = { load, create, MAX };
+  window.PatternPicker = {
+    load, create, MAX,
+    titleOf(id) {
+      const found = (catalog || []).find((pattern) => pattern.id === id);
+      return found ? found.title : id;
+    },
+  };
 })();

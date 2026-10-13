@@ -135,3 +135,50 @@
 #new-page .record-skip-options > p { flex-basis: 100%; margin: 0; }
 #new-page .record-skip-options > label { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; margin: 0; font-size: var(--text-sm); }
 #new-page .record-skip-options input { width: auto; margin: 0; }
+
+/* 新增记录页“可能属于”小标签 + “手动选择”折叠入口（待分类箱配套）。 */
+#new-page .pattern-suggest-row,
+#new-page .pattern-picked-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+}
+#new-page .pattern-suggest-label { color: var(--ink-2); }
+#new-page .pattern-suggest-chips,
+#new-page .pattern-picked-chips { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+#new-page .pattern-suggest-chip {
+  padding: var(--space-1) var(--space-3);
+  border: 1px dashed var(--ink-2);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+#new-page .pattern-suggest-chip:hover { border-style: solid; border-color: var(--accent); }
+#new-page .pattern-picked-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+#new-page .pattern-picked-x { color: var(--accent); font-weight: 700; }
+#new-page .pattern-manual { margin-top: var(--space-1); }
+#new-page .pattern-manual > summary {
+  display: inline-block;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+#new-page .pattern-manual > summary:hover { color: var(--ink); }

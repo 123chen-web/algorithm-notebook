@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/static/intro-film.css?v=2">
   <link rel="stylesheet" href="/static/scenes.css?v=5">
   <link rel="stylesheet" href="/static/themes.css?v=16">
-  <link rel="stylesheet" href="/static/new-record.css?v=7">
+  <link rel="stylesheet" href="/static/new-record.css?v=8">
   <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=4">
   <link rel="stylesheet" href="/static/groups.css?v=2">
@@ -67,6 +67,7 @@
   <link rel="stylesheet" href="/static/heatmap.css?v=2">
   <link rel="stylesheet" href="/static/patterns.css?v=2">
   <link rel="stylesheet" href="/static/roadmap.css?v=1">
+  <link rel="stylesheet" href="/static/inbox.css?v=1">
   <link rel="stylesheet" href="/static/feel.css?v=1">
   <script defer src="/static/scenes.js?v=7"></script>
   <script defer src="/static/intro.js?v=13"></script>
@@ -83,9 +84,10 @@
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
-  <script defer src="/static/pattern-render.js?v=1"></script>
-  <script defer src="/static/pattern-picker.js?v=1"></script>
-  <script defer src="/static/roadmap.js?v=1"></script>
+  <script defer src="/static/pattern-render.js?v=2"></script>
+  <script defer src="/static/pattern-picker.js?v=2"></script>
+  <script defer src="/static/roadmap.js?v=2"></script>
+  <script defer src="/static/inbox.js?v=1"></script>
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
@@ -709,6 +711,7 @@
         </div>
         <p id="roadmap-status" role="status" aria-live="polite"></p>
         <button id="roadmap-retry" type="button" hidden>重新加载</button>
+        <div id="roadmap-inbox-entry" class="roadmap-inbox-entry"></div>
         <section id="roadmap-summary-card" class="panel roadmap-summary-card" aria-labelledby="roadmap-summary-title" hidden>
           <h3 id="roadmap-summary-title">总体进度</h3>
           <p id="roadmap-summary-text" class="roadmap-summary-text"></p>
@@ -732,6 +735,37 @@
         </div>
         <p id="roadmap-count" class="roadmap-count" role="status" aria-live="polite"></p>
         <ol id="roadmap-list" class="patterns-list"></ol>
+      </section>
+
+      <section id="inbox-page" aria-labelledby="inbox-title" aria-busy="false" hidden>
+        <div class="page-heading inbox-heading-row">
+          <div>
+            <h2 id="inbox-title">待分类箱</h2>
+            <p class="muted">把卷子分进套路桶里：拖进去、点进去，或者用键盘拿起来放进去，都行。</p>
+          </div>
+          <button id="inbox-back" type="button">← 学习路线</button>
+        </div>
+        <p id="inbox-status" role="status" aria-live="polite"></p>
+        <button id="inbox-retry" type="button" hidden>重新加载</button>
+        <p id="inbox-remaining" class="inbox-remaining" aria-live="polite" hidden></p>
+        <div id="inbox-arena" class="inbox-arena">
+          <div>
+            <p class="inbox-cards-label">待批的卷子</p>
+            <div id="inbox-card-stack" class="inbox-card-stack"></div>
+          </div>
+          <div>
+            <p class="inbox-bins-label">套路桶</p>
+            <ul id="inbox-bins" class="inbox-bins"></ul>
+          </div>
+        </div>
+        <div id="inbox-bubble" class="inbox-bubble" hidden></div>
+        <div id="inbox-toast" class="inbox-toast" hidden></div>
+        <div id="inbox-done" class="inbox-done" hidden></div>
+        <div id="inbox-results" hidden>
+          <button id="inbox-back-results" type="button">← 返回分类</button>
+          <div id="inbox-results-body"></div>
+        </div>
+        <p id="inbox-live" class="inbox-sr-only" aria-live="polite"></p>
       </section>
 
       <section id="mastery-page" aria-labelledby="mastery-title" aria-busy="false" hidden>

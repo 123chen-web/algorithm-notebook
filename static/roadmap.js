@@ -242,6 +242,12 @@
       onStatus: putStatus,
       onExample: putExample,
       onJumpRelated: jumpTo,
+      onMistakeClick: (target) => {
+        if (typeof window.showView !== "function" || !window.Inbox) return;
+        void window.showView("inbox").then(() => {
+          window.Inbox.showPatternResults(target.id, target.title);
+        });
+      },
       withStatus: true,
     })));
     $("#roadmap-count").textContent = shown.length
@@ -253,6 +259,39 @@
     renderSummary();
     renderWeak();
     renderList();
+  }
+
+  /* ---------- 待分类箱入口 ---------- */
+
+  async function renderInboxEntry() {
+    const entry = $("#roadmap-inbox-entry");
+    entry.replaceChildren();
+    const request = ticket();
+    let total = 0;
+    try {
+      const data = await hooks.api("/api/roadmap/inbox?limit=1&offset=0");
+      if (!current(request)) return;
+      total = Number(data.total) || 0;
+    } catch {
+      // 读不到就不显示入口，不打断学习路线。
+      return;
+    }
+    if (total > 0) {
+      const link = node("button", "roadmap-inbox-link");
+      link.type = "button";
+      link.append(
+        node("span", "", "你还有"),
+        node("span", "inbox-count", String(total)),
+        node("span", "", "道题没分类 →"),
+      );
+      link.setAttribute("aria-label", `你还有 ${total} 道题没分类，去待分类箱`);
+      link.addEventListener("click", () => {
+        if (typeof window.showView === "function") void window.showView("inbox");
+      });
+      entry.append(link);
+    } else {
+      entry.append(node("span", "roadmap-inbox-seal", "全部分好了"));
+    }
   }
 
   /* ---------- 筛选控件 ---------- */
@@ -320,6 +359,7 @@
       if (!current(state)) return;
       applyState(data);
       render();
+      void renderInboxEntry();
       setStatus("");
     } catch {
       if (mine !== generation) return;

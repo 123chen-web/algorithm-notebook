@@ -232,7 +232,8 @@
   function renderCard(pattern, options = {}) {
     const {
       byId = new Map(), status = "none", doneKeys = new Set(), mistakeCount = 0,
-      onStatus = null, onExample = null, onJumpRelated = null, withStatus = Boolean(onStatus),
+      onStatus = null, onExample = null, onJumpRelated = null, onMistakeClick = null,
+      withStatus = Boolean(onStatus),
     } = options;
 
     const item = node("li", "pattern-card");
@@ -247,7 +248,18 @@
       node("span", "pattern-chip pattern-level", pattern.level),
     );
     if (mistakeCount > 0) {
-      summary.append(node("span", "pattern-chip pattern-mistakes", `你记过 ${mistakeCount} 道错题`));
+      if (onMistakeClick) {
+        const badge = node("button", "pattern-chip pattern-mistakes", `你记过 ${mistakeCount} 道错题`);
+        badge.type = "button";
+        badge.setAttribute("aria-label", `查看《${pattern.title}》的分类结果`);
+        badge.addEventListener("click", (event) => {
+          event.stopPropagation();
+          onMistakeClick(pattern);
+        });
+        summary.append(badge);
+      } else {
+        summary.append(node("span", "pattern-chip pattern-mistakes", `你记过 ${mistakeCount} 道错题`));
+      }
     }
     details.append(summary);
 
