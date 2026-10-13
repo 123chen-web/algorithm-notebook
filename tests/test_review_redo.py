@@ -7,6 +7,7 @@ import pytest
 
 import db
 import main
+from core import time as core_time
 from db import connect
 from test_app import client, register
 
@@ -204,7 +205,7 @@ def test_overview_redo_week_present_with_redo_data(client, monkeypatch):
     owner = register(client)["id"]
     mistake = seed(owner)
     now = datetime(2026, 10, 12, 4, tzinfo=timezone.utc)
-    monkeypatch.setattr(main, "utc_now", lambda: now.isoformat())
+    monkeypatch.setattr(core_time, "utc_now", lambda: now.isoformat())
     for quality, mode in [(4, "rewrite"), (2, "redo"), (5, "recall"), (3, "recall")]:
         insert_review(mistake, mode=mode, quality=quality, reviewed_at=now.isoformat())
     overview = client.get("/api/overview").json()
