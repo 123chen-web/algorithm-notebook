@@ -85,7 +85,7 @@ def test_image_contains_every_local_package_the_app_imports(tmp_path):
     for name in ("static", "assets"):
         (image / name).mkdir(exist_ok=True)
     result = subprocess.run(
-        [sys.executable, "-I", "-c", "import main"], cwd=image, capture_output=True, text=True, timeout=120,
+        [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(image)!r}); import main"], cwd=image, capture_output=True, text=True, timeout=120,
         env={"PATH": "", "PYTHONUTF8": "1", "DATABASE_PATH": str(tmp_path / "t.db"), "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", "")},
     )
     assert result.returncode == 0, result.stderr[-1500:]
