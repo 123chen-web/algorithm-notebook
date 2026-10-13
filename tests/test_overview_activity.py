@@ -235,6 +235,7 @@ EMPTY_OVERVIEW = {
     "groups_preview": [],
     "weakness": {"status": "insufficient_data", "mistake_count": 0, "minimum_mistakes": 5, "top": None},
     "hot_post": None,
+    "redo_week": None,
 }
 
 

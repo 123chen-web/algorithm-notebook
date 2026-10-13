@@ -56,14 +56,8 @@
       body: JSON.stringify(body),
     });
     if (!alive(t)) return null;
-    // quick 模式自动建 1 条易错点：打上"举一反三"标签，便于以后按标签筛选。
-    const mistakeId = created && created.mistake_ids && created.mistake_ids[0];
-    if (mistakeId != null) {
-      await request(`/api/mistakes/${mistakeId}/tags`, {
-        method: "PUT",
-        body: JSON.stringify({ tags: [SOURCE_TAG] }),
-      });
-    }
+    // 错因标签现在只能从固定词表里选（质量第一轮 A），“举一反三”这种来源标记不在词表里，
+    // 所以快速建题不再给新易错点打标签；错因由用户复习时自己补。
     return alive(t) ? created : null;
   }
 

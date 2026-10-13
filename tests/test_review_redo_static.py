@@ -50,7 +50,7 @@ def test_redo_assets_wired_in_index_with_versions_and_order():
     assert scripts.count("/static/redo-flow.js?v=1") == 1
     assert styles.count("/static/redo-flow.css?v=1") == 1
     # redo-flow 必须在 focus.js 和 app.js 之前（它们在运行时用 window.RedoFlow）
-    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/focus.js?v=6")
+    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/focus.js?v=8")
     assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/app.js?v=103")
     # 整页仍无内联 script / style 属性（CSP）
     assert all("style" not in attrs for _, attrs in markup.nodes)

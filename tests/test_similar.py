@@ -148,8 +148,8 @@ def test_quick_add_end_to_end(app_client, monkeypatch):
     )
     with main.connect() as conn:
         alice = _make_user(conn, 1, "alice")
-        _, my_mid = _make_problem(conn, 1, "我的 DP 题", tags=("动态规划",))
-        _make_problem(conn, 1, "站内 DP 题", tags=("动态规划",))
+        _, my_mid = _make_problem(conn, 1, "我的 DP 题", tags=("boundary",))
+        _make_problem(conn, 1, "站内 DP 题", tags=("boundary",))
     state["current"] = alice
 
     response = client.get(f"/api/review/similar?mistake_id={my_mid}")
@@ -165,10 +165,9 @@ def test_quick_add_end_to_end(app_client, monkeypatch):
     assert response.status_code == 201
     new_mid = response.json()["mistake_ids"][0]
 
-    # NewProblem 没有 source 字段：来源标记打在新建易错点的标签上。
+    # 错因标签只能从固定词表里选：来源标记“举一反三”不再写成标签（前端也不再发这个请求）。
     response = client.put(f"/api/mistakes/{new_mid}/tags", json={"tags": ["举一反三"]})
-    assert response.status_code == 200
-    assert response.json()["tags"] == ["举一反三"]
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("language,expected", [("C++", "C++"), ("", "Python")])

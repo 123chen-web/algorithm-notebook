@@ -17,15 +17,23 @@ const LIMITS = { per_mistake: 8, length: 20 };
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
 /* ---------------- 标签 ---------------- */
+// tags.js 现在除了 /api/tags，还会读固定词表 /api/error-taxonomy；测试只关心标签这一路，词表请求直接给空答案。
+const TAXONOMY = { causes: [], groups: [], verdicts: [] };
+function tagCalls(env) {
+  for (const call of env.calls) {
+    if (call.url === "/api/error-taxonomy" && !call.answered) { call.answered = true; env.respond(call, 200, TAXONOMY); }
+  }
+  return env.calls.filter((call) => call.url !== "/api/error-taxonomy");
+}
 test("tags: an answer that arrives after sign-out never reaches the next account", async () => {
   const env = load(["tags.js"]);
   const sidebar = env.document.createElement("div");
   const first = env.window.TagFilters.mountSidebar(sidebar);
   await tick();
-  assert.equal(env.calls.length, 1);
+  assert.equal(tagCalls(env).length, 1);
 
   env.window.TagFilters.reset(); // 登出
-  env.respond(env.calls[0], 200, { tags: [{ tag: "A的私人标签", count: 3 }], suggestions: ["边界"], limits: LIMITS });
+  env.respond(tagCalls(env)[0], 200, { tags: [{ tag: "A的私人标签", count: 3 }], suggestions: ["边界"], limits: LIMITS });
   await first;
   await tick();
   assert.deepEqual(plain(env.window.TagFilters.tags()), []);
@@ -33,8 +41,8 @@ test("tags: an answer that arrives after sign-out never reaches the next account
 
   const second = env.window.TagFilters.mountSidebar(sidebar); // 下一位用户
   await tick();
-  assert.equal(env.calls.length, 2, "the new account asks for its own tags");
-  env.respond(env.calls[1], 200, { tags: [{ tag: "B的标签", count: 1 }], suggestions: [], limits: LIMITS });
+  assert.equal(tagCalls(env).length, 2, "the new account asks for its own tags");
+  env.respond(tagCalls(env)[1], 200, { tags: [{ tag: "B的标签", count: 1 }], suggestions: [], limits: LIMITS });
   await second;
   await tick();
   assert.deepEqual(plain(env.window.TagFilters.tags()), [{ tag: "B的标签", count: 1 }]);
@@ -46,16 +54,16 @@ test("tags: a forced refresh requests again and an older answer cannot overwrite
   const sidebar = env.document.createElement("div");
   const mounted = env.window.TagFilters.mountSidebar(sidebar);
   await tick();
-  env.respond(env.calls[0], 200, { tags: [], suggestions: [], limits: LIMITS });
+  env.respond(tagCalls(env)[0], 200, { tags: [], suggestions: [], limits: LIMITS });
   await mounted;
 
   const slow = env.window.TagFilters.refresh();
   const fast = env.window.TagFilters.refresh();
   await tick();
-  assert.equal(env.calls.length, 3, "each forced refresh really asks the server");
-  env.respond(env.calls[2], 200, { tags: [{ tag: "新", count: 2 }], suggestions: [], limits: LIMITS });
+  assert.equal(tagCalls(env).length, 3, "each forced refresh really asks the server");
+  env.respond(tagCalls(env)[2], 200, { tags: [{ tag: "新", count: 2 }], suggestions: [], limits: LIMITS });
   await fast;
-  env.respond(env.calls[1], 200, { tags: [{ tag: "旧", count: 1 }], suggestions: [], limits: LIMITS });
+  env.respond(tagCalls(env)[1], 200, { tags: [{ tag: "旧", count: 1 }], suggestions: [], limits: LIMITS });
   await slow;
   await tick();
   assert.deepEqual(plain(env.window.TagFilters.tags()), [{ tag: "新", count: 2 }]);

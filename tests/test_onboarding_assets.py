@@ -35,7 +35,7 @@ def test_assets_are_versioned_and_loaded_before_app():
 def test_changed_assets_had_their_versions_bumped():
     # 基线：app.js=58、mastery.js=2、clusters.js=4；改过的都加一。
     # 整合后：app.js 每个分支加一（此处 66），mastery.js / clusters.js 被 AN 与 ON 各改一次（4 / 6）。
-    assert "/static/app.js?v=102" in script_sources()
+    assert "/static/app.js?v=103" in script_sources()
     assert "/static/mastery.js?v=4" in script_sources()
     assert "/static/clusters.js?v=7" in script_sources()
 
@@ -43,7 +43,7 @@ def test_changed_assets_had_their_versions_bumped():
 def test_overview_files_were_not_touched_by_this_task():
     # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们；
     # 墨点任务（inkdot）把 overview.css 升到 4；手感层又把 overview.js 升到 6。
-    assert "/static/overview.js?v=6" in script_sources()
+    assert "/static/overview.js?v=7" in script_sources()
     assert 'href="/static/overview.css?v=4"' in INDEX
 
 

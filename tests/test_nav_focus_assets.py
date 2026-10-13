@@ -68,17 +68,17 @@ def text_around(elements, element_id):
 
 def test_assets_are_served_once_and_before_app():
     assert INDEX.count('/static/nav-focus.css?v=1"') == 1
-    assert INDEX.count("/static/nav-focus.js?v=1") == 1
+    assert INDEX.count("/static/nav-focus.js?v=8") == 1
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
     assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=102")
+    assert INDEX.index("nav-focus.js?v=8") < INDEX.index("app.js?v=103")
 
 
 def test_changed_assets_bump_their_cache_busting_version():
     assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
     assert re.search(r'<script defer src="/static/rank\.js\?v=2"></script>', INDEX)
-    assert re.search(r'<script defer src="/static/app\.js\?v=102"></script>', INDEX)
+    assert re.search(r'<script defer src="/static/app\.js\?v=103"></script>', INDEX)
 
 
 def test_two_keyboard_operable_toggles_are_buttons_with_aria_pressed():

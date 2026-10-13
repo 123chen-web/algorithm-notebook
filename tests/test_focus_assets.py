@@ -51,7 +51,11 @@ def test_five_keys_map_to_the_review_qualities_the_scheduler_accepts(script):
 
 def test_grading_uses_the_existing_review_endpoint_with_the_item_version(script):
     assert "/api/mistakes/${item.id}/review" in script
-    assert "body: JSON.stringify({ quality, version: item.version })" in script
+    # 复习=重做：payload 按需带 mode/evidence（recall 时保持原来的 {quality, version} 形状）
+    assert "body: JSON.stringify(payload)" in script
+    assert "const payload = { quality, version: item.version };" in script
+    assert 'if (mode !== "recall") payload.mode = mode;' in script
+    assert 'if (evidence) payload.evidence = evidence;' in script
     assert '"X-CSRF-Protection": "1"' in script
     # 评分不经过 app.js 的 run()，不会触发全局禁用按钮；防重复提交靠这一轮自己的标记
     # （挂在发出请求时那一轮上，晚到的回应不会误伤后来新开的一轮）。
