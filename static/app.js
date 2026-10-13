@@ -672,6 +672,47 @@ function timestamp(value) {
   }
 }
 
+let redoPreferenceWired = false;
+let redoPreferenceCache = null; // "redo_first" | "recall_only"，读过 /api/me/review-settings 后缓存
+
+async function rvfFetchRedoPreference() {
+  if (redoPreferenceCache) return redoPreferenceCache;
+  try {
+    const settings = await api("/api/me/review-settings");
+    redoPreferenceCache = settings.redo_preference === "recall_only" ? "recall_only" : "redo_first";
+  } catch (error) {
+    redoPreferenceCache = "redo_first";
+  }
+  return redoPreferenceCache;
+}
+
+// 账号设置里的“复习方式偏好”：只接线一次，读/写都走 /api/me/review-settings。
+function rvfInitRedoPreference() {
+  if (redoPreferenceWired) return;
+  const select = $("#account-redo-preference");
+  if (!select) return;
+  redoPreferenceWired = true;
+  run(async () => {
+    select.value = await rvfFetchRedoPreference();
+  });
+  select.addEventListener("change", () => run(async () => {
+    const value = select.value === "recall_only" ? "recall_only" : "redo_first";
+    const previous = redoPreferenceCache;
+    redoPreferenceCache = value;
+    try {
+      await api("/api/me/review-settings", {
+        method: "PUT",
+        body: JSON.stringify({ redo_preference: value }),
+      });
+      message("复习方式偏好已保存。");
+    } catch (error) {
+      redoPreferenceCache = previous;
+      select.value = previous || "redo_first";
+      message(error.message);
+    }
+  }));
+}
+
 function renderUserInfo() {
   const wrap = $("#user-info-wrap");
   for (const id of ["account-password", "account-revoke-others", "account-delete"]) {
@@ -756,6 +797,7 @@ function updateUserInfo() {
   window.Roadmap?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.Inbox?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   mountPatternPicker();
+  rvfInitRedoPreference();
 
   $("#my-avatar-wrap").hidden = false;
   $("#my-avatar").replaceChildren(
@@ -3100,6 +3142,69 @@ function clearDetail(
   $("#detail").replaceChildren(empty);
 }
 
+// 三种复习方式共用的评分提交：mode 默认为 recall（旧行为），rewrite/redo
+// 会带上 evidence（建议分/最终分/相似度/用时）。离线时同样把 mode/evidence
+// 写进离线队列，联网后一起补交。
+async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, status, offline, pageGuard, root, due, mode = "recall", evidence = "", gradeButtons = null }) {
+  if (!state.isCurrent() || !state.revealed || !due || state.submitting) return;
+  state.submitting = true;
+  const buttons = gradeButtons || state.buttons;
+  for (const gradeButton of buttons) gradeButton.disabled = true;
+  reviewButtons.setAttribute("aria-busy", "true");
+  const anchor = button ? sealAnchorPoint(button) : null;
+  const sealText = { 0: "再练", 2: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality];
+  const payload = { quality, version: item.version };
+  if (mode !== "recall") payload.mode = mode;
+  if (evidence) payload.evidence = evidence;
+  try {
+    let result = null;
+    if (offline) {
+      await window.OfflineReview?.grade(item.id, quality, { mode, evidence }); // 内部已提示「已记下，联网后同步」
+    } else {
+      try {
+        result = await api(`/api/mistakes/${item.id}/review`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        // 在线详情打开后突然断网：POST 直接网络失败时转入离线队列，不让评分丢失。
+        if (window.OfflineReview?.isNetworkError(error)) {
+          await window.OfflineReview?.grade(item.id, quality, { mode, evidence });
+          window.OfflineReview?.restrictDetail(root);
+        } else {
+          throw error;
+        }
+      }
+    }
+    if (!state.isCurrent()) return;
+    stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
+    window.ReviewFeel?.buzz();
+    if (result) {
+      rvfRemoveItem({ ...item, ...result });
+      window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
+        onUndo: (restored) => rvfRestoreItem(item, restored) });
+      // F6 趁热打铁：复习完成后推荐 3 道同类题
+      const similarHost = element("div", "", "similar-host");
+      $("#detail").append(similarHost);
+      window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+      window.Similar?.mount(similarHost, item.id);
+    } else {
+      // 离线评分没有撤销入口（没发到服务器，无从撤销）。
+      rvfRemoveItem({ ...item }, { offline: true });
+    }
+    // 评分已提交（在线成功或离线入队）：停掉可能还在跑的重做计时器。
+    if (state.redo?.timer) { state.redo.timer.cancel(); state.redo.timer = null; }
+  } catch (error) {
+    if (state.isCurrent()) status.textContent = error.message;
+  } finally {
+    state.submitting = false;
+    if (state.isCurrent()) {
+      for (const gradeButton of buttons) gradeButton.disabled = !due;
+      reviewButtons.removeAttribute("aria-busy");
+    }
+  }
+}
+
 function rvfRevealDetail() {
   const state = rvfDetailState;
   if (!state || state.revealed || !state.isCurrent()) return;
@@ -3122,6 +3227,8 @@ function rvfDetailKeydown(event) {
     event.preventDefault();
     rvfRevealDetail();
   } else if (/^[1-5]$/.test(event.key) && state.revealed) {
+    // 重做模式（默写/限时）进行中时，数字键不触发隐藏的普通评分按钮。
+    if (state.redo && state.redo.mode && state.redo.mode !== "recall") return;
     const button = state.buttons[Number(event.key) - 1];
     if (!button.disabled) { event.preventDefault(); button.click(); }
   } else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && state.revealed) {
@@ -3133,6 +3240,217 @@ function rvfDetailKeydown(event) {
     const action = state.menu.querySelector(event.key.toLowerCase() === "t" ? '[data-review-action="snooze"][data-days="1"]' : '[data-review-action="suspend"]');
     if (action && !action.hidden && !action.disabled) { event.preventDefault(); action.click(); }
   }
+}
+
+// ---- 复习=重做：三种复习方式（只增强算法分区，其他分区保持原样） ----
+// 翻牌/拖动评分/盖章动效是第三期的事，这里只做“重做”的数据与流程。
+function rvfRedoAvailability(item) {
+  return {
+    rewrite: Boolean((item.correct_code || "").trim()),
+    redo: Boolean((item.source_url || "").trim()),
+  };
+}
+
+async function rvfPickDefaultMode(item) {
+  const avail = rvfRedoAvailability(item);
+  const preference = await rvfFetchRedoPreference();
+  let hint = false;
+  if (window.RedoFlow && (avail.rewrite || avail.redo)) {
+    try { hint = await window.RedoFlow.fetchHint(api, item.id); }
+    catch (error) { hint = false; }
+  }
+  if (hint && avail.rewrite) return { mode: "rewrite", hint };
+  if (hint && avail.redo) return { mode: "redo", hint };
+  if (preference === "recall_only") return { mode: "recall", hint };
+  if (avail.rewrite) return { mode: "rewrite", hint };
+  if (avail.redo) return { mode: "redo", hint };
+  return { mode: "recall", hint };
+}
+
+function rvfBuildRedoSection(state, item) {
+  const section = element("section", "", "redo-section");
+  section.setAttribute("aria-label", "选择复习方式");
+  const avail = rvfRedoAvailability(item);
+  const buttons = {};
+  const row = element("div", "", "redo-modes");
+  for (const [mode, label, ok, why] of [
+    ["rewrite", "默写关键代码", avail.rewrite, "该题没有正确代码，默写不可用"],
+    ["redo", "去原题限时重做", avail.redo, "该题没有来源链接，限时重做不可用"],
+    ["recall", "只回忆", true, ""],
+  ]) {
+    const button = element("button", label, "redo-mode");
+    button.type = "button";
+    button.disabled = !ok;
+    if (!ok) button.title = why;
+    button.setAttribute("aria-pressed", "false");
+    button.dataset.mode = mode;
+    button.addEventListener("click", () => rvfSelectRedoMode(state, mode));
+    row.append(button);
+    buttons[mode] = button;
+  }
+  const hintEl = element("p", "这条用重做更靠谱", "redo-hint");
+  hintEl.hidden = true;
+  const panelHost = element("div", "", "redo-panel-host");
+  section.append(element("h3", "这次怎么复习？", "section-label"), row, hintEl, panelHost);
+  state.redo = { section, buttons, hintEl, panelHost, mode: null, timer: null };
+  return section;
+}
+
+async function rvfInitRedoModes(state) {
+  if (!state.redo || state.redo.mode || !state.isCurrent()) return;
+  const { mode, hint } = await rvfPickDefaultMode(state.item);
+  if (!state.isCurrent() || !state.redo || state.redo.mode) return;
+  state.redo.hintEl.hidden = !hint;
+  rvfSelectRedoMode(state, mode);
+}
+
+function rvfSelectRedoMode(state, mode) {
+  const redo = state.redo;
+  if (!redo || redo.mode === mode || !state.isCurrent()) return;
+  if (redo.timer) { redo.timer.cancel(); redo.timer = null; }
+  redo.mode = mode;
+  for (const [name, button] of Object.entries(redo.buttons)) {
+    button.setAttribute("aria-pressed", String(name === mode));
+  }
+  redo.panelHost.replaceChildren();
+  const showGrades = mode === "recall";
+  if (state.reviewSection) state.reviewSection.hidden = !showGrades;
+  if (state.recallBadge) state.recallBadge.hidden = !showGrades;
+  if (mode === "rewrite") redo.panelHost.append(rvfBuildRewritePanel(state));
+  else if (mode === "redo") redo.panelHost.append(rvfBuildRedoPanel(state));
+}
+
+function rvfBuildPanelGradeRow(state, item, { mode, suggested, similarity, seconds }) {
+  const wrap = element("div");
+  wrap.append(element("p", `系统建议：${suggested} 分，你可以调整`, "redo-suggest"));
+  const row = element("div", "", "actions review-actions");
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-label", "最终评分");
+  const panelButtons = [];
+  grades.forEach(([quality, label], index) => {
+    const button = element("button", "", "review-grade");
+    button.append(element("kbd", String(index + 1)), element("span", label));
+    button.type = "button";
+    button.dataset.quality = String(quality);
+    if (quality === suggested) button.classList.add("redo-suggested");
+    button.addEventListener("click", () => {
+      const evidence = window.RedoFlow.buildEvidence({ suggested, final: quality, similarity, seconds });
+      rvfSubmitGrade(state, item, {
+        quality, button, ...state.gradeCtx, mode, evidence, gradeButtons: panelButtons,
+      });
+    });
+    row.append(button);
+    panelButtons.push(button);
+  });
+  wrap.append(row);
+  return wrap;
+}
+
+function rvfBuildRewritePanel(state) {
+  const item = state.item;
+  const panel = element("div", "", "redo-panel");
+  panel.append(element("h4", "默写关键代码"));
+  panel.append(element("p", `题目：${item.title}`, "muted"));
+  if ((item.counterexample || "").trim()) {
+    panel.append(element("p", "最小反例", "section-label"));
+    panel.append(element("pre", item.counterexample, "code"));
+  }
+  panel.append(element("p", "你记的错因", "section-label"));
+  panel.append(renderMistakeText(item));
+  const area = document.createElement("textarea");
+  area.setAttribute("aria-label", "默写代码输入区");
+  area.placeholder = "把关键几行写出来，不用整段照抄";
+  const compare = element("button", "对照", "primary");
+  compare.type = "button";
+  const resultHost = element("div");
+  compare.addEventListener("click", () => {
+    if (!state.isCurrent()) return;
+    const diff = window.RedoFlow.diffLines(item.correct_code, area.value);
+    const suggested = window.RedoFlow.similarityToGrade(diff.similarity);
+    const diffBox = element("div", "", "redo-diff");
+    for (const line of diff.missing) diffBox.append(element("pre", `− 没写出：${line}`, "redo-missing"));
+    for (const line of diff.extra) diffBox.append(element("pre", `＋ 多写了：${line}`, "redo-extra"));
+    resultHost.replaceChildren(
+      element("p", `相似度 ${Math.round(diff.similarity * 100)}%`, "redo-suggest"),
+      diffBox,
+    );
+    if (!diff.missing.length && !diff.extra.length) {
+      diffBox.append(element("p", "逐行一致，漂亮。", "muted"));
+    }
+    resultHost.append(rvfBuildPanelGradeRow(state, item, { mode: "rewrite", suggested, similarity: diff.similarity }));
+    compare.disabled = true;
+  });
+  panel.append(area, compare, resultHost);
+  return panel;
+}
+
+function rvfFormatCountdown(remaining) {
+  return `剩余 ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+}
+
+function rvfBuildRedoPanel(state) {
+  const item = state.item;
+  const panel = element("div", "", "redo-panel");
+  panel.append(element("h4", "去原题限时重做"));
+  const limitRow = element("div", "", "redo-limit-row");
+  limitRow.append(element("span", "时限"));
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "重做时限");
+  for (const minutes of window.RedoFlow.REDO_LIMITS) {
+    const option = document.createElement("option");
+    option.value = String(minutes);
+    option.textContent = `${minutes} 分钟`;
+    if (minutes === window.RedoFlow.DEFAULT_REDO_LIMIT) option.selected = true;
+    select.append(option);
+  }
+  limitRow.append(select);
+  const start = element("button", "开始，在新标签页打开原题", "primary");
+  start.type = "button";
+  const timerEl = element("p", "", "redo-timer");
+  timerEl.setAttribute("role", "timer");
+  const askHost = element("div");
+  const showAsk = () => {
+    askHost.replaceChildren();
+    askHost.append(element("p", "做完了吗？", "section-label"));
+    const row = element("div", "", "redo-actions");
+    for (const [label, fixed] of [
+      ["一次做对", null],
+      ["做对了但卡了很久", 3],
+      ["没做出来或看了题解", 0],
+    ]) {
+      const button = element("button", label);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        if (!state.isCurrent()) return;
+        const timer = state.redo.timer;
+        const elapsed = timer ? timer.elapsed() : 0;
+        const limitSeconds = Number(select.value) * 60;
+        if (timer) { timer.cancel(); state.redo.timer = null; }
+        const suggested = fixed === null
+          ? window.RedoFlow.redoGradeSuggest(elapsed, limitSeconds)
+          : fixed;
+        askHost.replaceChildren();
+        askHost.append(rvfBuildPanelGradeRow(state, item, { mode: "redo", suggested, seconds: elapsed }));
+      });
+      row.append(button);
+    }
+    askHost.append(row);
+  };
+  start.addEventListener("click", () => {
+    if (!state.isCurrent()) return;
+    window.open(item.source_url, "_blank", "noopener");
+    const limitSeconds = Number(select.value) * 60;
+    start.disabled = true;
+    select.disabled = true;
+    state.redo.timer = window.RedoFlow.startTimer(
+      limitSeconds,
+      (remaining) => { timerEl.textContent = rvfFormatCountdown(remaining); },
+      () => { timerEl.textContent = "时间到"; showAsk(); },
+    );
+    showAsk();
+  });
+  panel.append(limitRow, start, timerEl, askHost);
+  return panel;
 }
 
 function renderDetail(item, options = {}) {
@@ -3303,8 +3621,16 @@ function renderDetail(item, options = {}) {
   reviewButtons.setAttribute("role", "group");
   reviewButtons.setAttribute("aria-label", "这次掌握程度，数字键一到五或左右方向键评分");
   const due = !item.suspended_at && item.due_date <= item.today;
+  const reviewHeading = element("h3", "这次，你掌握得怎么样？");
+  // 只回忆 = 自评：卡片上标一个小标记。
+  const recallBadge = element("span", "自评", "redo-badge");
+  recallBadge.hidden = true;
+  reviewHeading.append(recallBadge);
+  state.reviewSection = reviewSection;
+  state.recallBadge = recallBadge;
+  state.gradeCtx = { reviewButtons, status, offline, pageGuard, root, due };
   reviewSection.append(
-    element("h3", "这次，你掌握得怎么样？"),
+    reviewHeading,
     element(
       "p",
       due
@@ -3322,58 +3648,8 @@ function renderDetail(item, options = {}) {
     button.dataset.blocked = due ? "0" : "1";
     button.disabled = !due;
     button.setAttribute("aria-keyshortcuts", String(index + 1));
-    button.addEventListener("click", async () => {
-      if (!state.isCurrent() || !state.revealed || !due || state.submitting) return;
-      state.submitting = true;
-      for (const gradeButton of state.buttons) gradeButton.disabled = true;
-      reviewButtons.setAttribute("aria-busy", "true");
-      const anchor = sealAnchorPoint(button);
-      const sealText = { 0: "再练", 2: "再练", 3: "过关", 4: "记住", 5: "掌握" }[quality];
-      try {
-        let result = null;
-        if (offline) {
-          await window.OfflineReview?.grade(item.id, quality); // 内部已提示「已记下，联网后同步」
-        } else {
-          try {
-            result = await api(`/api/mistakes/${item.id}/review`, {
-              method: "POST",
-              body: JSON.stringify({ quality, version: item.version }),
-            });
-          } catch (error) {
-            // 在线详情打开后突然断网：POST 直接网络失败时转入离线队列，不让评分丢失。
-            if (window.OfflineReview?.isNetworkError(error)) {
-              await window.OfflineReview?.grade(item.id, quality);
-              window.OfflineReview?.restrictDetail(root);
-            } else {
-              throw error;
-            }
-          }
-        }
-        if (!state.isCurrent()) return;
-        stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
-        window.ReviewFeel?.buzz();
-        if (result) {
-          rvfRemoveItem({ ...item, ...result });
-          window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
-            onUndo: (restored) => rvfRestoreItem(item, restored) });
-          // F6 趁热打铁：复习完成后推荐 3 道同类题
-          const similarHost = element("div", "", "similar-host");
-          $("#detail").append(similarHost);
-          window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
-          window.Similar?.mount(similarHost, item.id);
-        } else {
-          // 离线评分没有撤销入口（没发到服务器，无从撤销）。
-          rvfRemoveItem({ ...item }, { offline: true });
-        }
-      } catch (error) {
-        if (state.isCurrent()) status.textContent = error.message;
-      } finally {
-        state.submitting = false;
-        if (state.isCurrent()) {
-          for (const gradeButton of state.buttons) gradeButton.disabled = !due;
-          reviewButtons.removeAttribute("aria-busy");
-        }
-      }
+    button.addEventListener("click", () => {
+      rvfSubmitGrade(state, item, { quality, button, reviewButtons, status, offline, pageGuard, root, due });
     });
     reviewButtons.append(button);
     state.buttons.push(button);
@@ -3381,6 +3657,12 @@ function renderDetail(item, options = {}) {
   reviewSection.append(reviewButtons);
   root.append(reviewSection);
   state.answers.push(reviewSection);
+  // 复习=重做：只增强算法分区；未到期不显示方式选择。
+  if (item.zone === "算法" && due && window.RedoFlow) {
+    const redoSection = rvfBuildRedoSection(state, item);
+    root.append(redoSection);
+    state.answers.push(redoSection);
+  }
   void window.ReviewExtras?.decorateGrades(state.buttons, item, state.isCurrent);
   const menu = window.ReviewExtras?.menu({ item, status, isCurrent: () => pageGuard() && (rvfDetailState === state || state.removed),
     onAction: async (action, days, result) => {
@@ -3410,9 +3692,10 @@ function renderDetail(item, options = {}) {
     history.append(element("summary", `复习历史（${item.reviews.length} 次）`));
     const list = document.createElement("ul");
     for (const review of item.reviews) {
+      const modeLabel = (window.RedoFlow && window.RedoFlow.MODE_LABEL[review.mode]) || "自评";
       list.append(element(
         "li",
-        `${timestamp(review.reviewed_at)} · 评分 ${review.quality}/5` +
+        `${timestamp(review.reviewed_at)} · 评分 ${review.quality}/5 · ${modeLabel}` +
         ` · 下次 ${review.next_due_date}`
       ));
     }
@@ -3481,6 +3764,8 @@ function renderDetail(item, options = {}) {
   root.append(aiSection, dangerZone);
   state.answers.push(aiSection);
   for (const part of state.answers) part.hidden = !state.revealed;
+  // 复习=重做：显示错因后（或一开始就显示时）异步选默认复习方式。
+  if (state.redo) run(() => rvfInitRedoModes(state));
   if (offline) window.OfflineReview?.restrictDetail(root); // 禁用推迟/暂停、AI、变体保存、删除并说明原因
 }
 

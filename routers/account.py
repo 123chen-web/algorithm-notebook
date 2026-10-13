@@ -410,18 +410,36 @@ def update_username(data: main.UsernameUpdate, user=Depends(main.current_user)):
 def rvb_get_settings(user=Depends(main.current_user)):
     with main.connect() as conn:
         fresh = main.rvb_account(conn, user["id"])
-        return {"daily_review_cap": fresh["daily_review_cap"]}
+        return {
+            "daily_review_cap": fresh["daily_review_cap"],
+            "redo_preference": fresh["redo_preference"],
+        }
 
 
 @router.put("/api/me/review-settings")
 def rvb_update_settings(data: main.RvbSettingsInput, user=Depends(main.current_user)):
     with main.connect(write=True) as conn:
-        main.rvb_account(conn, user["id"])
-        conn.execute(
-            "UPDATE users SET daily_review_cap = ? WHERE id = ?",
-            (data.daily_review_cap, user["id"]),
-        )
-    return {"daily_review_cap": data.daily_review_cap}
+        fresh = main.rvb_account(conn, user["id"])
+        fields = data.model_fields_set
+        # daily_review_cap 传 null 表示“不限”（旧客户端行为）；没传就不动。
+        if "daily_review_cap" in fields:
+            conn.execute(
+                "UPDATE users SET daily_review_cap = ? WHERE id = ?",
+                (data.daily_review_cap, user["id"]),
+            )
+            cap = data.daily_review_cap
+        else:
+            cap = fresh["daily_review_cap"]
+        # redo_preference 没传就不动（旧客户端兼容）。
+        if "redo_preference" in fields and data.redo_preference is not None:
+            conn.execute(
+                "UPDATE users SET redo_preference = ? WHERE id = ?",
+                (data.redo_preference, user["id"]),
+            )
+            preference = data.redo_preference
+        else:
+            preference = fresh["redo_preference"]
+    return {"daily_review_cap": cap, "redo_preference": preference}
 
 
 @router.get("/api/me/push")

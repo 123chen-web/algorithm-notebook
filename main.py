@@ -552,6 +552,43 @@ class ReviewInput(InputModel):
     version: int | None = Field(default=None, strict=True, ge=0)
     client_op_id: str | None = Field(default=None, pattern=CLIENT_OP_ID_PATTERN)
     reviewed_at: datetime | None = None
+    # 复习=重做：mode 只接受三个固定值；旧客户端不传时默认为 recall。
+    mode: Literal["recall", "rewrite", "redo"] = "recall"
+    # 小 JSON：{"suggested":4,"final":3,"similarity":0.82,"seconds":412}，
+    # JS 码元长度 ≤ 500。空串表示不传（旧客户端兼容）。
+    evidence: str = ""
+
+    @field_validator("evidence")
+    @classmethod
+    def evidence_shape(cls, value):
+        if not value:
+            return value
+        if _js_string_length(value) > 500:
+            raise ValueError("evidence 长度不能超过 500 字符")
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            raise ValueError("evidence 必须是 JSON 对象") from None
+        if not isinstance(parsed, dict):
+            raise ValueError("evidence 必须是 JSON 对象")
+        allowed = {"suggested", "final", "similarity", "seconds"}
+        for key in parsed:
+            if key not in allowed:
+                raise ValueError(f"evidence 不支持的字段：{key}")
+        suggested = parsed.get("suggested")
+        final = parsed.get("final")
+        for key, val in (("suggested", suggested), ("final", final)):
+            if val is not None and not (isinstance(val, int) and 0 <= val <= 5):
+                raise ValueError("evidence 的 suggested/final 必须是 0 到 5 的整数")
+        similarity = parsed.get("similarity")
+        if similarity is not None and not (
+            isinstance(similarity, (int, float)) and 0 <= similarity <= 1
+        ):
+            raise ValueError("evidence 的 similarity 必须是 0 到 1 的数字")
+        seconds = parsed.get("seconds")
+        if seconds is not None and not (isinstance(seconds, int) and seconds >= 0):
+            raise ValueError("evidence 的 seconds 必须是非负整数")
+        return value
 
     @field_validator("reviewed_at", mode="before")
     @classmethod
@@ -592,7 +629,9 @@ class RvbSnoozeInput(RvbVersionInput):
 
 
 class RvbSettingsInput(InputModel):
-    daily_review_cap: Annotated[StrictInt, Field(ge=5, le=200)] | None
+    daily_review_cap: Annotated[StrictInt, Field(ge=5, le=200)] | None = None
+    # 复习方式偏好：redo_first（重做优先，默认）/ recall_only（只回忆）。
+    redo_preference: Literal["redo_first", "recall_only"] | None = None
 
 
 class VariantResult(InputModel):
@@ -2037,6 +2076,26 @@ def rvb_review_queue(items, today, cap, done_today, ignore_cap=False):
 REVIEW_OP_RETENTION = timedelta(days=30)
 REVIEW_FUTURE_SLACK = timedelta(seconds=60)
 REVIEW_BACKFILL_WINDOW = timedelta(days=7)
+
+
+def redo_overconfident_hint(conn, mistake_id, since_iso):
+    """防自评虚高：最近 14 天内“只回忆”打了高分（>=4）、紧接着下一次又评成
+    低分（<=2），出现 >=2 次时返回 True，下次复习默认引导到重做。
+
+    只读最近 14 天的评分，按时间顺序找 recall 高分→低分的相邻对。
+    """
+    rows = conn.execute(
+        "SELECT mode, quality FROM reviews WHERE mistake_id = ? AND reviewed_at >= ?"
+        " ORDER BY reviewed_at, id",
+        (mistake_id, since_iso),
+    ).fetchall()
+    count = 0
+    for prev, cur in zip(rows, rows[1:]):
+        if prev["mode"] == "recall" and prev["quality"] >= 4 and cur["quality"] <= 2:
+            count += 1
+            if count >= 2:
+                return True
+    return False
 
 
 def pwa_review_op_replay(conn, user_id, mistake_id, client_op_id, now):

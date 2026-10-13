@@ -38,6 +38,7 @@
   <link rel="stylesheet" href="/static/focus.css?v=3">
   <link rel="stylesheet" href="/static/review-extras.css?v=4">
   <link rel="stylesheet" href="/static/review-feel.css?v=1">
+  <link rel="stylesheet" href="/static/redo-flow.css?v=1">
   <link rel="stylesheet" href="/static/problem-cards.css?v=1">
   <link rel="stylesheet" href="/static/tags.css?v=3">
   <link rel="stylesheet" href="/static/practice.css?v=1">
@@ -83,7 +84,8 @@
   <script defer src="/static/palette.js?v=4"></script>
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/problem-cards.js?v=3"></script>
-  <script defer src="/static/focus.js?v=7"></script>
+  <script defer src="/static/redo-flow.js?v=1"></script>
+  <script defer src="/static/focus.js?v=8"></script>
   <script defer src="/static/review-feel.js?v=1"></script>
   <script defer src="/static/tags.js?v=3"></script>
   <script defer src="/static/practice.js?v=1"></script>
@@ -96,7 +98,7 @@
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=5"></script>
-  <script defer src="/static/overview.js?v=6"></script>
+  <script defer src="/static/overview.js?v=7"></script>
   <script defer src="/static/inkdot.js?v=1"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
@@ -127,8 +129,8 @@
   <script defer src="/static/anki-export.js?v=1"></script>
   <script defer src="/static/offline-queue.js?v=1"></script>
   <script defer src="/static/pwa-register.js?v=1"></script>
-  <script defer src="/static/offline-sync.js?v=6"></script>
-  <script defer src="/static/offline-review.js?v=3"></script>
+  <script defer src="/static/offline-sync.js?v=7"></script>
+  <script defer src="/static/offline-review.js?v=4"></script>
   <script defer src="/static/import-problem.js?v=2"></script>
   <script defer src="/static/similar.js?v=3"></script>
   <script defer src="/static/heatmap.js?v=1"></script>
@@ -139,7 +141,7 @@
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610121"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
-  <script defer src="/static/app.js?v=102"></script>
+  <script defer src="/static/app.js?v=103"></script>
   <script defer src="/static/view-history.js?v=1"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
@@ -315,6 +317,13 @@
               <label class="account-preference" for="account-scene">风景
                 <select id="account-scene" data-scene-select aria-label="账号页面风景"></select>
               </label>
+              <label class="account-preference" for="account-redo-preference">复习方式偏好
+                <select id="account-redo-preference" aria-label="复习方式偏好">
+                  <option value="redo_first">重做优先</option>
+                  <option value="recall_only">只回忆</option>
+                </select>
+              </label>
+              <p class="account-preference-hint">默认重做优先：算法分区复习时引导默写或限时重做；选“只回忆”则只用原来的自评。</p>
               <nav class="legal-links account-legal-links" aria-label="法律信息">
                 <a href="/terms" target="_blank" rel="noopener">服务条款</a>
                 <span aria-hidden="true">·</span>

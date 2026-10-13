@@ -212,14 +212,18 @@
   }
 
   /* ---------- 离线评分入队 ---------- */
-  async function enqueueGrade(mistakeId, grade) {
+  async function enqueueGrade(mistakeId, grade, extra = {}) {
     if (!hooks) throw new Error("OfflineSync 尚未 configure");
     if (!hooks.getUser()) throw new Error("需要登录后再评分");
     const ready = await ensureState();
     if (!ready) throw new Error("需要登录后再评分");
     const opId = makeOpId();
     const at = new Date().toISOString();
-    state = queue().enqueue(state, { opId, mistakeId, grade, at }); // TypeError / RangeError 原样上抛
+    // 复习=重做：mode/evidence 一起入队，联网后原样补交。
+    const op = { opId, mistakeId, grade, at };
+    if (extra.mode && extra.mode !== "recall") op.mode = extra.mode;
+    if (extra.evidence) op.evidence = extra.evidence;
+    state = queue().enqueue(state, op); // TypeError / RangeError 原样上抛
     persist();
     announceSyncState();
     return { opId, mistakeId, grade, at };
@@ -232,6 +236,8 @@
 
   function bodyFor(op) {
     const body = { quality: op.grade, client_op_id: op.opId, reviewed_at: op.at };
+    if (op.mode) body.mode = op.mode;
+    if (op.evidence) body.evidence = op.evidence;
     const known = prefetched?.items?.find((item) => item.id === op.mistakeId);
     if (known && Number.isInteger(known.version)) body.version = known.version;
     return body;

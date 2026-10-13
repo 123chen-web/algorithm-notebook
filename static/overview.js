@@ -68,6 +68,25 @@
     const focus = $("#tile-review-focus");
     focus.hidden = !(due > 0 && window.FocusReview);
     focus.onclick = () => context.onFocus?.();
+
+    // 复习=重做：本周重做通过率与自评虚高对比，有数据才显示。
+    let redoLine = tile.querySelector(".redo-week-line");
+    const week = data.redo_week;
+    if (week && week.redo_count > 0) {
+      const text = week.recall_avg == null
+        ? `本周重做通过率 ${Math.round(week.pass_rate * 100)}%（${week.redo_count} 次）`
+        : week.recall_minus_redo > 0
+          ? `本周重做通过率 ${Math.round(week.pass_rate * 100)}% · 自评平均比重做高 ${week.recall_minus_redo} 档`
+          : `本周重做通过率 ${Math.round(week.pass_rate * 100)}% · 自评平均比重做低 ${Math.abs(week.recall_minus_redo)} 档`;
+      if (!redoLine) {
+        redoLine = node("p", "redo-week-line");
+        tile.append(redoLine);
+      }
+      redoLine.textContent = text;
+      redoLine.hidden = false;
+    } else if (redoLine) {
+      redoLine.hidden = true;
+    }
   }
 
   /* ---------- 连续打卡磁贴：墨点（static/inkdot.js 负责画，数字保留一眼可读） ---------- */

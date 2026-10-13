@@ -76,9 +76,9 @@
   }
 
   /* ---------- 离线评分 ---------- */
-  async function grade(mistakeId, quality) {
+  async function grade(mistakeId, quality, extra = {}) {
     if (!sync()) throw new Error("OfflineSync 未就绪");
-    const op = await sync().enqueueGrade(mistakeId, quality);
+    const op = await sync().enqueueGrade(mistakeId, quality, extra);
     cachedItems.delete(mistakeId);
     notify("已记下，联网后同步。");
     return op;

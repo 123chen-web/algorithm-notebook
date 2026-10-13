@@ -1246,6 +1246,28 @@ def _apply_error_taxonomy(conn):
 
 
 MIGRATIONS.append((80, "错因固定词表 + 判题类型 + 最小反例", _apply_error_taxonomy))
+
+
+def _apply_review_redo(conn):
+    """复习=重做（迁移 81）。
+
+    1. reviews 加 mode 列（recall/rewrite/redo，默认 recall）与 evidence 列
+       （小 JSON，默认空串）。幂等：先查列是否存在。
+    2. users 加 redo_preference 列（redo_first/recall_only，默认 redo_first）。
+    """
+    for table, column, default in (
+        ("reviews", "mode", "'recall'"),
+        ("reviews", "evidence", "''"),
+        ("users", "redo_preference", "'redo_first'"),
+    ):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT {default}"
+            )
+
+
+MIGRATIONS.append((81, "复习=重做：reviews.mode/evidence + users.redo_preference", _apply_review_redo))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

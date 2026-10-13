@@ -341,12 +341,40 @@ def get_overview(user=Depends(main.current_user)):
             """,
             ((main.datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds"),),
         ).fetchone()
+        # 复习=重做：本周（今天起往前 7 天）的重做统计，有重做数据才返回。
+        week_start = (today - timedelta(days=6)).isoformat()
+        redo_rows = conn.execute(
+            """
+            SELECT r.mode, r.quality FROM reviews r
+            JOIN mistakes m ON m.id = r.mistake_id
+            JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? AND date(r.reviewed_at) >= ?
+            """,
+            (user["id"], week_start),
+        ).fetchall()
     groups = main.list_groups(user)["groups"]
     groups.sort(key=lambda group: (-group["level"]["points"], group["id"]))
     top_pattern = None
     if weakness["status"] == "ready" and weakness["insight"]["content"].get("patterns"):
         pattern = weakness["insight"]["content"]["patterns"][0]
         top_pattern = {"title": pattern["title"], "confidence": pattern["confidence"]}
+    redo_reviews = [row for row in redo_rows if row["mode"] in ("rewrite", "redo")]
+    recall_reviews = [row for row in redo_rows if row["mode"] == "recall"]
+    redo_week = None
+    if redo_reviews:
+        passed = sum(1 for row in redo_reviews if row["quality"] >= 3)
+        redo_avg = sum(row["quality"] for row in redo_reviews) / len(redo_reviews)
+        recall_avg = (
+            sum(row["quality"] for row in recall_reviews) / len(recall_reviews)
+            if recall_reviews else None
+        )
+        redo_week = {
+            "redo_count": len(redo_reviews),
+            "pass_rate": round(passed / len(redo_reviews), 2),
+            "redo_avg": round(redo_avg, 2),
+            "recall_avg": round(recall_avg, 2) if recall_avg is not None else None,
+            "recall_minus_redo": round(recall_avg - redo_avg, 2) if recall_avg is not None else None,
+        }
     return {
         "today": day,
         "due_count": counts["due"],
@@ -404,6 +432,7 @@ def get_overview(user=Depends(main.current_user)):
             }
             if hot is not None and hot["comment_count"] > 0 else None
         ),
+        "redo_week": redo_week,
     }
 
 

@@ -126,14 +126,15 @@ def review_mistake(
             INSERT INTO reviews(
                 mistake_id, quality, reviewed_at, next_due_date,
                 elapsed_days, scheduled_days, ease_before, repetitions_before,
-                due_before, last_reviewed_before, version_after
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                due_before, last_reviewed_before, version_after, mode, evidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 mistake_id, data.quality, reviewed_at, state["due_date"],
                 item["interval_days"] + overdue_days, item["interval_days"],
                 item["ease_factor"], item["repetitions"],
                 item["due_date"], item["last_reviewed_at"], item["version"] + 1,
+                data.mode, data.evidence,
             ),
         )
         # leech 判定：连续失败 8 次（对标 Anki 默认）自动暂停。
@@ -163,6 +164,17 @@ def review_mistake(
             )
 
     return response
+
+
+@router.get("/api/mistakes/{mistake_id}/redo-hint")
+def rvb_redo_hint(mistake_id: int, user=Depends(main.current_user)):
+    """防自评虚高的轻提示：最近 14 天内“只回忆”打高分、紧接着又评低分出现
+    >=2 次时 hint 为 True，前端下次复习默认引导到重做。"""
+    with main.connect() as conn:
+        main.owned_mistake(conn, mistake_id, user["id"])  # 不存在/非本人 → 404
+        since = (main.datetime.now(main.timezone.utc) - timedelta(days=14)).isoformat()
+        hint = main.redo_overconfident_hint(conn, mistake_id, since)
+    return {"hint": hint}
 
 
 @router.get("/api/mistakes/{mistake_id}/preview")
