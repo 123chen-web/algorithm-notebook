@@ -1,0 +1,125 @@
+/* 总览页「连续打卡墨点」：宣纸上的一滴墨。颜色全部走主题变量，水墨红笔和栖间两套主题都适用。
+   动画只用 transform / opacity；prefers-reduced-motion 下全部关闭（墨滴层直接不显示）。 */
+
+.ov-inkdot {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding: var(--space-2) 0 var(--space-1);
+  min-width: 0;
+}
+
+.inkdot-svg {
+  width: min(100%, 190px);
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.inkdot-halo { fill: var(--ink); opacity: 0.14; }
+.inkdot-blob { fill: var(--ink); }
+.inkdot-core { fill: var(--ink); }
+.inkdot-edge { fill: var(--ink); opacity: 0.35; }
+
+/* 档位浓淡：天数越多越浓 */
+.inkdot-svg[data-tier="0"] .inkdot-blob { opacity: 0.4; }
+.inkdot-svg[data-tier="1"] .inkdot-blob { opacity: 0.68; }
+.inkdot-svg[data-tier="2"] .inkdot-blob { opacity: 0.8; }
+.inkdot-svg[data-tier="3"] .inkdot-blob { opacity: 0.9; }
+.inkdot-svg[data-tier="4"] .inkdot-blob { opacity: 0.97; }
+.inkdot-svg[data-tier="0"] .inkdot-core { opacity: 0.35; }
+.inkdot-svg[data-tier="1"] .inkdot-core { opacity: 0.75; }
+.inkdot-svg[data-tier="2"] .inkdot-core { opacity: 0.85; }
+.inkdot-svg[data-tier="3"] .inkdot-core { opacity: 0.95; }
+.inkdot-svg[data-tier="4"] .inkdot-core { opacity: 1; }
+
+/* 中断：不归零，只是墨色变淡 */
+.inkdot-svg.is-broken .inkdot-blob { opacity: 0.32; }
+.inkdot-svg.is-broken .inkdot-core { opacity: 0.3; }
+.inkdot-svg.is-broken .inkdot-halo { opacity: 0.08; }
+.inkdot-svg.is-broken .inkdot-edge { opacity: 0.2; }
+
+/* 从没打过卡：淡淡的空轮廓 */
+.inkdot-empty {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 5;
+  opacity: 0.5;
+}
+
+/* 里程碑小印：印章风，和今日一签的印一家人 */
+.inkdot-seal {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 var(--space-1);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font: 600 var(--text-sm)/1 var(--serif);
+  letter-spacing: 0.1em;
+  transform: rotate(-6deg);
+  pointer-events: none;
+}
+
+.inkdot-caption {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+  text-align: center;
+}
+.inkdot-caption.is-milestone { color: var(--accent); }
+
+/* ---------- 墨滴落下：小墨点从上方落下，砸开三圈涟漪（总计 ≤ 1 秒，只播一次） ---------- */
+.inkdot-drop-layer { transform-box: fill-box; }
+.inkdot-drop-dot {
+  fill: var(--ink);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: inkdot-fall 0.42s cubic-bezier(0.5, 0, 0.75, 0.35) 0s 1 both;
+}
+.inkdot-ripple {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: inkdot-ripple 0.4s ease-out 1 both;
+}
+.inkdot-ripple[data-delay="0"] { animation-delay: 0.42s; }
+.inkdot-ripple[data-delay="1"] { animation-delay: 0.51s; }
+.inkdot-ripple[data-delay="2"] { animation-delay: 0.6s; }
+
+@keyframes inkdot-fall {
+  0% { transform: translateY(0) scale(1); opacity: 0; }
+  12% { opacity: 1; }
+  80% { transform: translateY(84px) scale(1); opacity: 1; }
+  90% { transform: translateY(86px) scale(1.3, 0.65); opacity: 1; }
+  100% { transform: translateY(84px) scale(1); opacity: 0; }
+}
+@keyframes inkdot-ripple {
+  0% { transform: scale(0.55); opacity: 0.5; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* 减少动画偏好：全部静止，墨滴层直接不显示（JS 里也不建） */
+@media (prefers-reduced-motion: reduce) {
+  .inkdot-drop-layer { display: none; }
+  .inkdot-drop-dot,
+  .inkdot-ripple { animation: none; }
+}
+
+/* 窄屏：墨点小一号 */
+@media (max-width: 599px) {
+  .inkdot-svg { width: min(100%, 150px); }
+  .inkdot-seal { min-width: 32px; height: 32px; }
+}

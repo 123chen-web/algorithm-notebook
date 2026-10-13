@@ -29,7 +29,8 @@
   <link rel="stylesheet" href="/static/notes-editor.css?v=1">
   <link rel="stylesheet" href="/static/draw-host.css?v=202610121">
   <link rel="stylesheet" href="/static/shell.css?v=4">
-  <link rel="stylesheet" href="/static/overview.css?v=3">
+  <link rel="stylesheet" href="/static/overview.css?v=4">
+  <link rel="stylesheet" href="/static/inkdot.css?v=1">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
   <link rel="stylesheet" href="/static/activity.css?v=2">
   <link rel="stylesheet" href="/static/emoji.css?v=2">
@@ -92,7 +93,8 @@
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=5"></script>
-  <script defer src="/static/overview.js?v=5"></script>
+  <script defer src="/static/overview.js?v=6"></script>
+  <script defer src="/static/inkdot.js?v=1"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
   <script defer src="/static/profile.js?v=3"></script>
@@ -601,7 +603,7 @@
           <section id="tile-streak" class="ov-tile ov-tile-streak" aria-labelledby="tile-streak-title">
             <h3 id="tile-streak-title" class="ov-eyebrow">连续打卡</h3>
             <p class="ov-big"><span id="streak-days">0</span><small>天</small></p>
-            <ol id="streak-ticks" class="ov-ticks" aria-label="最近 7 天的复习情况"></ol>
+            <div id="streak-ink" class="ov-inkdot" role="img" aria-label="连续打卡墨点"></div>
           </section>
 
           <section id="tile-heatmap" class="ov-tile ov-tile-heat" aria-labelledby="tile-heat-title">

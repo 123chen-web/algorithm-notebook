@@ -5,7 +5,6 @@
    context = { username, onOpenRecord(id), onOpenPost(id), onFocus() }；所有用户文本一律走 textContent。 */
 (() => {
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const DEFAULT_TITLE = "把薄弱点，练成得分点。";
   const $ = (selector) => document.querySelector(selector);
 
@@ -19,10 +18,6 @@
     const item = document.createElementNS(SVG_NS, tag);
     for (const [name, value] of Object.entries(attributes)) item.setAttribute(name, value);
     return item;
-  }
-  function parseDay(text) {
-    const [year, month, day] = text.split("-").map(Number);
-    return new Date(year, month - 1, day, 12);
   }
   function greetingFor(hour) {
     if (hour < 5) return "夜深了";
@@ -75,43 +70,11 @@
     focus.onclick = () => context.onFocus?.();
   }
 
-  /* ---------- 连续打卡磁贴 ---------- */
-  function tickIcon(done, today) {
-    const icon = svgNode("svg", { class: "ov-tick", viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" });
-    if (done) {
-      icon.append(
-        svgNode("circle", { cx: "12", cy: "12", r: "10", fill: "currentColor" }),
-        svgNode("path", {
-          d: "m7.5 12.5 3 3 6-7", fill: "none", stroke: "var(--surface)", "stroke-width": "2.4",
-          "stroke-linecap": "round", "stroke-linejoin": "round",
-        }),
-      );
-    } else {
-      icon.append(svgNode("circle", {
-        cx: "12", cy: "12", r: "9", fill: "none", stroke: "currentColor", "stroke-width": "1.8",
-        ...(today ? { "stroke-dasharray": "3.4 3.4" } : {}),
-      }));
-    }
-    return icon;
-  }
-  function renderStreak(data) {
+  /* ---------- 连续打卡磁贴：墨点（static/inkdot.js 负责画，数字保留一眼可读） ---------- */
+  function renderStreak(data, context) {
     $("#streak-days").textContent = String(data.streak_days);
     window.Feel?.countUp($("#streak-days"));
-    const today = parseDay(data.today);
-    const ticks = data.last7.map((done, index) => {
-      const date = new Date(today.getTime());
-      date.setDate(date.getDate() - (6 - index));
-      const isToday = index === 6;
-      const item = node("li", `${done ? "is-done" : ""} ${isToday ? "is-today" : ""}`.trim());
-      const label = `${date.getMonth() + 1}月${date.getDate()}日${isToday ? "（今天）" : ""}，${done ? "已复习" : "未复习"}`;
-      item.title = label;
-      const hidden = node("span", "ov-sr-only", label);
-      const letter = node("span", "", WEEKDAYS[date.getDay()]);
-      letter.setAttribute("aria-hidden", "true");
-      item.append(tickIcon(done, isToday), letter, hidden);
-      return item;
-    });
-    $("#streak-ticks").replaceChildren(...ticks);
+    if (window.InkDot) window.InkDot.render(data, context && context.username);
   }
 
   /* ---------- 热力图磁贴 ---------- */
@@ -925,7 +888,7 @@
     $("#overview-error").hidden = true;
     renderGreeting(data, context.username);
     renderReview(data, context);
-    renderStreak(data);
+    renderStreak(data, context);
     renderHeat(data);
     renderDue(data, context);
     renderWeakness(data);
@@ -963,7 +926,7 @@
     $("#tile-review-zones").textContent = "";
     $("#tile-review-focus").hidden = true;
     $("#streak-days").textContent = "0";
-    $("#streak-ticks").replaceChildren();
+    if (window.InkDot) window.InkDot.reset();
     $("#tile-heat-summary").textContent = "";
     $("#tile-heat-total").hidden = true;
     $("#tile-heat-total").replaceChildren();

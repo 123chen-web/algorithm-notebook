@@ -41,9 +41,10 @@ def test_changed_assets_had_their_versions_bumped():
 
 
 def test_overview_files_were_not_touched_by_this_task():
-    # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们，版本是 3。
-    assert "/static/overview.js?v=5" in script_sources()
-    assert 'href="/static/overview.css?v=3"' in INDEX
+    # ON 自己没有改总览文件（当时是 overview.js/css ?v=2）；整合后 OV 改过它们；
+    # 墨点任务（inkdot）把 overview.css 升到 4；手感层又把 overview.js 升到 6。
+    assert "/static/overview.js?v=6" in script_sources()
+    assert 'href="/static/overview.css?v=4"' in INDEX
 
 
 @pytest.mark.parametrize("source,name", [(SCRIPT, "onboarding.js"), (STYLE, "onboarding.css")], ids=["onboarding.js", "onboarding.css"])
