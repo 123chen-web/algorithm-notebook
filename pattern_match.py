@@ -298,3 +298,15 @@ def problem_pattern_ids(conn, problem_ids):
         result.setdefault(row["problem_id"], []).append(row["pattern_id"])
     return result
 
+
+def pattern_info(pattern_id):
+    """{"title", "category"}；未知套路返回 None。"""
+    for entry in _catalog():
+        if entry["id"] == pattern_id:
+            return {"title": entry["title"], "category": entry["category"]}
+    return None
+
+
+def ai_candidates_text():
+    """给 AI 看的候选清单：一行一个套路 “id | 大类 | 名称”。AI 只能从里面选。"""
+    return "\n".join(f"{e['id']} | {e['category']} | {e['title']}" for e in _catalog())

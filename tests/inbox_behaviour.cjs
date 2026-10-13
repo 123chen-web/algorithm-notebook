@@ -388,3 +388,94 @@ test("inbox: a late PUT response for another account is discarded", async () => 
   // 迟到的成功响应被丢弃：桶计数不涨（卡片已离场，属乐观更新）。
   assert.equal(q(binOf(ctx.env, "二分"), ".inbox-bin-count").textContent, "0");
 });
+
+/* ---------------- 让 AI 猜一下 ---------------- */
+
+async function openBubbleFor(ctx) {
+  const card = topCard(ctx.env);
+  const bin = binOf(ctx.env, "二分");
+  pointer(card, "pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
+  pointer(card, "pointermove", { pointerId: 1, clientX: 200, clientY: 200, target: bin });
+  pointer(card, "pointerup", { pointerId: 1, clientX: 200, clientY: 200 });
+  await settle();
+  return q(ctx.env.document, "#inbox-bubble");
+}
+const aiCalls = (env) => env.calls.filter((call) => call.url === "/api/roadmap/ai-suggest");
+
+test("inbox AI: nothing is sent until the button is clicked", async () => {
+  const ctx = setup();
+  await loadWith(ctx);
+  const bubble = await openBubbleFor(ctx);
+  assert.ok(q(bubble, ".inbox-bubble-ai-btn"), "button is offered");
+  assert.equal(aiCalls(ctx.env).length, 0);
+});
+
+test("inbox AI: click asks once, shows the suggestions, and picking one files the card", async () => {
+  const ctx = setup();
+  await loadWith(ctx);
+  const bubble = await openBubbleFor(ctx);
+  const button = q(bubble, ".inbox-bubble-ai-btn");
+  button.dispatchEvent(new FakeEvent("click", { bubbles: true }));
+  button.dispatchEvent(new FakeEvent("click", { bubbles: true })); // 连点只发一次
+  await settle();
+  const calls = aiCalls(ctx.env);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { problem_id: 101 });
+  assert.equal(button.disabled, true);
+  ctx.env.respond(calls[0], 200, {
+    suggestions: [{ pattern_id: "p-sw", title: "滑动窗口", category: "双指针", reason: "连续区间", source: "ai" }],
+    ai_daily_remaining: 7,
+  });
+  await settle();
+  const picks = qa(bubble, ".inbox-bubble-pick--ai");
+  assert.equal(picks.length, 1);
+  assert.match(picks[0].textContent, /滑动窗口（双指针）/);
+  assert.match(picks[0].textContent, /AI 建议/);
+  assert.match(q(bubble, ".inbox-bubble-ai-status").textContent, /还剩 7 次/);
+  picks[0].dispatchEvent(new FakeEvent("click", { bubbles: true }));
+  await settle();
+  const puts = putCalls(ctx.env);
+  assert.equal(puts.length, 1);
+  assert.deepEqual(JSON.parse(puts[0].init.body), { pattern_ids: ["p-sw"] });
+});
+
+test("inbox AI: failure is said in the bubble and the button can be tried again", async () => {
+  const ctx = setup();
+  await loadWith(ctx);
+  const bubble = await openBubbleFor(ctx);
+  const button = q(bubble, ".inbox-bubble-ai-btn");
+  button.dispatchEvent(new FakeEvent("click", { bubbles: true }));
+  await settle();
+  ctx.env.respond(aiCalls(ctx.env)[0], 429, { detail: "今天的 AI 生成次数已用完" });
+  await settle();
+  assert.equal(q(bubble, ".inbox-bubble-ai-status").textContent, "今天的 AI 生成次数已用完");
+  assert.equal(button.disabled, false);
+  assert.ok(qa(bubble, ".inbox-bubble-pick").length >= 1, "manual choices are still there");
+});
+
+test("inbox AI: an empty answer is honest", async () => {
+  const ctx = setup();
+  await loadWith(ctx);
+  const bubble = await openBubbleFor(ctx);
+  q(bubble, ".inbox-bubble-ai-btn").dispatchEvent(new FakeEvent("click", { bubbles: true }));
+  await settle();
+  ctx.env.respond(aiCalls(ctx.env)[0], 200, { suggestions: [], ai_daily_remaining: 3 });
+  await settle();
+  assert.match(q(bubble, ".inbox-bubble-ai-status").textContent, /拿不准/);
+  assert.equal(qa(bubble, ".inbox-bubble-pick--ai").length, 0);
+});
+
+test("inbox AI: an answer that arrives after sign-out is discarded", async () => {
+  const ctx = setup();
+  await loadWith(ctx);
+  const bubble = await openBubbleFor(ctx);
+  q(bubble, ".inbox-bubble-ai-btn").dispatchEvent(new FakeEvent("click", { bubbles: true }));
+  await settle();
+  ctx.env.window.Inbox.reset();
+  ctx.env.respond(aiCalls(ctx.env)[0], 200, {
+    suggestions: [{ pattern_id: "p-sw", title: "滑动窗口", category: "双指针", reason: "x", source: "ai" }],
+  });
+  await settle();
+  assert.equal(qa(bubble, ".inbox-bubble-pick--ai").length, 0);
+});

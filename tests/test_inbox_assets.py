@@ -60,7 +60,7 @@ def test_inbox_stylesheet_is_versioned_and_loaded_after_shared_styles(document, 
     ]
     assert len(matches) == 1
     inbox_index, attrs = matches[0]
-    assert attrs["href"] == "/static/inbox.css?v=1"
+    assert attrs["href"] == "/static/inbox.css?v=2"
     shared_indices = [
         index for index, attrs in enumerate(links)
         if attrs.get("href", "").split("?", 1)[0] in (
@@ -77,7 +77,7 @@ def test_inbox_script_is_versioned(document):
         if node["tag"] == "script" and node["attrs"].get("src", "").split("?", 1)[0] == "/static/inbox.js"
     ]
     assert len(scripts) == 1
-    assert scripts[0]["src"] == "/static/inbox.js?v=1"
+    assert scripts[0]["src"] == "/static/inbox.js?v=2"
 
 
 def test_inbox_selectors_are_scoped_to_inbox_or_roadmap_page(stylesheet):

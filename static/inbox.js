@@ -398,6 +398,59 @@
     bubble.replaceChildren();
   }
 
+  /* “让 AI 猜一下”：点一下才调用，花 1 次 AI 额度；AI 只能从路线清单里选，结果只是建议，
+     点哪个才归哪个。失败只在气泡里说一句，不影响手动选择。 */
+  function aiSuggestBox(item) {
+    const box = node("div", "inbox-bubble-ai");
+    const button = node("button", "inbox-bubble-ai-btn", "让 AI 帮我猜一下（用 1 次 AI 额度）");
+    button.type = "button";
+    const status = node("p", "inbox-bubble-ai-status", "");
+    status.setAttribute("aria-live", "polite");
+    const list = node("ul", "inbox-bubble-list inbox-bubble-ai-list");
+    box.append(button, status, list);
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      status.textContent = "AI 正在看这道题…";
+      const request = ticket();
+      try {
+        const data = await hooks.api("/api/roadmap/ai-suggest", {
+          method: "POST",
+          body: JSON.stringify({ problem_id: item.problem_id }),
+        });
+        if (!current(request) || !box.isConnected) return;
+        const picks = Array.isArray(data && data.suggestions) ? data.suggestions : [];
+        list.replaceChildren();
+        if (!picks.length) {
+          status.textContent = "AI 也拿不准，自己挑一个吧。";
+          return;
+        }
+        const remaining = Number.isInteger(data.ai_daily_remaining) ? `，今天还剩 ${data.ai_daily_remaining} 次 AI 额度` : "";
+        status.textContent = `AI 的建议（点哪个就归到哪个）${remaining}`;
+        for (const pick of picks) {
+          const row = node("li", "");
+          const choose = node("button", "inbox-bubble-pick inbox-bubble-pick--ai");
+          choose.type = "button";
+          choose.append(node("span", "", `${pick.title}（${pick.category}）`));
+          choose.append(node("span", "inbox-bubble-tag", "AI 建议"));
+          if (pick.reason) choose.append(node("span", "inbox-bubble-reason", pick.reason));
+          choose.setAttribute("aria-label", `归到套路《${pick.title}》，AI 的理由：${pick.reason || "无"}`);
+          choose.addEventListener("click", () => {
+            closeBubble();
+            void commitClassification(item.problem_id, [pick.pattern_id], pick.category);
+          });
+          row.append(choose);
+          list.append(row);
+        }
+      } catch (error) {
+        if (!current(request)) return;
+        status.textContent = (error && error.message) || "AI 暂时不可用，自己挑一个吧。";
+        button.disabled = false;
+      }
+    });
+    return box;
+  }
+
   function openBubble(item, category) {
     const bubble = $("#inbox-bubble");
     bubble.replaceChildren();
@@ -431,6 +484,7 @@
       list.append(node("li", "inbox-bubble-empty", "这个大类下暂时没有套路"));
     }
     bubble.append(list);
+    bubble.append(aiSuggestBox(item));
     const defer = node("button", "inbox-bubble-defer", "只记大类，具体以后再说");
     defer.type = "button";
     defer.addEventListener("click", () => {

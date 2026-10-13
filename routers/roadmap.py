@@ -12,7 +12,12 @@ pattern_id / example_key 必须在启动期读进来的 static/data/patterns.jso
 main 命名空间下的名字一律用 main.<name> 在调用时取属性，方便测试 monkeypatch。
 """
 from core import config, ratelimit, security, time
+import ai
+import ai_limits
 import db
+import os
+from contextlib import ExitStack
+from starlette import concurrency
 import json
 import pattern_match
 import problem_progress
@@ -243,3 +248,61 @@ def set_problem_patterns_route(problem_id: int, data: PatternsInput, user=Depend
         problem_progress.owned_problem(conn, problem_id, user["id"])
         pattern_match.set_problem_patterns(conn, problem_id, pattern_ids)
     return {"ok": True, "problem_id": problem_id, "pattern_ids": pattern_ids}
+
+
+class AiSuggestInput(InputModel):
+    problem_id: int
+
+
+@router.post("/api/roadmap/ai-suggest")
+async def ai_suggest_patterns(data: AiSuggestInput, user=Depends(security.current_user)):
+    """待分类箱里“让 AI 猜一下”：只猜用户自己的算法题，最多 3 个套路，花 1 次 AI 额度。
+    结果只是建议，真正归类仍由用户点选确认。"""
+    _rate(user, "ai-suggest")
+    with db.connect() as conn:
+        problem = problem_progress.owned_problem(conn, data.problem_id, user["id"])
+    if problem["zone"] not in pattern_match.SUGGEST_ZONES:
+        raise HTTPException(422, "AI 归类只支持算法分区的题")
+    material = {
+        "title": str(problem["title"])[:200],
+        "source_url": str(problem.get("source_url") or "")[:300],
+        "thinking": str(problem.get("thinking") or "")[:600],
+    }
+    # 额度的扣减、退还和生成练习题、拍照识别共用同一套规则：写事务里原子扣减，
+    # AI 调用放到事务外，服务端失败（502/503/504）退还。
+    with ExitStack() as stack:
+        with db.connect(write=True) as conn:
+            if not os.getenv("OPENAI_API_KEY", "").strip():
+                raise HTTPException(503, "服务端尚未配置 AI 服务密钥")
+            day = time.today_for(user).isoformat()
+            quota = ai_limits.ai_quota(conn, user["id"], day)
+            limit = quota["ai_daily_limit"]
+            if quota["ai_daily_used"] >= limit:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            stack.enter_context(ai_limits.ai_slot())
+            cursor = conn.execute(
+                """
+                INSERT INTO ai_usage(user_id, day, attempts)
+                SELECT ?, ?, 1 WHERE ? > 0
+                ON CONFLICT(user_id, day) DO UPDATE
+                SET attempts = ai_usage.attempts + 1
+                WHERE ai_usage.attempts < ?
+                """,
+                (user["id"], day, limit, limit),
+            )
+            if cursor.rowcount != 1:
+                raise HTTPException(429, "今天的 AI 生成次数已用完")
+            remaining = max(0, limit - quota["ai_daily_used"] - 1)
+        with ai_limits.refund_on_server_failure(user["id"], day, db.connect):
+            with ai_limits.track_call(user["id"], "pattern_suggest"):
+                picked = await concurrency.run_in_threadpool(
+                    ai.suggest_patterns, material, pattern_match.ai_candidates_text(), pattern_match.pattern_is_known,
+                )
+    suggestions = []
+    for item in picked:
+        info = pattern_match.pattern_info(item["pattern_id"])
+        suggestions.append({
+            "pattern_id": item["pattern_id"], "title": info["title"], "category": info["category"],
+            "reason": item["reason"], "source": "ai",
+        })
+    return {"suggestions": suggestions, "ai_daily_remaining": remaining}

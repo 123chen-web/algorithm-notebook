@@ -535,3 +535,22 @@
     transition: none;
   }
 }
+
+/* ---------- AI 帮忙猜（气泡里） ---------- */
+#inbox-page .inbox-bubble-ai { display: grid; gap: var(--space-2); margin: var(--space-3) 0; }
+#inbox-page .inbox-bubble-ai-btn {
+  justify-self: start;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+#inbox-page .inbox-bubble-ai-btn:hover:not(:disabled) { background: var(--soft); }
+#inbox-page .inbox-bubble-ai-btn:disabled { cursor: progress; opacity: .6; }
+#inbox-page .inbox-bubble-ai-status { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+#inbox-page .inbox-bubble-ai-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+#inbox-page .inbox-bubble-pick--ai { display: grid; gap: var(--space-1); text-align: left; }
+#inbox-page .inbox-bubble-reason { color: var(--ink-2); font-size: var(--text-xs); }
