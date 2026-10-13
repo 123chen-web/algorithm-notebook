@@ -962,7 +962,10 @@ test("pending reason: production detail opens the editor while ordinary records 
   assert.ok(reason.querySelector(".pending-reason-form"));
   assert.equal(reason.querySelector("textarea").value, "");
   assert.doesNotMatch(reason.textContent, /（待补：为什么错）/);
-  env.answer(env.calls.find((call) => call.url === "/api/tags/suggest"), { mine: [], builtin: ["边界"] });
+  env.answer(env.calls.find((call) => call.url === "/api/error-taxonomy"), {
+    groups: [{ code: "implementation", label: "写错了" }],
+    causes: [{ code: "boundary", label: "边界/特例", group: "implementation", hint: "n=0、n=1" }],
+  });
   await tick();
   assert.ok(reason.querySelector(".pending-reason-tag"));
   env.render(CARD(2, { pending_reason: false }));

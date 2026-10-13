@@ -304,8 +304,8 @@ def build(password):
     # ---- the main account: plenty of mistakes with varied review histories -----------------------
     main_problem_ids, main_mistakes = {}, {}
     # 错因标签：几种常见的，让侧栏的标签筛选和详情页的编辑器一开始就有东西可看。
-    algorithm_tags = (["边界"], ["边界", "粗心"], ["复杂度"], ["思路错误"], ["概念混淆"], ["没读清题"], [])
-    math_tags = (["公式记错"], ["概念混淆"], ["粗心"], [])
+    algorithm_tags = (["boundary"], ["boundary", "careless"], ["complexity"], ["wrong_idea"], ["concept"], ["misread"], [])
+    math_tags = (["formula"], ["concept"], ["careless"], [])
     tag_position = 0
     for title, zone, language, mistakes, days_ago, reviews in MAIN_PROBLEMS:
         problem_id, mistake_ids = world.problem(MAIN, title, zone, language, mistakes, days_ago, reviews, schedule_due=True)

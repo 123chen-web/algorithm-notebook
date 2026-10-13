@@ -258,7 +258,7 @@ def test_report_rendering_preserves_control_states_and_data_semantics(document, 
     for name in (
         "element", "timestamp", "renderWeaknessControls", "resetGrowthInsights",
         "resetWeaknessAnalysis", "weaknessRequestCurrent", "loadWeaknessAnalysis",
-        "renderWeaknessAnalysis", "renderGrowthInsights", "loadWeaknessDue",
+        "renderWeaknessAnalysis", "renderGrowthInsights", "renderErrorProfile", "loadWeaknessDue",
     ):
         declaration = re.search(
             rf"(?m)^(?:async\s+)?function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{",

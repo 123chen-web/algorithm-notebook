@@ -172,20 +172,20 @@ html[data-theme="qixi"] #weakness-page .weakness-layout { background: var(--surf
 }
 
 /* 错因画像：大类统计句、判题类型横向条、最常见错因 Top 3。 */
-.weakness-profile { display: grid; gap: var(--space-3); }
-.weakness-profile[hidden] { display: none; }
-.weakness-profile-sentence { margin: 0; font-size: var(--text-base); line-height: 1.8; }
-.weakness-profile-sentence strong { color: var(--accent); }
-.weakness-profile-title { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--ink-2); }
-.weakness-bars { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.weakness-bar-row { display: grid; grid-template-columns: minmax(120px, 160px) 1fr auto; align-items: center; gap: var(--space-2); }
-.weakness-bar-label { font-size: var(--text-sm); overflow-wrap: anywhere; }
-.weakness-bar-track { display: block; height: 10px; border-radius: var(--radius-pill); background: var(--soft); overflow: hidden; }
-.weakness-bar-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); }
-.weakness-bar-value { color: var(--ink-2); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.weakness-top-causes { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.weakness-top-causes li { display: flex; align-items: center; gap: var(--space-2); }
-.weakness-rank-seal {
+#weakness-page .weakness-profile { display: grid; gap: var(--space-3); }
+#weakness-page .weakness-profile[hidden] { display: none; }
+#weakness-page .weakness-profile-sentence { margin: 0; font-size: var(--text-base); line-height: 1.8; }
+#weakness-page .weakness-profile-sentence strong { color: var(--accent); }
+#weakness-page .weakness-profile-title { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--ink-2); }
+#weakness-page .weakness-bars { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+#weakness-page .weakness-bar-row { display: grid; grid-template-columns: minmax(120px, 160px) 1fr auto; align-items: center; gap: var(--space-2); }
+#weakness-page .weakness-bar-label { font-size: var(--text-sm); overflow-wrap: anywhere; }
+#weakness-page .weakness-bar-track { display: block; height: 10px; border-radius: var(--radius-pill); background: var(--soft); overflow: hidden; }
+#weakness-page .weakness-bar-fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); }
+#weakness-page .weakness-bar-value { color: var(--ink-2); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#weakness-page .weakness-top-causes { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+#weakness-page .weakness-top-causes li { display: flex; align-items: center; gap: var(--space-2); }
+#weakness-page .weakness-rank-seal {
   display: grid;
   place-items: center;
   width: 28px;
@@ -198,8 +198,8 @@ html[data-theme="qixi"] #weakness-page .weakness-layout { background: var(--surf
   font-weight: 700;
   transform: rotate(-4deg);
 }
-.weakness-cause-label { font-weight: 600; }
-.weakness-cause-count { margin-left: auto; color: var(--ink-2); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+#weakness-page .weakness-cause-label { font-weight: 600; }
+#weakness-page .weakness-cause-count { margin-left: auto; color: var(--ink-2); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) {
-  .weakness-bar-row { grid-template-columns: minmax(96px, 120px) 1fr auto; }
+  #weakness-page .weakness-bar-row { grid-template-columns: minmax(96px, 120px) 1fr auto; }
 }

@@ -46,7 +46,7 @@ def test_pending_reason_script_has_no_injection_or_network_bypass():
         assert forbidden not in source, forbidden
     assert 'textContent' in source
     assert 'hooks.api(' in source
-    assert '"/api/tags/suggest"' in source
+    assert '"/api/error-taxonomy"' in source
     assert '"/api/mistakes?due_only=false&pending_reason=1"' in source
     assert not re.search(r'https?://', source)
     assert len(source.encode("utf-8")) < 20 * 1024
@@ -89,4 +89,4 @@ def test_pending_reason_async_behaviour():
     )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-1000:]
     assert re.search(r'(?m)^(?:ℹ|#) fail 0$', result.stdout), result.stdout[-1500:]
-    assert re.search(r'(?m)^(?:ℹ|#) pass 40$', result.stdout), result.stdout[-1500:]
+    assert re.search(r'(?m)^(?:ℹ|#) pass 41$', result.stdout), result.stdout[-1500:]

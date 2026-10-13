@@ -236,7 +236,7 @@ async function growthReset() {
   const requests = [];
   context.api = (path) => new Promise((resolve) => requests.push({ path, resolve }));
   const loading = context.loadWeaknessAnalysis();
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
   assert.equal(get("weakness-page").getAttribute("aria-busy"), "true");
   assert.equal(get("growth-summary").hidden, true);
   assert.equal(get("growth-empty").hidden, false);
@@ -246,6 +246,7 @@ async function growthReset() {
     if (request.path === "/api/insights/weakness-analysis") request.resolve({ mistake_count: 5, minimum_mistakes: 5, insight: null });
     else if (request.path === "/api/me") request.resolve(context.user);
     else if (request.path === "/api/insights/growth") request.resolve({ zones: [] });
+    else if (request.path === "/api/stats/error-profile") request.resolve({ total: 0, groups: [], verdicts: [], top_causes: [] });
     else assert.fail(`Unexpected request: ${request.path}`);
   }
   await loading;
