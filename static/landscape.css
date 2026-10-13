@@ -1,0 +1,115 @@
+/* 总览页「成长山水」：随已掌握套路数生长的水墨小山水（栖间主题是绿色山水）。
+   颜色全部走主题变量，不写死色值；动画只用 transform / opacity；
+   prefers-reduced-motion 下全部静止。 */
+
+#landscape-card { margin: 0 0 var(--space-5); }
+
+.ls-wrap {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-home);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ls-svg { display: block; width: 100%; height: auto; }
+
+/* 山水本体：全部走主题变量，栖间主题自动变成绿色山水。 */
+.ls-mountain { fill: var(--ink); }
+.ls-m1 { opacity: 0.1; }
+.ls-m2 { opacity: 0.16; }
+.ls-m3 { opacity: 0.22; }
+.ls-water { stroke: var(--ink-2); stroke-width: 2; fill: none; opacity: 0.35; stroke-linecap: round; }
+.ls-mist { fill: var(--surface); opacity: 0.55; }
+.ls-tree { fill: var(--ink); opacity: 0.78; }
+.ls-bird { stroke: var(--ink); stroke-width: 2.5; fill: none; stroke-linecap: round; opacity: 0.8; }
+.ls-boat-hull { fill: var(--ink); opacity: 0.8; }
+.ls-boat-sail { fill: var(--accent); opacity: 0.9; }
+.ls-ripple { stroke: var(--ink-2); stroke-width: 2; fill: none; opacity: 0.5; }
+.ls-sun { fill: var(--accent); opacity: 0.85; }
+/* 栖间：日出换成一轮淡月。 */
+html[data-theme="qixi"] .ls-sun { fill: var(--gamboge); opacity: 0.9; }
+html[data-theme="qixi"] .ls-mist { fill: var(--paper-2); }
+/* 雾白：同样用一轮淡月，气质更安静。 */
+html[data-theme="fog"] .ls-sun { fill: var(--gamboge); opacity: 0.75; }
+html[data-theme="fog"] .ls-mist { fill: var(--paper-2); }
+
+/* 可交互的生长元素：键盘可聚焦，悬停/聚焦/点按出批注。 */
+.ls-el { transform-box: fill-box; transform-origin: center; cursor: pointer; }
+.ls-el:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+
+/* “墨晕开”：新长出的元素播一次，transform + opacity only。 */
+.ls-grow { animation: ls-ink-grow 0.9s var(--motion-ease) both; }
+.ls-delay-1 { animation-delay: 0.12s; }
+.ls-delay-2 { animation-delay: 0.24s; }
+.ls-delay-3 { animation-delay: 0.36s; }
+.ls-delay-4 { animation-delay: 0.48s; }
+@keyframes ls-ink-grow {
+  0% { opacity: 0; transform: scale(0.55); }
+  55% { opacity: 0.92; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* 常驻微动画：雾缓飘、飞鸟偶尔掠过、水波很淡。 */
+.ls-mist { animation: ls-drift 26s ease-in-out infinite alternate; }
+.ls-mist-b { animation-duration: 34s; }
+@keyframes ls-drift {
+  from { transform: translateX(-24px); }
+  to { transform: translateX(24px); }
+}
+.ls-fly { stroke: var(--ink-2); stroke-width: 2; fill: none; stroke-linecap: round; opacity: 0; animation: ls-flyby 43s linear infinite; }
+@keyframes ls-flyby {
+  0% { transform: translateX(-60px); opacity: 0; }
+  6% { opacity: 0.65; }
+  90% { opacity: 0.65; }
+  100% { transform: translateX(900px); opacity: 0; }
+}
+.ls-water { animation: ls-shimmer 7s ease-in-out infinite alternate; }
+@keyframes ls-shimmer {
+  from { opacity: 0.22; }
+  to { opacity: 0.4; }
+}
+
+/* 页面不可见 / 切到后台时暂停常驻动画。 */
+.ls-paused :is(.ls-mist, .ls-fly, .ls-water) { animation-play-state: paused; }
+
+/* 批注条：固定在画面上方，像一句红笔小批。 */
+.ls-tip {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - var(--space-6));
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 var(--text-sm)/var(--lh-ui) var(--serif);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ls-caption {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  text-align: center;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-ui);
+}
+
+/* 减少动画偏好：全部静止，直接呈现最终状态。 */
+@media (prefers-reduced-motion: reduce) {
+  .ls-grow, .ls-mist, .ls-fly, .ls-water { animation: none; }
+  .ls-fly { opacity: 0; }
+}
+
+/* 小屏：字小一点，画面比例不变（SVG 自适应宽度）。 */
+@media (max-width: 599px) {
+  .ls-caption { font-size: var(--text-xs); padding-left: var(--space-3); padding-right: var(--space-3); }
+  .ls-tip { font-size: var(--text-xs); }
+}

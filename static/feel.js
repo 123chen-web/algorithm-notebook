@@ -5,7 +5,7 @@
    规则：只有一个全局 pointermove 监听（rAF 节流）；指针静止、没有磁吸元素在动时没有任何 rAF；
    减少动画（prefers-reduced-motion）和触屏（hover: none）下全部关闭，数字和列表直接给最终状态。 */
 (() => {
-  const SPOT = ".ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card";
+  const SPOT = ".ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card, .ls-wrap";
   const MAGNET_RANGE = 130;
   const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   const hoverQuery = window.matchMedia("(hover: hover) and (pointer: fine)");

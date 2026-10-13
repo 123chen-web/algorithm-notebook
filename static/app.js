@@ -535,6 +535,7 @@ function signedOut() {
   window.RecommendCard?.reset();
   window.SignCard?.reset();
   window.BriefingCard?.reset();
+  window.Landscape?.reset();
   window.DuckPanel?.reset();
   window.Reminder?.reset();
   window.Heatmap?.reset();
@@ -1051,6 +1052,8 @@ async function loadHome({ refreshUser = true } = {}) {
     window.SignCard?.mount(document.querySelector("#sign-card"));
     window.BriefingCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.BriefingCard?.mount(document.querySelector("#briefing-card"));
+    window.Landscape?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.Landscape?.mount(document.querySelector("#landscape-card"));
     // GROWTH F3 下周主攻卡片：空数据/失败时模块自带兜底文案
     $("#ov-focus-card").hidden = false;
     window.Heatmap?.mountFocusCard($("#ov-focus"));

@@ -15,19 +15,19 @@
 
 /* ---------- 悬停：弹簧上浮 + 聚光灯 ---------- */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card) {
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card, .ls-wrap) {
     --mx: 50%; --my: 50%;
     transition: transform .7s var(--spring), box-shadow .5s var(--soft), border-color .35s, --spot-o .35s;
     background-image: radial-gradient(320px circle at var(--mx) var(--my), rgba(var(--glow, 14, 116, 144), calc(.11 * var(--spot-o))), transparent 62%);
   }
-  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card):hover {
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card, .ls-wrap):hover {
     --spot-o: 1;
     transform: translateY(-5px);
     border-color: rgba(var(--glow, 14, 116, 144), .4);
     box-shadow: 0 22px 44px -18px rgba(var(--shadow-rgb), .38), 0 0 0 1px rgba(var(--glow, 14, 116, 144), .1);
   }
   :is(.ov-tile, .pl-card, .pattern-card, .problem-record-card):hover { transform: translateY(-6px) scale(1.01); }
-  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card):active {
+  :is(.ov-tile, .ov-card, .problem-record-card, .pl-card, .pattern-card, .board-card, .groups-card, .plan-card, .rc-card, .ls-wrap):active {
     transform: translateY(-2px) scale(.995);
     transition-duration: .12s, .12s, .35s, .35s;
   }
