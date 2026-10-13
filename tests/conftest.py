@@ -10,6 +10,27 @@ from core import config
 # 需要时设置环境变量 OY_RUN_E2E=1，并按 tests/e2e/README.md 运行。
 collect_ignore = [] if os.environ.get("OY_RUN_E2E") == "1" else ["e2e"]
 
+# 线上 PBKDF2 是 60 万次迭代，单次约 0.4 秒；几千个用例每次注册/登录都真算一遍，
+# 全量测试要近半小时（CI 超时是 30 分钟）。测试里默认降到 1000 次——哈希格式、
+# 加盐、常量时间比较等逻辑完全不变，只是不再为安全强度付出时间。
+# 需要验证真实迭代次数的用例加 @pytest.mark.real_password_hash。
+TEST_PASSWORD_ITERATIONS = 1_000
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_password_hash: 使用线上的 PBKDF2 迭代次数，不做测试提速"
+    )
+
+
+@pytest.fixture(autouse=True)
+def fast_password_hash(request, monkeypatch):
+    if request.node.get_closest_marker("real_password_hash"):
+        return
+    from core import security
+    monkeypatch.setattr(security, "PASSWORD_ITERATIONS", TEST_PASSWORD_ITERATIONS)
+
+
 @pytest.fixture(autouse=True)
 def first_review_same_day_by_default(monkeypatch):
     # 线上默认"刚记下的完整错题明天才第一次到期"；绝大多数既有测试是"记下就立刻复习"的流程，

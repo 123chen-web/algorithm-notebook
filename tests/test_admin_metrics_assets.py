@@ -13,6 +13,7 @@ IDS = (
     "admin-metrics", "admin-metrics-title", "admin-metrics-status", "admin-metrics-retry",
     "admin-metrics-skeleton", "admin-metrics-body", "admin-metrics-strip", "admin-metrics-chart-wrap",
     "admin-metrics-chart", "admin-metrics-table", "admin-metrics-funnel", "admin-metrics-funnel-empty",
+    "admin-metrics-retention-panel", "admin-metrics-retention",
     "admin-metrics-ai-table", "admin-metrics-ai-empty", "admin-metrics-ai-split",
     "admin-metrics-other", "admin-metrics-updated", "admin-reports-heading",
 )
@@ -36,7 +37,7 @@ def test_markup_has_the_required_ids_once_and_sits_above_the_dashboard():
 
 def test_assets_are_versioned_and_loaded_in_order():
     assert '/static/admin-metrics.css?v=1' in HTML
-    assert '/static/admin-metrics.js?v=2' in HTML
+    assert '/static/admin-metrics.js?v=3' in HTML
     assert HTML.index('/static/admin-metrics.js?') < HTML.index('/static/app.js?')
     version = re.search(r'/static/app.js\?v=(\d+)', HTML)
     assert version and int(version.group(1)) >= 59

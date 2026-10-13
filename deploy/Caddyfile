@@ -18,6 +18,13 @@
 		file_server
 	}
 
+	# 请求体上限：在入口就挡掉超大上传（包括没有 Content-Length 的分块上传），
+	# 不让它们进到应用容器。应用层 API_MAX_BODY_BYTES 是 10 MiB，这里略宽一点；
+	# 应用里的 ApiBodySizeLimit 是第二道防线。
+	request_body {
+		max_size 12MB
+	}
+
 	# 其余所有请求反向代理到应用容器（内部网络，不走公网）
 	handle {
 		reverse_proxy app:8000

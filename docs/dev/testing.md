@@ -16,6 +16,13 @@ macOS / Linux：
 先安装开发依赖：Windows 用 `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`，macOS / Linux 用 `.venv/bin/python -m pip install -r requirements-dev.txt`。
 
 测试使用临时数据库，AI 调用被模拟，不会产生 API 费用。
+
+**跑得快一点**：开发依赖里带了 pytest-xdist，加 `-n auto` 按 CPU 核数并行（CI 也这样跑）。
+测试里密码哈希默认降到 1000 次迭代（见 `tests/conftest.py` 的 `fast_password_hash`），
+线上的 60 万次由 `tests/test_password_cost.py` 单独钉住；需要真实强度的用例加
+`@pytest.mark.real_password_hash`。两项合计，全量从约 29 分钟降到 2 核机器上约 7 分钟。
+并行要求每个进程收集到同样的用例列表：`parametrize` 的参数不要直接来自 `set` 的遍历顺序，
+先排序。
 不要把测试临时目录或缓存目录放进仓库；系统临时目录遇到权限错误时应停止，
 报告具体错误后再决定如何处理。页面静态测试不需要临时数据库。
 

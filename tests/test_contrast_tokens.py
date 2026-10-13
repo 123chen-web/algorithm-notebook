@@ -245,7 +245,10 @@ def theme_tokens(stylesheets):
         if tone is not None and theme is not None:
             tokens.update(overrides.get((theme, tone), {}))
         resolved[(theme, tone)] = tokens
-    return resolved
+    # contexts 是 set，遍历顺序随 PYTHONHASHSEED 变化；按键排序后返回，
+    # 让各文件里 parametrize(THEMES.items()) 的用例顺序固定——
+    # pytest-xdist 要求每个进程收集到完全相同的用例列表。
+    return dict(sorted(resolved.items(), key=lambda item: str(item[0])))
 
 
 def relative_luminance(color):

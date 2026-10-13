@@ -62,9 +62,42 @@ def max_concurrency():
     return limit if limit >= 1 else 6
 
 
+SITE_BUDGET_MESSAGE = "今天全站的 AI 用量已到上限，明天再来吧；这次没有消耗你的额度。"
+
+
+def site_daily_limit():
+    """全站每日 AI 调用总上限（熔断）；未设置、0 或非法值表示不限制。"""
+    try:
+        limit = int(os.getenv("AI_SITE_DAILY_LIMIT", "0"))
+    except (TypeError, ValueError):
+        return 0
+    return limit if limit > 0 else 0
+
+
+def site_budget_exhausted(connect_fn=connect):
+    """按服务器 UTC 日统计 ai_calls（成功和失败都算，因为都花了钱）。
+
+    记账在调用结束时才写入，进行中的调用不计数；并发上限很小，
+    所以最多超出 AI_MAX_CONCURRENCY 次，作为熔断足够。
+    """
+    limit = site_daily_limit()
+    if not limit:
+        return False
+    day_start = core_time.datetime.now(timezone.utc).date().isoformat()
+    with connect_fn() as conn:
+        used = conn.execute(
+            "SELECT COUNT(*) FROM ai_calls WHERE created_at >= ?", (day_start,)
+        ).fetchone()[0]
+    return used >= limit
+
+
 @contextmanager
 def ai_slot():
     global _semaphore_state
+    # 先看全站熔断，再占并发名额；调用方都在扣用户额度之前进入这里，
+    # 所以被熔断时用户额度不受影响。
+    if site_budget_exhausted():
+        raise HTTPException(503, SITE_BUDGET_MESSAGE)
     with _semaphore_lock:
         limit = max_concurrency()
         if _semaphore_state is None or _semaphore_state[0] != limit:

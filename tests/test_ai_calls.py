@@ -438,3 +438,51 @@ def test_accounting_failure_never_changes_request_result(monkeypatch, caplog, fa
     assert "RuntimeError" in caplog.text
     assert "PRIVATE_DATABASE_ERROR" not in caplog.text and "PRIVATE_AI_ERROR" not in caplog.text
     assert ai_limits._call_usage.get() is None
+
+
+# ---------- 全站每日熔断 AI_SITE_DAILY_LIMIT ----------
+
+def _fill_site_calls(count, created_at=None):
+    stamp = created_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with connect(write=True) as conn:
+        conn.executemany(
+            "INSERT INTO ai_calls(user_id, feature, model, ok, error, duration_ms, created_at) "
+            "VALUES (NULL, 'variant', 'm', 1, '', 1, ?)",
+            [(stamp,)] * count,
+        )
+
+
+@pytest.mark.parametrize("value", [None, "", "0", "-5", "abc"])
+def test_site_daily_limit_is_off_unless_positive(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("AI_SITE_DAILY_LIMIT", raising=False)
+    else:
+        monkeypatch.setenv("AI_SITE_DAILY_LIMIT", value)
+    assert ai_limits.site_daily_limit() == 0
+    assert ai_limits.site_budget_exhausted(connect_fn=lambda: pytest.fail("不限制时不查库")) is False
+
+
+@pytest.mark.parametrize("feature", FEATURES)
+def test_site_budget_blocks_before_charging_the_user(client, monkeypatch, feature):
+    user_id = register(client)["id"]
+    mistake_id = seed_mistakes(user_id)[0]
+    mock_ai(monkeypatch, feature)
+    monkeypatch.setenv("AI_SITE_DAILY_LIMIT", "3")
+    _fill_site_calls(3)
+    result = request_ai(client, feature, mistake_id)
+    assert result.status_code == 503
+    assert result.json()["detail"] == ai_limits.SITE_BUDGET_MESSAGE
+    assert attempts(user_id) == 0
+    assert len(call_rows()) == 3
+
+
+def test_site_budget_counts_only_today_utc(client, monkeypatch):
+    user_id = register(client)["id"]
+    mistake_id = seed_mistakes(user_id)[0]
+    mock_ai(monkeypatch, "variant")
+    monkeypatch.setenv("AI_SITE_DAILY_LIMIT", "3")
+    _fill_site_calls(10, created_at="2000-01-01T23:59:59+00:00")
+    _fill_site_calls(2)
+    result = request_ai(client, "variant", mistake_id)
+    assert result.status_code == 201
+    assert attempts(user_id) == 1

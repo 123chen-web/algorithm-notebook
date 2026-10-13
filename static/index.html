@@ -104,7 +104,7 @@
   <script defer src="/static/board.js?v=3"></script>
   <script defer src="/static/profile.js?v=3"></script>
   <script defer src="/static/redeem.js?v=1"></script>
-  <script defer src="/static/admin-metrics.js?v=2"></script>
+  <script defer src="/static/admin-metrics.js?v=3"></script>
   <script defer src="/static/rank.js?v=2"></script>
   <script defer src="/static/group-extras.js?v=2"></script>
   <script defer src="/static/rank-admin.js?v=1"></script>
@@ -1729,6 +1729,11 @@
               <p class="muted am-note">本周期内注册的正式账号；“次日回访”指注册日之后的某个更晚的 UTC 日又有过复习、新增、发帖或评论。</p>
               <ol id="admin-metrics-funnel" class="am-funnel"></ol>
               <p id="admin-metrics-funnel-empty" class="muted" hidden>这段时间没有新注册的正式账号，暂无漏斗数据。</p>
+            </section>
+            <section id="admin-metrics-retention-panel" class="panel am-panel" aria-labelledby="admin-metrics-retention-title">
+              <h4 id="admin-metrics-retention-title">留存与激活</h4>
+              <p class="muted am-note">全部正式账号，不受上面周期切换影响；只统计“已经有机会做到”的人（例如第 2 周留存只看注册满 14 天的账号）。次日 = 注册后第 1 天，第 2 周 = 第 7–13 天，第 2 月 = 第 30–59 天，按 UTC 日计。人数少于 20 时百分比波动很大，先看人数。</p>
+              <ol id="admin-metrics-retention" class="am-funnel"></ol>
             </section>
             <section class="panel am-panel" aria-labelledby="admin-metrics-ai-title">
               <h4 id="admin-metrics-ai-title">AI 明细</h4>

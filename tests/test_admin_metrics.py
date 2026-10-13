@@ -198,7 +198,7 @@ def test_response_has_no_private_fields(client, admin):
     assert "@example.com" not in body and "bob" not in body and "alice" not in body
     assert set(metrics(client)) == {
         "days", "generated_at", "new_users", "active_users", "records", "reviews", "posts",
-        "comments", "ai", "pending_reports", "redeem", "funnel", "daily",
+        "comments", "ai", "pending_reports", "redeem", "funnel", "retention", "daily",
     }
 
 
@@ -575,3 +575,95 @@ def test_rows_dated_after_today_are_excluded_everywhere(client, admin):
     assert result["ai"]["calls"]["current"] == 0 and result["ai"]["tokens"]["prompt"] == 0
     assert result["redeem"] == {"created": 0, "redeemed": 0, "unused": 0}
     assert result["funnel"]["registered"] == 0
+
+
+# ---- 留存与激活（全部正式账号，按注册后第几个 UTC 日） ----------------------------
+
+def retention(client):
+    return metrics(client)["retention"]
+
+
+def days_before_now(n, hour=10):
+    day = datetime.fromisoformat(NOW).date() - timedelta(days=n)
+    return f"{day.isoformat()}T{hour:02d}:00:00+00:00"
+
+
+def plus(created_at, n, hour=9):
+    day = datetime.fromisoformat(created_at).date() + timedelta(days=n)
+    return f"{day.isoformat()}T{hour:02d}:00:00+00:00"
+
+
+def test_retention_only_counts_users_old_enough(client, admin):
+    # admin 注册于 08-01（58 天前），没有任何行为：进次日/第 2 周/激活分母，不进第 2 月。
+    with connect(write=True) as conn:
+        add_user(conn, "today", days_before_now(0))
+        add_user(conn, "yesterday", days_before_now(1))
+    result = retention(client)
+    assert result["next_day"] == {"eligible": 1, "retained": 0}
+    assert result["week_2"] == {"eligible": 1, "retained": 0}
+    assert result["month_2"] == {"eligible": 0, "retained": 0}
+    assert result["activation"] == {"eligible": 1, "activated": 0, "min_records": 3}
+
+
+def test_next_day_retention_needs_activity_exactly_on_day_one(client, admin):
+    joined = days_before_now(20, hour=23)
+    with connect(write=True) as conn:
+        same_day = add_user(conn, "same", joined)
+        add_problem(conn, same_day, plus(joined, 0, hour=23))
+        next_day = add_user(conn, "next", joined)
+        add_review(conn, next_day, plus(joined, 1, hour=0))
+        later = add_user(conn, "later", joined)
+        add_post(conn, later, plus(joined, 2))
+    assert retention(client)["next_day"] == {"eligible": 4, "retained": 1}
+
+
+def test_week_two_and_month_two_windows(client, admin):
+    joined = days_before_now(90)
+    with connect(write=True) as conn:
+        # 评论挂在 admin 的帖子下，避免 add_comment 顺带给每个人造一篇帖子。
+        shared_post = add_post(conn, admin, OLD)
+        for name, offset in (("d6", 6), ("d7", 7), ("d13", 13), ("d14", 14),
+                             ("d30", 30), ("d59", 59), ("d60", 60)):
+            user = add_user(conn, name, joined)
+            add_comment(conn, user, plus(joined, offset), post_id=shared_post)
+    result = retention(client)
+    assert result["week_2"] == {"eligible": 8, "retained": 2}
+    assert result["month_2"] == {"eligible": 7, "retained": 2}
+
+
+def test_deleted_social_content_and_trial_accounts_do_not_count(client, admin):
+    joined = days_before_now(30)
+    with connect(write=True) as conn:
+        user = add_user(conn, "ghost", joined)
+        add_post(conn, user, plus(joined, 1), deleted=True)
+        trial = add_user(conn, "trial", joined, trial=True)
+        add_problem(conn, trial, plus(joined, 1))
+        add_user(conn, "gone", joined, deleted=True)
+    assert retention(client)["next_day"] == {"eligible": 2, "retained": 0}
+
+
+def test_activation_needs_three_records_and_a_review_in_the_first_week(client, admin):
+    joined = days_before_now(30)
+    with connect(write=True) as conn:
+        active = add_user(conn, "active", joined)
+        for offset in (0, 3, 6):
+            add_problem(conn, active, plus(joined, offset))
+        add_review(conn, active, plus(joined, 6),
+                   problem_id=add_problem(conn, active, plus(joined, 7)))
+
+        no_review = add_user(conn, "no-review", joined)
+        for offset in (0, 1, 2):
+            add_problem(conn, no_review, plus(joined, offset))
+
+        too_late = add_user(conn, "too-late", joined)
+        for offset in (0, 1, 7):
+            add_problem(conn, too_late, plus(joined, offset))
+        add_review(conn, too_late, plus(joined, 2),
+                   problem_id=add_problem(conn, too_late, plus(joined, 8)))
+
+        fresh = add_user(conn, "fresh", days_before_now(6))
+        for offset in (0, 1, 2):
+            add_problem(conn, fresh, plus(days_before_now(6), offset))
+        add_review(conn, fresh, plus(days_before_now(6), 2),
+                   problem_id=add_problem(conn, fresh, plus(days_before_now(6), 9)))
+    assert retention(client)["activation"] == {"eligible": 4, "activated": 1, "min_records": 3}

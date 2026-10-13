@@ -15,7 +15,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -55,6 +55,56 @@ app = FastAPI(
     openapi_url=None,
 )
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+
+class ApiBodySizeLimit:
+    """按“实际收到的字节”限制 /api/ 请求体，补上 Content-Length 检查的缺口。
+
+    下面 request_protection 只看请求头声明的 Content-Length；分块传输
+    （Transfer-Encoding: chunked）没有这个头，multipart 解析会先把整个上传
+    写进临时文件，然后才轮到登录校验——未登录的人也能用一个超大上传写满磁盘。
+    这里包一层 receive，累计超过 API_MAX_BODY_BYTES 立刻抛 413，解析随之中止。
+    （import_wizard 的 _bounded_request 是同一思路的单接口版本。）
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        received = 0
+        started = False
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > config.API_MAX_BODY_BYTES:
+                    raise HTTPException(413, "请求内容太大")
+            return message
+
+        async def tracking_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracking_send)
+        except HTTPException as exc:
+            # 正常情况下 FastAPI 自己会把 413 转成响应；这里兜住在路由之外
+            # （例如中间件层）读取请求体时抛出的情况。
+            if exc.status_code != 413 or started:
+                raise
+            response = JSONResponse(status_code=413, content={"detail": exc.detail})
+            await response(scope, receive, send)
+
+
+app.add_middleware(ApiBodySizeLimit)
 
 # 画板静态页 CSP：以全站策略为基线，仅把 frame-ancestors 从 'none' 放宽到 'self'
 # （允许同源笔记页以 iframe 嵌入）；其余逐项放宽均来自浏览器实测，清单与理由见

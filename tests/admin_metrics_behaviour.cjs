@@ -28,6 +28,10 @@ function payload(days = 7, overrides = {}) {
     },
     pending_reports: 2, redeem: { created: 10, redeemed: 6, unused: 4 },
     funnel: { registered: 12, first_record: 9, first_review: 6, returned_next_day: 3 },
+    retention: {
+      next_day: { eligible: 40, retained: 18 }, week_2: { eligible: 30, retained: 9 },
+      month_2: { eligible: 0, retained: 0 }, activation: { eligible: 35, activated: 7, min_records: 3 },
+    },
     daily, ...overrides,
   };
 }
@@ -471,4 +475,36 @@ test("the page re-fetches when it is opened again (view-changed does not reuse s
   env.requests[1].resolve(payload(7, { new_users: pair(1, 1) }));
   await second;
   assert.equal(env.cardText("新增用户")[1], "1");
+});
+
+test("retentionRows: rate over eligible, null when nobody is eligible, clamps bad data", () => {
+  const { retentionRows } = setup().helpers;
+  assert.equal(retentionRows(undefined), null);
+  const rows = retentionRows(payload().retention);
+  assert.deepEqual(Array.from(rows, (row) => row.key), ["next_day", "week_2", "month_2", "activation"]);
+  assert.deepEqual(Array.from(rows, (row) => row.rate), [0.45, 0.3, null, 0.2]);
+  assert.equal(rows[3].label, "首周激活（≥3 题且复习过）");
+  const broken = retentionRows({ next_day: { eligible: 2, retained: 5 }, week_2: { eligible: -1, retained: 1 } });
+  assert.deepEqual([broken[0].hit, broken[0].rate, broken[1].eligible, broken[1].rate], [2, 1, 0, null]);
+});
+
+test("retention renders four rows with rate and head counts; old payloads hide the panel", async () => {
+  const env = setup();
+  const loading = env.api.load();
+  env.requests[0].resolve(payload());
+  await loading;
+  assert.equal(env.$("admin-metrics-retention-panel").hidden, false);
+  const rows = env.$("admin-metrics-retention").children;
+  assert.deepEqual(rows.map((row) => row.querySelector(".am-funnel-count").textContent), ["45%", "30%", "—", "20%"]);
+  assert.deepEqual(rows.map((row) => row.querySelector(".am-funnel-rate").textContent),
+    ["18 / 40 人", "9 / 30 人", "还没有够资格的账号", "7 / 35 人"]);
+  assert.deepEqual(rows.map((row) => row.querySelector(".am-bar").styleValues.width), ["45%", "30%", "0%", "20%"]);
+
+  const old = env.api.load();
+  const legacy = payload();
+  delete legacy.retention;
+  env.requests[1].resolve(legacy);
+  await old;
+  assert.equal(env.$("admin-metrics-retention-panel").hidden, true);
+  assert.equal(env.$("admin-metrics-retention").children.length, 0);
 });

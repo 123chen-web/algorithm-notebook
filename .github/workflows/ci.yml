@@ -40,7 +40,7 @@ jobs:
       - name: Run tests
         run: |
           set -o pipefail
-          python -m pytest -p no:cacheprovider -q -rfE --tb=short 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+          python -m pytest -p no:cacheprovider -q -rfE --tb=short -n auto 2>&1 | tee "$RUNNER_TEMP/pytest.log"
       - name: Summarize failures
         if: failure()
         run: |

@@ -19,6 +19,8 @@ PERIOD_CHOICES = (7, 30)
 # 周期内算数的账号：正式（非体验）且未注销。
 ELIGIBLE_USER = "u.deleted_at IS NULL AND u.is_trial = 0"
 DIRECT_GRANT_HINT = "----"
+# 首周激活：注册后 7 天内至少记这么多题（且至少复习 1 次），才算真正用起来了。
+ACTIVATION_RECORDS = 3
 
 # 任一“行为”事件：新增错题记录 / 复习 / 发帖 / 评论，统一成 (user_id, at)。
 EVENTS = """
@@ -194,6 +196,56 @@ def compute_metrics(conn, days, now):
         WHERE """ + ELIGIBLE_USER + " AND u.created_at >= :cur_start AND u.created_at < :end",
         params).fetchone()
 
+    # 留存与激活：看“所有”正式账号（不限本周期），按注册后的第几个 UTC 日来算。
+    # 只有“已经有机会做到”的人才进分母：例如 7 日留存只看注册满 14 天的人，
+    # 否则新用户越多、留存显得越低。
+    #   次日留存：注册后第 1 天有任一行为（分母：注册满 2 天）
+    #   第 2 周留存：第 7–13 天有任一行为（分母：注册满 14 天）
+    #   第 2 月留存：第 30–59 天有任一行为（分母：注册满 60 天）
+    #   首周激活：前 7 天（第 0–6 天）记了 ≥ACTIVATION_RECORDS 题且至少复习过 1 次（分母：注册满 7 天）
+    retention = conn.execute(f"""
+        WITH cohort AS (
+            SELECT u.id,
+                CAST(julianday(:today) - julianday(substr(u.created_at, 1, 10)) AS INTEGER) AS age,
+                substr(u.created_at, 1, 10) AS joined
+            FROM users u WHERE {ELIGIBLE_USER} AND u.created_at < :end
+        ),
+        ev AS (
+            SELECT e.user_id,
+                CAST(julianday(substr(e.at, 1, 10)) - julianday(c.joined) AS INTEGER) AS d,
+                e.kind
+            FROM (
+                SELECT p.user_id, p.created_at AS at, 'record' AS kind FROM problems p
+                UNION ALL
+                SELECT pr.user_id, r.reviewed_at, 'review' FROM reviews r
+                    JOIN mistakes m ON m.id = r.mistake_id
+                    JOIN problems pr ON pr.id = m.problem_id
+                UNION ALL
+                SELECT user_id, created_at, 'social' FROM posts WHERE deleted_at IS NULL
+                UNION ALL
+                SELECT user_id, created_at, 'social' FROM post_comments WHERE deleted_at IS NULL
+            ) e JOIN cohort c ON c.id = e.user_id
+            WHERE e.at < :end
+        ),
+        per_user AS (
+            SELECT c.age,
+                EXISTS(SELECT 1 FROM ev WHERE ev.user_id = c.id AND ev.d = 1) AS d1,
+                EXISTS(SELECT 1 FROM ev WHERE ev.user_id = c.id AND ev.d BETWEEN 7 AND 13) AS w2,
+                EXISTS(SELECT 1 FROM ev WHERE ev.user_id = c.id AND ev.d BETWEEN 30 AND 59) AS m2,
+                (SELECT COUNT(*) FROM ev WHERE ev.user_id = c.id AND ev.kind = 'record'
+                    AND ev.d BETWEEN 0 AND 6) >= :activation_records
+                AND EXISTS(SELECT 1 FROM ev WHERE ev.user_id = c.id AND ev.kind = 'review'
+                    AND ev.d BETWEEN 0 AND 6) AS activated
+            FROM cohort c
+        )
+        SELECT
+            COALESCE(SUM(age >= 2), 0), COALESCE(SUM(age >= 2 AND d1), 0),
+            COALESCE(SUM(age >= 14), 0), COALESCE(SUM(age >= 14 AND w2), 0),
+            COALESCE(SUM(age >= 60), 0), COALESCE(SUM(age >= 60 AND m2), 0),
+            COALESCE(SUM(age >= 7), 0), COALESCE(SUM(age >= 7 AND activated), 0)
+        FROM per_user
+    """, {**params, "today": today.isoformat(), "activation_records": ACTIVATION_RECORDS}).fetchone()
+
     by_feature = sorted(
         (
             {"feature": row["feature"], "calls": row["calls"] or 0, "failed": row["failed"] or 0,
@@ -238,6 +290,13 @@ def compute_metrics(conn, days, now):
         "funnel": {
             "registered": funnel[0], "first_record": funnel[1],
             "first_review": funnel[2], "returned_next_day": funnel[3],
+        },
+        "retention": {
+            "next_day": {"eligible": retention[0], "retained": retention[1]},
+            "week_2": {"eligible": retention[2], "retained": retention[3]},
+            "month_2": {"eligible": retention[4], "retained": retention[5]},
+            "activation": {"eligible": retention[6], "activated": retention[7],
+                           "min_records": ACTIVATION_RECORDS},
         },
         "daily": [
             {"date": day, "new_users": new_users.get(day, 0),

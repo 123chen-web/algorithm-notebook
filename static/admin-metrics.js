@@ -1,6 +1,6 @@
 "use strict";
 
-/* 管理后台“运营概览”：指标条 + 每日趋势图 + 新用户漏斗 + AI 明细。
+/* 管理后台“运营概览”：指标条 + 每日趋势图 + 新用户漏斗 + 留存与激活 + AI 明细。
    只读；请求走宿主传入的 api()，响应按登录代次 / 页面 / 请求序号隔离；用户文字一律 textContent。 */
 (() => {
   const $ = (selector) => document.querySelector(selector);
@@ -21,6 +21,12 @@
     { key: "first_record", label: "记第一条错题" },
     { key: "first_review", label: "完成第一次复习" },
     { key: "returned_next_day", label: "次日回访" },
+  ];
+  const RETENTION_STEPS = [
+    { key: "next_day", label: "次日留存", hit: "retained" },
+    { key: "week_2", label: "第 2 周留存", hit: "retained" },
+    { key: "month_2", label: "第 2 月留存", hit: "retained" },
+    { key: "activation", label: "首周激活", hit: "activated" },
   ];
   let hooks = null;
   let generation = 0;
@@ -79,6 +85,22 @@
       };
     });
     return { empty: false, rows };
+  }
+
+  /** 留存与激活：每行 命中/分母 和比例；分母为 0（还没人“够老”）时 rate 为 null。
+      服务器没给 retention（旧版本）→ null，整块隐藏。 */
+  function retentionRows(retention) {
+    if (!retention || typeof retention !== "object") return null;
+    return RETENTION_STEPS.map((step) => {
+      const entry = retention[step.key] || {};
+      const eligible = Math.max(0, Number(entry.eligible) || 0);
+      const hit = Math.min(eligible, Math.max(0, Number(entry[step.hit]) || 0));
+      const rate = eligible ? hit / eligible : null;
+      const minRecords = Number(entry.min_records) || 0;
+      const label = step.key === "activation" && minRecords
+        ? `首周激活（≥${minRecords} 题且复习过）` : step.label;
+      return { key: step.key, label, eligible, hit, rate, width: rate === null ? 0 : rate * 100 };
+    });
   }
 
   /** 1 / 2 / 5 × 10^k 的“好看”刻度步长，保证 4 格能盖住最大值。 */
@@ -275,6 +297,27 @@
     }));
   }
 
+  function renderRetention(result) {
+    const rows = retentionRows(result.retention);
+    $("#admin-metrics-retention-panel").hidden = rows === null;
+    $("#admin-metrics-retention").replaceChildren(...(rows || []).map((row) => {
+      const item = node("li", "", "am-funnel-row");
+      item.dataset.step = row.key;
+      const head = node("div", "", "am-funnel-head");
+      head.append(
+        node("span", row.label, "am-funnel-label"),
+        node("b", row.rate === null ? "—" : percentText(row.rate), "am-funnel-count"),
+        node("span", row.eligible ? `${row.hit} / ${row.eligible} 人` : "还没有够资格的账号", "am-funnel-rate"),
+      );
+      const track = node("div", "", "am-bar-track");
+      const bar = node("div", "", "am-bar");
+      bar.style.setProperty("width", `${row.hit > 0 ? Math.max(row.width, 1.5) : 0}%`);
+      track.append(bar);
+      item.append(head, track);
+      return item;
+    }));
+  }
+
   function renderAi(result) {
     const ai = result.ai;
     const features = ai.by_feature;
@@ -315,6 +358,7 @@
     data = result;
     renderStrip(result);
     renderFunnel(result);
+    renderRetention(result);
     renderAi(result);
     renderOther(result);
   }
@@ -407,6 +451,6 @@
     configure: (value) => { hooks = value; },
     load,
     reset,
-    helpers: { delta, formatTokens, funnelRows, chartModel, niceStep },
+    helpers: { delta, formatTokens, funnelRows, retentionRows, chartModel, niceStep },
   };
 })();
