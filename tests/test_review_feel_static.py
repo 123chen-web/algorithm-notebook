@@ -23,11 +23,20 @@ def test_review_assets_have_bumped_versions_and_dependency_load_order():
     markup = Markup((STATIC / "index.html").read_text(encoding="utf-8"))
     scripts = [attrs["src"] for tag, attrs in markup.nodes if tag == "script" and "src" in attrs]
     styles = [attrs.get("href") for tag, attrs in markup.nodes if tag == "link" and attrs.get("rel") == "stylesheet"]
-    for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=5", "/static/app.js?v=101"):
+    for src in ("/static/review-extras.js?v=1", "/static/focus.js?v=7", "/static/review-feel.js?v=1", "/static/app.js?v=102"):
         assert scripts.count(src) == 1
-    assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=5") < scripts.index("/static/app.js?v=101")
+    assert scripts.index("/static/review-extras.js?v=1") < scripts.index("/static/focus.js?v=7") < scripts.index("/static/review-feel.js?v=1") < scripts.index("/static/app.js?v=102")
     assert styles.count("/static/review-extras.css?v=2") == 1
     assert styles.count("/static/focus.css?v=3") == 1
+    assert styles.count("/static/review-feel.css?v=1") == 1
+
+
+def test_review_vibrate_toggle_markup():
+    source = (STATIC / "index.html").read_text(encoding="utf-8")
+    markup = Markup(source)
+    assert any(tag == "input" and attrs.get("id") == "account-vibrate" and attrs.get("type") == "checkbox"
+               for tag, attrs in markup.nodes)
+    assert any(tag == "label" and attrs.get("for") == "account-vibrate" for tag, attrs in markup.nodes)
 
 
 def test_review_cap_markup_has_announced_status_and_accessible_options():
@@ -47,13 +56,13 @@ def test_review_markup_and_scripts_respect_csp():
     markup = Markup((STATIC / "index.html").read_text(encoding="utf-8"))
     assert all("style" not in attrs for _, attrs in markup.nodes)
     assert all("src" in attrs for tag, attrs in markup.nodes if tag == "script")
-    for filename in ("review-extras.js", "focus.js"):
+    for filename in ("review-extras.js", "focus.js", "review-feel.js"):
         source = (STATIC / filename).read_text(encoding="utf-8")
         for forbidden in ("innerHTML", "insertAdjacentHTML", "document.write", "eval("):
             assert forbidden not in source, (filename, forbidden)
 
 
-@pytest.mark.parametrize("filename", ["review-extras.css", "focus.css"])
+@pytest.mark.parametrize("filename", ["review-extras.css", "focus.css", "review-feel.css"])
 def test_review_css_uses_theme_tokens_and_motion_gates(filename):
     source = (STATIC / filename).read_text(encoding="utf-8")
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", source)

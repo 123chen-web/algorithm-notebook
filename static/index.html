@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="/static/palette.css?v=2">
   <link rel="stylesheet" href="/static/focus.css?v=3">
   <link rel="stylesheet" href="/static/review-extras.css?v=2">
+  <link rel="stylesheet" href="/static/review-feel.css?v=1">
   <link rel="stylesheet" href="/static/problem-cards.css?v=1">
   <link rel="stylesheet" href="/static/tags.css?v=2">
   <link rel="stylesheet" href="/static/practice.css?v=1">
@@ -82,7 +83,8 @@
   <script defer src="/static/palette.js?v=4"></script>
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/problem-cards.js?v=2"></script>
-  <script defer src="/static/focus.js?v=5"></script>
+  <script defer src="/static/focus.js?v=7"></script>
+  <script defer src="/static/review-feel.js?v=1"></script>
   <script defer src="/static/tags.js?v=2"></script>
   <script defer src="/static/practice.js?v=1"></script>
   <script defer src="/static/mastery.js?v=4"></script>
@@ -137,7 +139,7 @@
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610121"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
-  <script defer src="/static/app.js?v=101"></script>
+  <script defer src="/static/app.js?v=102"></script>
   <script defer src="/static/view-history.js?v=1"></script>
   <script defer src="/static/account.js?v=3"></script>
   <script defer src="/static/new-record.js?v=5"></script>
@@ -296,6 +298,10 @@
               <label class="account-preference account-rank-pref" id="account-group-today-label" for="account-group-today" hidden>
                 <span class="account-rank-pref-row"><input id="account-group-today" type="checkbox" checked><span>在小组里显示我的今日动态</span></span>
                 <span id="account-group-today-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，组内只会显示“未公开”。</span>
+              </label>
+              <label class="account-preference" for="account-vibrate">
+                <span class="account-rank-pref-row"><input id="account-vibrate" type="checkbox" checked><span>震动反馈</span></span>
+                <span class="account-rank-pref-note" role="status" aria-live="polite">评分成功时轻微震动一下（仅部分手机支持）</span>
               </label>
               <div id="push-settings-host" class="push-settings-host"></div>
               <div id="reminder-settings-host" class="reminder-settings-host"></div>

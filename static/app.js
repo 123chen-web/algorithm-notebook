@@ -94,7 +94,7 @@ function stampSeal(text, options = {}) {
   const layer = $("#seal-layer");
   const isGroupUpgrade = /^升至 Lv\.[1-8]$/u.test(text);
   if (!layer || document.hidden || (!/^[\u3400-\u9fff]{2,4}$/u.test(text) && !isGroupUpgrade)) return;
-  const tone = ["gamboge", "gold"].includes(options.tone) ? "gamboge" : "cinnabar";
+  const tone = options.tone === "ink" ? "ink" : (["gamboge", "gold"].includes(options.tone) ? "gamboge" : "cinnabar");
   const stamp = document.createElement("span");
   stamp.className = `seal-stamp seal-stamp--${tone}`;
   stamp.setAttribute("aria-hidden", "true");
@@ -3008,6 +3008,11 @@ function rvfDetailKeydown(event) {
   } else if (/^[1-5]$/.test(event.key) && state.revealed) {
     const button = state.buttons[Number(event.key) - 1];
     if (!button.disabled) { event.preventDefault(); button.click(); }
+  } else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && state.revealed) {
+    // 方向键评分：与滑动手势方向一致，→ = 记得(4)，← = 忘了(0)
+    const quality = event.key === "ArrowRight" ? 4 : 0;
+    const button = state.buttons.find((item) => Number(item.dataset.quality) === quality);
+    if (button && !button.disabled) { event.preventDefault(); button.click(); }
   } else if (/^[tTpP]$/.test(event.key) && state.menu) {
     const action = state.menu.querySelector(event.key.toLowerCase() === "t" ? '[data-review-action="snooze"][data-days="1"]' : '[data-review-action="suspend"]');
     if (action && !action.hidden && !action.disabled) { event.preventDefault(); action.click(); }
@@ -3174,7 +3179,7 @@ function renderDetail(item, options = {}) {
   const reviewButtons = element("div", "", "actions review-actions");
   reviewButtons.id = "review-grade-row";
   reviewButtons.setAttribute("role", "group");
-  reviewButtons.setAttribute("aria-label", "这次掌握程度，数字键一到五评分");
+  reviewButtons.setAttribute("aria-label", "这次掌握程度，数字键一到五或左右方向键评分");
   const due = !item.suspended_at && item.due_date <= item.today;
   reviewSection.append(
     element("h3", "这次，你掌握得怎么样？"),
@@ -3223,7 +3228,8 @@ function renderDetail(item, options = {}) {
           }
         }
         if (!state.isCurrent()) return;
-        stampSeal(sealText, { anchor });
+        stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
+        window.ReviewFeel?.buzz();
         if (result) {
           rvfRemoveItem({ ...item, ...result });
           window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,

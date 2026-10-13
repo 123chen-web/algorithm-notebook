@@ -199,6 +199,9 @@
     const cause = node("section", "focus-section");
     cause.append(node("h3", "focus-label", "你当时的错因"), node("p", "focus-text multiline", item.description || "错因待 AI 诊断"));
     if (!modern() || session.revealed) card.append(cause);
+    // 复习手感：错因翻牌。toggle 刚触发时先保持未翻，由 render() 在下一帧翻过去播动画；
+    // 其他已揭示的渲染直接呈现背面，不播动画。
+    if (modern()) window.ReviewFeel?.wrapFlip(cause, Boolean(session.revealed && !session.flipPending));
 
     const reveal = node("button", "focus-reveal");
     reveal.type = "button";
@@ -247,7 +250,15 @@
           committed = true;
           extraAction(active, item, action, days, result);
         } });
-      card.append(focusMenu);
+      if (focusMenu) card.append(focusMenu);
+    }
+    // 复习手感：滑动评分（走原来那颗评分按钮的流程）
+    if (modern()) {
+      window.ReviewFeel?.attachSwipe(card, {
+        gradeButton: (quality) => parts.gradeButtons.find((button) => button.dataset.quality === String(quality)),
+        canSwipe: () => Boolean(session && session.revealed && !session.submitting),
+        onCommitTarget: () => parts.stage,
+      });
     }
     return card;
   }
@@ -334,6 +345,18 @@
     }
     parts.stage.replaceChildren(renderCard(item));
     setGrading(true);
+    // 复习手感：滑动提交后，下一张轻轻升起
+    window.ReviewFeel?.consumeEnter(parts.stage);
+    // 复习手感：刚点"显示错因"时，把错因卡翻过去（下一帧播翻牌动画）
+    if (session.flipPending) {
+      session.flipPending = false;
+      const flipped = parts.stage.querySelector(".rf-flip");
+      if (flipped) {
+        const run = () => window.ReviewFeel?.setFlipped(flipped, true);
+        if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(() => window.requestAnimationFrame(run));
+        else run();
+      }
+    }
     parts.gradeRow.hidden = modern() && !session.revealed;
     for (const button of parts.gradeButtons) button.disabled = session.submitting;
     parts.defer.hidden = remaining().length < 2;
@@ -356,6 +379,7 @@
     if (!session || !current()) return;
     if (modern() && session.revealed) return;
     session.revealed = !session.revealed;
+    if (modern() && session.revealed) session.flipPending = true;
     render();
     (modern() && session.revealed ? parts.gradeButtons[0] : parts.stage).focus({ preventScroll: true });
   }
@@ -427,7 +451,8 @@
         const stamp = STAMPS.get(quality);
         if (stamp && typeof window.stampSeal === "function") {
           const button = parts.grades.querySelector(`[data-quality="${quality}"]`);
-          window.stampSeal(stamp, { anchor: button });
+          window.stampSeal(stamp, { anchor: button, tone: quality <= 2 ? "ink" : undefined });
+          window.ReviewFeel?.buzz();
         }
         message = `已保存，下次复习约 ${data.interval_days} 天后`;
         if (data.leech_suspended) {
@@ -505,7 +530,10 @@
       toggleReveal();
       return;
     }
-    const grade = GRADES.find((entry) => entry.key === event.key);
+    const arrowQuality = event.key === "ArrowRight" ? 4 : event.key === "ArrowLeft" ? 0 : null;
+    const grade = arrowQuality !== null
+      ? GRADES.find((entry) => entry.quality === arrowQuality)
+      : GRADES.find((entry) => entry.key === event.key);
     if (grade && current()) {
       event.preventDefault();
       gradeCurrent(grade.quality);

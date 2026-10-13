@@ -1,0 +1,60 @@
+/* 复习手感：翻牌 / 滑动评分 / 墨印。全部走主题变量；所有动效只在
+   prefers-reduced-motion: no-preference 里，reduce 下即时呈现最终态。 */
+
+.rf-flip { perspective: 1200px; }
+.rf-flip-inner { position: relative; transform-style: preserve-3d; }
+.rf-flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.rf-flip-front {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 72px;
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  background: var(--surface);
+}
+.rf-flip-hint { margin: 0; color: var(--ink-2); font-size: var(--text-sm); letter-spacing: .2em; }
+.rf-flip-back { transform: rotateY(180deg); }
+.rf-flipped { transform: rotateY(180deg); }
+
+/* 滑动：纵向滚动不受影响（pan-y），横向由 Pointer Events 接管 */
+.rf-swipe { position: relative; touch-action: pan-y; }
+.rf-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
+/* 边缘提示字：渐变底，像批注条 */
+.rf-hint {
+  position: absolute; z-index: 5; pointer-events: none;
+  padding: 8px 14px; border-radius: var(--radius-chip);
+  font: 600 var(--text-base)/1.4 var(--kai); letter-spacing: .3em; text-indent: .3em;
+  opacity: 0; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(var(--shadow-rgb), .12);
+}
+.rf-hint-right {
+  right: 10px; top: 40%;
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), var(--seal-gamboge, var(--accent)));
+}
+.rf-hint-left {
+  left: 10px; top: 40%;
+  color: var(--surface);
+  background: linear-gradient(135deg, var(--ink-2), var(--ink));
+}
+.rf-hint-up {
+  left: 50%; top: 8px; transform: translateX(-50%);
+  color: var(--on-accent);
+  background: linear-gradient(180deg, var(--accent), var(--seal-gamboge, var(--accent)));
+}
+
+/* 墨印：忘了 / 答错了 盖墨色印，记得 / 很熟 盖红印（默认 cinnabar） */
+.seal-stamp--ink { color: var(--ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rf-flip-inner { transition: transform .45s cubic-bezier(.3, .7, .3, 1); }
+  .rf-enter { animation: rf-rise .35s ease-out both; }
+  .rf-fly-right { transition: transform .28s ease-in, opacity .28s ease-in; transform: translateX(110%) rotate(10deg); opacity: 0; }
+  .rf-fly-left { transition: transform .28s ease-in, opacity .28s ease-in; transform: translateX(-110%) rotate(-10deg); opacity: 0; }
+  .rf-fly-up { transition: transform .28s ease-in, opacity .28s ease-in; transform: translateY(-60%); opacity: 0; }
+  @keyframes rf-rise { from { opacity: 0; transform: translateY(26px); } }
+}
+
+@media (max-width: 560px) {
+  .rf-hint { font-size: var(--text-sm); padding: 6px 10px; }
+}

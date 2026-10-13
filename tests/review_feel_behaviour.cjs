@@ -281,6 +281,23 @@ test("detail keyboard: digits score after reveal and respect editable/modifier/m
   assert.deepEqual(JSON.parse(env.calls.find((call) => call.url.endsWith("/review")).options.body), { quality: 2, version: 3 });
 });
 
+test("detail keyboard: ArrowRight grades 记得(4), ArrowLeft grades 忘了(0), only after reveal", async () => {
+  const env = environment();
+  env.render();
+  env.key("ArrowRight");
+  await tick();
+  assert.equal(env.calls.filter((call) => call.url.endsWith("/review")).length, 0, "no grading before reveal");
+  env.$("#review-reveal").click();
+  assert.equal(env.key("ArrowRight").defaultPrevented, true);
+  await tick();
+  assert.deepEqual(JSON.parse(env.calls.find((call) => call.url.endsWith("/review")).options.body), { quality: 4, version: 3 });
+  const env2 = environment();
+  env2.render(); env2.$("#review-reveal").click();
+  env2.key("ArrowLeft");
+  await tick();
+  assert.deepEqual(JSON.parse(env2.calls.find((call) => call.url.endsWith("/review")).options.body), { quality: 0, version: 3 });
+});
+
 test("detail opening: a later selection wins even when the old card responds last", async () => {
   const env = environment();
   const first = env.context.openMistake(1);
