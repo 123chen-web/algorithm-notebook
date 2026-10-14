@@ -245,4 +245,4 @@ def test_migration_84_idempotent_and_adds_column(tmp_path, monkeypatch):
         assert "include_in_summary" in cols
     db.init_db()  # 再跑一次：幂等
     with connect() as conn:
-        assert db.schema_version(conn) == 84
+        assert db.schema_version(conn) == db.SCHEMA_VERSION

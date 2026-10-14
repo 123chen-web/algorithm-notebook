@@ -18,7 +18,7 @@ import pytest
 
 import main
 from db import connect
-from scheduler import schedule
+import fsrs
 from test_app import client, register  # noqa: F401  (client 是 pytest fixture)
 from core import time
 import scheduler
@@ -34,6 +34,14 @@ RESPONSE_KEYS = {"repetitions", "interval_days", "ease_factor", "due_date", "ver
 @pytest.fixture(autouse=True)
 def review_clock(monkeypatch):
     monkeypatch.setattr(time, "utc_now", lambda: NOW.isoformat())
+
+
+def expected_schedule(quality, day, *, last=date(2026, 9, 10), repetitions=2, interval=6, ease=2.5):
+    """seed() 默认记录评分后应得到的排期（旧记录按“稳定度=间隔、难度由易度换算”进入 FSRS）。"""
+    state = scheduler.schedule(
+        (float(interval), fsrs.difficulty_from_ease(ease)), last, repetitions, quality, day,
+    )
+    return {k: state[k] for k in ("repetitions", "interval_days", "ease_factor", "due_date")}
 
 
 def stamp(moment):
@@ -288,7 +296,7 @@ def test_null_optional_fields_behave_like_absent_ones(client):
 def test_without_reviewed_at_the_behaviour_is_unchanged(client):
     mistake = seed(register(client)["id"], due="2026-09-16")
     result = ok(post(client, mistake, version=0))
-    expected = schedule(2, 6, 2.5, 4, TODAY, overdue_days=3)
+    expected = expected_schedule(4, TODAY)
     assert result == {**expected, "version": 1, "revenge": None}
     row, = logs(mistake)
     assert row["reviewed_at"] == NOW.isoformat() and row["elapsed_days"] == 9
@@ -346,7 +354,7 @@ def test_reviewed_at_drives_schedule_log_and_last_reviewed(client):
     mistake = seed(register(client)["id"], due="2026-09-16")
     given = "2026-09-16T10:30:15.789+08:00"  # 带毫秒和偏移：存成 UTC、秒精度
     result = ok(post(client, mistake, quality=5, client_op_id=OP, reviewed_at=given))
-    assert result == {**schedule(2, 6, 2.5, 5, date(2026, 9, 16), overdue_days=0), "version": 1, "revenge": None}
+    assert result == {**expected_schedule(5, date(2026, 9, 16)), "version": 1, "revenge": None}
     # 对照：不传 reviewed_at 时同样的题按“今天”（逾期 3 天）调度，结果不同。
     control = seed(1, due="2026-09-16")
     assert ok(post(client, control, quality=5, version=0))["due_date"] != result["due_date"]
@@ -374,7 +382,7 @@ def test_today_is_the_local_day_of_reviewed_at_at_midnight(client, given, local_
     mistake = seed(register(client)["id"], due="2026-09-10", last="2026-09-01T00:00:00+00:00")
     result = ok(post(client, mistake, client_op_id=OP, reviewed_at=given))
     assert date.fromisoformat(result["due_date"]) - timedelta(days=result["interval_days"]) == local_day
-    assert logs(mistake)[0]["elapsed_days"] == 6 + (local_day - date(2026, 9, 10)).days
+    assert logs(mistake)[0]["elapsed_days"] == (local_day - date(2026, 9, 1)).days
 
 
 def test_cross_timezone_the_same_instant_is_a_different_local_day(client):

@@ -8,7 +8,9 @@ import pytest
 
 import main
 from db import connect
-from scheduler import schedule, today_in_timezone
+import fsrs
+import scheduler
+from scheduler import today_in_timezone
 from test_app import client, register
 from core import time
 from core import security
@@ -45,6 +47,14 @@ def seed(owner, *, due=None, interval=6, repetitions=2, ease=2.5,
             [(mistake, owner, tag, NOW.isoformat()) for tag in tags],
         )
     return mistake
+
+
+def expected_schedule(quality, day=TODAY, *, last=date(2026, 9, 10), repetitions=2, interval=6, ease=2.5):
+    """seed() 默认记录（间隔 6 天、易度 2.5、2026-09-10 复习过）评分后应得到的排期。"""
+    state = scheduler.schedule(
+        (float(interval), fsrs.difficulty_from_ease(ease)), last, repetitions, quality, day,
+    )
+    return {k: state[k] for k in ("repetitions", "interval_days", "ease_factor", "due_date")}
 
 
 def stored(mistake):
@@ -94,17 +104,15 @@ def test_preview_matches_the_accepted_review_in_every_grade(client, quality, ove
     owner = register(client)["id"]
     mistake = seed(owner, due=(TODAY - timedelta(days=overdue)).isoformat())
     previews = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]
-    expected = schedule(2, 6, 2.5, quality, TODAY, overdue_days=overdue)
+    expected = expected_schedule(quality)
     assert previews[str(quality)]["interval_days"] == expected["interval_days"]
     assert previews[str(quality)]["due_date"] == expected["due_date"]
     accepted = assert_ok(rate(client, mistake, quality))
     assert accepted == {**expected, "version": 1, "revenge": None}
-    # 明确锁住逾期成功加成及失败仅扣 0.2，避免两条路径同时用错算法。
+    # 答错后间隔缩短、答得越好间隔越长。
     if quality < 3:
-        assert accepted["interval_days"] == 1
-        assert accepted["ease_factor"] == 2.3
-    if overdue == 10 and quality == 5:
-        assert accepted["interval_days"] == 40
+        assert accepted["interval_days"] <= 3
+        assert accepted["ease_factor"] < 2.5
 
 
 def test_preview_allows_a_record_that_is_not_yet_due(client):
@@ -113,7 +121,7 @@ def test_preview_allows_a_record_that_is_not_yet_due(client):
     before = stored(mistake)
     data = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))
     for quality in (0, 2, 3, 4, 5):
-        expected = schedule(2, 6, 2.5, quality, TODAY)
+        expected = expected_schedule(quality)
         assert data["previews"][str(quality)]["interval_days"] == expected["interval_days"]
         assert data["previews"][str(quality)]["due_date"] == expected["due_date"]
     assert stored(mistake) == before
@@ -133,7 +141,9 @@ def test_preview_and_review_use_the_same_local_day(client, monkeypatch, timezone
     monkeypatch.setattr(time, "today_for", lambda user: today_in_timezone(user["timezone"], boundary))
     mistake = seed(owner, due="2026-09-19")
     preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
-    expected = schedule(2, 6, 2.5, 5, today, overdue_days=(today - TODAY).days)
+    expected = expected_schedule(
+        5, today, last=date(2026, 9, 10) if timezone_name == "Asia/Shanghai" else date(2026, 9, 9),
+    )
     assert preview["due_date"] == expected["due_date"]
     assert preview["interval_days"] == expected["interval_days"]
     assert assert_ok(rate(client, mistake, 5)) == {**expected, "version": 1, "revenge": None}
@@ -151,7 +161,7 @@ def test_rating_logs_every_field_needed_to_restore_the_previous_state(client):
     assert row["ease_before"] == before["ease_factor"]
     assert row["repetitions_before"] == before["repetitions"]
     assert row["scheduled_days"] == before["interval_days"]
-    assert row["elapsed_days"] == 16
+    assert row["elapsed_days"] == 9  # 2026-09-10 复习过，今天 09-19
 
 
 @pytest.mark.parametrize("previous_review", [None, "2026-09-10T04:00:00+00:00"])
@@ -834,7 +844,7 @@ def test_review_preview_reads_the_latest_timezone_rather_than_the_auth_snapshot(
         preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
     finally:
         main.app.dependency_overrides.pop(security.current_user, None)
-    expected = schedule(2, 6, 2.5, 5, TODAY, overdue_days=0)
+    expected = expected_schedule(5, last=date(2026, 9, 9))
     assert preview["interval_days"] == expected["interval_days"]
     assert preview["due_date"] == expected["due_date"]
 

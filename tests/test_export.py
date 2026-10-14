@@ -23,6 +23,7 @@ PROBLEM_KEYS = {
 }
 MISTAKE_KEYS = {
     "id", "description", "counterexample", "repetitions", "interval_days", "ease_factor",
+    "stability", "difficulty",
     "due_date", "last_reviewed_at", "reviews", "variants", "tags",
     "pending_reason", "revenge_at",
 }
@@ -86,6 +87,8 @@ def seed_notebook(user_id, marker):
                 mistake["counterexample"] = ""
                 mistake["pending_reason"] = False
                 mistake["revenge_at"] = None
+                mistake["stability"] = None
+                mistake["difficulty"] = None
                 mistake["reviews"] = []
                 mistake["variants"] = []
                 mistake["tags"] = []

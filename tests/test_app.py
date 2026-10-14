@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import sqlite3
 
 import pytest
@@ -97,32 +97,28 @@ def mock_generated_practice(item):
     }
 
 
-def test_sm2_success_failure_and_floor():
+def test_fsrs_success_failure_and_bounds():
     day = date(2026, 9, 19)
 
-    first = schedule(0, 0, 2.5, 4, day)
-    assert first["interval_days"] == 1
-    assert first["due_date"] == "2026-09-20"
+    first = schedule(None, None, 0, 4, day)
+    assert first["interval_days"] == 2
+    assert first["due_date"] == "2026-09-21"
 
-    second = schedule(1, 1, first["ease_factor"], 4, day)
-    assert second["interval_days"] == 6
+    second = schedule((first["stability"], first["difficulty"]), day, 1, 4, date(2026, 9, 21))
+    assert second["interval_days"] > first["interval_days"]
+    assert second["repetitions"] == 2
 
-    third = schedule(2, 6, second["ease_factor"], 4, day)
-    assert third["interval_days"] == 15
+    failed = schedule((15.0, 5.0), day - timedelta(days=15), 3, 0, day)
+    assert failed["repetitions"] == 1  # 答错折半：3 // 2
+    assert failed["interval_days"] < 15
+    assert failed["ease_factor"] < 2.5
 
-    failed = schedule(3, 15, 2.5, 0, day)
-    assert failed["repetitions"] == 1  # 答错折半：3 // 2（原为清零）
-    assert failed["interval_days"] == 1
-    assert failed["ease_factor"] == 2.3
-
-    floor = schedule(0, 1, 1.3, 0, day)
-    assert floor["ease_factor"] == 1.3
-
-    # 浮点间隔向上取整。
-    assert schedule(2, 6, 2.6, 5, day)["interval_days"] == 16
+    floor = schedule((1.0, 10.0), day - timedelta(days=1), 0, 0, day)
+    assert floor["ease_factor"] >= 1.3
+    assert floor["difficulty"] <= 10
 
     with pytest.raises(ValueError):
-        schedule(0, 0, 2.5, 6, day)
+        schedule(None, None, 0, 6, day)
 
 
 def test_timezone_day_boundary():
@@ -150,7 +146,7 @@ def test_review_is_per_mistake_and_prevents_duplicate(client):
         json={"quality": 4, "version": 0},
     )
     assert response.status_code == 200
-    assert response.json()["due_date"] == "2026-09-20"
+    assert response.json()["due_date"] == "2026-09-21"  # 第一次答“记得”：FSRS 初始稳定度约 2 天
 
     # 相同版本的重复提交不能再次延长间隔。
     duplicate = client.post(

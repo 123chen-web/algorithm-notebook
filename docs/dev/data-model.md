@@ -12,7 +12,7 @@
 - study_group_members：小组成员及加入时间，按小组和用户联合主键去重。
 - password_resets：密码重置令牌哈希、所属用户、过期时间，用后即删。
 - problems：题目名、代码、思路。
-- mistakes：易错点、SM-2 状态、下次日期、版本。
+- mistakes：易错点、FSRS 状态（稳定度 stability、难度 difficulty；旧记录为空）、连续成功次数、间隔、易度（显示用）、下次日期、版本。
 - reviews：每次复习评分及下次日期。
 - variants：AI 题目及手动练习结果。
 - ai_usage：每个用户每日 AI 请求次数。
@@ -64,6 +64,7 @@
 | 82 | 复习方式偏好默认改为“只回忆”（`users.redo_preference` 默认值 `recall_only`） |
 | 83 | 复仇成功标记（`mistakes.revenge_at`，NULL=从未触发） |
 | 84 | 小组薄弱点汇总的成员退出开关（`study_group_members.include_in_summary`，默认参与） |
+| 85 | 复习排期换成 FSRS：`mistakes.stability/difficulty`、`reviews.stability_before/difficulty_before`（撤销用），只加列不改数据 |
 
 25–27 为未发布功能撤回后的空缺，82、83 为第三轮其他项预留，不重用。
 

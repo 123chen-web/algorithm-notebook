@@ -24,7 +24,6 @@ from problem_progress import enrich_problems
 from activity import day_counts
 from ai_limits import refund_on_server_failure, duck_daily_limit
 from contextlib import ExitStack
-from datetime import date
 from datetime import timedelta
 from duck_prompt import check_turns
 from fastapi import Depends
@@ -112,27 +111,21 @@ def review_mistake(
         if item["due_date"] > day.isoformat():
             raise HTTPException(409, "这条易错点尚未到期，今天不需要再次评分")
 
-        overdue_days = max(0, (day - date.fromisoformat(item["due_date"])).days)
-        state = scheduler.schedule(
-            repetitions=item["repetitions"],
-            interval_days=item["interval_days"],
-            ease_factor=item["ease_factor"],
-            quality=data.quality,
-            reviewed_on=day,
-            overdue_days=overdue_days,
-        )
+        card, last_day = scheduler.card_state(item, fresh["timezone"])
+        state = scheduler.schedule(card, last_day, item["repetitions"], data.quality, day)
 
         conn.execute(
             """
             UPDATE mistakes
             SET repetitions = ?, interval_days = ?, ease_factor = ?,
+                stability = ?, difficulty = ?,
                 due_date = ?, last_reviewed_at = ?, version = version + 1
             WHERE id = ?
             """,
             (
                 state["repetitions"], state["interval_days"],
-                state["ease_factor"], state["due_date"],
-                reviewed_at, mistake_id,
+                state["ease_factor"], state["stability"], state["difficulty"],
+                state["due_date"], reviewed_at, mistake_id,
             ),
         )
         conn.execute(
@@ -140,15 +133,16 @@ def review_mistake(
             INSERT INTO reviews(
                 mistake_id, quality, reviewed_at, next_due_date,
                 elapsed_days, scheduled_days, ease_before, repetitions_before,
-                due_before, last_reviewed_before, version_after, mode, evidence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                due_before, last_reviewed_before, version_after, mode, evidence,
+                stability_before, difficulty_before
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 mistake_id, data.quality, reviewed_at, state["due_date"],
-                item["interval_days"] + overdue_days, item["interval_days"],
+                (day - last_day).days if last_day else 0, item["interval_days"],
                 item["ease_factor"], item["repetitions"],
                 item["due_date"], item["last_reviewed_at"], item["version"] + 1,
-                data.mode, data.evidence,
+                data.mode, data.evidence, item["stability"], item["difficulty"],
             ),
         )
         # leech 判定：连续失败 8 次（对标 Anki 默认）自动暂停。
@@ -167,7 +161,11 @@ def review_mistake(
                 )
                 leech_suspended = True
         final_version = item["version"] + 1
-        response = {**state, "version": final_version}
+        # 稳定度和难度只在服务端内部使用，不放进响应，接口形状保持不变。
+        response = {
+            **{key: state[key] for key in ("repetitions", "interval_days", "ease_factor", "due_date")},
+            "version": final_version,
+        }
         if leech_suspended:
             response["leech_suspended"] = True
         # 复仇成功：本次评分满足条件且该条从未触发过时，写入标记并附在响应里，
@@ -209,11 +207,8 @@ def rvb_preview(mistake_id: int, user=Depends(security.current_user)):
         fresh = accounts.rvb_account(conn, user["id"])
         item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         day = time.today_for(fresh)
-        previews = preview_all(
-            repetitions=item["repetitions"], interval_days=item["interval_days"],
-            ease_factor=item["ease_factor"], reviewed_on=day,
-            overdue_days=max(0, (day - date.fromisoformat(item["due_date"])).days),
-        )
+        card, last_day = scheduler.card_state(item, fresh["timezone"])
+        previews = preview_all(card, last_day, item["repetitions"], day)
     return {
         "version": item["version"],
         "previews": {
@@ -254,11 +249,12 @@ def rvb_undo_review(mistake_id: int, data: RvbVersionInput, user=Depends(securit
         conn.execute(
             """
             UPDATE mistakes SET repetitions = :repetitions, interval_days = :interval_days,
-                ease_factor = :ease_factor, due_date = :due_date,
-                last_reviewed_at = :last_reviewed_at, version = :version, suspended_at = NULL
+                ease_factor = :ease_factor, stability = :stability, difficulty = :difficulty,
+                due_date = :due_date, last_reviewed_at = :last_reviewed_at, version = :version, suspended_at = NULL
             WHERE id = :id
             """,
-            {**restored, "id": mistake_id},
+            {**restored, "stability": review["stability_before"],
+             "difficulty": review["difficulty_before"], "id": mistake_id},
         )
         conn.execute("DELETE FROM reviews WHERE id = ?", (review["id"],))
     return restored

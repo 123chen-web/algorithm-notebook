@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -9,53 +9,25 @@ DAY = date(2026, 10, 4)
 
 
 @pytest.mark.parametrize(
-    "repetitions,interval_days,ease_factor,overdue_days",
-    [
-        (0, 0, 2.5, 0),
-        (1, 1, 2.5, 20),
-        (2, 6, 2.5, 0),
-        (2, 6, 2.5, 3),
-        (2, 6, 2.5, 365),
-        (5, 40, 1.3, 365),
-    ],
-    ids=["new", "second", "on-time", "overdue", "credit-cap", "ease-floor"],
+    "state,last_days",
+    [(None, None), ((3.2, 5.3), 3), ((12.0, 5.0), 12), ((12.0, 5.0), 400), ((40.0, 9.0), 40)],
+    ids=["new", "second", "on-time", "very-overdue", "hard-card"],
 )
-def test_preview_all_matches_each_schedule_result(
-    repetitions, interval_days, ease_factor, overdue_days,
-):
-    state = {
-        "repetitions": repetitions,
-        "interval_days": interval_days,
-        "ease_factor": ease_factor,
-        "reviewed_on": DAY,
-        "overdue_days": overdue_days,
-    }
-    before = state.copy()
-    previews = scheduler.preview_all(**state)
+def test_preview_all_matches_each_schedule_result(state, last_days):
+    last = None if last_days is None else DAY - timedelta(days=last_days)
+    previews = scheduler.preview_all(state, last, 2, DAY)
     assert list(previews) == ["0", "2", "3", "4", "5"]
     assert previews == {
-        str(quality): scheduler.schedule(quality=quality, **state)
+        str(quality): scheduler.schedule(state, last, 2, quality, DAY)
         for quality in (0, 2, 3, 4, 5)
     }
-    assert state == before
-    assert scheduler.preview_all(**state) == previews
+    assert scheduler.preview_all(state, last, 2, DAY) == previews
 
 
-def test_preview_all_retains_overdue_credit_and_failure_point_two_penalty():
-    previews = scheduler.preview_all(2, 6, 2.5, DAY, overdue_days=24)
-    assert {
-        quality: result["interval_days"] for quality, result in previews.items()
-    } == {"0": 1, "2": 1, "3": 23, "4": 30, "5": 45}
-    for quality in ("0", "2"):
-        assert previews[quality] == {
-            "repetitions": 1,  # 答错折半：2 // 2（原为清零）
-            "interval_days": 1,
-            "ease_factor": 2.3,
-            "due_date": "2026-10-05",
-        }
-    assert previews["3"]["due_date"] == "2026-10-27"
-    assert previews["4"]["due_date"] == "2026-11-03"
-    assert previews["5"]["due_date"] == "2026-11-18"
+def test_preview_all_is_pure():
+    state = (12.0, 5.0)
+    scheduler.preview_all(state, DAY - timedelta(days=12), 2, DAY)
+    assert state == (12.0, 5.0)
 
 
 @pytest.mark.parametrize(
@@ -66,10 +38,6 @@ def test_preview_all_retains_overdue_credit_and_failure_point_two_penalty():
 def test_preview_all_uses_the_callers_local_review_date(timezone_name, expected_due):
     now = datetime(2026, 10, 4, 17, tzinfo=timezone.utc)
     local_day = scheduler.today_in_timezone(timezone_name, now)
-    previews = scheduler.preview_all(0, 0, 2.5, local_day)
-    assert {result["due_date"] for result in previews.values()} == {expected_due}
-
-
-def test_preview_all_overdue_days_is_keyword_only():
-    with pytest.raises(TypeError):
-        scheduler.preview_all(2, 6, 2.5, DAY, 3)
+    previews = scheduler.preview_all(None, None, 0, local_day)
+    # 第一次复习：重来和困难都是 1 天。
+    assert {previews[q]["due_date"] for q in ("0", "2", "3")} == {expected_due}

@@ -35,6 +35,8 @@ def undo_probe(monkeypatch):
         "repetitions_before": 2,
         "scheduled_days": 6,
         "ease_before": 2.5,
+        "stability_before": None,
+        "difficulty_before": None,
     }
     statements = []
     ownership_checks = []

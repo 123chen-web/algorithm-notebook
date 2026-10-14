@@ -1,7 +1,9 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
+import fsrs
+import scheduler
 from db import connect
 from test_app import client, new_problem, register
 
@@ -42,22 +44,22 @@ def stored_mistake(mistake_id):
         ).fetchone())
 
 
-@pytest.mark.parametrize(
-    "overdue_days,quality,expected_interval,expected_ease",
-    [
-        (10, 5, 40, 2.6),
-        (3, 5, 23, 2.6),
-        (24, 5, 45, 2.6),
-        (24, 4, 30, 2.5),
-        (24, 3, 23, 2.36),
-    ],
-)
-def test_overdue_review_credits_and_logs_prior_state(
-    client, overdue_days, quality, expected_interval, expected_ease,
-):
+def expected_state(repetitions, interval_days, overdue_days, quality, ease_factor=2.5):
+    """旧记录（还没有稳定度/难度）按“稳定度=间隔、难度由易度换算”进入 FSRS。"""
+    due = TODAY - timedelta(days=overdue_days)
+    return scheduler.schedule(
+        (float(max(1, interval_days)), fsrs.difficulty_from_ease(ease_factor)),
+        due - timedelta(days=interval_days), repetitions, quality, TODAY,
+    )
+
+
+@pytest.mark.parametrize("overdue_days", [0, 3, 10, 24])
+@pytest.mark.parametrize("quality", [3, 4, 5])
+def test_review_uses_fsrs_and_logs_prior_state(client, overdue_days, quality):
     register(client)
     mistake_id = new_problem(client)[0]
     set_review_state(mistake_id, overdue_days=overdue_days)
+    expected = expected_state(2, 6, overdue_days, quality)
 
     response = client.post(
         f"/api/mistakes/{mistake_id}/review",
@@ -65,13 +67,16 @@ def test_overdue_review_credits_and_logs_prior_state(
     )
 
     assert response.status_code == 200
-    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
-        "repetitions": 3,
-        "interval_days": expected_interval,
-        "ease_factor": expected_ease,
-        "due_date": (TODAY + timedelta(days=expected_interval)).isoformat(),
-        "version": 1,
+    body = response.json()
+    assert {k: body[k] for k in ("repetitions", "interval_days", "ease_factor", "due_date")} == {
+        k: expected[k] for k in ("repetitions", "interval_days", "ease_factor", "due_date")
     }
+    assert set(body) == {"repetitions", "interval_days", "ease_factor", "due_date", "version", "revenge"}
+    assert body["version"] == 1
+    assert body["due_date"] == (TODAY + timedelta(days=body["interval_days"])).isoformat()
+    assert body["repetitions"] == 3
+    stored = stored_mistake(mistake_id)
+    assert (stored["stability"], stored["difficulty"]) == (expected["stability"], expected["difficulty"])
     rows = review_rows(mistake_id)
     assert len(rows) == 1
     row = rows[0]
@@ -80,54 +85,79 @@ def test_overdue_review_credits_and_logs_prior_state(
     assert row["scheduled_days"] == 6
     assert row["ease_before"] == 2.5
     assert row["repetitions_before"] == 2
-    assert row["next_due_date"] == response.json()["due_date"]
+    assert row["stability_before"] is None and row["difficulty_before"] is None
+    assert row["next_due_date"] == body["due_date"]
     assert row["reviewed_at"]
 
 
+def test_longer_overdue_gives_a_longer_interval_for_a_good_answer(client):
+    register(client)
+    intervals = []
+    for overdue_days in (0, 20):
+        mistake_id = new_problem(client)[0]
+        set_review_state(mistake_id, overdue_days=overdue_days)
+        intervals.append(client.post(
+            f"/api/mistakes/{mistake_id}/review", json={"quality": 4, "version": 0},
+        ).json()["interval_days"])
+    assert intervals[0] < intervals[1]
+
+
 @pytest.mark.parametrize(
-    "repetitions,interval_days,quality,expected_interval,expected_ease",
-    [
-        (0, 0, 4, 1, 2.5),
-        (1, 1, 4, 6, 2.5),
-        (2, 6, 5, 15, 2.6),
-    ],
+    "repetitions,interval_days,quality,expected_interval",
+    [(0, 0, 4, 2), (0, 0, 5, 8), (0, 0, 3, 1)],
 )
-def test_on_time_review_keeps_intervals_and_logs_prior_state(
+def test_first_review_of_a_new_mistake_uses_fsrs_initial_values(
     client, repetitions, interval_days, quality, expected_interval,
-    expected_ease,
 ):
     register(client)
     mistake_id = new_problem(client)[0]
-    set_review_state(
-        mistake_id, repetitions=repetitions, interval_days=interval_days,
-    )
+    with connect(write=True) as conn:
+        conn.execute("UPDATE mistakes SET last_reviewed_at = NULL WHERE id = ?", (mistake_id,))
 
     response = client.post(
-        f"/api/mistakes/{mistake_id}/review",
-        json={"quality": quality, "version": 0},
+        f"/api/mistakes/{mistake_id}/review", json={"quality": quality, "version": 0},
     )
 
     assert response.status_code == 200
-    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
-        "repetitions": repetitions + 1,
-        "interval_days": expected_interval,
-        "ease_factor": expected_ease,
-        "due_date": (TODAY + timedelta(days=expected_interval)).isoformat(),
-        "version": 1,
-    }
-    rows = review_rows(mistake_id)
-    assert len(rows) == 1
-    assert rows[0]["elapsed_days"] == interval_days
-    assert rows[0]["scheduled_days"] == interval_days
-    assert rows[0]["ease_before"] == 2.5
-    assert rows[0]["repetitions_before"] == repetitions
+    assert response.json()["interval_days"] == expected_interval
+    assert review_rows(mistake_id)[0]["elapsed_days"] == 0
+
+
+def test_second_review_continues_from_the_stored_fsrs_state_and_undo_restores_it(client):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    set_review_state(mistake_id)
+    first = client.post(f"/api/mistakes/{mistake_id}/review", json={"quality": 4, "version": 0}).json()
+    after_first = stored_mistake(mistake_id)
+    assert after_first["stability"] is not None and after_first["difficulty"] is not None
+
+    # 第二次：直接把到期日挪到今天，状态必须接着第一次的稳定度/难度算。
+    with connect(write=True) as conn:
+        conn.execute("UPDATE mistakes SET due_date = ? WHERE id = ?", (TODAY.isoformat(), mistake_id))
+    last_day = scheduler.today_in_timezone("Asia/Shanghai", datetime.fromisoformat(after_first["last_reviewed_at"]))
+    expected = scheduler.schedule(
+        (after_first["stability"], after_first["difficulty"]), last_day, first["repetitions"], 4, TODAY,
+    )
+    second = client.post(
+        f"/api/mistakes/{mistake_id}/review", json={"quality": 4, "version": first["version"]},
+    ).json()
+    assert stored_mistake(mistake_id)["stability"] == expected["stability"]
+    assert review_rows(mistake_id)[-1]["stability_before"] == after_first["stability"]
+
+    undone = client.post(
+        f"/api/mistakes/{mistake_id}/review/undo", json={"version": second["version"]},
+    )
+    assert undone.status_code == 200
+    restored = stored_mistake(mistake_id)
+    assert (restored["stability"], restored["difficulty"]) == (after_first["stability"], after_first["difficulty"])
 
 
 @pytest.mark.parametrize("quality", [0, 1, 2])
-def test_failed_overdue_review_only_reduces_ease_by_point_two(client, quality):
+def test_failed_overdue_review_resets_to_a_short_retry(client, quality):
     register(client)
     mistake_id = new_problem(client)[0]
     set_review_state(mistake_id, overdue_days=10)
+    expected = expected_state(2, 6, 10, quality)
 
     response = client.post(
         f"/api/mistakes/{mistake_id}/review",
@@ -135,13 +165,12 @@ def test_failed_overdue_review_only_reduces_ease_by_point_two(client, quality):
     )
 
     assert response.status_code == 200
-    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
-        "repetitions": 1,  # 答错折半：2 // 2（原为清零）
-        "interval_days": 1,
-        "ease_factor": 2.3,
-        "due_date": "2026-09-20",
-        "version": 1,
-    }
+    body = response.json()
+    assert body["interval_days"] == expected["interval_days"]
+    assert body["repetitions"] == 1  # 答错折半：2 // 2
+    assert body["interval_days"] <= 3
+    assert stored_mistake(mistake_id)["stability"] < 6
+    assert body["ease_factor"] < 2.5
     rows = review_rows(mistake_id)
     assert len(rows) == 1
     assert rows[0]["quality"] == quality

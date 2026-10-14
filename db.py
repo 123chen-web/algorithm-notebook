@@ -1336,6 +1336,25 @@ def _apply_group_summary_optout(conn):
 
 
 MIGRATIONS.append((84, "小组薄弱点汇总：study_group_members.include_in_summary", _apply_group_summary_optout))
+
+
+def _apply_fsrs_state(conn):
+    """复习排期换成 FSRS（迁移 85）。
+
+    mistakes 加稳定度、难度；reviews 加评分前的稳定度、难度，撤销要靠它们原样恢复。
+    两列都允许为空：空表示“还是旧算法时留下的状态”，程序会在下一次评分时由旧间隔和易度换算，
+    所以这里不批量改写任何已有排期。幂等：列已存在就跳过。
+    """
+    for table, column in (
+        ("mistakes", "stability"), ("mistakes", "difficulty"),
+        ("reviews", "stability_before"), ("reviews", "difficulty_before"),
+    ):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} REAL")
+
+
+MIGRATIONS.append((85, "复习排期换成 FSRS：mistakes.stability/difficulty + reviews.*_before", _apply_fsrs_state))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

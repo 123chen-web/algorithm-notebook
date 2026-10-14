@@ -8,7 +8,7 @@ import db
 @pytest.mark.parametrize("path", ["/", "/api/zones"])
 def test_csp_allows_local_photo_blobs_without_relaxing_other_sources(path, monkeypatch):
     # These routes are stateless; checking response headers needs no database.
-    monkeypatch.setattr(db, "init_db", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
     with TestClient(main.app) as client:
         response = client.get(path)
 
@@ -39,7 +39,7 @@ def test_csp_allows_local_photo_blobs_without_relaxing_other_sources(path, monke
 
 def test_draw_static_path_is_embeddable_same_origin_but_keeps_script_lockdown(monkeypatch):
     # /static/draw/ 是全站唯一允许被同源 iframe 嵌入的路径；脚本指令仍不得放宽。
-    monkeypatch.setattr(db, "init_db", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
     with TestClient(main.app) as client:
         draw = client.get("/static/draw/draw.html")
         home = client.get("/")
@@ -103,7 +103,7 @@ def test_woff2_fonts_are_served_with_correct_mime(monkeypatch):
     woff2_files = list(font_dir.rglob("*.woff2")) if font_dir.is_dir() else []
     if not woff2_files:
         pytest.skip("画板字体目录不存在")
-    monkeypatch.setattr(db, "init_db", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
     # 字体按字族子目录存放：fonts/<family>/<file>.woff2
     first = woff2_files[0]
     rel = first.relative_to(font_dir).as_posix()
