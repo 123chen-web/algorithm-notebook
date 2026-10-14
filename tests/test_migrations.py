@@ -496,6 +496,10 @@ def test_forum_migration_to_v5_preserves_old_data_and_is_repeatable(
         if before:
             for table, saved in before.items():
                 current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                if table == "users" and "public_rank_opt_out" in saved:
+                    # 迁移 86：公开榜单改为默认不参与，旧用户一并收回。
+                    assert current["public_rank_opt_out"] == 1
+                    saved = {key: value for key, value in saved.items() if key != "public_rank_opt_out"}
                 assert {key: current[key] for key in saved} == saved
             assert conn.execute("SELECT accepted_comment_id FROM posts WHERE id = 11").fetchone()[0] is None
         else:
@@ -813,6 +817,10 @@ def test_forum_zone_migration_to_v8_preserves_old_data_and_is_repeatable(
         if before:
             for table, saved in before.items():
                 current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                if table == "users" and "public_rank_opt_out" in saved:
+                    # 迁移 86：公开榜单改为默认不参与，旧用户一并收回。
+                    assert current["public_rank_opt_out"] == 1
+                    saved = {key: value for key, value in saved.items() if key != "public_rank_opt_out"}
                 assert {key: current[key] for key in saved} == saved
             assert conn.execute("SELECT zone FROM posts WHERE id = 11").fetchone()[0] is None
         indexes = {
@@ -923,6 +931,10 @@ def test_review_feel_migration_to_v10_preserves_old_data_and_is_repeatable(
         if before:
             for table, saved in before.items():
                 current = dict(conn.execute(f"SELECT * FROM {table}").fetchone())
+                if table == "users" and "public_rank_opt_out" in saved:
+                    # 迁移 86：公开榜单改为默认不参与，旧用户一并收回。
+                    assert current["public_rank_opt_out"] == 1
+                    saved = {key: value for key, value in saved.items() if key != "public_rank_opt_out"}
                 assert {key: current[key] for key in saved} == saved
             for table, new_columns in REVIEW_FEEL_COLUMNS.items():
                 current = conn.execute(f"SELECT * FROM {table}").fetchone()

@@ -71,8 +71,8 @@
   }
 
   function renderChrome() {
-    // 侧栏条目与“更多”抽屉条目。
-    document.querySelectorAll(".app-sidebar .nav-item[data-view], .more-item[data-view]").forEach((item) => {
+    // 侧栏条目、“更多”抽屉条目和分析页顶部切换条里的同名页面。
+    document.querySelectorAll(".app-sidebar .nav-item[data-view], .more-item[data-view], .analysis-tab[data-view]").forEach((item) => {
       markHidden(item, enabled && isHiddenView(item.dataset.view));
     });
     // 社区分组整组收起时连分组标题一起收起；组里还有条目则保留标题。
@@ -88,6 +88,7 @@
     renderPhoneTab();
   }
 
+  // 旧版底栏第四格是“小组”，专注模式下换成“分析”；新版底栏第四格固定是“分析”（没有 #tab-groups），这里直接跳过。
   function renderPhoneTab() {
     const tab = document.getElementById("tab-groups");
     if (!tab) return;

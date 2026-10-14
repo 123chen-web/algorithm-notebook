@@ -71,13 +71,13 @@ def test_assets_are_served_once_and_before_app():
     assert INDEX.count('/static/nav-focus.css?v=1"') == 1
     assert INDEX.count(versioned_src("nav-focus.js")) == 1
     assert re.search(r'<link rel="stylesheet" href="/static/nav-focus\.css\?v=1">', INDEX)
-    assert re.search(r'<script defer src="/static/nav-focus\.js\?v=1"></script>', INDEX)
+    assert f'<script defer src="{versioned_src("nav-focus.js")}"></script>' in INDEX
     assert INDEX.index("nav-focus.css") < INDEX.index("rank.css")
-    assert INDEX.index("nav-focus.js?v=1") < INDEX.index("app.js?v=103")
+    assert INDEX.index(versioned_src("nav-focus.js")) < INDEX.index(versioned_src("app.js"))
 
 
 def test_changed_assets_bump_their_cache_busting_version():
-    assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
+    assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=\d+">', INDEX)
     # 版本号不写死：用 versioned_src 读当前版本，只断言带版本接入（?v= 提升是改静态资源的规矩）。
     assert f'<script defer src="{versioned_src("rank.js")}"></script>' in INDEX
     assert f'<script defer src="{versioned_src("app.js")}"></script>' in INDEX
@@ -115,26 +115,14 @@ def test_notice_is_a_status_region_with_text_and_close_button():
     assert "关闭专注模式" in text_around(elements, "nav-focus-notice-close")
 
 
-def test_phone_tab_carries_both_icons_and_the_static_label_is_xiaozu():
+def test_phone_tab_bar_fourth_slot_is_analysis_and_groups_moved_to_more():
+    # 底栏第四格固定是“分析”（代表六个分析页）；学习小组收进“更多”抽屉。
     elements = parsed()
-    tab = find_id(elements, "tab-groups")
-    assert tab["attrs"]["data-view"] == "groups"
-    icons = [
-        element for element in elements
-        if tab in [elements[index] for index in element["ancestors"]]
-        and element["attrs"].get("data-nav-focus-icon")
-    ]
-    assert {icon["attrs"]["data-nav-focus-icon"] for icon in icons} == {"groups", "insights"}
-    label = next(
-        element for element in elements
-        if elements.index(tab) in element["ancestors"] and "tab-label" in element["attrs"].get("class", "").split()
-    )
-    assert label["tag"] == "span"
-    # 静态 HTML 里底栏仍是“小组”，专注模式开启后才由 nav-focus.js 换成“分析”。
-    tab_markup = re.search(r'<button[^>]*id="tab-groups"[^>]*>(.*?)</button>', INDEX, re.S).group(1)
-    assert "小组" in tab_markup and "分析" not in tab_markup
-    assert "分析" in FOCUS_JS
-
+    tab = find_id(elements, "tab-insights")
+    assert tab["attrs"]["data-view"] == "insights"
+    assert "achievements" in tab["attrs"]["data-view-group"].split()
+    assert 'id="tab-groups"' not in INDEX
+    assert re.search(r'class="more-item" data-view="groups"', INDEX)
 
 def test_focus_js_rules():
     for forbidden in (

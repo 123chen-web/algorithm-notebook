@@ -146,7 +146,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "is_admin": 0,
             "terms_accepted_at": None,
             "terms_version": None,
-            "public_rank_opt_out": 0,
+            "public_rank_opt_out": 1,  # 迁移 86：默认不参与公开榜单
             "daily_review_cap": None,
             "reminder_opt_in": 1,
             "bio": "",

@@ -389,3 +389,59 @@ body.sheet-open { overflow: hidden; }
   html[data-view="app"] .topbar-new, html[data-view="app"] .topbar-search { min-height: 44px; }
   html[data-view="app"] .topbar-icon-button { width: 44px; min-height: 44px; }
 }
+
+/* ---------- 侧栏“更多”：主入口之外的页面默认收起 ---------- */
+.sidebar-more-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 32px;
+  margin-top: var(--space-2);
+  padding: 4px var(--space-3);
+  border: 0;
+  border-radius: var(--radius-muted);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-align: left;
+}
+.sidebar-more-toggle:hover:not(:disabled) { background: var(--paper); color: var(--ink); transform: none; }
+.sidebar-more-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.sidebar-more-chevron { flex: 0 0 14px; width: 14px; height: 14px; transition: transform .16s ease; }
+.sidebar-more-toggle[aria-expanded="true"] .sidebar-more-chevron { transform: rotate(90deg); }
+.sidebar-more-list { display: grid; gap: 2px; }
+.sidebar-more-list[hidden] { display: none; }
+.sidebar-more-list .nav-link-out { margin-left: var(--space-1); }
+@media (prefers-reduced-motion: reduce) { .sidebar-more-chevron { transition: none; } }
+
+/* ---------- 分析：六个分析页共用的顶部切换条 ---------- */
+.analysis-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-4);
+  padding: 0 0 var(--space-1);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+.analysis-tabs[hidden] { display: none; }
+.analysis-tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-muted) var(--radius-muted) 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--text-md);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.analysis-tab:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); transform: none; }
+.analysis-tab[aria-current="page"] { border-bottom-color: var(--accent); color: var(--accent-hover); font-weight: 700; }
+.analysis-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+@media (max-width: 1023px) { .analysis-tab { min-height: 44px; } }

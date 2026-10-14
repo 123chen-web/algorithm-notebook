@@ -19,19 +19,53 @@
   }
 
   /* ---------- 当前页 ---------- */
+  // 一个入口可以代表一组页面（data-view-group）：侧栏/底栏的“分析”在六个分析页里都亮着。
+  function covers(button, view) {
+    return button.dataset.view === view || (button.dataset.viewGroup || "").split(" ").includes(view);
+  }
   function setActive(view) {
-    for (const button of document.querySelectorAll(".app-sidebar [data-view], .app-tabbar [data-view], .more-sheet [data-view]")) {
-      if (button.dataset.view === view) button.setAttribute("aria-current", "page");
+    for (const button of document.querySelectorAll(".app-sidebar [data-view], .app-tabbar [data-view], .more-sheet [data-view], #analysis-tabs [data-view]")) {
+      if (covers(button, view)) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     }
+    const tabs = $("#analysis-tabs");
+    if (tabs) tabs.hidden = !(tabs.dataset.views || "").split(" ").includes(view);
+    syncSidebarMore(view);
     // "总览"在手机上收进了"更多"，所以进入这些页面时让"更多"也亮着。
-    const inTabbar = Boolean($(`.app-tabbar [data-view="${view}"]`));
+    const inTabbar = [...document.querySelectorAll(".app-tabbar [data-view]")].some((button) => covers(button, view));
     if (moreButton) {
       if (!inTabbar && view !== "new") moreButton.setAttribute("aria-current", "page");
       else moreButton.removeAttribute("aria-current");
     }
     closeMore({ restore: false });
   }
+
+  /* ---------- 侧栏“更多”：默认收起，展开状态按本机记住；当前页在里面时自动展开 ---------- */
+  const MORE_KEY = "oy:sidebar-more-open";
+  const moreToggle = $("#sidebar-more-toggle");
+  const moreList = $("#sidebar-more-list");
+  function readMoreOpen() {
+    try { return window.localStorage.getItem(MORE_KEY) === "1"; } catch { return false; }
+  }
+  function setMoreOpen(open, { remember = false } = {}) {
+    if (!moreToggle || !moreList) return;
+    moreList.hidden = !open;
+    moreToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!remember) return;
+    try {
+      if (open) window.localStorage.setItem(MORE_KEY, "1");
+      else window.localStorage.removeItem(MORE_KEY);
+    } catch { /* 存不了就只在这次打开期间有效 */ }
+  }
+  function syncSidebarMore(view) {
+    if (!moreList) return;
+    const inside = [...moreList.querySelectorAll("[data-view]")].some((button) => !button.hidden && covers(button, view));
+    if (inside || readMoreOpen()) setMoreOpen(true);
+  }
+  moreToggle?.addEventListener("click", () => setMoreOpen(moreList.hidden, { remember: true }));
+  setMoreOpen(readMoreOpen());
+  const analysisTabs = $("#analysis-tabs");
+  if (analysisTabs) analysisTabs.dataset.views = [...analysisTabs.querySelectorAll("[data-view]")].map((button) => button.dataset.view).join(" ");
 
   /* ---------- 角标 ---------- */
   function setBadge(name, count, { suffix = "", showZero = false } = {}) {

@@ -23,9 +23,9 @@ def script_sources():
 
 
 def test_sidebar_and_mobile_menus_have_a_roadmap_entry():
-    learn_group = INDEX[INDEX.index('id="sidebar-g-learn"'):INDEX.index('id="sidebar-g-insight"')]
-    assert 'data-view="roadmap"' in learn_group, "学习路线要放在侧栏的「学习」分组里"
-    assert "学习路线" in learn_group
+    more_group = INDEX[INDEX.index('id="sidebar-more-list"'):INDEX.index("</nav>", INDEX.index('id="sidebar-more-list"'))]
+    assert 'data-view="roadmap"' in more_group, "学习路线放在侧栏「更多」里"
+    assert "学习路线" in more_group
     more = INDEX[INDEX.index('class="more-item" data-view="home"'):]
     assert 'data-view="roadmap"' in more, "手机「更多」里也要有入口"
     for entry in re.findall(r'<button type="button" class="(?:nav-item|more-item)" data-view="roadmap">.*?</button>', INDEX, re.S):

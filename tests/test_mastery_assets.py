@@ -38,8 +38,9 @@ def test_assets_are_versioned_and_script_loads_before_the_app(index_html):
 
 def test_page_sidebar_entry_and_more_sheet_entry_exist(index_html):
     assert re.search(r'<section id="mastery-page"[^>]*aria-labelledby="mastery-title"[^>]*\bhidden\b', index_html)
-    assert re.search(r'class="nav-item" data-view="mastery"', index_html)
-    assert re.search(r'class="more-item" data-view="mastery"', index_html)
+    # 侧栏/底栏只有一个“分析”入口（data-view-group 覆盖掌握度页），页内切换条直达掌握度趋势。
+    assert re.search(r'class="analysis-tab" data-view="mastery"', index_html)
+    assert re.search(r'class="nav-item" data-view="insights" data-view-group="[^"]*\bmastery\b', index_html)
     # 提醒卡在总览的信息栏里，默认不显示。
     assert re.search(r'<section id="ov-fading-card"[^>]*\bhidden\b', index_html)
 

@@ -33,7 +33,7 @@ def test_blocks_sit_in_the_leaderboard_page_in_order_notice_yesterday_hot_then_s
     assert order == sorted(order)
     assert order[-1] < page.index('class="panel leaderboard-personal"'), "榜单页原有的连续打卡区块保持在后面"
     assert "Asia/Shanghai" in page and "最多算 3 次" in page, "页面上写明北京时间与封顶规则"
-    assert "取消勾选“参与公开榜单”" in page
+    assert "默认不参与公开榜单" in page and "参与公开榜单" in page
 
 
 def test_notice_link_markup_is_safe_by_default():

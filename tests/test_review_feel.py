@@ -518,7 +518,8 @@ def test_suspension_hides_due_counts_and_forecasts_but_keeps_all_record_history(
 @pytest.mark.parametrize("cap", [None, 5, 20, 200])
 def test_review_settings_accept_and_persist_the_full_contract(client, cap):
     register(client)
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "recall_only"}
+    # 新账号默认每天 20 条（config.DEFAULT_DAILY_REVIEW_CAP），可改成其它值或“不限”(null)。
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
     expected = {"daily_review_cap": cap, "redo_preference": "recall_only"}
     assert assert_ok(client.put(SETTINGS, json=expected)) == expected
     assert assert_ok(client.get(SETTINGS)) == expected
@@ -538,14 +539,14 @@ def test_review_settings_reject_invalid_and_coerced_values_without_changing_the_
 
 def test_review_settings_can_be_cleared_back_to_unlimited_and_are_per_account(client):
     register(client)
-    assert_ok(client.put(SETTINGS, json={"daily_review_cap": 20}))
+    assert_ok(client.put(SETTINGS, json={"daily_review_cap": 30}))
     assert_ok(client.post("/api/auth/logout"))
     register(client, username="bob")
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "recall_only"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
     assert_ok(client.put(SETTINGS, json={"daily_review_cap": 5}))
     assert_ok(client.post("/api/auth/logout"))
     assert_ok(client.post("/api/auth/login", json={"username": "alice", "password": "a-test-password-123"}))
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 30, "redo_preference": "recall_only"}
     assert assert_ok(client.put(SETTINGS, json={"daily_review_cap": None})) == {"daily_review_cap": None, "redo_preference": "recall_only"}
 
 
@@ -613,6 +614,7 @@ def insert_history(mistake, timestamps):
 
 def test_queue_matches_the_normal_list_item_contract_and_sorts_every_candidate(client):
     owner = register(client)["id"]
+    assert_ok(client.put(SETTINGS, json={"daily_review_cap": None}))
     slow = seed(owner, due="2026-09-10", interval=9, tags=("边界",))
     tied_late = seed(owner, due="2026-09-17", interval=1)
     tied_early = seed(owner, due="2026-09-13", interval=3)
@@ -701,6 +703,7 @@ def test_queue_zone_tag_filters_match_list_semantics_before_the_cap_is_applied(c
 
 def test_queue_empty_account_has_the_complete_unlimited_response(client):
     register(client)
+    assert_ok(client.put(SETTINGS, json={"daily_review_cap": None}))
     assert assert_ok(client.get(QUEUE)) == {
         "today": TODAY.isoformat(), "cap": None, "done_today": 0,
         "remaining_today": None, "total_due": 0, "capped": False, "items": [],
@@ -772,7 +775,7 @@ def test_every_review_feel_write_requires_csrf_protection(client, method, path, 
     assert response.json() == {"detail": "请求缺少必要的安全校验"}
     assert stored(mistake) == before and logs(mistake) == []
     with connect() as conn:
-        assert conn.execute("SELECT daily_review_cap FROM users WHERE id = ?", (owner,)).fetchone()[0] is None
+        assert conn.execute("SELECT daily_review_cap FROM users WHERE id = ?", (owner,)).fetchone()[0] == 20
 
 
 @pytest.mark.parametrize("method,path,payload", RVB_REQUESTS, ids=RVB_REQUEST_IDS)
@@ -797,7 +800,7 @@ def test_review_feel_rechecks_the_account_after_authentication(client, method, p
     assert isinstance(response.json()["detail"], str)
     assert stored(mistake) == before and logs(mistake) == []
     with connect() as conn:
-        assert conn.execute("SELECT daily_review_cap FROM users WHERE id = ?", (owner,)).fetchone()[0] is None
+        assert conn.execute("SELECT daily_review_cap FROM users WHERE id = ?", (owner,)).fetchone()[0] == 20
 
 
 @pytest.mark.parametrize("operation", ["review/undo", "snooze", "suspend", "unsuspend"])
@@ -820,7 +823,7 @@ def test_queue_never_includes_another_users_candidates_or_reviews(client):
     alice = register(client)["id"]
     alice_mistake = seed(alice)
     insert_history(alice_mistake, [NOW.isoformat()] * 5)
-    assert_ok(client.put(SETTINGS, json={"daily_review_cap": 20}))
+    assert_ok(client.put(SETTINGS, json={"daily_review_cap": 5}))
     assert_ok(client.post("/api/auth/logout"))
     bob = register(client, username="bob")["id"]
     bob_mistake = seed(bob)
@@ -828,7 +831,8 @@ def test_queue_never_includes_another_users_candidates_or_reviews(client):
     queued = assert_ok(client.get(QUEUE))
     assert [item["id"] for item in queued["items"]] == [bob_mistake]
     assert queued["total_due"] == 1 and queued["done_today"] == 2
-    assert queued["cap"] is None and queued["remaining_today"] is None
+    # bob 用自己的上限（新账号默认 20）和自己的 done_today，和 alice 的 5 条无关。
+    assert queued["cap"] == 20 and queued["remaining_today"] == 18
 
 
 def test_review_preview_reads_the_latest_timezone_rather_than_the_auth_snapshot(client, monkeypatch):
@@ -889,3 +893,12 @@ def test_suspended_only_account_gets_no_reminder_and_no_sent_marker(client, monk
     assert sent == []
     with connect() as conn:
         assert conn.execute("SELECT last_reminder_sent FROM users WHERE id = ?", (owner,)).fetchone()[0] is None
+
+
+def test_new_account_queue_starts_with_the_default_daily_cap(client):
+    owner = register(client)["id"]
+    for _ in range(25):
+        seed(owner, due="2026-09-10")
+    queued = assert_ok(client.get(QUEUE))
+    assert queued["cap"] == 20 and queued["total_due"] == 25
+    assert len(queued["items"]) == 20 and queued["capped"] is True

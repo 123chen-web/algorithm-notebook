@@ -67,10 +67,22 @@
   }
   function pageItems() {
     const items = [];
-    for (const button of document.querySelectorAll(".app-sidebar .nav-item[data-view]")) {
+    const seen = new Set();
+    // 侧栏只放主入口；“分析”下面的六个页面在分析页顶部的切换条里，一起列出来。
+    for (const button of document.querySelectorAll(".app-sidebar .nav-item[data-view], #analysis-tabs [data-view]")) {
       if (button.hidden) continue;
       const view = button.dataset.view;
-      const label = button.querySelector(".nav-label")?.textContent.trim() || view;
+      const label = (button.querySelector(".nav-label") || button).textContent.trim() || view;
+      if (seen.has(view)) {
+        // 侧栏的“分析”和切换条的“薄弱点”是同一页：保留更具体的名字。
+        const existing = items.find((item) => item.id === `page-${view}`);
+        if (existing && button.closest("#analysis-tabs")) {
+          existing.search = `${existing.label} ${label} ${ALIASES[view] || ""}`;
+          existing.label = label;
+        }
+        continue;
+      }
+      seen.add(view);
       items.push({
         kind: "page", id: `page-${view}`, label, sub: "", search: `${label} ${ALIASES[view] || ""}`,
         run: () => navigate({ view }),

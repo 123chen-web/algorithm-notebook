@@ -12,7 +12,15 @@ from rank_helpers import (
     NOON_YESTERDAY, NOW, add_mistake, add_problem, add_review, add_user,
     review_times, user_with_mistake, user_with_reviews,
 )
-from test_app import client, register  # noqa: F401  (client 是 pytest fixture)
+from test_app import client  # noqa: F401  (client 是 pytest fixture)
+from test_app import register as register_account
+
+
+def register(client, *args, **kwargs):
+    """公开榜单默认不参与（迁移 86）：这里测榜单的用户先自己打开“参与公开榜单”。"""
+    result = register_account(client, *args, **kwargs)
+    assert client.put("/api/me/public-rank", json={"participate": True}).status_code == 200
+    return result
 
 PUBLIC_ENTRY_KEYS = {
     "rank", "user_id", "username", "avatar_version", "count", "streak_days", "praise", "is_me",

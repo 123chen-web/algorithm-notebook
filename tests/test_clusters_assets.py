@@ -49,10 +49,10 @@ def test_page_and_navigation_ids_are_registered(assets):
         "clusters-empty-text", "clusters-result",
     ):
         assert html.count(f'id="{name}"') == 1
-    assert 'class="nav-item" data-view="clusters"' in html
-    assert 'class="more-item" data-view="clusters"' in html
-    sidebar = html.split('class="more-item"')[0]
-    assert sidebar.index('data-view="mastery"') < sidebar.index('data-view="clusters"')
+    # 六个分析页合成一个“分析”入口，页面之间用分析页顶部的切换条切换。
+    assert 'class="analysis-tab" data-view="clusters"' in html
+    tabs = html[html.index('id="analysis-tabs"'):html.index("</nav>", html.index('id="analysis-tabs"'))]
+    assert tabs.index('data-view="mastery"') < tabs.index('data-view="clusters"')
 
 
 def test_page_status_is_live_and_generation_uses_own_guard(assets):

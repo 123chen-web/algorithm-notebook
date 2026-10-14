@@ -2,7 +2,15 @@
 import pytest
 import main
 import db
-from test_app import client, register, new_problem
+from test_app import client, new_problem
+from test_app import register as register_account
+
+
+def register(client, *args, **kwargs):
+    """公开榜单默认不参与（迁移 86）：榜单显示名只在参与时公开，这里的用户先打开参与。"""
+    result = register_account(client, *args, **kwargs)
+    assert client.put("/api/me/public-rank", json={"participate": True}).status_code == 200
+    return result
 from datetime import date
 
 

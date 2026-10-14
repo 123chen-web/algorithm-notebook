@@ -1,6 +1,6 @@
 /**
  * Node 假浏览器行为测试：专注模式（nav-focus.js）。
- * 覆盖：两个开关同步、默认关闭、侧栏/更多抽屉/总览卡片收起、手机底栏“小组”换“分析”、
+ * 覆盖：两个开关同步、默认关闭、侧栏/更多抽屉/总览卡片收起、手机底栏“分析”固定、分析页切换条同步收起、
  * localStorage 按用户 id 持久化、换号不串、localStorage 抛异常按关闭处理、
  * 键盘可达（真实 button）、被收起页面顶部轻提示与关闭按钮、reset 还原、data-admin-only 不被误展开。
  * 运行：node --test tests/nav_focus_behaviour.cjs
@@ -15,7 +15,7 @@ const { load, FakeEvent } = require("./js_harness.cjs");
 
 const STATIC = path.join(__dirname, "..", "static");
 const HIDDEN_VIEWS = ["groups", "forum", "leaderboard", "achievements", "weekly-recap", "plan"];
-const KEPT_VIEWS = ["home", "today", "all", "new", "insights", "mastery", "clusters"];
+const KEPT_VIEWS = ["home", "today", "all", "notes", "insights", "mastery", "clusters"];
 
 /** 把真实 index.html 的 <body> 解析进假文档（做法同 thread_behaviour.cjs）。 */
 function mountBody(document) {
@@ -102,21 +102,19 @@ test("focus mode: two real buttons, off by default, aria-pressed and text stay i
   assert.equal(document.getElementById("nav-focus-notice").hidden, true);
 });
 
-test("focus mode: enabling hides only the collapsed sidebar entries and the whole community group", () => {
+test("focus mode: enabling hides only the collapsed entries; the 更多 group keeps its study pages", () => {
   const { document } = loadFocus();
   activate(document, document.getElementById("nav-focus-toggle-sidebar"));
   for (const name of KEPT_VIEWS) {
-    assert.equal(sidebarVisible(document, name), true, `${name} stays visible`);
+    assert.equal(entryVisible(document, name), true, `${name} stays visible`);
   }
   for (const name of HIDDEN_VIEWS) {
-    assert.equal(sidebarVisible(document, name), false, `${name} is collapsed`);
+    assert.equal(entryVisible(document, name), false, `${name} is collapsed`);
   }
-  assert.equal(sidebarVisible(document, "print"), true, "考前打印版不在点名清单，保持可见");
+  assert.equal(entryVisible(document, "print"), true, "考前打印版不在点名清单，保持可见");
   const groups = Array.from(document.querySelectorAll(".app-sidebar .sidebar-group"));
-  const community = groups.find((group) => group.querySelector('[data-view="forum"]'));
-  const insight = groups.find((group) => group.querySelector('[data-view="insights"]'));
-  assert.equal(community.hidden, true, "社区分组整组（含标题）收起");
-  assert.equal(insight.hidden, false, "分析分组仍有条目，标题保留");
+  const more = groups.find((group) => group.querySelector('[data-view="forum"]'));
+  assert.equal(more.hidden, false, "“更多”里还有学习路线、打印版、画板，整组保留");
   for (const id of ["nav-focus-toggle-account", "nav-focus-toggle-sidebar"]) {
     const button = document.getElementById(id);
     assert.equal(button.getAttribute("aria-pressed"), "true");
@@ -124,37 +122,42 @@ test("focus mode: enabling hides only the collapsed sidebar entries and the whol
   }
 });
 
-function sidebarVisible(document, name) {
-  const item = document.querySelector(`.app-sidebar .nav-item[data-view="${name}"]`);
+// 一个页面的入口：侧栏条目，或分析页顶部切换条里的同名按钮（六个分析页只在那里有单独入口）。
+function entry(document, name) {
+  return document.querySelector(`.app-sidebar .nav-item[data-view="${name}"]`)
+    || document.querySelector(`.analysis-tab[data-view="${name}"]`);
+}
+
+function entryVisible(document, name) {
+  const item = entry(document, name);
   return Boolean(item) && item.hidden === false;
 }
 
 test("focus mode: more drawer collapses the same entries; account toggle mirrors state", () => {
   const { document } = loadFocus();
   activate(document, document.getElementById("nav-focus-toggle-account"));
-  for (const name of ["achievements", "weekly-recap", "forum", "leaderboard", "plan"]) {
+  for (const name of ["groups", "forum", "leaderboard", "plan"]) {
     assert.equal(document.querySelector(`.more-item[data-view="${name}"]`).hidden, true, `${name} hidden in more drawer`);
   }
-  for (const name of ["home", "insights", "print", "mastery", "clusters"]) {
+  for (const name of ["home", "notes", "print", "roadmap"]) {
     assert.equal(document.querySelector(`.more-item[data-view="${name}"]`).hidden, false, `${name} stays in more drawer`);
+  }
+  for (const name of ["achievements", "weekly-recap"]) {
+    assert.equal(document.querySelector(`.analysis-tab[data-view="${name}"]`).hidden, true, `${name} tab hidden`);
+  }
+  for (const name of ["insights", "mastery", "clusters"]) {
+    assert.equal(document.querySelector(`.analysis-tab[data-view="${name}"]`).hidden, false, `${name} tab stays`);
   }
 });
 
-test("focus mode: phone tab bar swaps 小组 for 分析 and restores when turned off", () => {
+test("focus mode: the phone tab bar's 分析 slot is fixed and unaffected by focus mode", () => {
   const { document } = loadFocus();
-  const tab = document.getElementById("tab-groups");
-  assert.equal(tab.dataset.view, "groups");
-  assert.equal(tab.querySelector(".tab-label").textContent.trim(), "小组");
+  const tab = document.getElementById("tab-insights");
+  assert.equal(tab.dataset.view, "insights");
   activate(document, document.getElementById("nav-focus-toggle-sidebar"));
   assert.equal(tab.dataset.view, "insights");
-  assert.equal(tab.querySelector(".tab-label").textContent.trim(), "分析");
-  assert.equal(tab.querySelector('[data-nav-focus-icon="groups"]').hidden, true);
-  assert.equal(tab.querySelector('[data-nav-focus-icon="insights"]').hidden, false);
-  activate(document, document.getElementById("nav-focus-toggle-sidebar"));
-  assert.equal(tab.dataset.view, "groups");
-  assert.equal(tab.querySelector(".tab-label").textContent.trim(), "小组");
-  assert.equal(tab.querySelector('[data-nav-focus-icon="groups"]').hidden, false);
-  assert.equal(tab.querySelector('[data-nav-focus-icon="insights"]').hidden, true);
+  assert.equal(tab.hidden, false);
+  assert.equal(document.getElementById("tab-groups"), null);
 });
 
 test("focus mode: overview community cards collapse; trend section stays", () => {
@@ -281,13 +284,13 @@ test("focus mode: reset restores every marker it touched but leaves data-admin-o
   ctx.setView("leaderboard");
   assert.equal(ctx.document.getElementById("nav-focus-notice").hidden, false);
   ctx.window.NavFocus.reset();
-  for (const name of ["home", "today", "all", "print", "new", "insights", "mastery", "clusters", "achievements", "weekly-recap", "groups", "forum", "leaderboard"]) {
-    assert.equal(ctx.sidebar(name).hidden, false, `${name} restored`);
+  for (const name of ["home", "today", "all", "print", "notes", "insights", "mastery", "clusters", "achievements", "weekly-recap", "groups", "forum", "leaderboard"]) {
+    assert.equal(entry(ctx.document, name).hidden, false, `${name} restored`);
   }
   assert.equal(plan.hidden, planInitial, "plan goes back to its original visibility");
   assert.equal(ctx.sidebar("admin").hidden, true, "admin stays hidden after reset");
   assert.equal(ctx.document.getElementById("nav-focus-notice").hidden, true);
-  assert.equal(ctx.document.getElementById("tab-groups").dataset.view, "groups");
+  assert.equal(ctx.document.getElementById("tab-insights").dataset.view, "insights");
   assert.equal(ctx.document.getElementById("ov-groups-card").hidden, false, "ov-groups-card 初始可见，还原为可见");
   assert.equal(ctx.document.getElementById("ov-hot-card").hidden, true, "ov-hot-card 初始 hidden，还原为 hidden");
   assert.equal(ctx.window.NavFocus.isEnabled(), false);
