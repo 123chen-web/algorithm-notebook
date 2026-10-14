@@ -12,6 +12,7 @@ from openai import (
 
 from ai import REFUSAL_MARKER, ZONE_NAMES, _is_off_topic_refusal, call_with_retry, check_model_refusal
 from ai_limits import note_usage
+from core import config
 
 
 MAX_COMMENTS = 60
@@ -225,7 +226,8 @@ def summarize_thread(reference):
                     {"role": "user", "content": "<untrusted_thread>\n" + reference_json + "\n</untrusted_thread>"},
                     {"role": "system", "content": SUMMARY_BOUNDARY_REMINDER},
                 ],
-                max_tokens=3000,
+                # 分档见 core.config.AI_MAX_TOKENS。
+                max_tokens=config.AI_MAX_TOKENS["thread_summary"],
                 response_format={"type": "json_object"},
             ))
             note_usage(model, response)

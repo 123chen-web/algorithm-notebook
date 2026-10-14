@@ -59,6 +59,8 @@ def me(user=Depends(security.current_user)):
         "has_avatar": images.sec_has_avatar(user["id"]),
         "today": core_time.today_for(user).isoformat(),
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        # 功能开关：前端据此隐藏入口，不要靠接口 404 猜。
+        "features": {"forum": bool(config.FORUM_ENABLED)},
     }
 
 

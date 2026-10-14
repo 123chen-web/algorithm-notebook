@@ -121,7 +121,9 @@
       sub: item.snippet || item.description || item.zone, badge: item.zone,
       run: () => navigate({ view: "all", recordId: item.mistake_id }),
     }));
-    const posts = (remote.posts || []).map((item) => ({
+    // 讨论区冻结时不展示帖子分组（后端 /api/search 也已置空，这里是前端兜底）。
+    const forumPosts = window.ForumSwitch && !window.ForumSwitch.postsVisible() ? [] : remote.posts || [];
+    const posts = forumPosts.map((item) => ({
       kind: "post", id: `post-${item.id}`, label: item.title,
       sub: `${item.username} · ${item.comment_count} 条评论`, badge: "",
       run: () => navigate({ view: "forum", postId: item.id }),

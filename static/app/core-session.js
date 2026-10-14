@@ -182,6 +182,7 @@ async function enterApp() {
   resetGroups();
   user = await api("/api/me");
   sessionEpoch += 1;
+  window.ForumSwitch?.apply(user?.features);
   window.Onboarding?.reset(user);
   window.OfflineSync?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
   window.OfflineReview?.configure({ notify: (text) => message(text), getUser: () => user, getEpoch: () => sessionEpoch });
@@ -202,6 +203,12 @@ async function enterApp() {
 }
 
 async function showView(nextView, { refreshUser = true } = {}) {
+  // 讨论区冻结时：任何试图进入讨论区的导航都拦下，回总览并提示。
+  if (nextView === "forum" && window.ForumSwitch && !window.ForumSwitch.isEnabled(user?.features)) {
+    message("讨论区暂未开放");
+    if (view === "home") return;
+    return showView("home", { refreshUser: false });
+  }
   stopOrderPolling();
   if (view !== nextView) {
     finishHomeOpening?.();

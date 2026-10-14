@@ -1,8 +1,9 @@
 """forum routes (split out of main.py; behavior unchanged).
 
-Names living in main's namespace are referenced as ``main.<name>``
-(attribute access at call time) so monkeypatch.setattr(main, ...)
-in tests keeps affecting the moved code.
+Names from other modules are referenced via module attribute access at call
+time (``import db`` then ``db.connect()``, ``from core import time`` then
+``time.today_for(user)``) so monkeypatch.setattr(<defining module>, ...)
+in tests keeps affecting the moved code. Never ``import main`` here.
 """
 from core import config, ratelimit, security, time
 from models.forum import AcceptedComment
@@ -33,7 +34,14 @@ import thread_summary
 from fastapi import APIRouter
 
 
-router = APIRouter()
+def _require_forum_enabled():
+    # 讨论区冻结开关：关闭时所有论坛接口统一 404。读 config.FORUM_ENABLED
+    # 属性（调用时取值），测试用 monkeypatch.setattr(config, "FORUM_ENABLED", …) 切换。
+    if not config.FORUM_ENABLED:
+        raise HTTPException(404, "讨论区暂未开放")
+
+
+router = APIRouter(dependencies=[Depends(_require_forum_enabled)])
 
 
 @router.get("/api/posts")

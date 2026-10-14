@@ -35,6 +35,7 @@ import push_channels
 import send_reminders
 from ai import call_with_retry
 from ai_limits import note_usage, track_call
+from core import config
 from db import ROOT, connect, init_db
 from legal import PRODUCT_NAME
 from openai import OpenAI
@@ -407,7 +408,8 @@ def summarize_items(items: list[dict]) -> dict:
                     messages=_build_ai_messages(items),
                     # 带“思考过程”的模型（如 deepseek-v4-pro）的推理 token 也算在这里，
                     # 给太少会把回答截成空，所以留足余量（和 ai.py 的做法一致）。
-                    max_tokens=16000,
+                    # 分档见 core.config.AI_MAX_TOKENS。
+                    max_tokens=config.AI_MAX_TOKENS["digest"],
                     response_format={"type": "json_object"},
                 ))
                 note_usage(model, response)

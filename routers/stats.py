@@ -338,8 +338,10 @@ def get_overview(user=Depends(security.current_user)):
             "WHERE p.user_id = ? AND m.pending_reason = 1",
             (user["id"],),
         ).fetchone()[0]
-        hot = conn.execute(
-            """
+        # 讨论区冻结时不查热帖：总览的“讨论区热帖”卡片靠 hot_post 为空自动隐藏。
+        hot = (
+            conn.execute(
+                """
             SELECT p.id, p.title, p.created_at, u.username,
                    (SELECT COUNT(*) FROM post_comments c
                     WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count
@@ -347,8 +349,11 @@ def get_overview(user=Depends(security.current_user)):
             WHERE p.deleted_at IS NULL AND p.created_at >= ?
             ORDER BY comment_count DESC, p.created_at DESC, p.id DESC LIMIT 1
             """,
-            ((time.datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds"),),
-        ).fetchone()
+                ((time.datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds"),),
+            ).fetchone()
+            if config.FORUM_ENABLED
+            else None
+        )
         # 复习=重做：本周（今天起往前 7 天）的重做统计，有重做数据才返回。
         week_start = (today - timedelta(days=6)).isoformat()
         redo_rows = conn.execute(
@@ -450,6 +455,11 @@ def global_search(
     user=Depends(security.current_user),
 ):
     # Ctrl K 命令面板用：我自己的题目/错因 + 讨论区帖子；纯 LIKE 查询，不调用 AI、不占额度。
+    # 讨论区冻结时不返回帖子（前端也不再展示帖子分组）。
     with db.connect() as conn:
         conn.execute("BEGIN")
-        return search_all(conn, user["id"], q, limit)
+        result = search_all(conn, user["id"], q, limit)
+    if not config.FORUM_ENABLED:
+        result["posts"] = []
+        result["truncated"]["posts"] = False
+    return result

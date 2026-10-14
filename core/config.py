@@ -51,6 +51,21 @@ try:
 except ValueError:
     FIRST_REVIEW_DELAY_DAYS = 1
 
+# 讨论区冻结开关：FORUM_ENABLED=0/false/no/off 关闭讨论区，默认开启（1）。
+# 关闭时论坛接口统一返回 404（中文 detail），前端入口隐藏；已有数据一行不删，
+# 重新打开即原样回来。测试用 monkeypatch.setattr(config, "FORUM_ENABLED", ...)
+# 切换，读取处必须走 config.FORUM_ENABLED 属性（调用时取值），不要 import 时绑定。
+def _parse_env_flag(raw, default=True):
+    if raw is None:
+        return default
+    cleaned = raw.strip().lower()
+    if not cleaned:
+        return default
+    return cleaned not in ("0", "false", "no", "off")
+
+
+FORUM_ENABLED = _parse_env_flag(os.getenv("FORUM_ENABLED"), True)
+
 QUICK_CODE_PLACEHOLDER = "（速记：代码待补）"
 
 QUICK_THINKING_PLACEHOLDER = "（速记：思路待补）"
@@ -211,6 +226,37 @@ REVIEW_FUTURE_SLACK = timedelta(seconds=60)
 REVIEW_BACKFILL_WINDOW = timedelta(days=7)
 
 DUCK_BAD_REPLY = "小黄鸭这次没答好，请再试一次"
+
+# AI 各任务 max_tokens 分档（推理型模型的思考 token 也计入上限，单次上限过大会
+# 放大成本和等待时间）。取值依据：线上 ai_calls 表各 feature 的 completion_tokens
+# 按“P95 的 3 倍，且不低于 2000”；站长可在生产库执行以下 SQL 后按公式回填：
+#   SELECT feature,
+#          COUNT(*) AS n,
+#          MAX(completion_tokens) AS p100,
+#          (SELECT completion_tokens FROM ai_calls a2
+#            WHERE a2.feature = a.feature AND a2.ok = 1
+#            ORDER BY completion_tokens
+#            LIMIT 1 OFFSET CAST(COUNT(*) * 0.95 AS INTEGER)) AS p95
+#     FROM ai_calls a WHERE ok = 1 GROUP BY feature;
+# 2026-10-13 时无生产数据可查：全部保持改动前现值，标记“待观察”，行为零变化。
+AI_MAX_TOKENS = {
+    # 生成变体题（ai.generate）：3 道变体题 + 讲解，结构化长输出。现值，待观察。
+    "variant": 30000,
+    # 拍照识别（ai.recognize_photo）：转录题干/代码/思路，照片内容多时输出长。现值，待观察。
+    "photo": 30000,
+    # 薄弱点分析（ai.analyze_weaknesses）：画像 + 建议，分析型长输出。现值，待观察。
+    "weakness": 30000,
+    # 错因归并（ai.cluster_mistakes）：聚类标签 + 说明。现值，待观察。
+    "cluster": 30000,
+    # 橡皮鸭（ai.duck_ai_reply）：单轮对话回复，短输出。现值，待观察。
+    "duck": 4000,
+    # 套路归类（ai.suggest_patterns）：候选套路列表；推理型模型要留思考余量。现值，待观察。
+    "suggest_patterns": 8000,
+    # 今日一读摘要（digest.py）：多条目中文摘要；推理 token 也计入，留足余量。现值，待观察。
+    "digest": 16000,
+    # AI 讨论要点（thread_summary.py）：帖子 + 评论的提炼摘要，短输出。现值，待观察。
+    "thread_summary": 3000,
+}
 
 LEADERBOARD_SIZE = 50
 
