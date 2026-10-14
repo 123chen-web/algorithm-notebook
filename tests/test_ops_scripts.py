@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SSH_HARDEN = ROOT / "deploy" / "bin" / "ssh-harden.sh"
 OFFSITE = ROOT / "deploy" / "bin" / "offsite-backup.sh"
 DRILL = ROOT / "deploy" / "bin" / "restore-drill.sh"
+BACKUP_SH = ROOT / "deploy" / "bin" / "backup.sh"
+UPDATE_SH = ROOT / "deploy" / "bin" / "update.sh"
 BACKUP_PY = ROOT / "backup.py"
 
 
@@ -120,6 +122,9 @@ FAKE_DOCKER = """#!/usr/bin/env bash
 echo "docker $*" >> "$DOCKER_FAKE_LOG"
 [ "${DOCKER_FAKE_FAIL:-0}" = "1" ] && exit 1
 case "$*" in
+  *" ps "*) printf '%s\\n' "${FAKE_DOCKER_PS_STATE:-running}"; exit 0 ;;
+  *"healthz"*) [ "${FAKE_DOCKER_HEALTH:-0}" = "1" ] && exit 0 || exit 1 ;;
+  *"ls -t /app/data/backups"*) echo "/app/data/backups/backup-20260101-000000.tar.gz"; exit 0 ;;
   *"backup.py verify"*) exit 0 ;;
   *) exit 0 ;;
 esac
@@ -380,7 +385,7 @@ def make_real_backup(tmp_path: Path, rows=3) -> Path:
 # ---- bash -n 语法检查 ----
 
 @requires_bash
-@pytest.mark.parametrize("script", [SSH_HARDEN, OFFSITE, DRILL])
+@pytest.mark.parametrize("script", [SSH_HARDEN, OFFSITE, DRILL, BACKUP_SH, UPDATE_SH])
 def test_scripts_pass_bash_syntax_check(script):
     proc = subprocess.run([BASH, "-n", bp(script)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert proc.returncode == 0, proc.stderr
@@ -780,3 +785,178 @@ def test_restore_drill_fails_when_remote_empty(fake, tmp_path):
     )
     assert proc.returncode != 0
     assert "没有找到" in proc.stderr
+
+
+# ---- backup.sh / update.sh（更新防呆）----
+
+FAKE_GIT = """#!/usr/bin/env bash
+echo "git $*" >> "$GIT_FAKE_LOG"
+case "$*" in
+  "rev-parse HEAD") echo "abc1234567890abcdef0123456789abcdef01234567" ;;
+  "rev-parse --short HEAD") echo "abc1234" ;;
+  "rev-parse --short origin/main") echo "def5678" ;;
+  "fetch"*) echo "unexpected git fetch in test" >&2; exit 1 ;;
+  *) ;;
+esac
+exit 0
+"""
+
+FAKE_DF_SMALL = """#!/usr/bin/env bash
+# 假装磁盘只剩 1KB 可用
+echo "Filesystem     1K-blocks  Used Available Use% Mounted on"
+echo "fakedev           100000 99999        1 100% /fake"
+"""
+
+
+def make_ops_repo(tmp_path: Path) -> Path:
+    """搭一个最小的假仓库根目录，供 backup.sh / update.sh 测试。
+
+    脚本从自身位置推导 REPO_DIR，所以把 deploy/bin/*.sh 拷到假仓库里跑；
+    APP_DIR/DATA_DIR 用环境变量指向假仓库，避免碰真目录。
+    """
+    repo = tmp_path / "repo"
+    bindir = repo / "deploy" / "bin"
+    bindir.mkdir(parents=True)
+    for name in ("lib.sh", "backup.sh", "update.sh"):
+        shutil.copy(ROOT / "deploy" / "bin" / name, bindir / name)
+    (repo / "deploy" / "docker-compose.prod.yml").write_text(
+        "services:\n  app:\n    image: fake\n", encoding="utf-8"
+    )
+    (repo / ".env").write_text("SITE_DOMAIN=example.com\n", encoding="utf-8")
+    data = repo / "data"
+    data.mkdir()
+    con = sqlite3.connect(data / "notebook.db")
+    con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+    con.execute("INSERT INTO t DEFAULT VALUES")
+    con.commit()
+    con.close()
+    # 模拟 WAL 模式的附带文件，冷备份必须一起拷走
+    (data / "notebook.db-wal").write_bytes(b"\x00" * 64)
+    (data / "notebook.db-shm").write_bytes(b"\x00" * 64)
+    (data / "avatars").mkdir()
+    return repo
+
+
+def run_ops_script(fake, repo: Path, script_name: str, *args, env_extra=None):
+    env = {
+        "APP_DIR": bp(repo),
+        "DATA_DIR": bp(repo / "data"),
+    }
+    if env_extra:
+        env.update(env_extra)
+    return fake.run(repo / "deploy" / "bin" / script_name, *args, env_extra=env)
+
+
+@requires_bash
+def test_backup_cold_when_app_not_running(fake, tmp_path):
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake, repo, "backup.sh", env_extra={"FAKE_DOCKER_PS_STATE": "exited"}
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "已改用冷备份" in proc.stdout
+    colds = list((repo / "data" / "backups").glob("cold-*"))
+    assert len(colds) == 1
+    cold = colds[0]
+    # 数据库与 WAL 附带文件都在，且 backups/ 自身没有被递归拷进去
+    assert (cold / "notebook.db").exists()
+    assert (cold / "notebook.db-wal").exists()
+    assert (cold / "notebook.db-shm").exists()
+    assert not (cold / "backups").exists()
+    # 拷贝的库是合法 SQLite
+    con = sqlite3.connect(cold / "notebook.db")
+    assert con.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    con.close()
+    # 为保证一致性停过 app 容器
+    assert "stop app" in fake.log_text("docker.log")
+
+
+@requires_bash
+def test_backup_cold_when_app_running_but_unhealthy(fake, tmp_path):
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake,
+        repo,
+        "backup.sh",
+        env_extra={"FAKE_DOCKER_PS_STATE": "running", "FAKE_DOCKER_HEALTH": "0"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "已改用冷备份" in proc.stdout
+    assert len(list((repo / "data" / "backups").glob("cold-*"))) == 1
+
+
+@requires_bash
+def test_backup_online_when_app_healthy(fake, tmp_path):
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake,
+        repo,
+        "backup.sh",
+        env_extra={"FAKE_DOCKER_PS_STATE": "running", "FAKE_DOCKER_HEALTH": "1"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "备份并校验完成" in proc.stdout
+    # 健康时不走冷备份、不停服务
+    assert "stop app" not in fake.log_text("docker.log")
+    assert not list((repo / "data" / "backups").glob("cold-*"))
+
+
+@requires_bash
+def test_backup_cold_aborts_on_low_disk_without_stopping(fake, tmp_path):
+    fake.write_fake("df", FAKE_DF_SMALL)
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake, repo, "backup.sh", env_extra={"FAKE_DOCKER_PS_STATE": "exited"}
+    )
+    assert proc.returncode != 0
+    assert "空间不足" in proc.stderr + proc.stdout
+    # 空间不足先报错，服务没有被停止，也没有产生半截备份
+    assert "stop app" not in fake.log_text("docker.log")
+    assert not list((repo / "data" / "backups").glob("cold-*"))
+
+
+@requires_bash
+def test_update_dry_run_has_zero_side_effects(fake, tmp_path):
+    fake.write_fake("git", FAKE_GIT)
+    git_log = tmp_path / "git.log"
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake,
+        repo,
+        "update.sh",
+        "--dry-run",
+        env_extra={
+            "FAKE_DOCKER_PS_STATE": "exited",
+            "GIT_FAKE_LOG": bp(git_log),
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout
+    assert "--dry-run" in out
+    assert "冷备份" in out  # app 不健康，演练应提示会走冷备份
+    assert "abc1234" in out  # 当前版本（只读 git rev-parse）
+    assert "main" in out  # 更新分支
+    # 零副作用：没 fetch、没停服务、没拉代码、没建备份目录
+    git_calls = git_log.read_text(encoding="utf-8") if git_log.exists() else ""
+    assert "fetch" not in git_calls
+    assert "stop" not in fake.log_text("docker.log")
+    assert not (repo / "data" / "backups").exists()
+
+
+@requires_bash
+def test_update_dry_run_reports_online_backup_when_healthy(fake, tmp_path):
+    fake.write_fake("git", FAKE_GIT)
+    repo = make_ops_repo(tmp_path)
+    proc = run_ops_script(
+        fake,
+        repo,
+        "update.sh",
+        "--dry-run",
+        env_extra={
+            "FAKE_DOCKER_PS_STATE": "running",
+            "FAKE_DOCKER_HEALTH": "1",
+            "GIT_FAKE_LOG": bp(tmp_path / "git2.log"),
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "在线备份" in proc.stdout

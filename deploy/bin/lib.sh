@@ -37,6 +37,15 @@ wait_healthy() {
   return 1
 }
 
+# 快速判断 app 容器是否“运行且健康”（只探一次，不等待）。
+# 返回 0 表示健康；容器没在 running 状态或健康接口不通则返回非 0。
+app_health() {
+  local state
+  state="$(compose ps --format '{{.State}}' app 2>/dev/null | tr -d '\r\n ' || true)"
+  [ "$state" = "running" ] || return 1
+  compose exec -T app python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).close()" >/dev/null 2>&1
+}
+
 # docker compose 只在 compose 文件所在目录（deploy/）找 .env 来替换 ${SITE_DOMAIN}，
 # 所以把仓库根目录的 .env 链接过去（.gitignore 已排除 .env，链接不会进 Git）。
 link_env() {
