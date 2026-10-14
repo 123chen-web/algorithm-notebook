@@ -24,7 +24,7 @@ PROBLEM_KEYS = {
 MISTAKE_KEYS = {
     "id", "description", "counterexample", "repetitions", "interval_days", "ease_factor",
     "due_date", "last_reviewed_at", "reviews", "variants", "tags",
-    "pending_reason",
+    "pending_reason", "revenge_at",
 }
 REVIEW_KEYS = {"quality", "reviewed_at", "next_due_date"}
 VARIANT_KEYS = {
@@ -85,6 +85,7 @@ def seed_notebook(user_id, marker):
                 ).lastrowid
                 mistake["counterexample"] = ""
                 mistake["pending_reason"] = False
+                mistake["revenge_at"] = None
                 mistake["reviews"] = []
                 mistake["variants"] = []
                 mistake["tags"] = []

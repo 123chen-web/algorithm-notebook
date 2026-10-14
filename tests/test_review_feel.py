@@ -98,7 +98,7 @@ def test_preview_matches_the_accepted_review_in_every_grade(client, quality, ove
     assert previews[str(quality)]["interval_days"] == expected["interval_days"]
     assert previews[str(quality)]["due_date"] == expected["due_date"]
     accepted = assert_ok(rate(client, mistake, quality))
-    assert accepted == {**expected, "version": 1}
+    assert accepted == {**expected, "version": 1, "revenge": None}
     # 明确锁住逾期成功加成及失败仅扣 0.2，避免两条路径同时用错算法。
     if quality < 3:
         assert accepted["interval_days"] == 1
@@ -136,7 +136,7 @@ def test_preview_and_review_use_the_same_local_day(client, monkeypatch, timezone
     expected = schedule(2, 6, 2.5, 5, today, overdue_days=(today - TODAY).days)
     assert preview["due_date"] == expected["due_date"]
     assert preview["interval_days"] == expected["interval_days"]
-    assert assert_ok(rate(client, mistake, 5)) == {**expected, "version": 1}
+    assert assert_ok(rate(client, mistake, 5)) == {**expected, "version": 1, "revenge": None}
 
 
 def test_rating_logs_every_field_needed_to_restore_the_previous_state(client):

@@ -52,7 +52,7 @@ def test_upgrade_from_81_sets_everyone_to_recall_only(tmp_path, monkeypatch):
         _insert_user(conn, "u-recall", "recall_only")
     db.init_db()  # 跑 82
     with connect() as conn:
-        assert db.schema_version(conn) == 82
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         rows = {
             r[0]: r[1]
             for r in conn.execute("SELECT username, redo_preference FROM users")
@@ -70,7 +70,7 @@ def test_migration_82_is_idempotent_and_keeps_later_choice(tmp_path, monkeypatch
     db.init_db()
     db.init_db()  # 重复启动不报错
     with connect() as conn:
-        assert db.schema_version(conn) == 82
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
     # 用户在升级后主动改回 redo_first，再跑一次迁移不能被重置
     with connect(write=True) as conn:
         _insert_user(conn, "u-switcher")
@@ -95,7 +95,7 @@ def test_migration_82_cleans_up_interrupted_tmp_column(tmp_path, monkeypatch):
         )
     db.init_db()  # 跑 82：幂等路径应先清掉临时列再判断
     with connect() as conn:
-        assert db.schema_version(conn) == 82
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         columns = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
         assert "redo_pref_tmp" not in columns
         assert "redo_preference" in columns

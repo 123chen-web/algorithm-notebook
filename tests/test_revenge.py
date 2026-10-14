@@ -46,7 +46,7 @@ def test_migration_83_adds_column_and_is_idempotent(tmp_path, monkeypatch):
     db.init_db()
     db.init_db()
     with connect() as conn:
-        assert db.schema_version(conn) == 83 == db.SCHEMA_VERSION
+        assert db.schema_version(conn) == db.SCHEMA_VERSION >= 83
         cols = {row[1] for row in conn.execute("PRAGMA table_info(mistakes)")}
         assert "revenge_at" in cols
 

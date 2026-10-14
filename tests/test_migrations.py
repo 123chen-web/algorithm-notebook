@@ -1220,6 +1220,7 @@ def test_recommend_and_pending_reason_upgrade_preserves_data_and_constraints(
         assert after.pop("pending_reason") == 0
         # 迁移 80 新增的最小反例列：旧数据默认为空。
         assert after.pop("counterexample") == ""
+        assert after.pop("revenge_at") is None
         assert after == before
         pending = next(row for row in conn.execute("PRAGMA table_info(mistakes)")
                        if row["name"] == "pending_reason")

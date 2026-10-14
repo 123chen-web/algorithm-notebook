@@ -134,7 +134,7 @@ def test_shared_member_activity_streams_once_and_keeps_each_groups_daily_window(
             INSERT INTO reviews VALUES (99, '2026-09-19T00:00:00+00:00');
         """)
         conn.executemany(
-            "INSERT INTO study_group_members VALUES (?, 1, ?)",
+            "INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, 1, ?)",
             list(boundaries.items()),
         )
         conn.executemany(

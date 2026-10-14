@@ -445,7 +445,7 @@ def test_group_points_queries_batch_groups_and_keep_membership_windows():
             CREATE TABLE mistakes(id INTEGER, problem_id INTEGER);
             CREATE TABLE reviews(mistake_id INTEGER, reviewed_at TEXT);
             INSERT INTO users VALUES (1, 'alice', 'Asia/Shanghai', 0, NULL), (2, 'bob', 'UTC', 0, NULL);
-            INSERT INTO study_group_members VALUES
+            INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES
                 (1, 1, '2026-09-19T00:00:00+00:00'),
                 (1, 2, '2026-09-19T00:00:00+00:00'),
                 (2, 1, '2026-09-20T00:00:00+00:00');

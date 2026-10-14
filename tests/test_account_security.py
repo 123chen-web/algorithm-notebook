@@ -443,7 +443,7 @@ def seed_account_data(user_id, other_id):
             "INSERT INTO study_groups(name,invite_code,created_by,created_at) "
             "VALUES ('他人小组', 'DELOTHER', ?, ?)", (other_id, NOW),
         ).lastrowid
-        conn.executemany("INSERT INTO study_group_members VALUES (?, ?, ?)", [
+        conn.executemany("INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)", [
             (own_group_id, user_id, NOW), (other_group_id, user_id, NOW),
             (other_group_id, other_id, NOW),
         ])
@@ -580,7 +580,7 @@ def test_creator_with_other_members_cannot_delete_and_nothing_is_changed(
         other_id = insert_user(conn, "otheruser")
     seeded = seed_account_data(user["id"], other_id)
     with connect(write=True) as conn:
-        conn.execute("INSERT INTO study_group_members VALUES (?, ?, ?)", (
+        conn.execute("INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)", (
             seeded["own_group_id"], other_id, NOW,
         ))
     avatar = images.avatar_path(user["id"])
@@ -692,7 +692,7 @@ def test_visible_user_lists_filter_deleted_rows_with_leftover_membership_and_rev
             "INSERT INTO study_groups(name,invite_code,created_by,created_at) "
             "VALUES ('过滤组', 'FILTER01', ?, ?)", (user["id"], NOW),
         ).lastrowid
-        conn.executemany("INSERT INTO study_group_members VALUES (?, ?, ?)", [
+        conn.executemany("INSERT INTO study_group_members(group_id, user_id, joined_at) VALUES (?, ?, ?)", [
             (group_id, user["id"], NOW), (group_id, deleted_id, NOW),
         ])
         problem_id = conn.execute(

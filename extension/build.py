@@ -16,6 +16,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+TEXT_SUFFIXES = {".js", ".json", ".html", ".css", ".md", ".txt"}
+
 # 固定时间戳（与源码进仓库时的构建产物一致）。
 FIXED_DATE_TIME = (2026, 10, 10, 21, 40, 0)
 
@@ -42,7 +44,11 @@ def build_zip_bytes() -> bytes:
             # 统一权限：文件 0o644。
             info.external_attr = 0o644 << 16
             # PNG 等二进制按原样读入。
-            zf.writestr(info, path.read_bytes())
+            data = path.read_bytes()
+            if path.suffix in TEXT_SUFFIXES:
+                # Windows 上签出会把换行变成 CRLF；统一成 LF，保证各平台构建结果逐字节一致。
+                data = data.replace(bytes([13, 10]), bytes([10]))
+            zf.writestr(info, data)
     return buf.getvalue()
 
 
@@ -61,9 +67,16 @@ def main(argv: list[str]) -> int:
         if not OUT_ZIP.is_file():
             print(f"仓库内 zip 不存在：{OUT_ZIP}", file=sys.stderr)
             return 2
-        committed = OUT_ZIP.read_bytes()
-        if built == committed:
-            print(f"一致：构建产物与 {OUT_ZIP} 逐字节相同（{len(built)} 字节）")
+        # 比较“条目名 + 每个文件的内容”，不比压缩后的字节：不同平台的 zlib 版本压出来的字节可能不同，
+        # 但内容一致就说明源码和下载包没有漂移。
+        import io
+
+        def entries(data: bytes) -> dict:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                return {name: archive.read(name) for name in archive.namelist()}
+
+        if entries(built) == entries(OUT_ZIP.read_bytes()):
+            print(f"一致：构建产物与 {OUT_ZIP} 的全部条目内容相同（{len(built)} 字节）")
             return 0
         print("不一致：构建产物与仓库内 zip 有差异（源码和下载包已漂移）", file=sys.stderr)
         return 1

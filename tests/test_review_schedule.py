@@ -65,7 +65,7 @@ def test_overdue_review_credits_and_logs_prior_state(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
         "repetitions": 3,
         "interval_days": expected_interval,
         "ease_factor": expected_ease,
@@ -108,7 +108,7 @@ def test_on_time_review_keeps_intervals_and_logs_prior_state(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
         "repetitions": repetitions + 1,
         "interval_days": expected_interval,
         "ease_factor": expected_ease,
@@ -135,7 +135,7 @@ def test_failed_overdue_review_only_reduces_ease_by_point_two(client, quality):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {k: v for k, v in response.json().items() if k != "revenge"} == {
         "repetitions": 1,  # 答错折半：2 // 2（原为清零）
         "interval_days": 1,
         "ease_factor": 2.3,

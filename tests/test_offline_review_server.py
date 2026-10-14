@@ -28,7 +28,7 @@ NOW = datetime(2026, 9, 19, 4, tzinfo=timezone.utc)  # 上海 2026-09-19 12:00
 TODAY = date(2026, 9, 19)
 OP = "op-00000001"
 NEWER = "这道题之后已经有更新的评分"
-RESPONSE_KEYS = {"repetitions", "interval_days", "ease_factor", "due_date", "version"}
+RESPONSE_KEYS = {"repetitions", "interval_days", "ease_factor", "due_date", "version", "revenge"}
 
 
 @pytest.fixture(autouse=True)
@@ -289,7 +289,7 @@ def test_without_reviewed_at_the_behaviour_is_unchanged(client):
     mistake = seed(register(client)["id"], due="2026-09-16")
     result = ok(post(client, mistake, version=0))
     expected = schedule(2, 6, 2.5, 4, TODAY, overdue_days=3)
-    assert result == {**expected, "version": 1}
+    assert result == {**expected, "version": 1, "revenge": None}
     row, = logs(mistake)
     assert row["reviewed_at"] == NOW.isoformat() and row["elapsed_days"] == 9
 
@@ -346,7 +346,7 @@ def test_reviewed_at_drives_schedule_log_and_last_reviewed(client):
     mistake = seed(register(client)["id"], due="2026-09-16")
     given = "2026-09-16T10:30:15.789+08:00"  # 带毫秒和偏移：存成 UTC、秒精度
     result = ok(post(client, mistake, quality=5, client_op_id=OP, reviewed_at=given))
-    assert result == {**schedule(2, 6, 2.5, 5, date(2026, 9, 16), overdue_days=0), "version": 1}
+    assert result == {**schedule(2, 6, 2.5, 5, date(2026, 9, 16), overdue_days=0), "version": 1, "revenge": None}
     # 对照：不传 reviewed_at 时同样的题按“今天”（逾期 3 天）调度，结果不同。
     control = seed(1, due="2026-09-16")
     assert ok(post(client, control, quality=5, version=0))["due_date"] != result["due_date"]
