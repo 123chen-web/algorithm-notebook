@@ -390,7 +390,9 @@ function rvfReviewDoneText(result) {
 // 会带上 evidence（建议分/最终分/相似度/用时）。离线时同样把 mode/evidence
 // 写进离线队列，联网后一起补交。
 async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, status, offline, pageGuard, root, due, mode = "recall", evidence = "", gradeButtons = null }) {
-  if (!state.isCurrent() || !state.revealed || !due || state.submitting) return;
+  if (!state.isCurrent() || !due || state.submitting) return;
+  // 只回忆要先看错因再自评；做题验证（默写、重做、类似题）不需要先看答案。
+  if (!state.revealed && mode === "recall") return;
   state.submitting = true;
   const buttons = gradeButtons || state.buttons;
   for (const gradeButton of buttons) gradeButton.disabled = true;
@@ -428,6 +430,7 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
       rvfShowRevengeLine(root, result.revenge);
     }
     window.Feel?.toast(rvfReviewDoneText(result)); // 手感层：盖章后提示下次复习时间
+    if (result?.unverified_cap) message("连续两次只自评，下次间隔最多 14 天。做一次题验证，间隔就能拉长。");
     window.ReviewFeel?.buzz();
     if (result) {
       rvfRemoveItem({ ...item, ...result });
@@ -475,6 +478,7 @@ function rvfRevealDetail() {
   state.reveal.hidden = true;
   state.reveal.setAttribute("aria-expanded", "true");
   state.status.textContent = "错因与当时的思路已显示，可以对照回忆评分。";
+  rvfSyncRedoVisibility(state);
   const first = state.buttons.find((button) => !button.disabled);
   (first || state.answers[0]).focus({ preventScroll: true });
 }
@@ -492,7 +496,7 @@ function rvfDetailKeydown(event) {
     // 重做模式（默写/限时）进行中时，数字键不触发隐藏的普通评分按钮。
     if (state.redo && state.redo.mode && state.redo.mode !== "recall") return;
     const button = state.buttons[Number(event.key) - 1];
-    if (!button.disabled) { event.preventDefault(); button.click(); }
+    if (button && !button.disabled) { event.preventDefault(); button.click(); }
   } else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && state.revealed) {
     // 方向键评分：与滑动手势方向一致，→ = 记得(4)，← = 忘了(0)
     const quality = event.key === "ArrowRight" ? 4 : 0;
@@ -504,13 +508,21 @@ function rvfDetailKeydown(event) {
   }
 }
 
-// ---- 复习=重做：三种复习方式（只增强算法分区，其他分区保持原样） ----
-// 翻牌/拖动评分/盖章动效是第三期的事，这里只做“重做”的数据与流程。
+// ---- 复习=重做：四种复习方式（只增强算法分区，其他分区保持原样） ----
+// 成绩由做题结果算出：默写看相似度，重做和类似题看“做完了吗”的结果；
+// 只回忆（自评）最高算“记得”，连续两次自评下次间隔最多 14 天。
 function rvfRedoAvailability(item) {
   return {
     rewrite: Boolean((item.correct_code || "").trim()),
     redo: Boolean((item.source_url || "").trim()),
+    similar: true,
   };
+}
+
+// 上一次复习只是自评：这次建议用做题验证。reviews 按时间倒序，第 0 条是最近一次。
+function rvfNeedsVerification(item) {
+  const last = (item.reviews || [])[0];
+  return Boolean(last) && (last.mode || "recall") === "recall";
 }
 
 async function rvfPickDefaultMode(item) {
@@ -523,9 +535,12 @@ async function rvfPickDefaultMode(item) {
   }
   if (hint && avail.rewrite) return { mode: "rewrite", hint };
   if (hint && avail.redo) return { mode: "redo", hint };
-  if (preference === "recall_only") return { mode: "recall", hint };
-  if (avail.rewrite) return { mode: "rewrite", hint };
-  if (avail.redo) return { mode: "redo", hint };
+  const nudge = rvfNeedsVerification(item);
+  if (nudge || preference !== "recall_only") {
+    if (avail.redo) return { mode: "redo", hint };
+    if (avail.rewrite) return { mode: "rewrite", hint };
+    if (nudge && avail.similar) return { mode: "similar", hint };
+  }
   return { mode: "recall", hint };
 }
 
@@ -536,9 +551,10 @@ function rvfBuildRedoSection(state, item) {
   const buttons = {};
   const row = element("div", "", "redo-modes");
   for (const [mode, label, ok, why] of [
-    ["rewrite", "默写关键代码", avail.rewrite, "该题没有正确代码，默写不可用"],
     ["redo", "去原题限时重做", avail.redo, "该题没有来源链接，限时重做不可用"],
-    ["recall", "只回忆", true, ""],
+    ["similar", "做一道类似题", avail.similar, ""],
+    ["rewrite", "默写关键代码", avail.rewrite, "该题没有正确代码，默写不可用"],
+    ["recall", "只回忆（自评）", true, ""],
   ]) {
     const button = element("button", label, "redo-mode");
     button.type = "button";
@@ -552,8 +568,10 @@ function rvfBuildRedoSection(state, item) {
   }
   const hintEl = element("p", "这条用重做更靠谱", "redo-hint");
   hintEl.hidden = true;
+  const nudgeEl = element("p", "上次只是自评。这次建议做题验证：连续两次自评，下次间隔最多 14 天。", "redo-nudge");
+  nudgeEl.hidden = !rvfNeedsVerification(item);
   const panelHost = element("div", "", "redo-panel-host");
-  section.append(element("h3", "这次怎么复习？", "section-label"), row, hintEl, panelHost);
+  section.append(element("h3", "这次怎么复习？", "section-label"), row, hintEl, nudgeEl, panelHost);
   state.redo = { section, buttons, hintEl, panelHost, mode: null, timer: null };
   return section;
 }
@@ -566,6 +584,16 @@ async function rvfInitRedoModes(state) {
   rvfSelectRedoMode(state, mode);
 }
 
+// 自评的评分按钮只在“先显示错因、并且选了只回忆”时出现；做题验证的方式没有评分按钮。
+function rvfSyncRedoVisibility(state) {
+  const redo = state.redo;
+  if (!redo || !state.reviewSection) return;
+  const selfRating = !redo.mode || redo.mode === "recall";
+  const show = selfRating && state.revealed;
+  state.reviewSection.hidden = !show;
+  if (state.recallBadge) state.recallBadge.hidden = !show;
+}
+
 function rvfSelectRedoMode(state, mode) {
   const redo = state.redo;
   if (!redo || redo.mode === mode || !state.isCurrent()) return;
@@ -575,37 +603,17 @@ function rvfSelectRedoMode(state, mode) {
     button.setAttribute("aria-pressed", String(name === mode));
   }
   redo.panelHost.replaceChildren();
-  const showGrades = mode === "recall";
-  if (state.reviewSection) state.reviewSection.hidden = !showGrades;
-  if (state.recallBadge) state.recallBadge.hidden = !showGrades;
+  rvfSyncRedoVisibility(state);
   if (mode === "rewrite") redo.panelHost.append(rvfBuildRewritePanel(state));
   else if (mode === "redo") redo.panelHost.append(rvfBuildRedoPanel(state));
+  else if (mode === "similar") redo.panelHost.append(rvfBuildSimilarPanel(state));
 }
 
-function rvfBuildPanelGradeRow(state, item, { mode, suggested, similarity, seconds }) {
-  const wrap = element("div");
-  wrap.append(element("p", `系统建议：${suggested} 分，你可以调整`, "redo-suggest"));
-  const row = element("div", "", "actions review-actions");
-  row.setAttribute("role", "group");
-  row.setAttribute("aria-label", "最终评分");
-  const panelButtons = [];
-  grades.forEach(([quality, label], index) => {
-    const button = element("button", "", "review-grade");
-    button.append(element("kbd", String(index + 1)), element("span", label));
-    button.type = "button";
-    button.dataset.quality = String(quality);
-    if (quality === suggested) button.classList.add("redo-suggested");
-    button.addEventListener("click", () => {
-      const evidence = window.RedoFlow.buildEvidence({ suggested, final: quality, similarity, seconds });
-      rvfSubmitGrade(state, item, {
-        quality, button, ...state.gradeCtx, mode, evidence, gradeButtons: panelButtons,
-      });
-    });
-    row.append(button);
-    panelButtons.push(button);
+// 做题验证交卷：成绩已由结果算出，直接提交，不再让用户二次选分。
+function rvfSubmitVerified(state, item, mode, picked) {
+  return rvfSubmitGrade(state, item, {
+    quality: picked.quality, button: null, ...state.gradeCtx, mode, evidence: picked.evidence, gradeButtons: [],
   });
-  wrap.append(row);
-  return wrap;
 }
 
 function rvfBuildRewritePanel(state) {
@@ -628,7 +636,6 @@ function rvfBuildRewritePanel(state) {
   compare.addEventListener("click", () => {
     if (!state.isCurrent()) return;
     const diff = window.RedoFlow.diffLines(item.correct_code, area.value);
-    const suggested = window.RedoFlow.similarityToGrade(diff.similarity);
     const diffBox = element("div", "", "redo-diff");
     for (const line of diff.missing) diffBox.append(element("pre", `− 没写出：${line}`, "redo-missing"));
     for (const line of diff.extra) diffBox.append(element("pre", `＋ 多写了：${line}`, "redo-extra"));
@@ -639,7 +646,10 @@ function rvfBuildRewritePanel(state) {
     if (!diff.missing.length && !diff.extra.length) {
       diffBox.append(element("p", "逐行一致，漂亮。", "muted"));
     }
-    resultHost.append(rvfBuildPanelGradeRow(state, item, { mode: "rewrite", suggested, similarity: diff.similarity }));
+    resultHost.append(window.RedoFlow.buildRewriteSubmit({
+      similarity: diff.similarity,
+      onPick: (picked) => rvfSubmitVerified(state, item, "rewrite", picked),
+    }));
     compare.disabled = true;
   });
   panel.append(area, compare, resultHost);
@@ -654,6 +664,7 @@ function rvfBuildRedoPanel(state) {
   const item = state.item;
   const panel = element("div", "", "redo-panel");
   panel.append(element("h4", "去原题限时重做"));
+  panel.append(element("p", "从空白开始重做，别先看答案；卡住了先想提示，实在不行再看题解（会按“没做出来”计分）。", "muted"));
   const limitRow = element("div", "", "redo-limit-row");
   limitRow.append(element("span", "时限"));
   const select = document.createElement("select");
@@ -672,31 +683,16 @@ function rvfBuildRedoPanel(state) {
   timerEl.setAttribute("role", "timer");
   const askHost = element("div");
   const showAsk = () => {
-    askHost.replaceChildren();
-    askHost.append(element("p", "做完了吗？", "section-label"));
-    const row = element("div", "", "redo-actions");
-    for (const [label, fixed] of [
-      ["一次做对", null],
-      ["做对了但卡了很久", 3],
-      ["没做出来或看了题解", 0],
-    ]) {
-      const button = element("button", label);
-      button.type = "button";
-      button.addEventListener("click", () => {
+    askHost.replaceChildren(window.RedoFlow.buildResultAsk({
+      mode: "redo",
+      seconds: () => (state.redo.timer ? state.redo.timer.elapsed() : 0),
+      limitSeconds: Number(select.value) * 60,
+      onPick: (picked) => {
         if (!state.isCurrent()) return;
-        const timer = state.redo.timer;
-        const elapsed = timer ? timer.elapsed() : 0;
-        const limitSeconds = Number(select.value) * 60;
-        if (timer) { timer.cancel(); state.redo.timer = null; }
-        const suggested = fixed === null
-          ? window.RedoFlow.redoGradeSuggest(elapsed, limitSeconds)
-          : fixed;
-        askHost.replaceChildren();
-        askHost.append(rvfBuildPanelGradeRow(state, item, { mode: "redo", suggested, seconds: elapsed }));
-      });
-      row.append(button);
-    }
-    askHost.append(row);
+        if (state.redo.timer) { state.redo.timer.cancel(); state.redo.timer = null; }
+        rvfSubmitVerified(state, item, "redo", picked);
+      },
+    }));
   };
   start.addEventListener("click", () => {
     if (!state.isCurrent()) return;
@@ -715,3 +711,15 @@ function rvfBuildRedoPanel(state) {
   return panel;
 }
 
+function rvfBuildSimilarPanel(state) {
+  const item = state.item;
+  window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+  return window.RedoFlow.buildSimilarPanel({
+    api,
+    mistakeId: item.id,
+    isAlive: () => state.isCurrent() && state.redo?.mode === "similar",
+    quickAdd: (picked) => window.Similar.quickAdd(picked, api),
+    onTimer: (timer) => { state.redo.timer = timer; },
+    onPick: (picked) => rvfSubmitVerified(state, item, "similar", picked),
+  });
+}

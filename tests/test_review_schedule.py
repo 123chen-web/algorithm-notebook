@@ -59,7 +59,8 @@ def test_review_uses_fsrs_and_logs_prior_state(client, overdue_days, quality):
     register(client)
     mistake_id = new_problem(client)[0]
     set_review_state(mistake_id, overdue_days=overdue_days)
-    expected = expected_state(2, 6, overdue_days, quality)
+    effective = min(quality, 4)  # 只回忆（自评）最高算“记得”
+    expected = expected_state(2, 6, overdue_days, effective)
 
     response = client.post(
         f"/api/mistakes/{mistake_id}/review",
@@ -80,7 +81,7 @@ def test_review_uses_fsrs_and_logs_prior_state(client, overdue_days, quality):
     rows = review_rows(mistake_id)
     assert len(rows) == 1
     row = rows[0]
-    assert row["quality"] == quality
+    assert row["quality"] == effective
     assert row["elapsed_days"] == 6 + overdue_days
     assert row["scheduled_days"] == 6
     assert row["ease_before"] == 2.5
@@ -104,7 +105,7 @@ def test_longer_overdue_gives_a_longer_interval_for_a_good_answer(client):
 
 @pytest.mark.parametrize(
     "repetitions,interval_days,quality,expected_interval",
-    [(0, 0, 4, 2), (0, 0, 5, 8), (0, 0, 3, 1)],
+    [(0, 0, 4, 2), (0, 0, 5, 2), (0, 0, 3, 1)],
 )
 def test_first_review_of_a_new_mistake_uses_fsrs_initial_values(
     client, repetitions, interval_days, quality, expected_interval,

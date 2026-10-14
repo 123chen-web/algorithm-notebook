@@ -183,13 +183,17 @@ function renderDetail(item, options = {}) {
     element(
       "p",
       due
-        ? "先回忆，再对照。按真实感受评分，下次复习会据此安排。"
+        ? (item.zone === "算法"
+          ? "先回忆，再对照。自评最高算“记得”；想拿“很熟”、把间隔拉长，请用上面的做题方式。"
+          : "先回忆，再对照。按真实感受评分，下次复习会据此安排。")
         : "还没到复习日期。先回看笔记或练一道变体题，到期后就能评分。",
       "muted"
     )
   );
 
   for (const [index, [quality, label]] of grades.entries()) {
+    // 算法题的自评没有“很熟”：想拿它必须做题验证（服务端也会封顶）。
+    if (quality === 5 && item.zone === "算法") continue;
     const button = element("button", "", "review-grade");
     button.append(element("kbd", String(index + 1)), element("span", label));
     button.type = "button";
@@ -208,9 +212,8 @@ function renderDetail(item, options = {}) {
   state.answers.push(reviewSection);
   // 复习=重做：只增强算法分区；未到期不显示方式选择。
   if (item.zone === "算法" && due && window.RedoFlow) {
-    const redoSection = rvfBuildRedoSection(state, item);
-    root.append(redoSection);
-    state.answers.push(redoSection);
+    // 复习方式放在“显示错因”之前：重做和类似题要先动手，不能先看到答案。
+    root.append(rvfBuildRedoSection(state, item));
   }
   void window.ReviewExtras?.decorateGrades(state.buttons, item, state.isCurrent);
   const menu = window.ReviewExtras?.menu({ item, status, isCurrent: () => pageGuard() && (rvfDetailState === state || state.removed),

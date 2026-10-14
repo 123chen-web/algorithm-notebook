@@ -108,3 +108,31 @@ test("MODE_LABEL 覆盖三种模式", () => {
   assert.deepEqual([...RedoFlow.REDO_LIMITS], [10, 15, 30]);
   assert.equal(RedoFlow.DEFAULT_REDO_LIMIT, 15);
 });
+
+test("做题结果算成绩：与服务端共用同一张对照表", () => {
+  const cases = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "verified_grading.json"), "utf-8"));
+  for (const entry of cases) {
+    assert.equal(RedoFlow.qualityFromEvidence(entry.mode, entry.evidence), entry.quality, JSON.stringify(entry));
+  }
+});
+
+test("做题结果缺失或模式不对时抛错，不悄悄给分", () => {
+  assert.throws(() => RedoFlow.qualityFromEvidence("redo", {}));
+  assert.throws(() => RedoFlow.qualityFromEvidence("redo", { result: "maybe" }));
+  assert.throws(() => RedoFlow.qualityFromEvidence("rewrite", {}));
+  assert.throws(() => RedoFlow.qualityFromEvidence("recall", { result: "clean" }));
+});
+
+test("evidence 接受新字段并拒绝不合法的值", () => {
+  const text = RedoFlow.buildEvidence({ result: "clean", seconds: 12, limit_seconds: 900, auto: true, ref: "两数之和", suggested: 4, final: 4 });
+  assert.deepEqual(JSON.parse(text), { suggested: 4, final: 4, seconds: 12, limit_seconds: 900, result: "clean", auto: true, ref: "两数之和" });
+  assert.throws(() => RedoFlow.buildEvidence({ result: "maybe" }));
+  assert.throws(() => RedoFlow.buildEvidence({ auto: false }));
+  assert.throws(() => RedoFlow.buildEvidence({ ref: "x".repeat(61) }));
+  assert.throws(() => RedoFlow.buildEvidence({ limit_seconds: -1 }));
+});
+
+test("复习方式有四种，类似题有中文标签", () => {
+  assert.deepEqual([...RedoFlow.MODES], ["recall", "rewrite", "redo", "similar"]);
+  assert.equal(RedoFlow.MODE_LABEL.similar, "类似题");
+});

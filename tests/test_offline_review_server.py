@@ -354,7 +354,7 @@ def test_reviewed_at_drives_schedule_log_and_last_reviewed(client):
     mistake = seed(register(client)["id"], due="2026-09-16")
     given = "2026-09-16T10:30:15.789+08:00"  # 带毫秒和偏移：存成 UTC、秒精度
     result = ok(post(client, mistake, quality=5, client_op_id=OP, reviewed_at=given))
-    assert result == {**expected_schedule(5, date(2026, 9, 16)), "version": 1, "revenge": None}
+    assert result == {**expected_schedule(4, date(2026, 9, 16)), "version": 1, "revenge": None}
     # 对照：不传 reviewed_at 时同样的题按“今天”（逾期 3 天）调度，结果不同。
     control = seed(1, due="2026-09-16")
     assert ok(post(client, control, quality=5, version=0))["due_date"] != result["due_date"]

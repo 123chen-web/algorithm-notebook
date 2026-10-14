@@ -13,6 +13,7 @@ import db
 import pattern_match
 import problem_progress
 import review_lib
+import review_verify
 import scratch
 from problem_progress import enrich_problems
 
@@ -108,6 +109,10 @@ def list_mistakes(
         items = pattern_match.attach_pattern_ids(conn, enrich_problems(conn, user['id'], [
             problem_progress.mistake_public({**dict(row), 'tags': tags_by_id[row['id']]}) for row in rows
         ], day))
+        # 与复习队列同一份字段契约：上一次评分的方式（专注模式据此提示“上次只是自评”）。
+        last_modes = review_verify.last_modes(conn, [item["id"] for item in items])
+        for item in items:
+            item["last_review_mode"] = last_modes.get(item["id"])
     return {
         "today": day,
         "items": items,

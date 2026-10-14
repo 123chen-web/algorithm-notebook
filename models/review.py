@@ -35,7 +35,7 @@ class ReviewInput(InputModel):
     client_op_id: str | None = Field(default=None, pattern=CLIENT_OP_ID_PATTERN)
     reviewed_at: datetime | None = None
     # 复习=重做：mode 只接受三个固定值；旧客户端不传时默认为 recall。
-    mode: Literal["recall", "rewrite", "redo"] = "recall"
+    mode: Literal["recall", "rewrite", "redo", "similar"] = "recall"
     # 小 JSON：{"suggested":4,"final":3,"similarity":0.82,"seconds":412}，
     # JS 码元长度 ≤ 500。空串表示不传（旧客户端兼容）。
     evidence: str = ""
@@ -53,7 +53,7 @@ class ReviewInput(InputModel):
             raise ValueError("evidence 必须是 JSON 对象") from None
         if not isinstance(parsed, dict):
             raise ValueError("evidence 必须是 JSON 对象")
-        allowed = {"suggested", "final", "similarity", "seconds"}
+        allowed = {"suggested", "final", "similarity", "seconds", "result", "limit_seconds", "auto", "ref"}
         for key in parsed:
             if key not in allowed:
                 raise ValueError(f"evidence 不支持的字段：{key}")
@@ -67,9 +67,18 @@ class ReviewInput(InputModel):
             isinstance(similarity, (int, float)) and 0 <= similarity <= 1
         ):
             raise ValueError("evidence 的 similarity 必须是 0 到 1 的数字")
-        seconds = parsed.get("seconds")
-        if seconds is not None and not (isinstance(seconds, int) and seconds >= 0):
-            raise ValueError("evidence 的 seconds 必须是非负整数")
+        for key in ("seconds", "limit_seconds"):
+            number = parsed.get(key)
+            if number is not None and not (isinstance(number, int) and not isinstance(number, bool) and number >= 0):
+                raise ValueError(f"evidence 的 {key} 必须是非负整数")
+        result = parsed.get("result")
+        if result is not None and result not in ("clean", "retry", "hinted", "failed"):
+            raise ValueError("evidence 的 result 不合法")
+        if "auto" in parsed and parsed["auto"] is not True:
+            raise ValueError("evidence 的 auto 只能是 true")
+        ref = parsed.get("ref")
+        if ref is not None and not (isinstance(ref, str) and len(ref) <= 60):
+            raise ValueError("evidence 的 ref 必须是不超过 60 字的文字")
         return value
 
     @field_validator("reviewed_at", mode="before")

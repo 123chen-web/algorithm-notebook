@@ -1,0 +1,20 @@
+[
+  {"mode": "redo", "evidence": {"result": "clean", "seconds": 200, "limit_seconds": 900}, "quality": 5},
+  {"mode": "redo", "evidence": {"result": "clean", "seconds": 300, "limit_seconds": 900}, "quality": 5},
+  {"mode": "redo", "evidence": {"result": "clean", "seconds": 301, "limit_seconds": 900}, "quality": 4},
+  {"mode": "redo", "evidence": {"result": "clean"}, "quality": 4},
+  {"mode": "redo", "evidence": {"result": "clean", "seconds": 1000, "limit_seconds": 900}, "quality": 3},
+  {"mode": "redo", "evidence": {"result": "retry", "seconds": 100, "limit_seconds": 900}, "quality": 4},
+  {"mode": "redo", "evidence": {"result": "retry", "seconds": 1000, "limit_seconds": 900}, "quality": 3},
+  {"mode": "redo", "evidence": {"result": "hinted", "seconds": 100, "limit_seconds": 900}, "quality": 3},
+  {"mode": "redo", "evidence": {"result": "failed", "seconds": 100, "limit_seconds": 900}, "quality": 0},
+  {"mode": "similar", "evidence": {"result": "clean", "seconds": 100, "limit_seconds": 900}, "quality": 4},
+  {"mode": "similar", "evidence": {"result": "retry"}, "quality": 4},
+  {"mode": "similar", "evidence": {"result": "hinted"}, "quality": 3},
+  {"mode": "similar", "evidence": {"result": "failed"}, "quality": 0},
+  {"mode": "rewrite", "evidence": {"similarity": 1.0}, "quality": 4},
+  {"mode": "rewrite", "evidence": {"similarity": 0.85}, "quality": 4},
+  {"mode": "rewrite", "evidence": {"similarity": 0.84}, "quality": 3},
+  {"mode": "rewrite", "evidence": {"similarity": 0.6}, "quality": 3},
+  {"mode": "rewrite", "evidence": {"similarity": 0.59}, "quality": 0}
+]

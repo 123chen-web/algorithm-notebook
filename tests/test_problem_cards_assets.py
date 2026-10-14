@@ -2,18 +2,18 @@
 from pathlib import Path
 import re
 
-from static_helpers import app_source
+from static_helpers import app_source, versioned_src
 
 STATIC = Path(__file__).resolve().parents[1] / 'static'
 
 
 def test_problem_cards_assets_and_load_order():
     index = (STATIC / 'index.html').read_text(encoding='utf-8')
-    assert index.count('/static/problem-cards.css?v=1') == 1
-    assert index.count('/static/problem-cards.js?v=3') == 1
-    assert index.index('problem-cards.js?v=3') < index.index('focus.js?v=9') < index.index('app.js?v=103')
-    for file, version in [('overview.js', 7), ('clusters.js', 7), ('app.js', 103)]:
-        assert f'/static/{file}?v={version}' in index
+    assert index.count(versioned_src('problem-cards.css')) == 1
+    assert index.count(versioned_src('problem-cards.js')) == 1
+    assert index.index(versioned_src('problem-cards.js')) < index.index(versioned_src('focus.js')) < index.index(versioned_src('app.js'))
+    for file in ('overview.js', 'clusters.js', 'app.js'):
+        assert versioned_src(file) in index
 
 
 def test_csp_and_server_only_progress():

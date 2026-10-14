@@ -120,7 +120,7 @@
     redoModes.setAttribute("role", "group");
     redoModes.setAttribute("aria-label", "选择复习方式");
     const redoModeButtons = {};
-    for (const [mode, label] of [["rewrite", "默写关键代码"], ["redo", "去原题限时重做"], ["recall", "只回忆"]]) {
+    for (const [mode, label] of [["redo", "去原题限时重做"], ["similar", "做一道类似题"], ["rewrite", "默写关键代码"], ["recall", "只回忆（自评）"]]) {
       const button = node("button", "redo-mode", label);
       button.type = "button";
       button.dataset.mode = mode;
@@ -378,7 +378,13 @@
       }
     }
     parts.gradeRow.hidden = modern() && !session.revealed;
-    for (const button of parts.gradeButtons) button.disabled = session.submitting;
+    // 算法题的自评没有“很熟”：想拿它必须做题验证（服务端也会封顶）。
+    const capped = item.zone === "算法";
+    for (const button of parts.gradeButtons) {
+      const top = button.dataset.quality === "5";
+      button.hidden = top && capped;
+      button.disabled = session.submitting || (top && capped);
+    }
     parts.defer.hidden = remaining().length < 2;
     parts.status.textContent = `${item.zone}：${item.title}`;
     // 复习=重做：切题时重置方式选择并异步选默认。
@@ -402,7 +408,13 @@
     return {
       rewrite: Boolean((item.correct_code || "").trim()),
       redo: Boolean((item.source_url || "").trim()),
+      similar: true,
     };
+  }
+
+  // 上一次复习只是自评：这次建议用做题验证（队列接口给每条带上 last_review_mode）。
+  function focusNeedsVerification(item) {
+    return (item.last_review_mode || "") === "recall";
   }
 
   async function focusRedoPreference() {
@@ -429,23 +441,28 @@
     const preference = await focusRedoPreference();
     if (hint && avail.rewrite) return { mode: "rewrite", hint };
     if (hint && avail.redo) return { mode: "redo", hint };
-    if (preference === "recall_only") return { mode: "recall", hint };
-    if (avail.rewrite) return { mode: "rewrite", hint };
-    if (avail.redo) return { mode: "redo", hint };
+    const nudge = focusNeedsVerification(item);
+    if (nudge || preference !== "recall_only") {
+      if (avail.redo) return { mode: "redo", hint };
+      if (avail.rewrite) return { mode: "rewrite", hint };
+      if (nudge && avail.similar) return { mode: "similar", hint };
+    }
     return { mode: "recall", hint };
   }
 
   function focusApplyRedoMode() {
     const item = current();
-    const show = Boolean(session && modern() && session.revealed && item && item.zone === "算法" && window.RedoFlow);
+    // 复习方式在“显示错因”之前就能选：重做和类似题要先动手，不能先看到答案。
+    const show = Boolean(session && modern() && item && item.zone === "算法" && window.RedoFlow);
     parts.redoModes.hidden = !show;
     parts.redoPanel.replaceChildren();
     const mode = session.redoMode;
     const recall = !show || !mode || mode === "recall";
     parts.gradeRow.hidden = !recall || (modern() && !session.revealed);
-    parts.recallBadge.hidden = !show || !recall;
+    parts.recallBadge.hidden = !show || !recall || !session.revealed;
     if (show && mode === "rewrite") parts.redoPanel.append(focusBuildRewritePanel(item));
     else if (show && mode === "redo") parts.redoPanel.append(focusBuildRedoPanel(item));
+    else if (show && mode === "similar") parts.redoPanel.append(focusBuildSimilarPanel(item));
   }
 
   function focusSelectRedoMode(mode) {
@@ -468,6 +485,7 @@
       const avail = focusRedoAvailable(item);
       parts.redoModeButtons.rewrite.disabled = !avail.rewrite;
       parts.redoModeButtons.redo.disabled = !avail.redo;
+      parts.redoModeButtons.similar.disabled = !avail.similar;
       for (const button of Object.values(parts.redoModeButtons)) button.setAttribute("aria-pressed", "false");
       parts.redoHint.hidden = true;
       const active = session;
@@ -485,25 +503,9 @@
     focusApplyRedoMode();
   }
 
-  function focusBuildPanelGradeRow(item, { mode, suggested, similarity, seconds }) {
-    const wrap = node("div");
-    wrap.append(node("p", "redo-suggest", `系统建议：${suggested} 分，你可以调整`));
-    const row = node("div", "focus-grade-row redo-actions");
-    row.setAttribute("role", "group");
-    row.setAttribute("aria-label", "最终评分");
-    for (const grade of GRADES) {
-      const button = node("button", `focus-grade focus-grade-${grade.tone}`, "");
-      button.type = "button";
-      button.dataset.quality = String(grade.quality);
-      button.append(node("kbd", "focus-key", grade.key), node("span", "focus-grade-label", grade.label));
-      button.addEventListener("click", () => {
-        const evidence = window.RedoFlow.buildEvidence({ suggested, final: grade.quality, similarity, seconds });
-        gradeCurrent(grade.quality, mode, evidence);
-      });
-      row.append(button);
-    }
-    wrap.append(row);
-    return wrap;
+  // 做题验证交卷：成绩已由结果算出，直接提交，不再让用户二次选分。
+  function focusSubmitVerified(mode, picked) {
+    return gradeCurrent(picked.quality, mode, picked.evidence);
   }
 
   function focusBuildRewritePanel(item) {
@@ -525,7 +527,6 @@
     const resultHost = node("div");
     compare.addEventListener("click", () => {
       const diff = window.RedoFlow.diffLines(item.correct_code, area.value);
-      const suggested = window.RedoFlow.similarityToGrade(diff.similarity);
       resultHost.replaceChildren();
       resultHost.append(node("p", "redo-suggest", `相似度 ${Math.round(diff.similarity * 100)}%`));
       const diffBox = node("div", "redo-diff");
@@ -533,7 +534,10 @@
       for (const line of diff.extra) diffBox.append(node("pre", "redo-extra", `＋ 多写了：${line}`));
       if (!diff.missing.length && !diff.extra.length) diffBox.append(node("p", "muted", "逐行一致，漂亮。"));
       resultHost.append(diffBox);
-      resultHost.append(focusBuildPanelGradeRow(item, { mode: "rewrite", suggested, similarity: diff.similarity }));
+      resultHost.append(window.RedoFlow.buildRewriteSubmit({
+        similarity: diff.similarity,
+        onPick: (picked) => focusSubmitVerified("rewrite", picked),
+      }));
       compare.disabled = true;
     });
     panel.append(area, compare, resultHost);
@@ -561,24 +565,15 @@
     timerEl.setAttribute("role", "timer");
     const askHost = node("div");
     const showAsk = () => {
-      askHost.replaceChildren();
-      askHost.append(node("p", "section-label", "做完了吗？"));
-      const row = node("div", "redo-actions");
-      for (const [label, fixed] of [["一次做对", null], ["做对了但卡了很久", 3], ["没做出来或看了题解", 0]]) {
-        const button = node("button", "", label);
-        button.type = "button";
-        button.addEventListener("click", () => {
-          const timer = session.redoTimer;
-          const elapsed = timer ? timer.elapsed() : 0;
-          const limitSeconds = Number(select.value) * 60;
-          if (timer) { timer.cancel(); session.redoTimer = null; }
-          const suggested = fixed === null ? window.RedoFlow.redoGradeSuggest(elapsed, limitSeconds) : fixed;
-          askHost.replaceChildren();
-          askHost.append(focusBuildPanelGradeRow(item, { mode: "redo", suggested, seconds: elapsed }));
-        });
-        row.append(button);
-      }
-      askHost.append(row);
+      askHost.replaceChildren(window.RedoFlow.buildResultAsk({
+        mode: "redo",
+        seconds: () => (session.redoTimer ? session.redoTimer.elapsed() : 0),
+        limitSeconds: Number(select.value) * 60,
+        onPick: (picked) => {
+          if (session.redoTimer) { session.redoTimer.cancel(); session.redoTimer = null; }
+          focusSubmitVerified("redo", picked);
+        },
+      }));
     };
     start.addEventListener("click", () => {
       window.open(item.source_url, "_blank", "noopener");
@@ -594,6 +589,27 @@
     });
     panel.append(limitRow, start, timerEl, askHost);
     return panel;
+  }
+
+  function focusBuildSimilarPanel(item) {
+    const active = session;
+    const call = async (path, options = {}) => {
+      const response = await request(path, {
+        method: "GET", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Protection": "1" }, ...options,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "请求失败");
+      return data;
+    };
+    return window.RedoFlow.buildSimilarPanel({
+      api: call,
+      mistakeId: item.id,
+      isAlive: () => session === active && current()?.id === item.id && session.redoMode === "similar",
+      quickAdd: (picked) => (window.Similar ? window.Similar.quickAdd(picked, call) : Promise.resolve()),
+      onTimer: (timer) => { session.redoTimer = timer; },
+      onPick: (picked) => focusSubmitVerified("similar", picked),
+    });
   }
 
   /* ---------- 动作 ---------- */
@@ -620,7 +636,11 @@
     // 评分请求回来时，这一轮可能已经被关掉、甚至换成了新的一轮：所有收尾都认准发请求时的那一轮。
     const active = session;
     const item = current();
-    if (!active || !item || active.submitting || (modern() && !active.revealed)) return;
+    if (!active || !item || active.submitting) return;
+    // 只回忆要先看错因再自评；做题验证（默写、重做、类似题）不需要先看答案。
+    if (modern() && !active.revealed && mode === "recall") return;
+    // 算法题的自评没有“很熟”。
+    if (mode === "recall" && quality === 5 && item.zone === "算法") return;
     const valid = capture(active);
     if (!valid()) return;
     active.submitting = true;
@@ -763,7 +783,7 @@
       : GRADES.find((entry) => entry.key === event.key);
     if (grade && current()) {
       // 重做模式（默写/限时）进行中时，数字键不触发普通的回忆评分。
-      if (session.redoMode === "rewrite" || session.redoMode === "redo") return;
+      if (["rewrite", "redo", "similar"].includes(session.redoMode)) return;
       event.preventDefault();
       gradeCurrent(grade.quality);
       return;

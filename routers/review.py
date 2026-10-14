@@ -17,6 +17,7 @@ import db
 import pattern_match
 import problem_progress
 import review_lib
+import review_verify
 import scheduler
 from models import InputModel
 from problem_progress import enrich_problems
@@ -32,7 +33,7 @@ from pydantic import StringConstraints
 from scheduler import preview_all
 from scheduler import today_in_timezone
 from tags import tags_for_mistakes
-from typing import Annotated
+from typing import Annotated, Literal
 import ai
 import json
 import os
@@ -74,6 +75,9 @@ def rvb_get_queue(
             for row in rows
         ]
         items = pattern_match.attach_pattern_ids(conn, enrich_problems(conn, user['id'], items, today.isoformat()))
+        last_modes = review_verify.last_modes(conn, [item["id"] for item in items])
+        for item in items:
+            item["last_review_mode"] = last_modes.get(item["id"])
         review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
         done_today = review_days.get(today, 0)
     return review_lib.rvb_review_queue(items, today, fresh["daily_review_cap"], done_today, ignore_cap)
@@ -111,8 +115,13 @@ def review_mistake(
         if item["due_date"] > day.isoformat():
             raise HTTPException(409, "这条易错点尚未到期，今天不需要再次评分")
 
+        # 成绩由做题结果算出（验证方式）或被自评上限压住（只回忆），再交给 FSRS 排期。
+        quality, evidence = review_verify.settle(data.mode, data.quality, data.evidence, item["zone"])
         card, last_day = scheduler.card_state(item, fresh["timezone"])
-        state = scheduler.schedule(card, last_day, item["repetitions"], data.quality, day)
+        state = scheduler.schedule(card, last_day, item["repetitions"], quality, day)
+        state, streak_capped = review_verify.limit_unverified_streak(
+            state, day, data.mode, review_verify.previous_mode(conn, mistake_id), item["zone"],
+        )
 
         conn.execute(
             """
@@ -138,18 +147,18 @@ def review_mistake(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                mistake_id, data.quality, reviewed_at, state["due_date"],
+                mistake_id, quality, reviewed_at, state["due_date"],
                 (day - last_day).days if last_day else 0, item["interval_days"],
                 item["ease_factor"], item["repetitions"],
                 item["due_date"], item["last_reviewed_at"], item["version"] + 1,
-                data.mode, data.evidence, item["stability"], item["difficulty"],
+                data.mode, evidence, item["stability"], item["difficulty"],
             ),
         )
         # leech 判定：连续失败 8 次（对标 Anki 默认）自动暂停。
         # 暂停是本次评分的一部分，共用评分日志的 version_after，才能撤销。
         # 评分前已拒绝暂停的记录，因此撤销时原暂停状态必然是 NULL。
         leech_suspended = False
-        if data.quality < 3:
+        if quality < 3:
             recent = conn.execute(
                 "SELECT quality FROM reviews WHERE mistake_id = ? ORDER BY id DESC LIMIT 8",
                 (mistake_id,),
@@ -168,10 +177,12 @@ def review_mistake(
         }
         if leech_suspended:
             response["leech_suspended"] = True
+        if streak_capped:
+            response["unverified_cap"] = True
         # 复仇成功：本次评分满足条件且该条从未触发过时，写入标记并附在响应里，
         # 前端评分后立刻盖章庆祝。每条只触发一次。
         revenge = review_lib.check_revenge(
-            conn, mistake_id, data.quality, data.mode, reviewed_at, data.evidence
+            conn, mistake_id, quality, data.mode, reviewed_at, evidence
         )
         if revenge is not None:
             conn.execute(
@@ -201,14 +212,18 @@ def rvb_redo_hint(mistake_id: int, user=Depends(security.current_user)):
 
 
 @router.get("/api/mistakes/{mistake_id}/preview")
-def rvb_preview(mistake_id: int, user=Depends(security.current_user)):
+def rvb_preview(mistake_id: int, mode: Literal["recall", "rewrite", "redo", "similar"] = "recall",
+                user=Depends(security.current_user)):
     with db.connect() as conn:
         conn.execute("BEGIN")
         fresh = accounts.rvb_account(conn, user["id"])
         item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         day = time.today_for(fresh)
         card, last_day = scheduler.card_state(item, fresh["timezone"])
-        previews = preview_all(card, last_day, item["repetitions"], day)
+        previews = review_verify.limit_previews(
+            preview_all(card, last_day, item["repetitions"], day),
+            day, mode, review_verify.previous_mode(conn, mistake_id), item["zone"],
+        )
     return {
         "version": item["version"],
         "previews": {

@@ -155,3 +155,29 @@
   color: var(--ink-soft, var(--ink));
   margin: 0.25rem 0 0;
 }
+
+/* 做题验证：上次只是自评的提醒、做完了吗的四个结果按钮、类似题 */
+.redo-nudge {
+  width: 100%;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--accent);
+}
+.redo-ask {
+  margin-top: 0.75rem;
+}
+.redo-result {
+  text-align: left;
+}
+.redo-submit {
+  margin-top: 0.5rem;
+}
+.similar-pick strong {
+  color: var(--ink);
+}
+.redo-add-failed {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}

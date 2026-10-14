@@ -122,14 +122,14 @@ function modeButtons(env) {
   return [...env.$("#detail").querySelectorAll(".redo-mode")];
 }
 
-test("算法分区显示三种复习方式；非算法分区不显示", async () => {
+test("算法分区显示四种复习方式；非算法分区不显示", async () => {
   const env = environment();
   env.render();
   env.$("#review-reveal").click();
   await env.settleRedo();
   const buttons = modeButtons(env);
-  assert.equal(buttons.length, 3);
-  assert.deepEqual(buttons.map((b) => b.dataset.mode), ["rewrite", "redo", "recall"]);
+  assert.equal(buttons.length, 4);
+  assert.deepEqual(buttons.map((b) => b.dataset.mode), ["redo", "similar", "rewrite", "recall"]);
 
   const other = environment();
   other.render(CARD(2, { zone: "数学" }));
@@ -189,9 +189,10 @@ test("默写：对照 diff 后评分带 mode 与 evidence 入库", async () => {
   assert.ok(missing.some((t) => t.includes("x = 1")), `缺失行应含 x = 1，实际 ${missing}`);
   assert.ok(extra.some((t) => t.includes("x = 2")), `多余行应含 x = 2，实际 ${extra}`);
   assert.match(panel.textContent, /相似度/);
-  // 点建议分对应的按钮（相似度 0.57 → 建议 3）
-  const gradeButton = [...panel.querySelectorAll(".review-grade")].find((b) => b.dataset.quality === "3");
-  assert.ok(gradeButton, "应当有 3 分按钮");
+  // 成绩由相似度算出（0.6–0.85 → 很吃力 3），只有一个提交按钮，没有二次选分。
+  assert.equal(panel.querySelectorAll(".review-grade").length, 0);
+  const gradeButton = panel.querySelector(".redo-submit");
+  assert.ok(gradeButton && gradeButton.dataset.quality === "3", "应当有按相似度计分的提交按钮");
   gradeButton.click();
   await tick(); await tick();
   const review = env.calls.find((call) => call.url === "/api/mistakes/1/review");
@@ -202,6 +203,7 @@ test("默写：对照 diff 后评分带 mode 与 evidence 入库", async () => {
   const evidence = JSON.parse(body.evidence);
   assert.equal(evidence.suggested, 3);
   assert.equal(evidence.final, 3);
+  assert.equal(evidence.auto, true);
   assert.ok(evidence.similarity > 0.6 && evidence.similarity < 0.7, JSON.stringify(evidence));
 });
 
@@ -222,21 +224,151 @@ test("限时重做：选择时限、开始、做对后建议分入库", async ()
   start.click();
   await tick();
   assert.deepEqual(opened, ["https://example.com/problem/1"]);
-  const done = [...panel.querySelectorAll("button")].find((b) => b.textContent === "一次做对");
-  assert.ok(done, "应当出现“做完了吗”三按钮");
-  done.click();
-  await tick();
-  const gradeButton = [...panel.querySelectorAll(".review-grade")].find((b) => b.dataset.quality === "5");
-  assert.ok(gradeButton, "刚开始就做对（用时不到时限一半）建议 5 分");
-  gradeButton.click();
+  const results = [...panel.querySelectorAll(".redo-result")].map((b) => b.dataset.result);
+  assert.deepEqual(results, ["clean", "retry", "hinted", "failed"]);
+  assert.equal(panel.querySelectorAll(".review-grade").length, 0, "不再有二次选分的按钮");
+  panel.querySelector('[data-result="clean"]').click();
   await tick(); await tick();
   const review = env.calls.find((call) => call.url === "/api/mistakes/1/review");
   const body = JSON.parse(review.options.body);
   assert.equal(body.mode, "redo");
+  assert.equal(body.quality, 5, "刚开始就一次通过（用时不到时限 1/3）算很熟");
   const evidence = JSON.parse(body.evidence);
   assert.equal(evidence.suggested, 5);
   assert.equal(evidence.final, 5);
+  assert.equal(evidence.result, "clean");
+  assert.equal(evidence.auto, true);
+  assert.equal(evidence.limit_seconds, 600);
   assert.ok(Number.isInteger(evidence.seconds) && evidence.seconds >= 0);
+});
+
+test("重做：看了提示算很吃力，没做出来算答错，客户端和服务端规则一致", async () => {
+  for (const [result, quality] of [["hinted", 3], ["retry", 4], ["failed", 0]]) {
+    const env = environment();
+    env.window.open = () => null;
+    env.render();
+    env.$("#review-reveal").click();
+    await env.settleRedo();
+    modeButtons(env).find((b) => b.dataset.mode === "redo").click();
+    const panel = env.$("#detail").querySelector(".redo-panel");
+    [...panel.querySelectorAll("button")].find((b) => /开始/.test(b.textContent)).click();
+    panel.querySelector(`[data-result="${result}"]`).click();
+    await tick(); await tick();
+    const review = env.calls.find((call) => call.url === "/api/mistakes/1/review");
+    assert.equal(JSON.parse(review.options.body).quality, quality, result);
+  }
+});
+
+test("做类似题：找题、限时、做错时顺手记成新错题，成绩由结果算出", async () => {
+  const env = environment();
+  const opened = [], added = [];
+  env.window.open = (url) => { opened.push(url); return null; };
+  env.window.Similar = { configure() {}, quickAdd: async (item) => { added.push(item.title); } };
+  env.render();
+  env.$("#review-reveal").click();
+  await env.settleRedo();
+  modeButtons(env).find((b) => b.dataset.mode === "similar").click();
+  await tick();
+  const lookup = env.calls.find((call) => call.url === "/api/review/similar?mistake_id=1");
+  assert.ok(lookup, "应当去取一道类似题");
+  lookup.resolve({ items: [
+    { title: "没有链接的站内题", source: "站内", url: null },
+    { title: "Two Sum 变体", source: "codeforces", difficulty: 1200, reason: "同一个套路", url: "https://example.com/p/2",
+      add_payload: { title: "Two Sum 变体", zone: "算法", language: "Python", quick: true } },
+  ] });
+  await tick(); await tick();
+  const panel = env.$("#detail").querySelector(".redo-panel");
+  assert.match(panel.textContent, /Two Sum 变体/);
+  assert.doesNotMatch(panel.textContent, /没有链接的站内题/, "没有题目链接的题没法去做，不推荐");
+  [...panel.querySelectorAll("button")].find((b) => /开始/.test(b.textContent)).click();
+  assert.deepEqual(opened, ["https://example.com/p/2"]);
+  panel.querySelector('[data-result="failed"]').click();
+  await tick(); await tick(); await tick();
+  assert.deepEqual(added, ["Two Sum 变体"], "没做出来时默认把它记进错题本");
+  const review = env.calls.find((call) => call.url === "/api/mistakes/1/review");
+  const body = JSON.parse(review.options.body);
+  assert.equal(body.mode, "similar");
+  assert.equal(body.quality, 0);
+  const evidence = JSON.parse(body.evidence);
+  assert.equal(evidence.result, "failed");
+  assert.equal(evidence.ref, "Two Sum 变体");
+  assert.equal(evidence.auto, true);
+});
+
+test("类似题：一次通过最高算记得，不给很熟", async () => {
+  const env = environment();
+  env.window.open = () => null;
+  env.window.Similar = { configure() {}, quickAdd: async () => {} };
+  env.render();
+  env.$("#review-reveal").click();
+  await env.settleRedo();
+  modeButtons(env).find((b) => b.dataset.mode === "similar").click();
+  await tick();
+  env.calls.find((call) => call.url === "/api/review/similar?mistake_id=1")
+    .resolve({ items: [{ title: "T", source: "x", url: "https://example.com/p/3" }] });
+  await tick(); await tick();
+  const panel = env.$("#detail").querySelector(".redo-panel");
+  [...panel.querySelectorAll("button")].find((b) => /开始/.test(b.textContent)).click();
+  panel.querySelector('[data-result="clean"]').click();
+  await tick(); await tick();
+  const review = env.calls.find((call) => call.url === "/api/mistakes/1/review");
+  assert.equal(JSON.parse(review.options.body).quality, 4);
+});
+
+test("没有带链接的类似题时给出说明，不卡住", async () => {
+  const env = environment();
+  env.render();
+  env.$("#review-reveal").click();
+  await env.settleRedo();
+  modeButtons(env).find((b) => b.dataset.mode === "similar").click();
+  await tick();
+  env.calls.find((call) => call.url === "/api/review/similar?mistake_id=1").resolve({ items: [] });
+  await tick(); await tick();
+  assert.match(env.$("#detail").querySelector(".redo-panel").textContent, /暂时没有合适的类似题/);
+});
+
+test("复习方式在显示错因之前就能选；做题验证不需要先看答案", async () => {
+  const env = environment();
+  env.window.open = () => null;
+  env.render();
+  await env.settleRedo();
+  const section = env.$("#detail").querySelector(".redo-section");
+  assert.ok(section && !section.hidden, "没点“显示错因”也应当能选复习方式");
+  assert.equal(env.$("#detail").querySelector(".review-actions").parentNode.hidden, true, "自评按钮在显示错因之前不可见");
+  modeButtons(env).find((b) => b.dataset.mode === "redo").click();
+  const panel = env.$("#detail").querySelector(".redo-panel");
+  [...panel.querySelectorAll("button")].find((b) => /开始/.test(b.textContent)).click();
+  panel.querySelector('[data-result="clean"]').click();
+  await tick(); await tick();
+  assert.ok(env.calls.find((call) => call.url === "/api/mistakes/1/review"), "没看错因也能交卷");
+});
+
+test("上一次只是自评：默认改用做题验证，并提醒两周上限", async () => {
+  const env = environment();
+  env.render(CARD(1, { reviews: [{ reviewed_at: "2026-10-01T04:00:00+00:00", quality: 4, next_due_date: "2026-10-05", mode: "recall" }] }));
+  await env.settleRedo({ preference: "recall_only" });
+  const pressed = modeButtons(env).find((b) => b.getAttribute("aria-pressed") === "true");
+  assert.equal(pressed.dataset.mode, "redo");
+  const nudge = env.$("#detail").querySelector(".redo-nudge");
+  assert.ok(nudge && !nudge.hidden);
+  assert.match(nudge.textContent, /14 天/);
+
+  const verified = environment();
+  verified.render(CARD(1, { reviews: [{ reviewed_at: "2026-10-01T04:00:00+00:00", quality: 4, next_due_date: "2026-10-05", mode: "redo" }] }));
+  await verified.settleRedo({ preference: "recall_only" });
+  const choice = modeButtons(verified).find((b) => b.getAttribute("aria-pressed") === "true");
+  assert.equal(choice.dataset.mode, "recall", "上次已经验证过，按偏好走");
+  assert.equal(verified.$("#detail").querySelector(".redo-nudge").hidden, true);
+});
+
+test("算法题的自评没有“很熟”，其他分区还有", async () => {
+  const algorithm = environment();
+  algorithm.render();
+  const qualities = [...algorithm.$("#detail").querySelectorAll(".review-grade")].map((b) => b.dataset.quality);
+  assert.deepEqual(qualities, ["0", "2", "3", "4"]);
+  const math = environment();
+  math.render(CARD(2, { zone: "数学" }));
+  assert.deepEqual([...math.$("#detail").querySelectorAll(".review-grade")].map((b) => b.dataset.quality), ["0", "2", "3", "4", "5"]);
 });
 
 test("重做进行中按数字键不触发普通评分", async () => {

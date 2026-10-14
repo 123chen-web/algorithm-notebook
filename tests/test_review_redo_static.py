@@ -4,9 +4,11 @@ import re
 
 import pytest
 
+from static_helpers import versioned_src
 from test_review_feel_static import Markup
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
+
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 
 
@@ -47,11 +49,12 @@ def test_redo_assets_wired_in_index_with_versions_and_order():
     scripts = [attrs["src"] for tag, attrs in markup.nodes if tag == "script" and "src" in attrs]
     styles = [attrs.get("href") for tag, attrs in markup.nodes
               if tag == "link" and attrs.get("rel") == "stylesheet"]
-    assert scripts.count("/static/redo-flow.js?v=1") == 1
-    assert styles.count("/static/redo-flow.css?v=1") == 1
+    redo_js, redo_css = versioned_src("redo-flow.js"), versioned_src("redo-flow.css")
+    assert scripts.count(redo_js) == 1
+    assert styles.count(redo_css) == 1
     # redo-flow 必须在 focus.js 和 app.js 之前（它们在运行时用 window.RedoFlow）
-    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/focus.js?v=9")
-    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/app.js?v=103")
+    assert scripts.index(redo_js) < scripts.index(versioned_src("focus.js"))
+    assert scripts.index(redo_js) < scripts.index(versioned_src("app.js"))
     # 整页仍无内联 script / style 属性（CSP）
     assert all("style" not in attrs for _, attrs in markup.nodes)
     assert all("src" in attrs for tag, attrs in markup.nodes if tag == "script")

@@ -104,7 +104,7 @@ def test_preview_matches_the_accepted_review_in_every_grade(client, quality, ove
     owner = register(client)["id"]
     mistake = seed(owner, due=(TODAY - timedelta(days=overdue)).isoformat())
     previews = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]
-    expected = expected_schedule(quality)
+    expected = expected_schedule(min(quality, 4))  # 自评没有“很熟”，按“记得”算
     assert previews[str(quality)]["interval_days"] == expected["interval_days"]
     assert previews[str(quality)]["due_date"] == expected["due_date"]
     accepted = assert_ok(rate(client, mistake, quality))
@@ -121,7 +121,7 @@ def test_preview_allows_a_record_that_is_not_yet_due(client):
     before = stored(mistake)
     data = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))
     for quality in (0, 2, 3, 4, 5):
-        expected = expected_schedule(quality)
+        expected = expected_schedule(min(quality, 4))
         assert data["previews"][str(quality)]["interval_days"] == expected["interval_days"]
         assert data["previews"][str(quality)]["due_date"] == expected["due_date"]
     assert stored(mistake) == before
@@ -142,7 +142,7 @@ def test_preview_and_review_use_the_same_local_day(client, monkeypatch, timezone
     mistake = seed(owner, due="2026-09-19")
     preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
     expected = expected_schedule(
-        5, today, last=date(2026, 9, 10) if timezone_name == "Asia/Shanghai" else date(2026, 9, 9),
+        4, today, last=date(2026, 9, 10) if timezone_name == "Asia/Shanghai" else date(2026, 9, 9),
     )
     assert preview["due_date"] == expected["due_date"]
     assert preview["interval_days"] == expected["interval_days"]
@@ -844,7 +844,7 @@ def test_review_preview_reads_the_latest_timezone_rather_than_the_auth_snapshot(
         preview = assert_ok(client.get(f"/api/mistakes/{mistake}/preview"))["previews"]["5"]
     finally:
         main.app.dependency_overrides.pop(security.current_user, None)
-    expected = expected_schedule(5, last=date(2026, 9, 9))
+    expected = expected_schedule(4, last=date(2026, 9, 9))
     assert preview["interval_days"] == expected["interval_days"]
     assert preview["due_date"] == expected["due_date"]
 

@@ -241,14 +241,15 @@ test("detail keyboard: modifiers, IME and modal dialogs protect the hidden answe
   assert.equal(env.$(".review-section").hidden, true);
 });
 
-test("detail scoring: five labels map to scheduler qualities and scores use api without global run", async () => {
+test("detail scoring: self-rating labels map to scheduler qualities and scores use api without global run", async () => {
   const env = environment();
   let runs = 0;
   env.context.run = () => { runs += 1; throw new Error("review must not use run"); };
   env.render();
   env.$("#review-reveal").click();
   const buttons = env.$("#review-grade-row").querySelectorAll("button");
-  assert.deepEqual(buttons.map((button) => button.dataset.quality), ["0", "2", "3", "4", "5"]);
+  // 算法题的自评没有“很熟”（想拿它必须做题验证）；其他分区仍是五档。
+  assert.deepEqual(buttons.map((button) => button.dataset.quality), ["0", "2", "3", "4"]);
   assert.match(buttons[0].textContent, /完全忘了/);
   assert.match(buttons[1].textContent, /答错了/);
   assert.match(buttons[2].textContent, /很吃力/);
