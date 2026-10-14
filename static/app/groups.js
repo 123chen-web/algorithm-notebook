@@ -41,6 +41,13 @@ function resetGroups() {
   $("#groups-retry").hidden = true;
   $("#groups-create-form").reset();
   $("#groups-join-form").reset();
+  $("#groups-coach-section").hidden = true;
+  $("#groups-coach-summary").replaceChildren();
+  $("#groups-coach-status").textContent = "";
+  $("#groups-summary-notice").hidden = true;
+  const pref = $("#groups-summary-pref");
+  pref.checked = true;
+  pref.onchange = null;
 }
 
 async function requestGroups(action, onSuccess, loadingText, { retry = false } = {}) {
@@ -222,6 +229,9 @@ function renderStudyGroup(group) {
     members.append(row);
   }
   renderGroupWeakness(group.weakness_by_zone);
+  renderGroupCoachSection(group);
+  renderGroupSummaryPref(group);
+  maybeShowSummaryNotice(group);
   window.GroupExtras?.renderAll(group);
   $("#groups-delete").hidden = !group.is_creator;
   void loadGroupLevelRules();
@@ -253,6 +263,166 @@ function renderGroupWeakness(weaknessByZone) {
     signals.append(row);
   }
   if (missing.length) signals.append(element("p", `样本暂不足：${missing.join("、")}`, "groups-signal-missing"));
+}
+
+// ---- 薄弱点汇总（仅组长可见，纯聚合） ----
+
+function renderGroupCoachSection(group) {
+  const section = $("#groups-coach-section");
+  section.hidden = !group.is_creator;
+  if (!group.is_creator) return;
+  loadGroupCoachSummary(group.id);
+}
+
+async function loadGroupCoachSummary(groupId) {
+  const status = $("#groups-coach-status");
+  const host = $("#groups-coach-summary");
+  host.replaceChildren();
+  status.textContent = "正在加载全组汇总…";
+  try {
+    const data = await api(`/api/groups/${groupId}/weakness-summary`);
+    if (!studyGroup || studyGroup.id !== groupId || !studyGroup.is_creator) return;
+    status.textContent = "";
+    renderGroupCoachSummary(host, data);
+  } catch (error) {
+    if (!studyGroup || studyGroup.id !== groupId) return;
+    status.textContent = `汇总暂时无法加载：${error.message || "请稍后重试"}`;
+  }
+}
+
+function coachBarRow(label, count, percent) {
+  const row = element("div", "", "coach-bar-row");
+  row.append(element("span", label, "coach-bar-label"));
+  const track = element("span", "", "coach-bar-track");
+  const fill = element("span", "", "coach-bar-fill");
+  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  track.append(fill);
+  row.append(track);
+  row.append(element("span", `${count} · ${percent}%`, "coach-bar-value"));
+  return row;
+}
+
+function coachBlock(title) {
+  const block = element("div", "", "coach-block");
+  block.append(element("h4", title));
+  return block;
+}
+
+function renderGroupCoachSummary(host, data) {
+  host.replaceChildren();
+  const meta = element("p", `参与汇总 ${data.eligible_members} 人`, "muted");
+  host.append(meta);
+  if (!data.has_summary) {
+    host.append(element("p", data.reason, "muted"));
+    return;
+  }
+  // ① 错因分布：4 大类。
+  const groupBlock = coachBlock("错因分布");
+  const groupBars = element("div", "", "coach-bars");
+  for (const g of data.cause_groups) {
+    groupBars.append(coachBarRow(g.label, g.count, g.percent));
+  }
+  groupBlock.append(groupBars);
+  host.append(groupBlock);
+  // 14 个错因明细（只显示有计数的）。
+  const counted = data.causes.filter((c) => c.count > 0);
+  if (counted.length) {
+    const causeBlock = coachBlock("错因明细");
+    const causeBars = element("div", "", "coach-bars");
+    const max = Math.max(...counted.map((c) => c.count));
+    for (const c of counted) {
+      causeBars.append(coachBarRow(
+        `${c.label}`, c.count, max ? Math.round(c.count / max * 100) : 0
+      ));
+    }
+    causeBlock.append(causeBars);
+    host.append(causeBlock);
+  }
+  // ② 判题类型分布。
+  if (data.verdicts.length) {
+    const verdictBlock = coachBlock("判题类型");
+    const verdictBars = element("div", "", "coach-bars");
+    for (const v of data.verdicts) {
+      verdictBars.append(coachBarRow(v.label, v.count, v.percent));
+    }
+    verdictBlock.append(verdictBars);
+    host.append(verdictBlock);
+  }
+  // ③ 套路：错得最多的 5 个 + 学习路线进度。
+  const patternBlock = coachBlock("错得最多的套路");
+  if (data.top_patterns.length) {
+    const list = element("ul", "", "coach-pattern-list");
+    for (const p of data.top_patterns) {
+      const li = element("li");
+      li.append(element("span", p.title));
+      li.append(element("span", `${p.mistake_count} 条易错点`, "coach-pattern-count"));
+      list.append(li);
+    }
+    patternBlock.append(list);
+  } else {
+    patternBlock.append(element("p", "还没有套路关联数据。", "muted"));
+  }
+  const roadmap = element("p", "", "muted");
+  roadmap.textContent = `全组学习路线：${data.roadmap.mastered} 个已掌握 / ${data.roadmap.learning} 个学习中`;
+  patternBlock.append(roadmap);
+  host.append(patternBlock);
+  // ④ 本周活跃与复习完成率。
+  const weekBlock = coachBlock("本周");
+  const stats = element("div", "", "coach-stats");
+  const activeStat = element("div", "", "coach-stat");
+  activeStat.append(element("strong", String(data.active_this_week)), element("span", "活跃人数"));
+  const rateStat = element("div", "", "coach-stat");
+  rateStat.append(
+    element("strong", `${data.review_completion.percent}%`),
+    element("span", `复习完成率（${data.review_completion.reviewed}/${data.review_completion.due}）`)
+  );
+  stats.append(activeStat, rateStat);
+  weekBlock.append(stats);
+  host.append(weekBlock);
+}
+
+// ---- 成员汇总偏好（退出开关）与首次提示 ----
+
+function renderGroupSummaryPref(group) {
+  const pref = $("#groups-summary-pref");
+  pref.checked = group.include_in_summary !== false;
+  pref.onchange = () => {
+    const include = pref.checked;
+    pref.disabled = true;
+    api(`/api/groups/${group.id}/summary-preference`, {
+      method: "POST",
+      body: JSON.stringify({ include_in_summary: include }),
+    }).then(
+      () => {
+        pref.disabled = false;
+        studyGroup.include_in_summary = include;
+        message(include ? "已重新参与全组汇总。" : "已退出全组汇总，你的数据不再计入。");
+      },
+      (error) => {
+        pref.disabled = false;
+        pref.checked = !include;
+        message(`设置失败：${error.message || "请稍后重试"}`);
+      }
+    );
+  };
+}
+
+function maybeShowSummaryNotice(group) {
+  const banner = $("#groups-summary-notice");
+  let seen = false;
+  try {
+    seen = localStorage.getItem(`groupSummaryNotice:${user.id}:${group.id}`) === "1";
+  } catch {
+    seen = true;
+  }
+  banner.hidden = seen;
+  if (seen) return;
+  $("#groups-summary-notice-dismiss").onclick = () => {
+    banner.hidden = true;
+    try {
+      localStorage.setItem(`groupSummaryNotice:${user.id}:${group.id}`, "1");
+    } catch { /* 忽略 */ }
+  };
 }
 
 function renderGroupLevelRules(data) {

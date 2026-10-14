@@ -114,12 +114,17 @@ def group_detail(conn, group_id, user_id):
     ranked_members = sorted(
         members, key=lambda row: (-streaks[row["id"]], row["username"])
     )
+    my_preference = conn.execute(
+        "SELECT include_in_summary FROM study_group_members WHERE group_id = ? AND user_id = ?",
+        (group_id, user_id),
+    ).fetchone()
     return {
         "id": group["id"],
         "name": group["name"],
         "invite_code": group["invite_code"],
         "created_at": group["created_at"],
         "is_creator": group["created_by"] == user_id,
+        "include_in_summary": bool(my_preference[0]) if my_preference else True,
         "member_limit": config.GROUP_MAX_MEMBERS,
         "level": level_summary(points),
         "points": points,
@@ -285,6 +290,232 @@ def group_today_feed(conn, group_id):
         entry["goal_met"] = reviewed_today >= config.GROUP_TODAY_GOAL_REVIEWS
         feed.append(entry)
     return feed
+
+
+# ---- 薄弱点汇总（组长视角，纯聚合，不含任何个人明细） ----
+
+# 参与汇总的最少合格成员数：低于此数不显示任何汇总，防止从汇总反推个人。
+WEAKNESS_SUMMARY_MIN_MEMBERS = 3
+
+_PATTERN_TITLES = None
+
+
+def _pattern_titles():
+    """套路 id → 中文标题（只读 id/title 两列，进程内缓存）。"""
+    global _PATTERN_TITLES
+    if _PATTERN_TITLES is None:
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parent / "static" / "data" / "patterns.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _PATTERN_TITLES = {
+                item["id"]: item.get("title") or item["id"] for item in data
+            }
+        except (OSError, ValueError, KeyError, TypeError):
+            _PATTERN_TITLES = {}
+    return _PATTERN_TITLES
+
+
+def eligible_summary_member_ids(conn, group_id):
+    """参与汇总的合格成员 id：未注销 + 未退出汇总。"""
+    rows = conn.execute(
+        """
+        SELECT u.id FROM study_group_members gm
+        JOIN users u ON u.id = gm.user_id
+        WHERE gm.group_id = ? AND u.deleted_at IS NULL
+          AND gm.include_in_summary = 1
+        """,
+        (group_id,),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def group_weakness_summary(conn, group_id):
+    """组长视角的成员薄弱点汇总。
+
+    口径（同步写进 docs/features/groups.md）：
+    - 只统计合格成员：未注销且未退出汇总（include_in_summary=1）。
+    - 少于 3 个合格成员时不返回任何汇总（has_summary=False），只给原因文案。
+    - 错因分布：合格成员 mistake_tags 按 14 个固定 code 聚合 → 4 大类。
+    - 判题类型分布：合格成员 problems.verdict（非空）。
+    - 套路：合格成员易错点最多的 5 个 pattern_id（经 problem_patterns 关联
+      mistakes 计数）+ 全组学习路线进度（pattern_progress 的 learning/mastered）。
+    - 本周活跃人数：本周一 00:00（北京）以来有 reviews 记录的合格成员数。
+    - 复习完成率：本周到期的错题中，本周已复习过的去重错题占比。
+
+    返回里只有聚合数字，没有用户名、题名、错题内容、笔记。
+    """
+    import error_taxonomy
+
+    member_ids = eligible_summary_member_ids(conn, group_id)
+    eligible = len(member_ids)
+    if eligible < WEAKNESS_SUMMARY_MIN_MEMBERS:
+        return {
+            "group_id": group_id,
+            "eligible_members": eligible,
+            "has_summary": False,
+            "reason": (
+                f"参与汇总的成员只有 {eligible} 人，不足 "
+                f"{WEAKNESS_SUMMARY_MIN_MEMBERS} 人。为保护个人隐私，"
+                "人数不足时不显示任何汇总统计。"
+            ),
+        }
+    placeholders = ",".join("?" for _ in member_ids)
+
+    # ① 错因分布：4 大类 + 14 错因。
+    cause_rows = conn.execute(
+        f"""
+        SELECT t.tag, COUNT(DISTINCT m.id) AS count
+        FROM mistake_tags t
+        JOIN mistakes m ON m.id = t.mistake_id
+        JOIN problems p ON p.id = m.problem_id
+        WHERE t.user_id IN ({placeholders}) AND p.user_id = t.user_id
+        GROUP BY t.tag
+        """,
+        tuple(member_ids),
+    ).fetchall()
+    group_counts = {group: 0 for group, _ in error_taxonomy.CAUSE_GROUPS}
+    causes = []
+    total_causes = 0
+    for row in cause_rows:
+        code, count = row[0], row[1]
+        total_causes += count
+        try:
+            group = error_taxonomy.cause_group(code)
+            label = error_taxonomy.cause_label(code)
+        except KeyError:
+            continue
+        group_counts[group] += count
+        causes.append({
+            "code": code, "label": label, "group": group, "count": count,
+        })
+    causes.sort(key=lambda item: (-item["count"], item["code"]))
+    cause_groups = [
+        {
+            "code": group,
+            "label": error_taxonomy.group_label(group),
+            "count": group_counts[group],
+            "percent": round(group_counts[group] / total_causes * 100) if total_causes else 0,
+        }
+        for group, _ in error_taxonomy.CAUSE_GROUPS
+    ]
+
+    # ② 判题类型分布。
+    verdict_rows = conn.execute(
+        f"""
+        SELECT verdict, COUNT(*) AS count FROM problems
+        WHERE user_id IN ({placeholders}) AND verdict != ''
+        GROUP BY verdict ORDER BY count DESC
+        """,
+        tuple(member_ids),
+    ).fetchall()
+    verdict_total = sum(row[1] for row in verdict_rows)
+    verdicts = []
+    for row in verdict_rows:
+        code, count = row[0], row[1]
+        try:
+            label = error_taxonomy.verdict_label(code)
+        except KeyError:
+            continue
+        verdicts.append({
+            "code": code, "label": label, "count": count,
+            "percent": round(count / verdict_total * 100) if verdict_total else 0,
+        })
+
+    # ③ 套路：错得最多的 5 个 + 学习路线进度。
+    pattern_rows = conn.execute(
+        f"""
+        SELECT pp.pattern_id, COUNT(DISTINCT m.id) AS count
+        FROM problem_patterns pp
+        JOIN problems p ON p.id = pp.problem_id
+        JOIN mistakes m ON m.problem_id = p.id
+        WHERE p.user_id IN ({placeholders})
+        GROUP BY pp.pattern_id
+        ORDER BY count DESC, pp.pattern_id ASC
+        LIMIT 5
+        """,
+        tuple(member_ids),
+    ).fetchall()
+    titles = _pattern_titles()
+    top_patterns = [
+        {
+            "pattern_id": row[0],
+            "title": titles.get(row[0], row[0]),
+            "mistake_count": row[1],
+        }
+        for row in pattern_rows
+    ]
+    roadmap_rows = conn.execute(
+        f"""
+        SELECT status, COUNT(*) FROM pattern_progress
+        WHERE user_id IN ({placeholders})
+        GROUP BY status
+        """,
+        tuple(member_ids),
+    ).fetchall()
+    roadmap = {"learning": 0, "mastered": 0}
+    for row in roadmap_rows:
+        if row[0] in roadmap:
+            roadmap[row[0]] = row[1]
+
+    # ④ 本周活跃人数、复习完成率（周一起点用北京时间周一）。
+    week_start = group_week_start()
+    week_start_dt = _as_utc(week_start).replace(
+        tzinfo=ZoneInfo(config.GROUP_WEEK_TIMEZONE)
+    )
+    week_end_dt = week_start_dt + timedelta(days=7)
+    week_end_date = week_end_dt.date().isoformat()
+    active_rows = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT p.user_id)
+        FROM problems p
+        JOIN mistakes m ON m.problem_id = p.id
+        JOIN reviews r ON r.mistake_id = m.id
+        WHERE p.user_id IN ({placeholders}) AND r.reviewed_at >= ?
+        """,
+        tuple(member_ids) + (week_start,),
+    ).fetchone()
+    due_rows = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT m.id)
+        FROM problems p
+        JOIN mistakes m ON m.problem_id = p.id
+        WHERE p.user_id IN ({placeholders}) AND m.due_date <= ?
+        """,
+        tuple(member_ids) + (week_end_date,),
+    ).fetchone()
+    reviewed_rows = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT m.id)
+        FROM problems p
+        JOIN mistakes m ON m.problem_id = p.id
+        JOIN reviews r ON r.mistake_id = m.id
+        WHERE p.user_id IN ({placeholders})
+          AND m.due_date <= ?
+          AND r.reviewed_at >= ?
+        """,
+        tuple(member_ids) + (week_end_date, week_start),
+    ).fetchone()
+    due_count = due_rows[0]
+    reviewed_count = reviewed_rows[0]
+
+    return {
+        "group_id": group_id,
+        "eligible_members": eligible,
+        "has_summary": True,
+        "cause_groups": cause_groups,
+        "causes": causes,
+        "verdicts": verdicts,
+        "top_patterns": top_patterns,
+        "roadmap": roadmap,
+        "active_this_week": active_rows[0],
+        "review_completion": {
+            "due": due_count,
+            "reviewed": reviewed_count,
+            "percent": round(reviewed_count / due_count * 100) if due_count else 0,
+        },
+    }
 
 
 def generate_group_invite_code():

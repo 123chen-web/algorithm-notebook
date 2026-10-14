@@ -46,3 +46,7 @@ class WeeklyGoalInput(InputModel):
 class GroupTodayVisibilityInput(InputModel):
     show: StrictBool
 
+
+class SummaryPreference(InputModel):
+    include_in_summary: StrictBool
+

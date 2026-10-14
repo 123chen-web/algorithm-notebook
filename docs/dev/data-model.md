@@ -63,8 +63,9 @@
 | 81 | 复习=重做（`reviews.mode`/`evidence` + `users.redo_preference`） |
 | 82 | 复习方式偏好默认改为“只回忆”（`users.redo_preference` 默认值 `recall_only`） |
 | 83 | 复仇成功标记（`mistakes.revenge_at`，NULL=从未触发） |
+| 84 | 小组薄弱点汇总的成员退出开关（`study_group_members.include_in_summary`，默认参与） |
 
-25–27 为未发布功能撤回后的空缺，不重用。
+25–27 为未发布功能撤回后的空缺，82、83 为第三轮其他项预留，不重用。
 
 数据库版本比程序新时程序会拒绝启动；回退程序版本前请先备份。
 

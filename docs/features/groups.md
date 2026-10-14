@@ -76,3 +76,48 @@
 .venv\Scripts\python.exe -B -m pytest -p no:cacheprovider -q tests/test_group_levels.py tests/test_groups.py
 ```
 
+
+## 薄弱点汇总（仅组长可见）
+
+面向学校集训队、算法课等场景：组长（创建者）在小组详情页可以看到
+「薄弱点汇总」标签页，一眼看到队员整体栽在哪。**只汇总、不展示个人明细**。
+
+### 数据口径
+
+- **合格成员**：未注销（`deleted_at IS NULL`）且未退出汇总
+  （`study_group_members.include_in_summary = 1`）的成员。
+- **人数门槛**：合格成员少于 3 人时不显示任何汇总，只显示原因文案，
+  防止从汇总数字反推个人。
+- **错因分布**：合格成员的 `mistake_tags` 按 14 个固定 code 聚合，
+  给出 4 大类（想错了/写错了/跑得慢/环境与其他）的计数与占比，
+  以及有计数的错因明细。
+- **判题类型分布**：合格成员 `problems.verdict`（非空）的计数与占比。
+- **套路**：合格成员易错点最多的 5 个 `pattern_id`
+  （经 `problem_patterns` 关联 `mistakes` 计数），附中文标题；
+  另给全组学习路线进度（`pattern_progress` 的 learning/mastered 计数）。
+- **本周活跃人数**：本周一 00:00（北京时间）以来有 `reviews` 记录的合格成员数。
+- **复习完成率**：本周到期的错题（`due_date` ≤ 本周日）中，
+  本周已复习过的去重错题占比。
+
+### 隐私设计
+
+- 接口 `GET /api/groups/{group_id}/weakness-summary`：
+  非成员返回 404（不区分不存在和未加入，避免枚举探测）；
+  成员但非组长返回 403；只有组长能拿到数据。
+- 返回里只有聚合数字，**没有用户名、题名、错题内容、笔记**。
+  后端测试用“扫描响应 JSON 不应出现用户名/题名”断言守住这一点。
+- 成员知情：加入表单下方、以及已有成员首次打开小组详情时，
+  会提示“组长可以看到全组的汇总统计，看不到你的具体题目和笔记”。
+- 成员可在小组详情页「小组设置」里随时退出/重新参与汇总
+  （`POST /api/groups/{group_id}/summary-preference`，
+  `{"include_in_summary": false}`）；退出者不计入汇总，
+  也不计入“少于 3 人”的判断。默认参与（迁移 84，
+  `study_group_members.include_in_summary`，默认 1，幂等）。
+- 注销账号后，其数据不再计入汇总（`deleted_at` 过滤）。
+
+### 前端
+
+小组详情页组长视图新增「薄弱点汇总」区块（`#groups-coach-section`，
+`group.is_creator` 为真时显示）；图表复用薄弱点页的横向条视觉，
+样式作用域限定在 `#groups-coach-summary`（`static/groups.css`），
+不串到别的页面。空状态、人数不足、全员退出都有诚实文案。

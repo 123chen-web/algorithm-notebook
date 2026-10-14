@@ -171,7 +171,10 @@ def test_group_frontend_timezone_and_level_storage_regressions(scenario):
     for name in (
         "element", "profileAuthor", "timestamp", "formatGroupDate", "groupLevelBadge",
         "groupNextLevelText", "setGroupProgress", "renderStudyGroup",
-        "renderGroupWeakness", "renderGroupLevelRules", "loadGroupLevelRules",
+        "renderGroupWeakness", "renderGroupCoachSection", "loadGroupCoachSummary",
+        "renderGroupCoachSummary", "coachBarRow", "coachBlock",
+        "renderGroupSummaryPref", "maybeShowSummaryNotice",
+        "renderGroupLevelRules", "loadGroupLevelRules",
         "rememberGroupLevel",
     ):
         declaration = re.search(

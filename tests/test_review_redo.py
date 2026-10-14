@@ -47,7 +47,7 @@ def test_migration_81_adds_columns_and_is_idempotent(tmp_path, monkeypatch):
     db.init_db()
     db.init_db()  # 重复启动不报错
     with connect() as conn:
-        assert db.schema_version(conn) == 83 == db.SCHEMA_VERSION
+        assert db.schema_version(conn) == 84 == db.SCHEMA_VERSION
         review_cols = {row[1] for row in conn.execute("PRAGMA table_info(reviews)")}
         assert {"mode", "evidence"} <= review_cols
         user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
@@ -73,7 +73,7 @@ def test_upgrade_from_80_keeps_data(tmp_path, monkeypatch):
         user_id = conn.execute("SELECT id FROM users WHERE username='old-user'").fetchone()[0]
     db.init_db()
     with connect() as conn:
-        assert db.schema_version(conn) == 83
+        assert db.schema_version(conn) == 84
         row = conn.execute("SELECT redo_preference FROM users WHERE id = ?", (user_id,)).fetchone()
         assert row["redo_preference"] == "recall_only"
 

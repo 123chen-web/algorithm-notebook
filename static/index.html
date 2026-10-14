@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="/static/new-record.css?v=8">
   <link rel="stylesheet" href="/static/capture.css?v=1">
   <link rel="stylesheet" href="/static/weakness.css?v=5">
-  <link rel="stylesheet" href="/static/groups.css?v=2">
+  <link rel="stylesheet" href="/static/groups.css?v=3">
   <link rel="stylesheet" href="/static/group-extras.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=7">
   <link rel="stylesheet" href="/static/notes.css?v=3">
@@ -157,7 +157,7 @@
   <script defer src="/static/app/forum-post.js?v=1"></script>
   <script defer src="/static/app/forum-comments.js?v=1"></script>
   <script defer src="/static/app/forum-map.js?v=1"></script>
-  <script defer src="/static/app/groups.js?v=1"></script>
+  <script defer src="/static/app/groups.js?v=2"></script>
   <script defer src="/static/app/rank.js?v=1"></script>
   <script defer src="/static/app/account.js?v=1"></script>
   <script defer src="/static/app/admin.js?v=1"></script>
@@ -1321,12 +1321,17 @@
                 <input id="groups-invite-input" name="invite_code" required minlength="8" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入 8 位邀请码">
                 <button type="submit" class="primary">加入小组</button>
               </form>
+              <p class="muted groups-join-privacy">加入后，组长可以看到全组的汇总统计（看不到你的具体题目和笔记）。你可以在小组设置里随时退出汇总。</p>
             </section>
           </div>
         </div>
 
         <section id="groups-detail" aria-labelledby="groups-detail-title" hidden>
           <button id="groups-back" type="button">返回我的小组</button>
+          <div id="groups-summary-notice" class="groups-notice" hidden>
+            <p>组长可以看到全组的汇总统计，看不到你的具体题目和笔记。你可以在本页“小组设置”里随时退出汇总。</p>
+            <button id="groups-summary-notice-dismiss" type="button">知道了</button>
+          </div>
           <div id="groups-detail-content" hidden>
             <div id="groups-hero" class="panel groups-hero">
               <div id="groups-hero-badge" class="groups-hero-badge"></div>
@@ -1361,6 +1366,20 @@
               <h3 id="groups-weakness-title">组内薄弱点信号</h3>
               <p class="muted">每个分区至少有 3 位非体验成员记录过易错点，才显示群体挣扎占比；其中累计有 3 条及以上易错点视为反复出错。体验账号的学习数据不参与聚合。</p>
               <div id="groups-weakness"></div>
+            </section>
+            <section class="panel" id="groups-coach-section" aria-labelledby="groups-coach-title" hidden>
+              <h3 id="groups-coach-title">薄弱点汇总 <span class="groups-coach-badge">仅组长可见</span></h3>
+              <p class="muted">只显示全组聚合数字，不含任何成员的具体题目、笔记和姓名。参与汇总的成员不足 3 人时不显示。</p>
+              <p id="groups-coach-status" class="muted" role="status" aria-live="polite"></p>
+              <div id="groups-coach-summary"></div>
+            </section>
+            <section class="panel" id="groups-pref-section" aria-labelledby="groups-pref-title">
+              <h3 id="groups-pref-title">小组设置</h3>
+              <label class="groups-pref-row">
+                <input type="checkbox" id="groups-summary-pref">
+                <span>参与全组薄弱点汇总</span>
+              </label>
+              <p class="muted">关闭后，你的学习数据不计入组长的汇总统计，也不计入人数判断。可随时重新打开。</p>
             </section>
             <section class="panel groups-extras-section" id="groups-goal-section" aria-labelledby="groups-goal-title" hidden>
               <h3 id="groups-goal-title">本周小目标</h3>

@@ -7,6 +7,7 @@ in tests keeps affecting the moved code.
 from core import config, ratelimit, security, time
 from models.groups import JoinGroup
 from models.groups import NewGroup
+from models.groups import SummaryPreference
 import accounts
 import db
 import groups_lib
@@ -175,6 +176,36 @@ def remove_group_member(group_id: int, user_id: int, user=Depends(security.curre
             (group_id, user_id),
         )
     return {"ok": True}
+
+
+@router.get("/api/groups/{group_id}/weakness-summary")
+def get_group_weakness_summary(group_id: int, user=Depends(security.current_user)):
+    """组长视角的成员薄弱点汇总：只返回聚合数字，不含任何个人明细。
+
+    鉴权：非成员 404（不区分不存在和未加入，避免枚举探测）；成员但非组长 403。
+    少于 3 个参与汇总的合格成员时不返回任何汇总，只给原因。
+    """
+    with db.connect() as conn:
+        conn.execute("BEGIN")
+        group = groups_lib.member_group(conn, group_id, user["id"])
+        if group["created_by"] != user["id"]:
+            raise HTTPException(403, "只有组长可以查看薄弱点汇总")
+        return groups_lib.group_weakness_summary(conn, group_id)
+
+
+@router.post("/api/groups/{group_id}/summary-preference")
+def set_group_summary_preference(
+    group_id: int, data: SummaryPreference, user=Depends(security.current_user)
+):
+    """成员设置自己是否参与本组的薄弱点汇总（默认参与，可随时退出/重新加入）。"""
+    with db.connect(write=True) as conn:
+        groups_lib.member_group(conn, group_id, user["id"])
+        conn.execute(
+            "UPDATE study_group_members SET include_in_summary = ?"
+            " WHERE group_id = ? AND user_id = ?",
+            (1 if data.include_in_summary else 0, group_id, user["id"]),
+        )
+    return {"ok": True, "include_in_summary": bool(data.include_in_summary)}
 
 
 @router.delete("/api/groups/{group_id}")

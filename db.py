@@ -1319,6 +1319,23 @@ def _apply_revenge_mark(conn):
 
 
 MIGRATIONS.append((83, "复仇成功：mistakes.revenge_at 标记", _apply_revenge_mark))
+
+
+def _apply_group_summary_optout(conn):
+    """小组薄弱点汇总的成员退出开关（迁移 84）。
+
+    study_group_members 加 include_in_summary 列（1=参与汇总，0=退出），
+    默认参与。幂等：列已存在直接返回。
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(study_group_members)")}
+    if "include_in_summary" not in existing:
+        conn.execute(
+            "ALTER TABLE study_group_members "
+            "ADD COLUMN include_in_summary INTEGER NOT NULL DEFAULT 1"
+        )
+
+
+MIGRATIONS.append((84, "小组薄弱点汇总：study_group_members.include_in_summary", _apply_group_summary_optout))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

@@ -214,3 +214,58 @@ html[data-theme="ink"] #groups-page { --groups-seal-gold-text: var(--ink); }
   #groups-page #groups-weakness { padding: var(--space-4); }
   #groups-page .groups-signal-row { gap: var(--space-3); grid-template-columns: minmax(60px, 1fr) minmax(0, 2fr) 3em; }
 }
+
+/* 薄弱点汇总（组长视角）：横向条复用 weakness 页视觉，作用域限定在 #groups-coach-summary。 */
+#groups-coach-section .groups-coach-badge {
+  font-size: var(--text-xs);
+  font-weight: normal;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+#groups-coach-summary .coach-block { margin-top: var(--space-4); }
+#groups-coach-summary .coach-block > h4 { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+#groups-coach-summary .coach-bars { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+#groups-coach-summary .coach-bar-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+#groups-coach-summary .coach-bar-label { font-size: var(--text-sm); overflow-wrap: anywhere; }
+#groups-coach-summary .coach-bar-track {
+  display: block; height: 10px; border-radius: var(--radius-pill);
+  background: var(--soft); overflow: hidden;
+}
+#groups-coach-summary .coach-bar-fill {
+  display: block; height: 100%; border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+#groups-coach-summary .coach-bar-value {
+  color: var(--ink-2); font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#groups-coach-summary .coach-stats { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+#groups-coach-summary .coach-stat { display: grid; gap: var(--space-1); }
+#groups-coach-summary .coach-stat strong { font-size: var(--text-xl); }
+#groups-coach-summary .coach-stat span { font-size: var(--text-xs); color: var(--ink-2); }
+#groups-coach-summary .coach-pattern-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+#groups-coach-summary .coach-pattern-list li { display: flex; justify-content: space-between; gap: var(--space-2); font-size: var(--text-sm); }
+#groups-coach-summary .coach-pattern-list .coach-pattern-count { color: var(--ink-2); white-space: nowrap; }
+.groups-notice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--soft);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+.groups-notice p { margin: 0; font-size: var(--text-sm); }
+.groups-pref-row { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); cursor: pointer; }
+.groups-pref-row input { width: 1.1em; height: 1.1em; }
+.groups-join-privacy { margin-top: var(--space-2); }
