@@ -804,8 +804,11 @@
       });
       if (!alive(token)) return;
       Object.assign(note, updated);
-      sortNotes();
-      renderList();
+      // 手感层：置顶后卡片 FLIP 挪位；reduced-motion 下 flip 直接执行 mutate。
+      const notesListEl = $("#notes-list");
+      const mutate = () => { sortNotes(); renderList(); };
+      if (window.Feel?.flip) window.Feel.flip(notesListEl, mutate);
+      else mutate();
     } catch (error) {
       if (!alive(token)) return;
       hooks?.notify?.(error?.message || "操作失败，请稍后重试。");

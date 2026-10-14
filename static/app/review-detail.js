@@ -373,6 +373,19 @@ function clearDetail(
   $("#detail").replaceChildren(empty);
 }
 
+// 复习完成提示：按服务端给的今天（user.today，core.time.today_for 口径）与
+// result.due_date 算下次复习在几天后；算不出就只说"复习完成"。
+function rvfReviewDoneText(result) {
+  const dayNumber = (value) => {
+    const parts = String(value || "").split("-").map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) return NaN;
+    return Date.UTC(parts[0], parts[1] - 1, parts[2]);
+  };
+  const diff = Math.round((dayNumber(result?.due_date) - dayNumber(user?.today)) / 86400000);
+  if (!Number.isFinite(diff) || diff < 1) return "✅ 复习完成";
+  return `✅ 复习完成，下次在 ${diff} 天后`;
+}
+
 // 三种复习方式共用的评分提交：mode 默认为 recall（旧行为），rewrite/redo
 // 会带上 evidence（建议分/最终分/相似度/用时）。离线时同样把 mode/evidence
 // 写进离线队列，联网后一起补交。
@@ -414,6 +427,7 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
       stampSeal("雪耻", { anchor, tone: "cinnabar" });
       rvfShowRevengeLine(root, result.revenge);
     }
+    window.Feel?.toast(rvfReviewDoneText(result)); // 手感层：盖章后提示下次复习时间
     window.ReviewFeel?.buzz();
     if (result) {
       rvfRemoveItem({ ...item, ...result });

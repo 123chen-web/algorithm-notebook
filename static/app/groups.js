@@ -50,7 +50,7 @@ function resetGroups() {
   pref.onchange = null;
 }
 
-async function requestGroups(action, onSuccess, loadingText, { retry = false } = {}) {
+async function requestGroups(action, onSuccess, loadingText, { retry = false, skeletonHost = null } = {}) {
   if (!user || view !== "groups") return;
   const generation = ++groupsGeneration;
   const userId = user.id;
@@ -60,15 +60,23 @@ async function requestGroups(action, onSuccess, loadingText, { retry = false } =
   const status = $("#groups-status");
   page.setAttribute("aria-busy", "true");
   status.classList.remove("error");
-  status.textContent = loadingText;
+  // 手感层：骨架屏代替"正在加载…"文字；feel.js 未提供骨架 API 时回退到文字。
+  if (skeletonHost && window.Feel?.skeletonShow) {
+    window.Feel.skeletonShow(skeletonHost, 3);
+    status.textContent = "";
+  } else {
+    status.textContent = loadingText;
+  }
   $("#groups-retry").hidden = true;
   try {
     const data = await action();
     if (!isCurrent()) return;
+    window.Feel?.skeletonHide?.(skeletonHost);
     await onSuccess(data);
     if (isCurrent()) status.textContent = "";
   } catch (error) {
     if (!isCurrent()) return;
+    window.Feel?.skeletonHide?.(skeletonHost);
     status.classList.add("error");
     status.textContent = `暂时无法完成：${error.message || "请检查网络后重试"}`;
     $("#groups-retry").hidden = !retry;
@@ -155,7 +163,7 @@ async function loadGroups() {
     () => api("/api/groups"),
     (data) => renderGroups(data.groups),
     "正在加载你的小组…",
-    { retry: true }
+    { retry: true, skeletonHost: $("#groups-list") }
   );
 }
 
@@ -527,13 +535,18 @@ async function openStudyGroup(groupId) {
   studyGroup = null;
   $("#groups-overview").hidden = true;
   $("#groups-detail").hidden = false;
-  $("#groups-detail-content").hidden = true;
+  // 骨架屏需要可见的宿主：只有 feel.js 提供骨架 API 时才提前显示内容区。
+  const detailContent = $("#groups-detail-content");
+  const showSkeleton = Boolean(window.Feel?.skeletonShow);
+  if (showSkeleton) detailContent.hidden = false;
   await requestGroups(
     () => api(`/api/groups/${groupId}`),
     renderStudyGroup,
     "正在加载小组成员与学习信号…",
-    { retry: true }
+    { retry: true, skeletonHost: $("#groups-members") }
   );
+  // renderStudyGroup 成功时 studyGroup 已赋值；失败时恢复详情区隐藏（与原来一致）。
+  if (showSkeleton && studyGroup == null) detailContent.hidden = true;
 }
 
 async function submitStudyGroup(form, path, fieldName) {

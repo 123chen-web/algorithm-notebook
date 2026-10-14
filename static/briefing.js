@@ -156,13 +156,20 @@
     const mine = ++generation;
     const request = ticket();
     container.replaceChildren();
+    window.Feel?.skeletonShow?.(container, 2); // 手感层：骨架屏代替空白等待
     try {
       const data = await hooks.api("/api/briefing/today");
       if (mine !== generation || !current(request)) return;
-      if (!data || typeof data.date !== "string" || !Array.isArray(data.items)) return;
+      window.Feel?.skeletonHide?.(container);
+      if (!data || typeof data.date !== "string" || !Array.isArray(data.items)) {
+        container.replaceChildren();
+        return;
+      }
       const card = render(data, request);
       if (card) container.replaceChildren(card);
+      else container.replaceChildren();
     } catch {
+      window.Feel?.skeletonHide?.(container);
       if (mine === generation && container) container.replaceChildren();
     }
   }

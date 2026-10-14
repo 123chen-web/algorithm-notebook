@@ -181,20 +181,26 @@
     noticeRoot.hidden = false;
   }
 
-  async function loadSection(name, path, render, root, statusId, retryId, loadingText) {
+  async function loadSection(name, path, render, root, statusId, retryId, loadingText, skeletonHost = null) {
     const request = ticket(name);
     const status = $(statusId);
     const retry = $(retryId);
     if (root) setBusy(root, true);
-    if (status) status.textContent = loadingText;
+    // 手感层：骨架屏代替"正在加载…"文字；feel.js 未提供骨架 API 时回退到文字。
+    if (skeletonHost && window.Feel?.skeletonShow) {
+      window.Feel.skeletonShow(skeletonHost, 3);
+      if (status) status.textContent = "";
+    } else if (status) status.textContent = loadingText;
     if (retry) retry.hidden = true;
     try {
       const data = await hooks.api(path);
       if (!current(request)) return false;
+      window.Feel?.skeletonHide?.(skeletonHost);
       render(data);
       return true;
     } catch (error) {
       if (!current(request)) return false;
+      window.Feel?.skeletonHide?.(skeletonHost);
       if (status) status.textContent = failure(error);
       if (retry) retry.hidden = false;
       return false;
@@ -205,12 +211,14 @@
 
   function loadYesterday() {
     return loadSection("yesterday", "/api/rank/yesterday", renderYesterday, yesterdayRoot,
-      "#rank-yesterday-status", "#rank-yesterday-retry", "正在加载昨日之星…");
+      "#rank-yesterday-status", "#rank-yesterday-retry", "正在加载昨日之星…",
+      $("#rank-yesterday-list"));
   }
 
   function loadHot() {
     return loadSection("hot", "/api/rank/hot-problems", renderHot, hotRoot,
-      "#rank-hot-status", "#rank-hot-retry", "正在加载本周热门题目…");
+      "#rank-hot-status", "#rank-hot-retry", "正在加载本周热门题目…",
+      $("#rank-hot-list"));
   }
 
   async function loadNotice() {

@@ -181,7 +181,12 @@
     fill.style.setProperty("width", `${percent}%`);
     track.append(fill);
     progress.append(track, node("span", "gc-progress-text", `${percent}%`));
-    wrap.append(progress);
+    // 手感层：进度环（--p 取 0~1；用 CSSOM 设值，不写行内 style；原有进度条保留无障碍语义）。
+    const ring = node("div", "feel-ring");
+    ring.setAttribute("aria-hidden", "true");
+    ring.style.setProperty("--p", String(percent / 100));
+    ring.append(node("span", `${percent}%`));
+    wrap.append(ring, progress);
 
     const onTrack = Boolean(goal.on_track);
     wrap.append(node("p", `gc-track ${onTrack ? "is-on" : "is-behind"}`, trackText(onTrack, goal.remaining_today)));

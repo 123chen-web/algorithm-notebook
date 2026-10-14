@@ -120,6 +120,8 @@ function notifyDataChanged(reason) {
 function message(text = "", error = false) {
   $("#notice").textContent = text;
   $("#notice").classList.toggle("error", error);
+  // 手感层：非空提示额外弹一条 toast；#notice 原有逻辑与错误态保持不变。
+  if (text) window.Feel?.toast(text);
 }
 
 function setBusy(value) {

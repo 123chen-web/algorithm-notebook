@@ -72,13 +72,13 @@
   <link rel="stylesheet" href="/static/patterns.css?v=2">
   <link rel="stylesheet" href="/static/roadmap.css?v=1">
   <link rel="stylesheet" href="/static/inbox.css?v=2">
-  <link rel="stylesheet" href="/static/feel.css?v=2">
+  <link rel="stylesheet" href="/static/feel.css?v=3">
   <script defer src="/static/scenes.js?v=7"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
   <script defer src="/static/intro-film.js?v=2"></script>
   <script defer src="/static/cursor-fx.js?v=19"></script>
-  <script defer src="/static/feel.js?v=2"></script>
+  <script defer src="/static/feel.js?v=3"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
   <script defer src="/static/forum-switch.js?v=1"></script>
@@ -90,7 +90,7 @@
   <script defer src="/static/review-feel.js?v=1"></script>
   <script defer src="/static/tags.js?v=3"></script>
   <script defer src="/static/practice.js?v=1"></script>
-  <script defer src="/static/mastery.js?v=4"></script>
+  <script defer src="/static/mastery.js?v=5"></script>
   <script defer src="/static/pattern-render.js?v=2"></script>
   <script defer src="/static/pattern-picker.js?v=2"></script>
   <script defer src="/static/roadmap.js?v=2"></script>
@@ -106,7 +106,7 @@
   <script defer src="/static/profile.js?v=3"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=3"></script>
-  <script defer src="/static/rank.js?v=2"></script>
+  <script defer src="/static/rank.js?v=3"></script>
   <script defer src="/static/group-extras.js?v=2"></script>
   <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=3"></script>
@@ -114,10 +114,10 @@
   <script defer src="/static/plan.js?v=4"></script>
   <script defer src="/static/manual-claims.js?v=2"></script>
   <script defer src="/static/nav-focus.js?v=1"></script>
-  <script defer src="/static/goal-card.js?v=1"></script>
+  <script defer src="/static/goal-card.js?v=2"></script>
   <script defer src="/static/recommend.js?v=4"></script>
-  <script defer src="/static/sign.js?v=1"></script>
-  <script defer src="/static/briefing.js?v=1"></script>
+  <script defer src="/static/sign.js?v=2"></script>
+  <script defer src="/static/briefing.js?v=2"></script>
   <script defer src="/static/landscape.js?v=1"></script>
   <script defer src="/static/pending-reason.js?v=2"></script>
   <script defer src="/static/import-wizard.js?v=1"></script>
@@ -137,19 +137,19 @@
   <script defer src="/static/heatmap.js?v=1"></script>
   <script defer src="/static/reminder.js?v=2"></script>
   <script defer src="/static/vendor/editor/oy-editor.js?v=3"></script>
-  <script defer src="/static/notes.js?v=6"></script>
+  <script defer src="/static/notes.js?v=7"></script>
   <script defer src="/static/notes-links.js?v=8"></script>
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610121"></script>
   <script defer src="/static/notes-editor.js?v=3"></script>
   <script defer src="/static/app/core-api.js?v=1"></script>
   <script defer src="/static/app/core-session.js?v=2"></script>
-  <script defer src="/static/app/core-ui.js?v=2"></script>
-  <script defer src="/static/app/overview-growth.js?v=1"></script>
+  <script defer src="/static/app/core-ui.js?v=3"></script>
+  <script defer src="/static/app/overview-growth.js?v=2"></script>
   <script defer src="/static/app/overview-home.js?v=2"></script>
-  <script defer src="/static/app/overview-insights.js?v=1"></script>
+  <script defer src="/static/app/overview-insights.js?v=2"></script>
   <script defer src="/static/app/overview-revenge.js?v=1"></script>
-  <script defer src="/static/app/review-list.js?v=1"></script>
+  <script defer src="/static/app/review-list.js?v=2"></script>
   <script defer src="/static/app/review-detail.js?v=2"></script>
   <script defer src="/static/app/review-grade.js?v=1"></script>
   <script defer src="/static/app/problem-form.js?v=1"></script>
@@ -158,7 +158,7 @@
   <script defer src="/static/app/forum-comments.js?v=1"></script>
   <script defer src="/static/app/forum-map.js?v=1"></script>
   <script defer src="/static/app/groups.js?v=2"></script>
-  <script defer src="/static/app/rank.js?v=1"></script>
+  <script defer src="/static/app/rank.js?v=2"></script>
   <script defer src="/static/app/account.js?v=1"></script>
   <script defer src="/static/app/admin.js?v=1"></script>
   <script defer src="/static/app/payments.js?v=1"></script>
@@ -908,7 +908,7 @@
             <p class="weekly-recap-note">本周按你的时区统计今天及之前 6 天；上周为紧邻的前 7 天。易错点新增、复习完成、练习生成与活跃天数均展示本周与上周对比。</p>
           </div>
         </div>
-        <div id="weekly-recap-summary" class="weekly-recap-summary" hidden></div>
+        <div id="weekly-recap-summary" class="weekly-recap-summary" data-tilt hidden></div>
         <p id="weekly-recap-status" role="status" aria-live="polite"></p>
         <button id="weekly-recap-retry" type="button" hidden>重新加载战报</button>
         <div id="weekly-recap-cards" class="weekly-recap-cards"></div>

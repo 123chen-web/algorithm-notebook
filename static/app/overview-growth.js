@@ -201,6 +201,7 @@ function renderAchievements(achievements) {
     for (const badge of badges) {
       const { current, target, unit, message: progressMessage } = badge.progress;
       const card = element("article", "", `achievement-card ${badge.unlocked ? "is-unlocked" : "is-locked"}`);
+      card.setAttribute("data-tilt", ""); // 手感层：徽章卡倾斜 + 反光（feel.js 接管）
       const top = element("div", "", "achievement-card-top");
       const emblem = element("span", "", "achievement-emblem");
       emblems.set(badge.key, emblem);

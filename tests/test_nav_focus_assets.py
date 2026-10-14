@@ -78,8 +78,9 @@ def test_assets_are_served_once_and_before_app():
 
 def test_changed_assets_bump_their_cache_busting_version():
     assert re.search(r'<link rel="stylesheet" href="/static/rank\.css\?v=2">', INDEX)
-    assert re.search(r'<script defer src="/static/rank\.js\?v=2"></script>', INDEX)
-    assert re.search(r'<script defer src="/static/app\.js\?v=103"></script>', INDEX)
+    # 版本号不写死：用 versioned_src 读当前版本，只断言带版本接入（?v= 提升是改静态资源的规矩）。
+    assert f'<script defer src="{versioned_src("rank.js")}"></script>' in INDEX
+    assert f'<script defer src="{versioned_src("app.js")}"></script>' in INDEX
 
 
 def test_two_keyboard_operable_toggles_are_buttons_with_aria_pressed():

@@ -142,9 +142,11 @@ function renderWeaknessControls() {
   if (Number.isInteger(count)) {
     const visual = element("span", "", "weakness-count-visual");
     visual.setAttribute("aria-hidden", "true");
+    const countNumber = element("span", String(count), "weakness-count-number");
+    countNumber.setAttribute("data-countup", ""); // 手感层：数字滚动（最终值已在 DOM）
     visual.append(
       element("span", "已积累", "weakness-count-label"),
-      element("span", String(count), "weakness-count-number"),
+      countNumber,
       element("span", "条易错点", "weakness-count-unit")
     );
     countNode.append(element("span", countText, "weakness-sr-only"), visual);
@@ -215,7 +217,7 @@ function renderErrorProfile(profile) {
   // 判题类型分布（横向条）。
   if (profile.verdicts.length) {
     host.append(element("h4", "判题类型分布", "weakness-profile-title"));
-    const bars = element("ul", "", "weakness-bars");
+    const bars = element("ul", "", "weakness-bars feel-grow"); // 手感层：条形图首次进入视口生长
     const max = Math.max(...profile.verdicts.map((item) => item.count));
     for (const item of profile.verdicts) {
       const entry = element("li", "", "weakness-bar-row");
@@ -281,7 +283,9 @@ function renderWeaknessAnalysis() {
     [sample.review_count, "次复习评分"],
   ]) {
     const stat = element("div", "", "weakness-stat");
-    stat.append(element("dt", label), element("dd", String(amount), "weakness-stat-number"));
+    const amountNode = element("dd", String(amount), "weakness-stat-number");
+    amountNode.setAttribute("data-countup", ""); // 手感层：数字滚动（最终值已在 DOM）
+    stat.append(element("dt", label), amountNode);
     sampleStats.append(stat);
   }
   if (weaknessAnalysis.status === "insufficient_data") {
@@ -360,8 +364,17 @@ async function loadWeaknessAnalysis() {
   $("#growth-empty").hidden = false;
   $("#growth-empty").textContent = "正在读取长期成长趋势…";
   const status = $("#weakness-status");
+  const resultHost = $("#weakness-result");
   status.classList.remove("error");
-  status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
+  const resultWasHidden = resultHost.hidden;
+  // 手感层：骨架屏代替"正在读取…"文字；feel.js 未提供骨架 API 时回退到文字。
+  if (window.Feel?.skeletonShow) {
+    resultHost.hidden = false;
+    window.Feel.skeletonShow(resultHost, 3);
+    status.textContent = "";
+  } else {
+    status.textContent = "正在读取已保存的分析，不消耗 AI 额度…";
+  }
   const [analysis, profile, growth, errorProfile] = await Promise.allSettled([
     api("/api/insights/weakness-analysis"),
     api("/api/me"),
@@ -377,9 +390,12 @@ async function loadWeaknessAnalysis() {
   weaknessPending = false;
   if (analysis.status === "fulfilled") {
     weaknessAnalysis = analysis.value;
+    window.Feel?.skeletonHide?.(resultHost);
     renderWeaknessAnalysis();
     status.textContent = weaknessAnalysis.message || "";
   } else {
+    window.Feel?.skeletonHide?.(resultHost);
+    resultHost.hidden = resultWasHidden;
     renderWeaknessControls();
     status.classList.add("error");
     status.textContent = `读取分析失败：${analysis.reason.message || "请检查网络后重试"}。可点击上方“刷新”重新读取。`;

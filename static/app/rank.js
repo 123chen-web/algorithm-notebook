@@ -11,15 +11,24 @@ async function loadLeaderboard() {
   const entries = $("#leaderboard-entries");
   const mine = $("#leaderboard-me");
   page.setAttribute("aria-busy", "true");
-  status.textContent = "正在加载连续打卡天数排行榜…";
+  const tableWrap = $("#leaderboard-table-wrap");
   entries.replaceChildren();
   mine.replaceChildren();
-  $("#leaderboard-table-wrap").hidden = true;
+  tableWrap.hidden = true;
+  // 手感层：骨架屏代替"正在加载…"文字；feel.js 未提供骨架 API 时回退到文字。
+  if (window.Feel?.skeletonShow) {
+    tableWrap.hidden = false;
+    window.Feel.skeletonShow(tableWrap, 3);
+    status.textContent = "";
+  } else {
+    status.textContent = "正在加载连续打卡天数排行榜…";
+  }
 
   try {
     const data = await api("/api/leaderboard");
     if (user !== currentUser || !user || view !== "leaderboard") return;
     const { me } = data;
+    window.Feel?.skeletonHide?.(tableWrap);
     $("#leaderboard-list-title").textContent = `连续打卡天数排行榜 · 前 ${data.leaderboard_size} 名`;
     const rankText = me.is_trial
       ? "体验账号不参与排名，你仍可查看自己的连续打卡天数。"
@@ -28,9 +37,22 @@ async function loadLeaderboard() {
           ? "你已设置不参与公开榜单，不会出现在榜单上；你仍可查看自己的连续打卡天数。"
           : "暂无排名，连续打卡至少 1 天即可参与排名。")
         : `第 ${me.rank} 名${me.rank > data.leaderboard_size ? `（未进入前 ${data.leaderboard_size} 名）` : ""}`;
+    const rankPara = element("p", "", "leaderboard-my-rank");
+    if (!me.is_trial && me.rank !== null) {
+      // 手感层：名次数字单独成 span 且最终值已在 DOM，feel.js 做数字滚动。
+      const rankNumber = element("span", String(me.rank));
+      rankNumber.setAttribute("data-countup", "");
+      rankPara.append(
+        document.createTextNode("第 "),
+        rankNumber,
+        document.createTextNode(` 名${me.rank > data.leaderboard_size ? `（未进入前 ${data.leaderboard_size} 名）` : ""}`),
+      );
+    } else {
+      rankPara.textContent = rankText;
+    }
     mine.append(
       element("p", `${me.streak_days} 天`, "leaderboard-streak"),
-      element("p", rankText, "leaderboard-my-rank")
+      rankPara
     );
     for (const entry of data.entries) {
       const row = element("tr");
@@ -44,6 +66,8 @@ async function loadLeaderboard() {
     status.textContent = data.entries.length ? "" : "暂无上榜用户，完成一次复习评分，开始连续打卡吧。";
     $("#leaderboard-table-wrap").hidden = !data.entries.length;
   } catch (error) {
+    window.Feel?.skeletonHide?.(tableWrap);
+    tableWrap.hidden = true;
     if (user === currentUser && user && view === "leaderboard") {
       status.textContent = "连续打卡天数排行榜加载失败，请点击上方“刷新”重试。";
     }

@@ -153,7 +153,10 @@ function rvfRemoveItem(item, { offline = false } = {}) {
   } else {
     rvfListItems.set(item.id, item);
   }
-  rvfRenderCards(user.today);
+  // 手感层：移除一张卡后其余卡片 FLIP 上移；reduced-motion 下 flip 直接执行 mutate。
+  const mutate = () => rvfRenderCards(user.today);
+  if (window.Feel?.flip) window.Feel.flip($("#cards"), mutate);
+  else mutate();
   $("#list-summary").textContent = rvfListSummary(user.today, offline);
   clearDetail(offline ? "已记下，联网后同步" : "已更新复习安排", offline ? "这条评分存在本机队列里，恢复联网后会自动补交。" : item.leech_suspended ? "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。" : "可以选择下一条继续复习。");
   if (offline) return; // 离线不触发会打网络的头部刷新与跨视图联动。

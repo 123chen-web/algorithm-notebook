@@ -65,6 +65,7 @@
     const key = storageKey(request, data.date);
     const card = node("section", "sign-card");
     card.setAttribute("aria-labelledby", "sign-title");
+    card.setAttribute("data-tilt", ""); // 手感层：卡片倾斜 + 反光（feel.js 接管）
 
     const head = node("div", "sign-head");
     const date = node("div", "sign-date");
@@ -122,12 +123,18 @@
     const mine = ++generation;
     const request = ticket();
     container.replaceChildren();
+    window.Feel?.skeletonShow?.(container, 2); // 手感层：骨架屏代替空白等待
     try {
       const data = await hooks.api("/api/today-sign");
       if (mine !== generation || !current(request)) return;
-      if (!data || !Array.isArray(data.yi) || !Array.isArray(data.ji) || typeof data.date !== "string") return;
+      window.Feel?.skeletonHide?.(container);
+      if (!data || !Array.isArray(data.yi) || !Array.isArray(data.ji) || typeof data.date !== "string") {
+        container.replaceChildren();
+        return;
+      }
       container.replaceChildren(render(data, request));
     } catch {
+      window.Feel?.skeletonHide?.(container);
       if (mine === generation && container) container.replaceChildren();
     }
   }

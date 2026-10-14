@@ -266,12 +266,27 @@
       if (row.tier >= 0) pill.append(stairIcon(row.tier));
       pill.append(node("span", "mastery-tier-text", row.tier < 0 ? NO_DATA_TEXT : TIERS[row.tier].label));
 
-      const steps = node("span", "mastery-steps");
+      const steps = node("span", "mastery-steps feel-grow"); // 手感层：阶梯条首次进入视口生长
       steps.setAttribute("aria-hidden", "true");
       for (let step = 0; step < 4; step += 1) steps.append(node("span", `mastery-step${step <= row.tier ? " is-on" : ""}`));
 
       const meta = node("span", "mastery-row-meta");
-      meta.append(node("span", "mastery-row-pct", row.tier < 0 ? "—" : percent(entry.mastery)));
+      // 手感层：整数百分比把纯数字拆进子 span（data-countup，feel.js 的 countUp 只处理纯数字）；
+      // 带小数时保持原文本（不滚动但显示正确）；无数据时显示"—"。
+      const pct = node("span", "mastery-row-pct");
+      if (row.tier < 0) {
+        pct.textContent = "—";
+      } else {
+        const digits = /^(\d+)%$/.exec(percent(entry.mastery));
+        if (digits) {
+          const number = node("span", "", digits[1]);
+          number.setAttribute("data-countup", "");
+          pct.append(number, document.createTextNode("%"));
+        } else {
+          pct.textContent = percent(entry.mastery);
+        }
+      }
+      meta.append(pct);
       const spark = row.tier < 0 ? null : sparkline(entry);
       if (spark) meta.append(spark);
       else {
@@ -517,16 +532,27 @@
   async function load() {
     const page = $("#mastery-page");
     const ticket = ++generation;
+    const overviewCard = $("#mastery-overview-card");
+    const overviewHost = $("#mastery-overview");
     page.setAttribute("aria-busy", "true");
-    setStatus("正在计算各分区的掌握度…");
+    // 手感层：骨架屏代替"正在计算…"文字；feel.js 未提供骨架 API 时回退到文字。
+    if (window.Feel?.skeletonShow) {
+      overviewCard.hidden = false;
+      window.Feel.skeletonShow(overviewHost, 3);
+      setStatus("");
+    } else {
+      setStatus("正在计算各分区的掌握度…");
+    }
     try {
       const report = await fetchReport(true);
       if (ticket !== generation) return;
       data = report;
+      window.Feel?.skeletonHide?.(overviewHost);
       render();
     } catch {
       if (ticket !== generation) return;
       data = null;
+      window.Feel?.skeletonHide?.(overviewHost);
       $("#mastery-chart-card").hidden = true;
       $("#mastery-overview-card").hidden = true;
       $("#mastery-overview").replaceChildren();
