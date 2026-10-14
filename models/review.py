@@ -112,7 +112,7 @@ class RvbSnoozeInput(RvbVersionInput):
 
 class RvbSettingsInput(InputModel):
     daily_review_cap: Annotated[StrictInt, Field(ge=5, le=200)] | None = None
-    # 复习方式偏好：redo_first（重做优先，默认）/ recall_only（只回忆）。
+    # 复习方式偏好：recall_only（只回忆，默认）/ redo_first（重做优先）。
     redo_preference: Literal["redo_first", "recall_only"] | None = None
 
 

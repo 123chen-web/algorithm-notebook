@@ -158,7 +158,7 @@ def test_init_migrates_old_users_and_preserves_data(
             "profile_public_joined": 1,
             "show_group_today": 1,
             "recommend_source": "cf",
-            "redo_preference": "redo_first",
+            "redo_preference": "recall_only",
         }
         plan_id = insert_plan(conn)
         conn.execute(

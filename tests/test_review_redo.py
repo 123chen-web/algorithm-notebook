@@ -47,7 +47,7 @@ def test_migration_81_adds_columns_and_is_idempotent(tmp_path, monkeypatch):
     db.init_db()
     db.init_db()  # 重复启动不报错
     with connect() as conn:
-        assert db.schema_version(conn) == 81 == db.SCHEMA_VERSION
+        assert db.schema_version(conn) == 82 == db.SCHEMA_VERSION
         review_cols = {row[1] for row in conn.execute("PRAGMA table_info(reviews)")}
         assert {"mode", "evidence"} <= review_cols
         user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
@@ -73,9 +73,9 @@ def test_upgrade_from_80_keeps_data(tmp_path, monkeypatch):
         user_id = conn.execute("SELECT id FROM users WHERE username='old-user'").fetchone()[0]
     db.init_db()
     with connect() as conn:
-        assert db.schema_version(conn) == 81
+        assert db.schema_version(conn) == 82
         row = conn.execute("SELECT redo_preference FROM users WHERE id = ?", (user_id,)).fetchone()
-        assert row["redo_preference"] == "redo_first"
+        assert row["redo_preference"] == "recall_only"
 
 
 def test_review_rejects_bad_mode(client):
@@ -178,7 +178,7 @@ def test_redo_hint_404_for_other_user(client):
 def test_review_settings_preference_roundtrip(client):
     register(client)
     response = client.get("/api/me/review-settings")
-    assert response.json()["redo_preference"] == "redo_first"
+    assert response.json()["redo_preference"] == "recall_only"
     response = client.put("/api/me/review-settings", json={"redo_preference": "recall_only"})
     assert response.status_code == 200, response.text
     assert response.json()["redo_preference"] == "recall_only"

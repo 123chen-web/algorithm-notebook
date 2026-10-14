@@ -59,6 +59,7 @@
 | 28 | 扩展 token 哈希（`users.api_token_hash`）与题目来源（`problems.source/source_url/statement/difficulty`） |
 | 74 | AI 回答有用/没用反馈（`ai_feedback`，`(user_id, kind, ref_id)` 唯一，只记布尔值） |
 | 78 | 推荐来源 `users.recommend_source` 与 AtCoder 推荐记录（`atcoder_recommendations`） |
+| 82 | 复习方式偏好默认改为只回忆（`users.redo_preference` 默认 `recall_only`，已有用户统一迁移） |
 
 25–27 为未发布功能撤回后的空缺，不重用。
 

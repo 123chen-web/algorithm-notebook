@@ -50,7 +50,7 @@ def test_redo_assets_wired_in_index_with_versions_and_order():
     assert scripts.count("/static/redo-flow.js?v=1") == 1
     assert styles.count("/static/redo-flow.css?v=1") == 1
     # redo-flow 必须在 focus.js 和 app.js 之前（它们在运行时用 window.RedoFlow）
-    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/focus.js?v=8")
+    assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/focus.js?v=9")
     assert scripts.index("/static/redo-flow.js?v=1") < scripts.index("/static/app.js?v=103")
     # 整页仍无内联 script / style 属性（CSP）
     assert all("style" not in attrs for _, attrs in markup.nodes)
@@ -60,12 +60,12 @@ def test_redo_assets_wired_in_index_with_versions_and_order():
 def test_account_redo_preference_select():
     select = re.search(r'<select id="account-redo-preference"[^>]*>([\s\S]*?)</select>', INDEX)
     assert select, "账号页需要 account-redo-preference 下拉"
-    assert re.findall(r'<option value="([^"]*)"', select.group(1)) == ["redo_first", "recall_only"]
+    assert re.findall(r'<option value="([^"]*)"', select.group(1)) == ["recall_only", "redo_first"]
     markup = Markup(INDEX)
     assert any(tag == "label" and attrs.get("for") == "account-redo-preference"
                for tag, attrs in markup.nodes)
     # 帮助文字里写明默认值
-    assert "默认重做优先" in INDEX
+    assert "默认只回忆" in INDEX
 
 
 @pytest.mark.parametrize("filename", ["app.js", "focus.js", "overview.js", "offline-sync.js", "offline-review.js"])

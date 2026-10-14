@@ -169,7 +169,7 @@ async function rvfFetchRedoPreference() {
     const settings = await api("/api/me/review-settings");
     redoPreferenceCache = settings.redo_preference === "recall_only" ? "recall_only" : "redo_first";
   } catch (error) {
-    redoPreferenceCache = "redo_first";
+    redoPreferenceCache = "recall_only";
   }
   return redoPreferenceCache;
 }
@@ -195,7 +195,7 @@ function rvfInitRedoPreference() {
       message("复习方式偏好已保存。");
     } catch (error) {
       redoPreferenceCache = previous;
-      select.value = previous || "redo_first";
+      select.value = previous || "recall_only";
       message(error.message);
     }
   }));

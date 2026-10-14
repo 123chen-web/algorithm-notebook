@@ -412,7 +412,7 @@
       const data = await response.json().catch(() => ({}));
       session.redoPreference = data.redo_preference === "recall_only" ? "recall_only" : "redo_first";
     } catch (error) {
-      session.redoPreference = "redo_first";
+      session.redoPreference = "recall_only";
     }
     return session.redoPreference;
   }

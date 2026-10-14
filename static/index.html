@@ -85,7 +85,7 @@
   <script defer src="/static/review-extras.js?v=1"></script>
   <script defer src="/static/problem-cards.js?v=3"></script>
   <script defer src="/static/redo-flow.js?v=1"></script>
-  <script defer src="/static/focus.js?v=8"></script>
+  <script defer src="/static/focus.js?v=9"></script>
   <script defer src="/static/review-feel.js?v=1"></script>
   <script defer src="/static/tags.js?v=3"></script>
   <script defer src="/static/practice.js?v=1"></script>
@@ -143,7 +143,7 @@
   <script defer src="/static/notes-editor.js?v=3"></script>
   <script defer src="/static/app/core-api.js?v=1"></script>
   <script defer src="/static/app/core-session.js?v=1"></script>
-  <script defer src="/static/app/core-ui.js?v=1"></script>
+  <script defer src="/static/app/core-ui.js?v=2"></script>
   <script defer src="/static/app/overview-growth.js?v=1"></script>
   <script defer src="/static/app/overview-home.js?v=1"></script>
   <script defer src="/static/app/overview-insights.js?v=1"></script>
@@ -339,11 +339,11 @@
               </label>
               <label class="account-preference" for="account-redo-preference">复习方式偏好
                 <select id="account-redo-preference" aria-label="复习方式偏好">
+                  <option value="recall_only">只回忆（默认）</option>
                   <option value="redo_first">重做优先</option>
-                  <option value="recall_only">只回忆</option>
                 </select>
               </label>
-              <p class="account-preference-hint">默认重做优先：算法分区复习时引导默写或限时重做；选“只回忆”则只用原来的自评。</p>
+              <p class="account-preference-hint">默认只回忆（自己打分）。系统发现你对某条的自评可能偏高时，会提示并默认改用重做；选“重做优先”则算法分区每次都先引导默写或限时重做。</p>
               <nav class="legal-links account-legal-links" aria-label="法律信息">
                 <a href="/terms" target="_blank" rel="noopener">服务条款</a>
                 <span aria-hidden="true">·</span>

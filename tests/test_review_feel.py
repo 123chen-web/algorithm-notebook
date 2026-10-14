@@ -343,7 +343,7 @@ def test_trial_accounts_can_review_undo_snooze_suspend_and_change_their_preferen
     assert_ok(action(client, mistake, "suspend", version=2))
     assert_ok(action(client, mistake, "unsuspend", version=3))
     assert_ok(action(client, mistake, "snooze", version=4, days=3))
-    assert assert_ok(client.put(SETTINGS, json={"daily_review_cap": 20})) == {"daily_review_cap": 20, "redo_preference": "redo_first"}
+    assert assert_ok(client.put(SETTINGS, json={"daily_review_cap": 20})) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
 
 
 @pytest.mark.parametrize("days", [1, 3, 7])
@@ -508,8 +508,8 @@ def test_suspension_hides_due_counts_and_forecasts_but_keeps_all_record_history(
 @pytest.mark.parametrize("cap", [None, 5, 20, 200])
 def test_review_settings_accept_and_persist_the_full_contract(client, cap):
     register(client)
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "redo_first"}
-    expected = {"daily_review_cap": cap, "redo_preference": "redo_first"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "recall_only"}
+    expected = {"daily_review_cap": cap, "redo_preference": "recall_only"}
     assert assert_ok(client.put(SETTINGS, json=expected)) == expected
     assert assert_ok(client.get(SETTINGS)) == expected
     assert "daily_review_cap" not in assert_ok(client.get("/api/me"))
@@ -523,7 +523,7 @@ def test_review_settings_reject_invalid_and_coerced_values_without_changing_the_
     response = client.put(SETTINGS, json={"daily_review_cap": value})
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], str)
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "redo_first"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
 
 
 def test_review_settings_can_be_cleared_back_to_unlimited_and_are_per_account(client):
@@ -531,12 +531,12 @@ def test_review_settings_can_be_cleared_back_to_unlimited_and_are_per_account(cl
     assert_ok(client.put(SETTINGS, json={"daily_review_cap": 20}))
     assert_ok(client.post("/api/auth/logout"))
     register(client, username="bob")
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "redo_first"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": None, "redo_preference": "recall_only"}
     assert_ok(client.put(SETTINGS, json={"daily_review_cap": 5}))
     assert_ok(client.post("/api/auth/logout"))
     assert_ok(client.post("/api/auth/login", json={"username": "alice", "password": "a-test-password-123"}))
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "redo_first"}
-    assert assert_ok(client.put(SETTINGS, json={"daily_review_cap": None})) == {"daily_review_cap": None, "redo_preference": "redo_first"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 20, "redo_preference": "recall_only"}
+    assert assert_ok(client.put(SETTINGS, json={"daily_review_cap": None})) == {"daily_review_cap": None, "redo_preference": "recall_only"}
 
 
 def queue_item(identity, *, overdue=0, interval=1):
@@ -635,7 +635,7 @@ def test_queue_daily_cap_counts_review_rows_and_ignore_cap_is_one_request_only(c
     assert len(full["items"]) == 7 and full["total_due"] == 7
     assert full["cap"] == 5 and full["done_today"] == 3
     assert full["remaining_today"] is None and full["capped"] is False
-    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 5, "redo_preference": "redo_first"}
+    assert assert_ok(client.get(SETTINGS)) == {"daily_review_cap": 5, "redo_preference": "recall_only"}
     assert assert_ok(client.get(QUEUE))["remaining_today"] == 2
 
 

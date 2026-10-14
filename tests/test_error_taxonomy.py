@@ -71,13 +71,13 @@ def test_migration_80_is_idempotent_and_maps_legacy_tags(client):
         mistakes_cols = {row[1] for row in conn.execute("PRAGMA table_info(mistakes)")}
         assert "verdict" in problems_cols
         assert "counterexample" in mistakes_cols
-        assert db.schema_version(conn) == 81
+        assert db.schema_version(conn) == 82
     db.init_db()  # 再跑一次：幂等
     with db.connect() as conn:
         tags2 = sorted(row[0] for row in conn.execute(
             "SELECT tag FROM mistake_tags WHERE mistake_id = ?", (mistake_id,)))
         assert tags2 == tags
-        assert db.schema_version(conn) == 81
+        assert db.schema_version(conn) == 82
 
 
 def test_put_tags_rejects_non_taxonomy_with_options(client):

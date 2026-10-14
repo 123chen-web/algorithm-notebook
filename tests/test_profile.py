@@ -115,7 +115,7 @@ def test_version_18_upgrade_preserves_user_and_pending_reason(tmp_path, monkeypa
             assert after.pop(f'profile_public_{field}') == 1
         assert after.pop('show_group_today') == 1
         assert after.pop('recommend_source') == 'cf'
-        assert after.pop('redo_preference') == 'redo_first'
+        assert after.pop('redo_preference') == 'recall_only'
         assert after == before
         column = next(row for row in conn.execute('PRAGMA table_info(users)') if row['name'] == 'bio')
         assert (column['type'], column['notnull'], column['dflt_value']) == ('TEXT', 1, "''")

@@ -1268,6 +1268,43 @@ def _apply_review_redo(conn):
 
 
 MIGRATIONS.append((81, "复习=重做：reviews.mode/evidence + users.redo_preference", _apply_review_redo))
+
+
+def _apply_redo_default_recall(conn):
+    """复习方式偏好默认改为“只回忆”（迁移 82）。
+
+    SQLite 不能直接修改列默认值，用三步重建列：
+    加临时列（默认 recall_only）→ 删旧列 → 重命名为 redo_preference。
+    已有用户统一变成 recall_only（该选项从未发布给用户，无人主动选过）。
+
+    幂等：若 redo_preference 的 dflt_value 已含 recall_only，直接返回，
+    不会把用户之后主动选的 redo_first 重置掉；若上次迁移中途留下了
+    redo_pref_tmp 列，先清掉再来。
+    """
+    columns = {row[1]: row for row in conn.execute("PRAGMA table_info(users)")}
+    if "redo_pref_tmp" in columns:
+        conn.execute("ALTER TABLE users DROP COLUMN redo_pref_tmp")
+        columns = {row[1]: row for row in conn.execute("PRAGMA table_info(users)")}
+    current = columns.get("redo_preference")
+    if current is None:
+        # 极端情况：81 没跑过（旧列不存在），直接按新默认值建列。
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN redo_preference "
+            "TEXT NOT NULL DEFAULT 'recall_only'"
+        )
+        return
+    dflt = (current[4] or "").lower()
+    if "recall_only" in dflt:
+        return
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN redo_pref_tmp "
+        "TEXT NOT NULL DEFAULT 'recall_only'"
+    )
+    conn.execute("ALTER TABLE users DROP COLUMN redo_preference")
+    conn.execute("ALTER TABLE users RENAME COLUMN redo_pref_tmp TO redo_preference")
+
+
+MIGRATIONS.append((82, "复习方式偏好默认改为只回忆（users.redo_preference）", _apply_redo_default_recall))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

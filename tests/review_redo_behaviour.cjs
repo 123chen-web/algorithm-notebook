@@ -105,7 +105,7 @@ function environment() {
           if (call.url.endsWith("/redo-hint")) { call.answered = true; call.resolve({ hint: Boolean(options.hint) }); }
           else if (call.url === "/api/me/review-settings" && !call.options.method) {
             call.answered = true;
-            call.resolve({ daily_review_cap: null, redo_preference: options.preference || "redo_first" });
+            call.resolve({ daily_review_cap: null, redo_preference: options.preference || "recall_only" });
           }
         }
         await tick();
