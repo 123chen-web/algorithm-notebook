@@ -170,6 +170,17 @@ def review_mistake(
         response = {**state, "version": final_version}
         if leech_suspended:
             response["leech_suspended"] = True
+        # 复仇成功：本次评分满足条件且该条从未触发过时，写入标记并附在响应里，
+        # 前端评分后立刻盖章庆祝。每条只触发一次。
+        revenge = review_lib.check_revenge(
+            conn, mistake_id, data.quality, data.mode, reviewed_at, data.evidence
+        )
+        if revenge is not None:
+            conn.execute(
+                "UPDATE mistakes SET revenge_at = ? WHERE id = ? AND revenge_at IS NULL",
+                (reviewed_at, mistake_id),
+            )
+        response["revenge"] = revenge
         if data.client_op_id is not None:
             conn.execute(
                 "INSERT INTO review_ops(user_id, client_op_id, mistake_id, response, created_at) "

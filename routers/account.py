@@ -106,7 +106,7 @@ def export_data(user=Depends(security.current_user)):
             """
             SELECT m.id, m.problem_id, m.description, m.counterexample, m.repetitions,
                    m.interval_days, m.ease_factor, m.due_date, m.last_reviewed_at,
-                   m.pending_reason
+                   m.pending_reason, m.revenge_at
             FROM mistakes m JOIN problems p ON p.id = m.problem_id
             WHERE p.user_id = ? ORDER BY m.id
             """,

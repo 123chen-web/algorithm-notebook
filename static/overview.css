@@ -332,3 +332,28 @@ html[data-theme="qixi"] .ov-greeting { padding: var(--space-4) var(--space-5); b
   .ov-trend-skeleton, .ov-trend-tab.is-skeleton { animation: ov-trend-pulse 1.4s ease-in-out infinite; }
   @keyframes ov-trend-pulse { 50% { opacity: .55; } }
 }
+
+/* 复仇成功卡 */
+.revenge-card { margin-top: var(--space-4); }
+.revenge-card-head { display: flex; align-items: baseline; gap: var(--space-2); width: 100%; background: none; border: none; padding: var(--space-3); cursor: pointer; color: inherit; font: inherit; text-align: left; }
+.revenge-card-title { font-weight: 600; }
+.revenge-card-count { color: var(--accent); font-size: 1.25em; }
+.revenge-card-toggle { margin-left: auto; color: var(--ink-2); font-size: 0.875em; }
+.revenge-list { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); }
+.revenge-item { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--line); }
+.revenge-title { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.revenge-meta { color: var(--ink-2); font-size: 0.875em; }
+.revenge-share { flex: none; }
+.revenge-empty { color: var(--ink-2); padding: var(--space-2) 0; }
+/* 评分后的复仇文案行 */
+.revenge-line { color: var(--accent); font-weight: 500; margin: var(--space-2) 0; }
+/* 分享对话框 */
+.revenge-dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: var(--space-4); }
+.revenge-dialog { background: var(--paper); border-radius: 12px; padding: var(--space-4); max-width: 420px; width: 100%; }
+.revenge-dialog h3 { margin: 0 0 var(--space-2); }
+.revenge-preview { margin: 0 0 var(--space-2); }
+.revenge-hide-label { display: flex; align-items: center; gap: var(--space-1); margin-bottom: var(--space-3); cursor: pointer; }
+.revenge-dialog-actions { display: flex; gap: var(--space-2); justify-content: flex-end; margin-bottom: var(--space-2); }
+.revenge-img-host img { max-width: 100%; height: auto; border-radius: 8px; }
+.revenge-download { display: inline-block; margin-top: var(--space-2); }
+.revenge-error { color: var(--danger, #b3261e); }

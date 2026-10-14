@@ -1305,6 +1305,20 @@ def _apply_redo_default_recall(conn):
 
 
 MIGRATIONS.append((82, "复习方式偏好默认改为只回忆（users.redo_preference）", _apply_redo_default_recall))
+
+
+def _apply_revenge_mark(conn):
+    """复仇成功标记（迁移 83）。
+
+    mistakes 加 revenge_at 列（ISO 时间戳，NULL=从未触发）。每条易错点只触发
+    一次复仇成功，触发时写入本次评分时间。幂等：先查列是否存在。
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(mistakes)")}
+    if "revenge_at" not in existing:
+        conn.execute("ALTER TABLE mistakes ADD COLUMN revenge_at TEXT")
+
+
+MIGRATIONS.append((83, "复仇成功：mistakes.revenge_at 标记", _apply_revenge_mark))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

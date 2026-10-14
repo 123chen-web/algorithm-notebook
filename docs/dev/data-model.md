@@ -59,7 +59,10 @@
 | 28 | 扩展 token 哈希（`users.api_token_hash`）与题目来源（`problems.source/source_url/statement/difficulty`） |
 | 74 | AI 回答有用/没用反馈（`ai_feedback`，`(user_id, kind, ref_id)` 唯一，只记布尔值） |
 | 78 | 推荐来源 `users.recommend_source` 与 AtCoder 推荐记录（`atcoder_recommendations`） |
-| 82 | 复习方式偏好默认改为只回忆（`users.redo_preference` 默认 `recall_only`，已有用户统一迁移） |
+| 80 | 错因固定词表 + 判题类型（`problems.verdict`）+ 最小反例（`mistakes.counterexample`） |
+| 81 | 复习=重做（`reviews.mode`/`evidence` + `users.redo_preference`） |
+| 82 | 复习方式偏好默认改为“只回忆”（`users.redo_preference` 默认值 `recall_only`） |
+| 83 | 复仇成功标记（`mistakes.revenge_at`，NULL=从未触发） |
 
 25–27 为未发布功能撤回后的空缺，不重用。
 

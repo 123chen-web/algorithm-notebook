@@ -409,6 +409,11 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
     }
     if (!state.isCurrent()) return;
     stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
+    if (result && result.revenge) {
+      // 复仇成功：在现有盖章流程上加一枚特别印章 + 一句文案，不另起一套。
+      stampSeal("雪耻", { anchor, tone: "cinnabar" });
+      rvfShowRevengeLine(root, result.revenge);
+    }
     window.ReviewFeel?.buzz();
     if (result) {
       rvfRemoveItem({ ...item, ...result });
@@ -434,6 +439,18 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
       reviewButtons.removeAttribute("aria-busy");
     }
   }
+}
+
+function rvfShowRevengeLine(root, revenge) {
+  // 复仇成功文案行：插在详情区顶部，用户文本一律 textContent。
+  const host = root.querySelector("#detail") || root;
+  const line = element("p", "", "revenge-line");
+  const strong = element("strong", "复仇成功", "");
+  line.append(strong);
+  line.append(document.createTextNode(
+    `：${revenge.days_gap} 天前在这道题上栽过，今天一次做对。`
+  ));
+  host.prepend(line);
 }
 
 function rvfRevealDetail() {

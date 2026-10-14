@@ -126,3 +126,72 @@ def redact_pending_answer(variant):
         variant["expected_answer"] = "***"
     return variant
 
+
+
+# 复仇成功判定常量（阈值见 docs/features/revenge.md，请站长确认）。
+REVENGE_MIN_GAP_DAYS = 7
+REVENGE_SUCCESS_QUALITY = 4
+REVENGE_FAIL_QUALITY = 2
+REVENGE_MODES = ("rewrite", "redo")
+# 失败类判题：建题时记录的 verdict 属于这些即视为“曾经失败过”。
+REVENGE_FAIL_VERDICTS = ("WA", "TLE", "MLE", "RE", "CE", "NOANS")
+
+
+def check_revenge(conn, mistake_id, quality, mode, reviewed_at, evidence=""):
+    """判定本次评分是否构成“复仇成功”，返回 revenge dict 或 None。
+
+    条件（全部满足才触发）：
+    1. 本次评分 quality >= 4，且 mode 为 rewrite/redo（实测成绩，不是自评）；
+    2. 该条此前至少有一次评分 <= 2，或建题时判题类型为失败类；
+    3. 首次失败（低分记录的最早时间，或失败判题的建题时间）距今 >= 7 天；
+    4. 该条从未触发过（mistakes.revenge_at IS NULL）。
+
+    reviewed_at 为 ISO 时间字符串。本函数只做判定不写库；
+    调用方在触发时把 mistakes.revenge_at 置为本次评分时间。
+    返回的 dict 可直接序列化进评分响应和 /api/stats/revenge。
+    """
+    if quality < REVENGE_SUCCESS_QUALITY or mode not in REVENGE_MODES:
+        return None
+    row = conn.execute(
+        "SELECT m.revenge_at, p.title, p.verdict, p.created_at"
+        " FROM mistakes m JOIN problems p ON p.id = m.problem_id"
+        " WHERE m.id = ?",
+        (mistake_id,),
+    ).fetchone()
+    if row is None or row["revenge_at"] is not None:
+        return None
+    fail_row = conn.execute(
+        "SELECT MIN(reviewed_at) FROM reviews"
+        " WHERE mistake_id = ? AND quality <= ?",
+        (mistake_id, REVENGE_FAIL_QUALITY),
+    ).fetchone()
+    first_fail_at = fail_row[0] if fail_row else None
+    verdict_failed = (row["verdict"] or "") in REVENGE_FAIL_VERDICTS
+    if verdict_failed and row["created_at"]:
+        if first_fail_at is None or row["created_at"] < first_fail_at:
+            first_fail_at = row["created_at"]
+    if first_fail_at is None:
+        return None
+    try:
+        gap_days = (
+            datetime.fromisoformat(reviewed_at) - datetime.fromisoformat(first_fail_at)
+        ).days
+    except ValueError:
+        return None
+    if gap_days < REVENGE_MIN_GAP_DAYS:
+        return None
+    seconds = None
+    if evidence:
+        try:
+            seconds = json.loads(evidence).get("seconds")
+        except (ValueError, AttributeError):
+            seconds = None
+    return {
+        "mistake_id": mistake_id,
+        "problem_title": row["title"],
+        "first_fail_date": first_fail_at[:10],
+        "verdict": row["verdict"] or "",
+        "mode": mode,
+        "seconds": seconds if isinstance(seconds, int) else None,
+        "days_gap": gap_days,
+    }

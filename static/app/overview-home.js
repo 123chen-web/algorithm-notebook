@@ -152,6 +152,8 @@ async function loadHome({ refreshUser = true } = {}) {
     window.BriefingCard?.mount(document.querySelector("#briefing-card"));
     window.Landscape?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
     window.Landscape?.mount(document.querySelector("#landscape-card"));
+    window.RevengeCard?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+    window.RevengeCard?.mount(document.querySelector("#revenge-card"));
     // GROWTH F3 下周主攻卡片：空数据/失败时模块自带兜底文案
     $("#ov-focus-card").hidden = false;
     window.Heatmap?.mountFocusCard($("#ov-focus"));

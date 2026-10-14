@@ -107,3 +107,51 @@ def render_achievement_card(
     output = BytesIO()
     card.save(output, format="PNG")
     return output.getvalue()
+
+
+def render_revenge_card(title, days_gap, verdict_label, mode_label, hide_title=False):
+    """复仇成功分享卡：纯服务端绘制，不含用户代码。
+
+    title 为题名（hide_title 时显示为省略号）；days_gap 为间隔天数；
+    verdict_label 为判题中文名；mode_label 为本次模式中文名。
+    同一组输入生成相同 PNG 字节。
+    """
+    font = _load_font(40)
+    card = Image.new("RGB", CARD_SIZE, PAPER)
+    draw = ImageDraw.Draw(card)
+
+    def text(x, y, value, size, color=INK, width=880, anchor="lt"):
+        draw.text(
+            (x, y), value, font=_fit_font(font, value, size, width),
+            fill=color, anchor=anchor,
+        )
+
+    draw.rounded_rectangle((40, 40, 1040, 1310), radius=32, outline=SOFT, width=3)
+    text(100, 106, PRODUCT_NAME, 52, ACCENT)
+    text(100, 180, "把错误变成掌握", 30, MUTED)
+    draw.line((100, 250, 980, 250), fill=SOFT, width=3)
+
+    text(540, 330, "复仇成功", 96, ACCENT, anchor="mt")
+    display_title = "···" if hide_title else " ".join(title.split())
+    text(540, 480, f"《{display_title}》", 44, width=860, anchor="mt")
+
+    text(540, 620, str(days_gap), 150, ACCENT, anchor="mt")
+    text(540, 800, f"{days_gap} 天前在这里栽过，今天一次做对", 34, anchor="mt")
+
+    stats = (
+        (verdict_label or "—", "当时的判题"),
+        (mode_label or "—", "这次的方式"),
+    )
+    draw.rounded_rectangle((240, 900, 840, 1060), radius=24, fill=SOFT)
+    for index, (value, label) in enumerate(stats):
+        center = 390 + index * 300
+        text(center, 930, value, 40, ACCENT, width=260, anchor="mt")
+        text(center, 990, label, 26, MUTED, width=260, anchor="mt")
+
+    draw.line((100, 1150, 980, 1150), fill=SOFT, width=3)
+    text(540, 1190, "继续保持", 28, MUTED, anchor="mt")
+    text(980, 1246, PRODUCT_NAME, 24, MUTED, width=400, anchor="rt")
+
+    output = BytesIO()
+    card.save(output, format="PNG")
+    return output.getvalue()

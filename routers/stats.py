@@ -19,11 +19,13 @@ from activity import activity_summary
 from activity import day_counts
 from ai_limits import refund_on_server_failure
 from contextlib import ExitStack
+from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Response
 from learning_stats import current_streak
 from mastery import mastery_report
 from search import search_all
@@ -292,6 +294,112 @@ def get_error_profile(user=Depends(security.current_user)):
             "top_causes": top_causes[:3],
             "total_tagged": total,
         }
+
+
+@router.get("/api/stats/revenge")
+def get_revenge(user=Depends(security.current_user)):
+    """复仇成功列表：近 30 天内触发的复仇成功，按触发时间倒序。
+
+    每条含题名、首次失败日期、判题类型、本次模式与用时、间隔天数。
+    只读聚合，不调用 AI。
+    """
+    import error_taxonomy
+
+    with db.connect() as conn:
+        conn.execute("BEGIN")
+        since = (
+            time.datetime.now(time.timezone.utc) - timedelta(days=30)
+        ).isoformat()
+        rows = conn.execute(
+            """
+            SELECT m.id AS mistake_id, m.revenge_at, p.title, p.verdict,
+                   (SELECT r.mode FROM reviews r
+                     WHERE r.mistake_id = m.id
+                     ORDER BY r.reviewed_at DESC, r.id DESC LIMIT 1) AS mode,
+                   (SELECT r.evidence FROM reviews r
+                     WHERE r.mistake_id = m.id
+                     ORDER BY r.reviewed_at DESC, r.id DESC LIMIT 1) AS evidence,
+                   (SELECT MIN(r2.reviewed_at) FROM reviews r2
+                     WHERE r2.mistake_id = m.id AND r2.quality <= 2) AS first_fail_at
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE p.user_id = ? AND m.revenge_at IS NOT NULL AND m.revenge_at >= ?
+            ORDER BY m.revenge_at DESC
+            """,
+            (user["id"], since),
+        ).fetchall()
+        items = []
+        for row in rows:
+            seconds = None
+            if row["evidence"]:
+                try:
+                    seconds = json.loads(row["evidence"]).get("seconds")
+                except (ValueError, AttributeError):
+                    seconds = None
+            verdict = row["verdict"] or ""
+            try:
+                verdict_label = error_taxonomy.verdict_label(verdict) if verdict else ""
+            except KeyError:
+                verdict_label = ""
+            items.append({
+                "mistake_id": row["mistake_id"],
+                "revenge_at": row["revenge_at"],
+                "problem_title": row["title"],
+                "first_fail_date": (row["first_fail_at"] or "")[:10],
+                "verdict": verdict,
+                "verdict_label": verdict_label,
+                "mode": row["mode"] or "",
+                "seconds": seconds if isinstance(seconds, int) else None,
+            })
+        return {"items": items, "count": len(items)}
+
+
+@router.get("/api/stats/revenge/share-card")
+def get_revenge_share_card(
+    mistake_id: int = Query(ge=1),
+    hide_title: bool = False,
+    user=Depends(security.current_user),
+):
+    """复仇成功分享图：只有用户点了“分享”才会调用到这里。
+
+    纯服务端绘制，不含用户代码；hide_title=1 时题名显示为省略号。
+    """
+    import error_taxonomy
+    import share_card
+
+    with db.connect() as conn:
+        conn.execute("BEGIN")
+        row = conn.execute(
+            """
+            SELECT m.revenge_at, p.title, p.verdict,
+                   (SELECT r.mode FROM reviews r
+                     WHERE r.mistake_id = m.id
+                     ORDER BY r.reviewed_at DESC, r.id DESC LIMIT 1) AS mode,
+                   (SELECT MIN(r2.reviewed_at) FROM reviews r2
+                     WHERE r2.mistake_id = m.id AND r2.quality <= 2) AS first_fail_at
+            FROM mistakes m JOIN problems p ON p.id = m.problem_id
+            WHERE m.id = ? AND p.user_id = ? AND m.revenge_at IS NOT NULL
+            """,
+            (mistake_id, user["id"]),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "没有这条复仇记录")
+        try:
+            days_gap = (
+                datetime.fromisoformat(row["revenge_at"])
+                - datetime.fromisoformat(row["first_fail_at"] or row["revenge_at"])
+            ).days
+        except ValueError:
+            days_gap = 0
+        verdict = row["verdict"] or ""
+        try:
+            verdict_label = error_taxonomy.verdict_label(verdict) if verdict else ""
+        except KeyError:
+            verdict_label = ""
+        mode_label = {"rewrite": "默写", "redo": "限时重做"}.get(row["mode"] or "", "")
+    png_bytes = share_card.render_revenge_card(
+        row["title"], max(days_gap, 0), verdict_label, mode_label, hide_title
+    )
+    return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get("/api/overview")
