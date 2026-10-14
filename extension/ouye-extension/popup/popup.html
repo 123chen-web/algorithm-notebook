@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 300px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #222; }
+  h2 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin: 6px 0; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .ok { background: #2e9e5b; } .bad { background: #c0392b; } .warn { background: #e6a23c; }
+  .muted { color: #888; font-size: 12px; }
+  .title { font-weight: 600; margin: 8px 0 2px; word-break: break-all; }
+  button { font: inherit; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  .primary { background: #c0392b; color: #fff; width: 100%; margin-top: 8px; }
+  .primary:disabled { background: #bbb; }
+  .ghost { background: #f0f0f0; color: #333; margin-top: 8px; width: 100%; }
+  .link { color: #c0392b; cursor: pointer; text-decoration: underline; background: none; padding: 0; }
+  #msg { font-size: 12px; color: #c0392b; margin-top: 6px; min-height: 18px; }
+  #msg.ok { color: #2e9e5b; }
+  hr { border: none; border-top: 1px solid #eee; margin: 10px 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #e8e8e8; }
+    .ghost { background: #333; color: #e8e8e8; }
+    .muted { color: #999; }
+    hr { border-color: #333; }
+  }
+</style>
+</head>
+<body>
+  <h2>欧叶OY 刷题伴侣</h2>
+  <div class="row"><span><span id="connDot" class="dot warn"></span><span id="connText">检测中…</span></span></div>
+  <div class="row"><span class="muted">今日待复习</span><span id="reviewCount" class="muted">…</span></div>
+  <div class="row"><span class="muted">已收录题目</span><span id="recordedCount">–</span></div>
+  <div class="row"><span class="muted">待同步错因</span><span id="pendingCount">–</span></div>
+  <hr>
+  <div id="pageInfo" class="muted">正在识别当前页面…</div>
+  <div id="pageTitle" class="title"></div>
+  <button id="importBtn" class="primary" disabled>记到欧叶OY</button>
+  <button id="openBtn" class="ghost">打开欧叶OY</button>
+  <button id="optionsBtn" class="ghost">选项（后端地址 / token）</button>
+  <div id="msg"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -23,7 +23,7 @@
 
     <section class="help-section" aria-labelledby="ext-step1">
       <h2 id="ext-step1">第一步：下载并安装</h2>
-      <p><a class="ext-download" href="/static/downloads/ouye-companion-extension.zip" download>下载扩展（约 30 KB）</a></p>
+      <p><a class="ext-download" href="/static/downloads/ouye-companion-extension.zip" download>下载扩展 v2.1.0（约 100 KB）</a></p>
       <ol>
         <li>把下载的压缩包解压到一个固定的文件夹（解压后不要删，删了扩展就没了）。</li>
         <li>Chrome 地址栏输入 <code>chrome://extensions</code>，Edge 输入 <code>edge://extensions</code>，回车。</li>
@@ -52,6 +52,19 @@
         <li>回到欧叶OY，在「全部记录」里就能看到这道题。</li>
       </ol>
       <p>如果不想装扩展，也可以在欧叶OY 的「新增记录」页直接粘贴题目链接，同样支持洛谷、力扣、牛客、Codeforces、AtCoder。</p>
+    </section>
+
+    <section class="help-section" aria-labelledby="ext-result">
+      <h2 id="ext-result">提交后一键记错题（v2.1.0 新增）</h2>
+      <p>更自然的记题时刻是刚提交完、看到判题失败的那一刻。在各 OJ 的提交结果页（当前版本 2.1.0）：</p>
+      <ol>
+        <li>扩展会识别判题结果，失败（答案错误 / 超时 / 超内存 / 运行错误 / 编译错误）时在右下角弹一个小条：「这次是 TLE，记一笔？」</li>
+        <li>点「记下」，题名、来源链接、判题类型和你这次提交的代码会自动填好，一次写入欧叶OY。</li>
+        <li>点「今天不再提醒这道题」，今天就不会再弹；同一次提交只会弹一次。</li>
+      </ol>
+      <p>隐私说明：判题识别只在你的浏览器本地读页面，不向任何地方发送；只有你点「记下」才会向欧叶OY发一次请求，绝不自动上传。可以在扩展「选项」里关掉「结果页提示」（默认开）。</p>
+      <p class="field-hint">（截图位：结果页右下角提示条样式）</p>
+      <p class="field-hint">支持的结果页：AtCoder 提交页、Codeforces 提交页、力扣中国提交页、洛谷评测记录页、牛客（尽力而为）。通过（AC）不弹。</p>
     </section>
   </main>
 </body>

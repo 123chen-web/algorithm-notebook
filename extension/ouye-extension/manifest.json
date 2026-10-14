@@ -1,0 +1,93 @@
+{
+  "action": {
+    "default_icon": {
+      "128": "icons/icon128.png",
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    },
+    "default_popup": "popup/popup.html",
+    "default_title": "欧叶OY 刷题伴侣"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "i18n/messages.js",
+        "lib/api.js",
+        "lib/dedup.js",
+        "lib/validate.js",
+        "lib/verdict.js",
+        "content/adapters.js",
+        "content/sites/luogu.js",
+        "content/sites/leetcode.js",
+        "content/sites/nowcoder.js",
+        "content/sites/codeforces.js",
+        "content/sites/atcoder.js",
+        "content/inject.js",
+        "content/result-nudge.js"
+      ],
+      "matches": [
+        "*://luogu.com.cn/problem/*",
+        "*://www.luogu.com.cn/problem/*",
+        "*://leetcode.cn/problems/*",
+        "*://www.leetcode.cn/problems/*",
+        "*://leetcode.com/problems/*",
+        "*://ac.nowcoder.com/acm/problem/*",
+        "*://codeforces.com/problemset/problem/*",
+        "*://codeforces.com/contest/*/problem/*",
+        "*://atcoder.jp/contests/*/tasks/*",
+        "*://atcoder.jp/contests/*/submissions/*",
+        "*://codeforces.com/contest/*/submission/*",
+        "*://codeforces.com/problemset/submission/*",
+        "*://leetcode.cn/problems/*/submissions/*",
+        "*://www.leetcode.cn/problems/*/submissions/*",
+        "*://leetcode.com/problems/*/submissions/*",
+        "*://luogu.com.cn/record/*",
+        "*://www.luogu.com.cn/record/*",
+        "*://ac.nowcoder.com/acm/contest/*/submission*"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "description": "在洛谷 / 力扣 / 牛客 / Codeforces / AtCoder 题目页点一下，把题目记到欧叶OY。",
+  "host_permissions": [
+    "https://ouyeoy.com/*",
+    "*://luogu.com.cn/problem/*",
+    "*://www.luogu.com.cn/problem/*",
+    "*://leetcode.cn/problems/*",
+    "*://www.leetcode.cn/problems/*",
+    "*://leetcode.com/problems/*",
+    "*://ac.nowcoder.com/acm/problem/*",
+    "*://codeforces.com/problemset/problem/*",
+    "*://codeforces.com/contest/*/problem/*",
+    "*://atcoder.jp/contests/*/tasks/*",
+    "*://atcoder.jp/contests/*/submissions/*",
+    "*://codeforces.com/contest/*/submission/*",
+    "*://codeforces.com/problemset/submission/*",
+    "*://leetcode.cn/problems/*/submissions/*",
+    "*://www.leetcode.cn/problems/*/submissions/*",
+    "*://leetcode.com/problems/*/submissions/*",
+    "*://luogu.com.cn/record/*",
+    "*://www.luogu.com.cn/record/*",
+    "*://ac.nowcoder.com/acm/contest/*/submission*"
+  ],
+  "icons": {
+    "128": "icons/icon128.png",
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png"
+  },
+  "manifest_version": 3,
+  "name": "欧叶OY 刷题伴侣",
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "options_page": "options/options.html",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "version": "2.1.0"
+}

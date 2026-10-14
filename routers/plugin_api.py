@@ -160,6 +160,9 @@ class ExtensionImport(BaseModel):
     zone: str = "算法"
     # 判题类型：不传就空。WA/TLE/MLE/RE/CE/NOANS。
     verdict: str = Field(default="")
+    # 本次提交的代码（扩展在结果页抓取的用户自己的提交）：存入 problems.code。
+    # 可选；超长由扩展侧先截断（20000 字），后端再卡一次上限。
+    submitted_code: str = Field(default="", max_length=20000)
     # 错因一句话（对应速记模式）：可选；有则建题后再建一条错题。
     pending_reason: str | None = Field(default=None, max_length=REASON_MAX_LENGTH)
 
@@ -255,7 +258,7 @@ def import_from_extension(data: ExtensionImport, user=Depends(_bearer_user)):
             """,
             (
                 user["id"], data.title, data.zone, data.language,
-                "", "",
+                data.submitted_code, "",
                 data.source, data.source_url, data.content,
                 data.difficulty, data.verdict, time.utc_now(),
             ),

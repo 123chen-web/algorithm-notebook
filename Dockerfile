@@ -12,6 +12,7 @@ COPY assets/ ./assets/
 COPY routers/ ./routers/
 COPY core/ ./core/
 COPY models/ ./models/
+COPY extension/ ./extension/
 
 RUN groupadd --gid 10001 notebook \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin notebook \

@@ -18,7 +18,7 @@
 
 | 接口 | 说明 |
 | --- | --- |
-| `POST /api/problems/import-from-extension` | `source` 现在还接受 `luogu`、`atcoder`（只允许各自官方域名 `luogu.com.cn`、`atcoder.jp`；原有来源规则不变）。新增可选字段 `pending_reason`（1–500 字）：有则建题后再建一条带这句错因的错题，响应多一个 `mistake_id`（没有则为 `null`） |
+| `POST /api/problems/import-from-extension` | `source` 现在还接受 `luogu`、`atcoder`（只允许各自官方域名 `luogu.com.cn`、`atcoder.jp`；原有来源规则不变）。新增可选字段 `pending_reason`（1–500 字）：有则建题后再建一条带这句错因的错题，响应多一个 `mistake_id`（没有则为 `null`）。v2.1.0 新增可选字段：`verdict`（判题类型，只能是 `WA`/`TLE`/`MLE`/`RE`/`CE`/`NOANS`，非法返回 422）和 `submitted_code`（本次提交的代码，最多 20000 字，存入 `problems.code`，超长返回 422） |
 | `GET /api/problems/by-source?source=&source_id=` | 按来源和题目标识查询本人是否已收录，返回 `{exists, problem_id}`。标识规则：洛谷、Codeforces 大写（Codeforces 为 contestId+题号，如 `1730A`），力扣为 slug，牛客为数字 id，AtCoder 为 task id；服务端从已保存的 `source_url` 推出标识来比较，不需要新增列 |
 | `POST /api/problems/{id}/mistakes` | 给本人已有的题追加一条错因，请求 `{reason(1–500 字), quick}`，成功 201 返回 `{id, problem_id, status:"recorded"}`；不影响该题已有的复习计划 |
 | `GET /api/review/due-count` | 今天到期且未暂停的易错点数，返回 `{due_count}`（不含每日复习上限的折算） |

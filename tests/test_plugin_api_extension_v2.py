@@ -187,3 +187,53 @@ def test_new_endpoints_are_rate_limited(client, monkeypatch):
     assert [client.get("/api/review/due-count", headers=auth_headers(token)).status_code for _ in range(3)] == [200, 200, 429]
     url = f"/api/problems/{problem['id']}/mistakes"
     assert [client.post(url, json={"reason": "x"}, headers=auth_headers(token)).status_code for _ in range(3)] == [201, 201, 429]
+
+
+def test_import_with_verdict_and_submitted_code(client):
+    """结果页一键录入：verdict + submitted_code 存入 problems.verdict/code。"""
+    register(client)
+    token = issue_token(client)
+    code = "n = int(input())\nprint(n + 1)"
+    body = post_import(
+        client,
+        token,
+        luogu_payload(
+            source_url="https://www.luogu.com.cn/record/98765432",
+            verdict="WA",
+            submitted_code=code,
+            language="Python",
+        ),
+    )
+    assert body.status_code == 201
+    data = body.json()
+    assert data["verdict"] == "WA"
+    with connect() as conn:
+        row = conn.execute("SELECT verdict, code, language FROM problems WHERE id = ?", (data["id"],)).fetchone()
+    assert row["verdict"] == "WA"
+    assert row["code"] == code
+    assert row["language"] == "Python"
+
+
+def test_import_verdict_rejects_unknown_code(client):
+    """verdict 非法 code 被 422（只能是 error_taxonomy.VERDICTS）。"""
+    register(client)
+    token = issue_token(client)
+    assert post_import(client, token, luogu_payload(verdict="AC")).status_code == 422
+    assert post_import(client, token, luogu_payload(verdict="Wrong Answer")).status_code == 422
+
+
+def test_import_submitted_code_too_long_is_422(client):
+    """submitted_code 超过 20000 字被 422。"""
+    register(client)
+    token = issue_token(client)
+    assert post_import(client, token, luogu_payload(submitted_code="x" * 20001)).status_code == 422
+
+
+def test_import_without_verdict_and_code_still_works(client):
+    """不带 verdict/code 的老请求体仍然可用（向后兼容）。"""
+    register(client)
+    token = issue_token(client)
+    body = post_import(client, token, luogu_payload())
+    assert body.status_code == 201
+    data = body.json()
+    assert data["verdict"] == ""
