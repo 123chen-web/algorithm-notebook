@@ -77,7 +77,7 @@ function environment() {
     $, user: { id: 1, ai_enabled: false, ai_daily_limit: 10 }, view: "today", sessionEpoch: 1,
     busy: false, codeZones: new Set(["算法"]), listCreatedOn: "",
     rvfDetailState: null, rvfDetailGeneration: 0, rvfSelectionGeneration: 0, rvfListGeneration: 0, rvfPageGeneration: 0,
-    rvfHeaderGeneration: 0, rvfListItems: new Map(), rvfQueue: null,
+    rvfHeaderGeneration: 0, rvfListItems: new Map(), rvfQueue: null, rvfShowAllOn: "",
     redoPreferenceCache: null, // app.js 模块级 let，提取的函数在 vm 上下文里需要它
     localStorage: env.window.localStorage,
     timestamp: (value) => value || "尚未复习", confirm: () => false,

@@ -181,7 +181,8 @@ def test_migration_9_adds_the_column_index_and_table_to_an_old_database(tmp_path
     db.init_db()
     with closing(sqlite3.connect(path)) as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == original[-1][0]
-        assert conn.execute("SELECT public_rank_opt_out FROM users").fetchone()[0] == 0, "旧用户默认参与"
+        # 迁移 9 时旧用户默认参与；迁移 86 起公开榜单改成默认不参与，旧用户也一起收回。
+        assert conn.execute("SELECT public_rank_opt_out FROM users").fetchone()[0] == 1
         indexes = {row[1] for row in conn.execute("PRAGMA index_list(reviews)")}
         assert "idx_reviews_reviewed_at" in indexes
         columns = [row[1] for row in conn.execute("PRAGMA table_info(daily_notices)")]

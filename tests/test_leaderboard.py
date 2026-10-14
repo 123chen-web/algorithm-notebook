@@ -7,7 +7,14 @@ test_app.py），所以这里的"今天"锚点是确定的；但 reviews.reviewe
 """
 import main
 from db import connect
-from test_app import client, new_problem, register
+from test_app import client, new_problem, register as register_account
+
+
+def register(client, *args, **kwargs):
+    """公开榜单默认不参与（迁移 86）：这里测排名的用户先自己打开“参与公开榜单”。"""
+    result = register_account(client, *args, **kwargs)
+    assert client.put("/api/me/public-rank", json={"participate": True}).status_code == 200
+    return result
 from core import config
 from core import time
 
@@ -193,3 +200,17 @@ def test_leaderboard_truncates_and_still_reports_own_rank_beyond_cutoff(
         "usera", "userb",
     ]
     assert body["me"] == {"streak_days": 1, "rank": 3, "is_trial": False}
+
+
+def test_new_accounts_stay_off_the_public_board_until_they_opt_in(client):
+    register_account(client)
+    mistake_id = new_problem(client)[0]
+    insert_review(mistake_id, "2026-09-19T04:00:00+00:00")
+    assert client.get("/api/me").json()["public_rank_opt_out"] is True
+    board = client.get("/api/leaderboard").json()
+    assert board["entries"] == []
+    assert board["me"]["rank"] is None
+    assert client.put("/api/me/public-rank", json={"participate": True}).status_code == 200
+    board = client.get("/api/leaderboard").json()
+    assert [entry["streak_days"] for entry in board["entries"]] == [1]
+    assert board["me"]["rank"] == 1

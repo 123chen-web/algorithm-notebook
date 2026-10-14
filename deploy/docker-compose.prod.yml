@@ -39,6 +39,11 @@ services:
       # 邮件里的找回密码链接必须用真实域名拼接。
       PUBLIC_BASE_URL: https://${SITE_DOMAIN}
     restart: unless-stopped
+    # 应用进程是非 root 用户，不需要任何 Linux 特权：全部去掉，并禁止子进程再提权。
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         - CMD

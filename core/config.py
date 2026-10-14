@@ -225,6 +225,10 @@ REVIEW_FUTURE_SLACK = timedelta(seconds=60)
 
 REVIEW_BACKFILL_WINDOW = timedelta(days=7)
 
+# 新账号的每日复习上限（和 Anki 新卡默认 20 张/天同量级）：放假回来积压几百条时，
+# 每天只放出这么多，其余按逾期程度排队，几天内自然清完。用户可在复习页改成“不限”。
+DEFAULT_DAILY_REVIEW_CAP = 20
+
 DUCK_BAD_REPLY = "小黄鸭这次没答好，请再试一次"
 
 # AI 各任务 max_tokens 分档（推理型模型的思考 token 也计入上限，单次上限过大会

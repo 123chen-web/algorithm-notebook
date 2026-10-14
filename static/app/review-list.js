@@ -13,6 +13,9 @@ let rvfHeaderGeneration = 0;
 let rvfDetailState = null;
 let rvfListItems = new Map();
 let rvfQueue = null;
+// 今日上限：超过上限的到期记录默认不进今天的列表（和 Anki 一样只放出上限内的），
+// 用户点“今天全部显示”后当天在本页会话内放开；记的是放开那天的日期，过了零点自动恢复。
+let rvfShowAllOn = "";
 
 // ---- 事件绑定与模块配置 ----
 
@@ -88,11 +91,68 @@ function rvfRenderQueueHeader(queue) {
     select.append(option);
   }
   select.value = value;
-  $("#review-cap-note").hidden = !queue.capped;
-  $("#review-cap-note").textContent = queue.capped ? `今日队列上限 ${queue.cap} 条，其余明天再说` : "";
+  rvfRenderCapNote(queue);
 }
 
-async function rvfLoadQueueHeader(isCurrent = rvfPageGuard(), zone = $("#zone-filter").value, tag = $("#tag-filter").value) {
+function rvfCapNoteText(queue, showAll) {
+  const shown = (queue.items || []).length;
+  const later = Math.max(0, (queue.total_due ?? shown) - shown);
+  if (showAll) return `今天已放开上限，显示全部 ${queue.total_due ?? shown} 条到期记录`;
+  if (!shown) return `今天的 ${queue.cap} 条已经做完，其余 ${later} 条按逾期程度排到之后几天`;
+  return `今日上限 ${queue.cap} 条：先做这 ${shown} 条，其余 ${later} 条按逾期程度排到之后几天`;
+}
+
+function rvfRenderCapNote(queue) {
+  const note = $("#review-cap-note");
+  const showAll = Boolean(queue.capped) && rvfShowAllOn !== "" && rvfShowAllOn === queue.today;
+  note.hidden = !queue.capped;
+  const text = queue.capped ? rvfCapNoteText(queue, showAll) : "";
+  const label = $("#review-cap-text");
+  if (label) label.textContent = text;
+  else note.textContent = text;
+  const toggle = $("#review-cap-toggle");
+  if (toggle) {
+    toggle.hidden = !queue.capped || !queue.today;
+    toggle.textContent = showAll ? "恢复上限" : "今天全部显示";
+  }
+}
+
+// 上限内放出哪几条由服务端按逾期程度排好（queue.items）；列表里多出来的先收起，
+// 用户点“今天全部显示”后当天不再收。只删不加：列表本身仍以 /api/mistakes 为准。
+function rvfApplyCapToList(queue) {
+  if (view !== "today" || !queue.capped || (rvfShowAllOn && rvfShowAllOn === queue.today)) return;
+  const allowed = new Set((queue.items || []).map((item) => item.id));
+  const held = [...rvfListItems.keys()].filter((id) => !allowed.has(id));
+  if (!held.length) return;
+  rvfListGeneration += 1;
+  for (const id of held) rvfListItems.delete(id);
+  const selectedId = rvfDetailState?.isCurrent() ? rvfDetailState.item.id : null;
+  rvfRenderCards(user.today, selectedId);
+  $("#list-summary").textContent = rvfListSummary(user.today);
+  $("#list-focus").hidden = !(rvfListItems.size && window.FocusReview);
+  if (!rvfListItems.size) {
+    $("#cards").append(element("p", `今天的上限已经做完，还有 ${held.length} 条排在之后几天。`, "muted empty-list"));
+  }
+}
+
+function rvfToggleShowAll() {
+  if (view !== "today" || !rvfQueue?.today) return;
+  rvfShowAllOn = rvfShowAllOn === rvfQueue.today ? "" : rvfQueue.today;
+  return loadList();
+}
+
+function rvfQueueParams(zone, tag) {
+  const params = new URLSearchParams();
+  if (zone) params.set("zone", zone);
+  if (tag) params.set("tag", tag);
+  return params;
+}
+
+function rvfSettle(promise) {
+  return promise.then((value) => ({ status: "fulfilled", value }), (reason) => ({ status: "rejected", reason }));
+}
+
+async function rvfLoadQueueHeader(isCurrent = rvfPageGuard(), zone = $("#zone-filter").value, tag = $("#tag-filter").value, prefetched = null) {
   const generation = ++rvfHeaderGeneration;
   const valid = () => isCurrent() && view === "today" && generation === rvfHeaderGeneration;
   $("#review-cap-controls").hidden = true;
@@ -100,15 +160,14 @@ async function rvfLoadQueueHeader(isCurrent = rvfPageGuard(), zone = $("#zone-fi
   $("#review-queue-status").textContent = "";
   $("#review-daily-cap").disabled = false;
   if (view !== "today") return;
-  const params = new URLSearchParams();
-  if (zone) params.set("zone", zone);
-  if (tag) params.set("tag", tag);
-  const [queue, settings] = await Promise.allSettled([
-    api(`/api/review/queue?${params}`), api("/api/me/review-settings"),
-  ]);
+  const queueRequest = prefetched
+    ? prefetched.then((result) => (result.status === "fulfilled" ? result.value : Promise.reject(result.reason)))
+    : api(`/api/review/queue?${rvfQueueParams(zone, tag)}`);
+  const [queue, settings] = await Promise.allSettled([queueRequest, api("/api/me/review-settings")]);
   if (!valid()) return;
   if (queue.status === "fulfilled") {
     rvfRenderQueueHeader(queue.value);
+    rvfApplyCapToList(queue.value);
     $("#review-cap-controls").hidden = false;
     rvfCapAvailable(settings.status === "fulfilled");
   } else if (queue.reason.status !== 404 && !window.OfflineReview?.isNetworkError?.(queue.reason)) {
@@ -135,7 +194,7 @@ async function rvfSetDailyCap() {
   try {
     await api("/api/me/review-settings", { method: "PUT", body: JSON.stringify({ daily_review_cap: selected ? Number(selected) : null }) });
     if (!valid()) return;
-    await rvfLoadQueueHeader(isCurrent);
+    await loadList(); // 上限决定今天的列表放出多少条，换了上限要整页重排。
   } catch (error) {
     if (!valid()) return;
     select.value = old;
@@ -195,8 +254,11 @@ async function loadList() {
     + (listCreatedOn ? `&created_on=${encodeURIComponent(listCreatedOn)}` : "");
   let data;
   let offlineToday = false;
+  const listRequest = api(`/api/mistakes?${query}`);
+  // 今日复习同时取队列：上限内放出哪几条由服务端按逾期程度排好；取不到（老后端/出错）就不截断。
+  const queuePromise = view === "today" ? rvfSettle(api(`/api/review/queue?${rvfQueueParams(zoneParam, tagParam)}`)) : null;
   try {
-    data = await api(`/api/mistakes?${query}`);
+    data = await listRequest;
   } catch (error) {
     // 今日复习在断网（或请求直接网络失败）时，用预取队列兜底；其他视图/无缓存照常报错。
     if (view === "today" && window.OfflineReview?.isNetworkError(error)) {
@@ -228,7 +290,7 @@ async function loadList() {
     $("#review-cap-note").hidden = true;
     $("#review-queue-status").textContent = "离线模式：展示的是联网时预取的今日队列，评分会先存在本机。";
   } else {
-    void rvfLoadQueueHeader(valid, zoneParam, tagParam);
+    void rvfLoadQueueHeader(valid, zoneParam, tagParam, queuePromise);
   }
   $("#list-focus").hidden = !(view === "today" && data.items.length && window.FocusReview);
   $("#list-filter").hidden = !listCreatedOn;

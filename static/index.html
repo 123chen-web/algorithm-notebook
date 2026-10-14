@@ -50,7 +50,7 @@
   <link rel="stylesheet" href="/static/redeem.css?v=1">
   <link rel="stylesheet" href="/static/admin-metrics.css?v=1">
   <link rel="stylesheet" href="/static/nav-focus.css?v=1">
-  <link rel="stylesheet" href="/static/rank.css?v=2">
+  <link rel="stylesheet" href="/static/rank.css?v=3">
   <link rel="stylesheet" href="/static/goal-card.css?v=1">
   <link rel="stylesheet" href="/static/recommend.css?v=2">
   <link rel="stylesheet" href="/static/sign.css?v=1">
@@ -106,7 +106,7 @@
   <script defer src="/static/profile.js?v=3"></script>
   <script defer src="/static/redeem.js?v=1"></script>
   <script defer src="/static/admin-metrics.js?v=3"></script>
-  <script defer src="/static/rank.js?v=3"></script>
+  <script defer src="/static/rank.js?v=4"></script>
   <script defer src="/static/group-extras.js?v=2"></script>
   <script defer src="/static/rank-admin.js?v=1"></script>
   <script defer src="/static/capture.js?v=3"></script>
@@ -149,16 +149,16 @@
   <script defer src="/static/app/overview-home.js?v=2"></script>
   <script defer src="/static/app/overview-insights.js?v=2"></script>
   <script defer src="/static/app/overview-revenge.js?v=1"></script>
-  <script defer src="/static/app/review-list.js?v=2"></script>
+  <script defer src="/static/app/review-list.js?v=3"></script>
   <script defer src="/static/app/review-detail.js?v=3"></script>
-  <script defer src="/static/app/review-grade.js?v=2"></script>
+  <script defer src="/static/app/review-grade.js?v=3"></script>
   <script defer src="/static/app/problem-form.js?v=1"></script>
   <script defer src="/static/app/forum-board.js?v=1"></script>
   <script defer src="/static/app/forum-post.js?v=1"></script>
   <script defer src="/static/app/forum-comments.js?v=1"></script>
   <script defer src="/static/app/forum-map.js?v=1"></script>
   <script defer src="/static/app/groups.js?v=2"></script>
-  <script defer src="/static/app/rank.js?v=2"></script>
+  <script defer src="/static/app/rank.js?v=3"></script>
   <script defer src="/static/app/account.js?v=1"></script>
   <script defer src="/static/app/admin.js?v=1"></script>
   <script defer src="/static/app/payments.js?v=1"></script>
@@ -316,8 +316,8 @@
               <button type="button" class="link-button fx-toggle" id="fx-toggle" aria-label="山水涟漪特效"></button>
               <button type="button" class="link-button nav-focus-toggle" id="nav-focus-toggle-account" aria-pressed="false">专注模式：关</button>
               <label class="account-preference account-rank-pref" id="account-public-rank-label" for="account-public-rank" hidden>
-                <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox" checked><span>参与公开榜单</span></span>
-                <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。</span>
+                <span class="account-rank-pref-row"><input id="account-public-rank" type="checkbox"><span>参与公开榜单</span></span>
+                <span id="account-public-rank-status" class="account-rank-pref-note" role="status" aria-live="polite">默认不参与。打开后，你会出现在“昨日之星”“本周热门题目”和榜单里。</span>
               </label>
               <label class="account-preference account-rank-pref" id="account-group-today-label" for="account-group-today" hidden>
                 <span class="account-rank-pref-row"><input id="account-group-today" type="checkbox" checked><span>在小组里显示我的今日动态</span></span>
@@ -992,7 +992,7 @@
               </label>
               <span id="review-done-today"></span>
             </div>
-            <p id="review-cap-note" class="review-cap-note" hidden></p>
+            <p id="review-cap-note" class="review-cap-note" hidden><span id="review-cap-text"></span> <button id="review-cap-toggle" type="button" class="link-button" hidden>今天全部显示</button></p>
             <p id="review-queue-status" role="status" aria-live="polite"></p>
             <p id="list-filter" class="list-filter" hidden><span id="list-filter-text"></span><button id="list-filter-clear" type="button" class="link-button">清除筛选</button></p>
           </div>
@@ -1246,7 +1246,7 @@
           <p id="rank-yesterday-status" class="muted" role="status" aria-live="polite"></p>
           <ol id="rank-yesterday-list" class="rank-list" aria-describedby="rank-yesterday-rules"></ol>
           <p id="rank-yesterday-me" class="rank-me"></p>
-          <p class="muted rank-privacy">熟人小范围使用，建议用真名；不想公开可选择匿名。可在“我的资料”填写榜单显示名，留空继续显示昵称。仅登录用户可查看榜单；在账号菜单取消勾选“参与公开榜单”后不会上榜，你仍能看到自己的数据。</p>
+          <p class="muted rank-privacy">熟人小范围使用，建议用真名；不想公开可选择匿名。可在“我的资料”填写榜单显示名，留空继续显示昵称。仅登录用户可查看榜单。默认不参与公开榜单，想上榜就在下面或账号菜单里打开“参与公开榜单”，随时可以关掉；不上榜也能看到自己的数据。</p>
         </section>
 
         <section id="rank-hot" class="panel rank-panel" aria-labelledby="rank-hot-title" aria-busy="false">

@@ -71,7 +71,7 @@ function environment(source = SOURCE) {
     $, user: { id: 1, ai_enabled: false, ai_daily_limit: 10 }, view: "today", sessionEpoch: 1,
     busy: false, codeZones: new Set(["算法"]), listCreatedOn: "",
     rvfDetailState: null, rvfDetailGeneration: 0, rvfSelectionGeneration: 0, rvfListGeneration: 0, rvfPageGeneration: 0,
-    rvfHeaderGeneration: 0, rvfListItems: new Map(), rvfQueue: null,
+    rvfHeaderGeneration: 0, rvfListItems: new Map(), rvfQueue: null, rvfShowAllOn: "",
     localStorage: env.window.localStorage,
     timestamp: (value) => value || "尚未复习", confirm: () => false,
     message: (text, error) => messages.push({ text, error }),
@@ -371,8 +371,10 @@ test("queue header: cap and done_today come from queue metadata while filters ar
   assert.equal(env.$("#review-cap-controls").hidden, false);
   assert.equal(env.$("#review-daily-cap").value, "20");
   assert.match(env.$("#review-done-today").textContent, /今天已复习 12 \/ 20/);
-  assert.match(env.$("#review-cap-note").textContent, /今日队列上限 20 条，其余明天再说/);
+  assert.match(env.$("#review-cap-text").textContent, /今日上限 20 条：先做这 1 条，其余 22 条按逾期程度排到之后几天/);
   assert.equal(env.$("#review-cap-note").hidden, false);
+  assert.equal(env.$("#review-cap-toggle").hidden, false);
+  assert.equal(env.$("#review-cap-toggle").textContent, "今天全部显示");
 });
 
 test("queue header: unlimited has no capped note and missing API keeps old review available", async () => {
@@ -419,10 +421,14 @@ test("daily cap: selection saves the numeric value using PUT and refreshes metad
   assert.deepEqual(JSON.parse(write.options.body), { daily_review_cap: 30 });
   env.answer(write, { daily_review_cap: 30 });
   await tick();
+  const list = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
+  assert.ok(list, "a new cap re-reads today's list because the cap decides what is shown");
+  env.answer(list, { today: "2026-10-04", items: [CARD()] });
+  await pending;
   const queue = env.calls.find((call) => call.url.startsWith("/api/review/queue"));
   assert.ok(queue);
   env.answer(queue, { cap: 30, done_today: 12, total_due: 23, capped: false, items: [CARD()] });
-  await pending;
+  await tick(); await tick();
   assert.match(env.$("#review-done-today").textContent, /12 \/ 30/);
 });
 
@@ -548,19 +554,41 @@ test("list: edited cause tags survive regrouping after its sibling is reviewed",
   assert.doesNotMatch(env.$('[data-problem-id="8"]').textContent, /边界$/);
 });
 
-test("list: today's left pane keeps every due record while queue metadata reports a smaller cap", async () => {
+test("list: today's left pane shows only the capped queue until the learner opens it up for today", async () => {
   const env = environment();
+  const queueBody = { today: "2026-10-04", cap: 10, done_today: 9, remaining_today: 1, total_due: 3, capped: true, items: [CARD()] };
   const pending = env.context.loadList();
   const list = env.calls.find((call) => call.url.startsWith("/api/mistakes?"));
   assert.match(list.url, /due_only=true/);
-  env.answer(list, { today: "2026-10-04", items: [CARD(1), CARD(2), CARD(3)] }); await pending;
   const queue = env.calls.find((call) => call.url.startsWith("/api/review/queue?"));
-  env.answer(queue, { cap: 10, done_today: 9, remaining_today: 1, total_due: 3, capped: true, items: [CARD()] });
-  await tick();
-  assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 3);
-  assert.match(env.$("#list-summary").textContent, /3 条易错点/);
-  assert.match(env.$("#review-cap-note").textContent, /今日队列上限 10 条，其余明天再说/);
+  assert.ok(queue, "today's list reads the queue together with the records");
+  env.answer(list, { today: "2026-10-04", items: [CARD(1), CARD(2), CARD(3)] }); await pending;
+  env.answer(queue, queueBody); await tick(); await tick();
+  assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 1);
+  assert.match(env.$("#list-summary").textContent, /1 条易错点/);
+  assert.match(env.$("#review-cap-text").textContent, /今日上限 10 条：先做这 1 条，其余 2 条/);
+  assert.equal(env.calls.filter((call) => call.url.startsWith("/api/review/queue?")).length, 1, "header reuses the queue the list already fetched");
   assert.doesNotMatch(env.$("#cards").textContent, /边界容易漏掉/, "recall-first due cards do not reveal their cause in the left pane");
+
+  const reopened = env.context.rvfToggleShowAll();
+  env.answer(env.calls.filter((call) => call.url.startsWith("/api/mistakes?")).at(-1), { today: "2026-10-04", items: [CARD(1), CARD(2), CARD(3)] });
+  await reopened;
+  env.answer(env.calls.filter((call) => call.url.startsWith("/api/review/queue?")).at(-1), queueBody);
+  await tick(); await tick();
+  assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 3);
+  assert.match(env.$("#review-cap-text").textContent, /显示全部 3 条/);
+  assert.equal(env.$("#review-cap-toggle").textContent, "恢复上限");
+});
+
+test("list: when today's cap is used up the empty state says how many wait for later days", async () => {
+  const env = environment();
+  const pending = env.context.loadList();
+  env.answer(env.calls.find((call) => call.url.startsWith("/api/mistakes?")), { today: "2026-10-04", items: [CARD(1), CARD(2)] }); await pending;
+  env.answer(env.calls.find((call) => call.url.startsWith("/api/review/queue?")),
+    { today: "2026-10-04", cap: 10, done_today: 10, remaining_today: 0, total_due: 2, capped: true, items: [] });
+  await tick(); await tick();
+  assert.match(env.$("#cards").textContent, /今天的上限已经做完，还有 2 条排在之后几天/);
+  assert.match(env.$("#review-cap-text").textContent, /今天的 10 条已经做完/);
 });
 
 test("queue header: missing settings hides only the cap editor and preserves queue progress", async () => {

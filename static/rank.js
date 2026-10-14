@@ -257,7 +257,7 @@
   const checkbox = $("#account-public-rank");
   const settingLabel = $("#account-public-rank-label");
   const settingNote = $("#account-public-rank-status");
-  const NOTE = "关闭后，你不会出现在“昨日之星”“本周热门题目”和榜单里。";
+  const NOTE = "默认不参与。打开后，你会出现在“昨日之星”“本周热门题目”和榜单里。";
 
   function syncSetting(user) {
     if (!checkbox || !settingLabel) return;

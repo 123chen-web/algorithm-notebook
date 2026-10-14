@@ -34,7 +34,7 @@ async function loadLeaderboard() {
       ? "体验账号不参与排名，你仍可查看自己的连续打卡天数。"
       : me.rank === null
         ? (user.public_rank_opt_out
-          ? "你已设置不参与公开榜单，不会出现在榜单上；你仍可查看自己的连续打卡天数。"
+          ? "你没有参与公开榜单（默认不参与），不会出现在榜单上；你仍可查看自己的连续打卡天数。"
           : "暂无排名，连续打卡至少 1 天即可参与排名。")
         : `第 ${me.rank} 名${me.rank > data.leaderboard_size ? `（未进入前 ${data.leaderboard_size} 名）` : ""}`;
     const rankPara = element("p", "", "leaderboard-my-rank");
@@ -54,6 +54,17 @@ async function loadLeaderboard() {
       element("p", `${me.streak_days} 天`, "leaderboard-streak"),
       rankPara
     );
+    // 默认不参与公开榜单（迁移 86）：在榜单页直接给一个加入入口，走账号菜单里同一个开关。
+    const optIn = $("#account-public-rank");
+    if (!me.is_trial && user.public_rank_opt_out && optIn && !optIn.checked) {
+      const join = element("button", "加入公开榜单", "leaderboard-join");
+      join.type = "button";
+      join.addEventListener("click", () => {
+        join.disabled = true;
+        if (!optIn.checked) optIn.click();
+      });
+      mine.append(join);
+    }
     for (const entry of data.entries) {
       const row = element("tr");
       row.append(

@@ -9,9 +9,29 @@ from fastapi import Request
 _rate_lock = threading.Lock()
 _rate_buckets = defaultdict(deque)
 
+# 桶按 key（IP、用户、接口名）建，过了窗口的旧时间戳只在同一个 key 再被访问时才清理，
+# 所以只来过一次的 key（比如陌生 IP）会一直留在内存里。每调用 SWEEP_EVERY 次顺手扫一遍，
+# 把最近一次记录早于 SWEEP_IDLE_SECONDS（比代码里最长的 24 小时窗口还久）的桶整个删掉。
+SWEEP_EVERY = 2000
+SWEEP_IDLE_SECONDS = 2 * 24 * 3600
+_calls_since_sweep = 0
+
+
+def _maybe_sweep(now):
+    """必须在持有 _rate_lock 时调用。"""
+    global _calls_since_sweep
+    _calls_since_sweep += 1
+    if _calls_since_sweep < SWEEP_EVERY:
+        return
+    _calls_since_sweep = 0
+    stale = [key for key, bucket in _rate_buckets.items() if not bucket or now - bucket[-1] > SWEEP_IDLE_SECONDS]
+    for key in stale:
+        del _rate_buckets[key]
+
 def rate_limited(key, limit, window_seconds):
     now = time.time()
     with _rate_lock:
+        _maybe_sweep(now)
         bucket = _rate_buckets[key]
         while bucket and now - bucket[0] > window_seconds:
             bucket.popleft()
@@ -35,6 +55,7 @@ def rate_note(key, window_seconds):
     """记录一次事件（例如一次登录失败），不判断是否超限。"""
     now = time.time()
     with _rate_lock:
+        _maybe_sweep(now)
         bucket = _rate_buckets[key]
         while bucket and now - bucket[0] > window_seconds:
             bucket.popleft()
@@ -42,8 +63,10 @@ def rate_note(key, window_seconds):
 
 
 def reset_rate_limits():
+    global _calls_since_sweep
     with _rate_lock:
         _rate_buckets.clear()
+        _calls_since_sweep = 0
 
 
 def client_ip(request: Request):

@@ -110,3 +110,6 @@ a.rank-hot-link:focus-visible, .rank-notice-link:focus-visible, .rank-admin-item
 @media (hover: hover) and (pointer: fine) {
   .rank-mini-link:hover { background: var(--accent); border-color: var(--accent); }
 }
+
+/* 默认不参与公开榜单：榜单页“我的”卡片里的加入按钮。 */
+.leaderboard-join { margin-top: var(--space-3); }

@@ -1355,6 +1355,39 @@ def _apply_fsrs_state(conn):
 
 
 MIGRATIONS.append((85, "复习排期换成 FSRS：mistakes.stability/difficulty + reviews.*_before", _apply_fsrs_state))
+
+
+def _apply_rank_default_opt_out(conn):
+    """公开榜单改为默认不参与（迁移 86）。
+
+    和迁移 82 一样用三步重建列（SQLite 不能改列默认值）：
+    加临时列（默认 1）→ 删旧列 → 重命名为 public_rank_opt_out。
+    已有用户统一变成“不参与”：之前是默认参与，没人明确同意过公开，
+    想上榜的人在榜单页或账号菜单里一键打开。
+
+    幂等：若 public_rank_opt_out 的默认值已经是 1，直接返回，不会把用户之后
+    主动打开的参与状态重置掉；若上次迁移中途留下了 rank_opt_out_tmp 列，先清掉再来。
+    """
+    columns = {row[1]: row for row in conn.execute("PRAGMA table_info(users)")}
+    if "rank_opt_out_tmp" in columns:
+        conn.execute("ALTER TABLE users DROP COLUMN rank_opt_out_tmp")
+        columns = {row[1]: row for row in conn.execute("PRAGMA table_info(users)")}
+    current = columns.get("public_rank_opt_out")
+    if current is None:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN public_rank_opt_out INTEGER NOT NULL DEFAULT 1"
+        )
+        return
+    if (current[4] or "").strip() == "1":
+        return
+    conn.execute(
+        "ALTER TABLE users ADD COLUMN rank_opt_out_tmp INTEGER NOT NULL DEFAULT 1"
+    )
+    conn.execute("ALTER TABLE users DROP COLUMN public_rank_opt_out")
+    conn.execute("ALTER TABLE users RENAME COLUMN rank_opt_out_tmp TO public_rank_opt_out")
+
+
+MIGRATIONS.append((86, "公开榜单改为默认不参与（users.public_rank_opt_out 默认 1）", _apply_rank_default_opt_out))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

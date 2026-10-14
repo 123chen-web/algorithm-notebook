@@ -59,11 +59,11 @@ def register(data: Registration, request: Request, response: Response):
                 """
                 INSERT INTO users(username, password_hash, email, timezone, created_at,
                                   is_admin, terms_accepted_at, terms_version,
-                                  reminder_token)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  reminder_token, daily_review_cap)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (username, hashed, data.email, data.timezone, now,
-                  0, now, TERMS_VERSION, None),
+                  0, now, TERMS_VERSION, None, config.DEFAULT_DAILY_REVIEW_CAP),
             )
             user_id = cursor.lastrowid
             conn.execute("UPDATE users SET reminder_token = ? WHERE id = ?", (f"{user_id}.{secrets.token_urlsafe(24)}", user_id))
@@ -94,10 +94,11 @@ def create_trial_account(data: TrialSignup, request: Request, response: Response
                     """
                     INSERT INTO users(
                         username, password_hash, email, timezone,
-                        created_at, is_trial
-                    ) VALUES (?, ?, NULL, ?, ?, 1)
+                        created_at, is_trial, daily_review_cap
+                    ) VALUES (?, ?, NULL, ?, ?, 1, ?)
                     """,
-                    (username, hashed, data.timezone, core_time.utc_now()),
+                    (username, hashed, data.timezone, core_time.utc_now(),
+                     config.DEFAULT_DAILY_REVIEW_CAP),
                 )
                 user_id = cursor.lastrowid
                 security.set_session(conn, user_id, response, request)
