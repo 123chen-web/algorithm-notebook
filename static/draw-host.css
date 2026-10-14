@@ -75,3 +75,7 @@
   }
 }
 .draw-panel-bar button[hidden] { display: none; }
+
+/* 面板栏里的“怎么插图片”提示：窄屏收起，工具栏本身有图片按钮。 */
+.draw-panel-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) { .draw-panel-hint { display: none; } }

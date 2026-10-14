@@ -57,7 +57,7 @@ def test_focus_card_is_revealed_and_prefill_status_does_not_conflict_with_file_i
     assert '$("#ov-focus-card").hidden = false;' in app
     assert 'id="problem-import-status"' in page
     assert '$("#import-status")' not in app
-    learn = page.split('aria-labelledby="sidebar-g-learn"', 1)[1].split('</div>', 1)[0]
+    learn = page.split('aria-label="学习"', 1)[1].split('</div>', 1)[0]
     assert 'data-view="notes"' in learn
     assert '$("#detail").append(similarHost);' in app
     assert 'reviewSection.append(similarHost)' not in app

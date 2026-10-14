@@ -55,6 +55,9 @@ def test_draw_static_path_is_embeddable_same_origin_but_keeps_script_lockdown(mo
     assert draw.headers["X-Frame-Options"] == "SAMEORIGIN"
     # 连接源不允许内联与任意源。
     assert draw_directives["connect-src"] == ["'self'"]
+    # 画板里的图片（含用户插入的图片）是 data: 地址，只在画板页放行 data: 图片。
+    assert draw_directives["img-src"] == ["'self'", "blob:", "data:"]
+    assert "data:" not in home.headers["Content-Security-Policy"]
     # 脚本/样式只允许 'self' 外加 draw.html 两段厂商静态内联块的 sha256 白名单
     # （配置脚本设置本地字体前缀、全屏布局样式），绝不允许 unsafe-inline/unsafe-eval。
     import base64
@@ -84,8 +87,11 @@ def test_draw_static_path_is_embeddable_same_origin_but_keeps_script_lockdown(mo
     assert draw_directives["style-src"] == expected_style
     # hash 白名单必须非空，否则内联配置脚本被拦会导致字体回退外链。
     assert len(expected_script) > 1 and len(expected_style) > 1
-    for forbidden in ("unsafe-inline", "unsafe-eval", "data:", "*"):
+    for forbidden in ("unsafe-inline", "unsafe-eval", "*"):
         assert forbidden not in draw_policy
+    # data: 只允许出现在 img-src（<img> 里的 data: 图片不会执行脚本）；脚本、样式、连接一律不允许。
+    for name in ("default-src", "script-src", "style-src", "connect-src"):
+        assert "data:" not in draw_directives[name], name
 
     # 其它路径维持 frame-ancestors 'none' / DENY 语义，不允许被嵌入。
     home_directives = {

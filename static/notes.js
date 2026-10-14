@@ -588,11 +588,18 @@
     editButton.type = "button";
     editButton.setAttribute("aria-label", "编辑这条笔记");
     editButton.addEventListener("click", () => startEdit(card, note));
+    const historyButton = h("button", "历史", "notes-action");
+    historyButton.type = "button";
+    historyButton.setAttribute("aria-label", "查看这条笔记的历史版本");
+    historyButton.hidden = !window.NotesHistory;
+    historyButton.addEventListener("click", () => window.NotesHistory?.openHistory(note, {
+      onRestored: (updated) => { Object.assign(note, updated); sortNotes(); renderList(); },
+    }));
     const deleteButton = h("button", "删除", "notes-action is-danger");
     deleteButton.type = "button";
     deleteButton.setAttribute("aria-label", "删除这条笔记");
     deleteButton.addEventListener("click", () => removeNote(note));
-    actions.append(pinButton, editButton, deleteButton);
+    actions.append(pinButton, editButton, historyButton, deleteButton);
     card.append(actions);
     return card;
   }
@@ -732,7 +739,34 @@
     if (problemsLoaded) applyPrefill();
   }
 
+  // 新建区的本机草稿：输入后 0.6 秒存一次，保存成功 / 清空时删掉；下次进笔记页时自动放回去。
+  let draftTimer = 0;
+  function saveComposerDraft() {
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => {
+      const store = window.NotesHistory?.drafts;
+      if (!store) return;
+      const content = getComposerContent();
+      if (!String(content).trim()) store.clear("composer");
+      else store.write("composer", { content, tags: $("#notes-tags-input")?.value || "", problem: $("#notes-problem")?.value || "" });
+    }, 600);
+  }
+
+  function restoreComposerDraft() {
+    const draft = window.NotesHistory?.drafts.read("composer");
+    if (!draft || typeof draft.content !== "string" || !draft.content.trim()) return;
+    if (String(getComposerContent()).trim()) return;
+    setComposerContent(draft.content);
+    const tags = $("#notes-tags-input");
+    if (tags && !tags.value) tags.value = draft.tags || "";
+    const select = $("#notes-problem");
+    if (select && draft.problem && [...select.options].some((option) => option.value === draft.problem)) select.value = draft.problem;
+    composerNotice(`已放回上次（${window.NotesHistory.when(draft.at)}）没保存的草稿。`);
+  }
+
   function clearComposer() {
+    window.clearTimeout(draftTimer);
+    window.NotesHistory?.drafts.clear("composer");
     setComposerContent("");
     const tags = $("#notes-tags-input");
     const select = $("#notes-problem");
@@ -818,7 +852,7 @@
   async function removeNote(note) {
     if (!hooks?.api) return;
     const token = takeToken();
-    const ok = hooks.confirm ? hooks.confirm("确定删除这条笔记吗？删除后无法恢复。") : true;
+    const ok = hooks.confirm ? hooks.confirm("删除这条笔记？删除后可以在「最近删除」里恢复。") : true;
     if (!ok) return;
     try {
       await hooks.api(`/api/notes/${note.id}`, { method: "DELETE" });
@@ -827,7 +861,7 @@
       if (index >= 0) notes.splice(index, 1);
       total = Math.max(0, total - 1);
       renderList();
-      hooks?.notify?.("笔记已删除。");
+      hooks?.notify?.("笔记已删除，可以在「最近删除」里恢复。");
     } catch (error) {
       if (!alive(token)) return;
       hooks?.notify?.(error?.message || "删除失败，请稍后重试。");
@@ -874,33 +908,99 @@
     tagInput.placeholder = "标签，用逗号或空格分隔";
     tagInput.setAttribute("aria-label", "笔记标签");
     const row = h("div", null, "notes-editor-row");
-    const save = h("button", "保存", "notes-action primary");
-    save.type = "button";
-    const cancel = h("button", "取消", "notes-action");
-    cancel.type = "button";
+    const done = h("button", "完成", "notes-action primary");
+    done.type = "button";
+    done.title = "保存并收起编辑（Ctrl/⌘ + S 随时保存）";
+    const discard = h("button", "放弃本次修改", "notes-action");
+    discard.type = "button";
+    const saveBar = h("p", null, "notes-save-bar");
     const error = h("p", "", "notes-notice");
     error.hidden = true;
     error.setAttribute("role", "status");
-    row.append(save, cancel);
+    row.append(done, discard, saveBar);
     editor.append(titleInput, bodyHost, tagInput, row, error);
     body.replaceWith(editor);
     if (editCtl && typeof editCtl.focus === "function") editCtl.focus();
     else area.focus();
 
     const readBody = () => (editCtl ? editCtl.getMarkdown() : area.value);
+    const readAll = () => ({ title: titleInput.value, content: String(readBody() ?? ""), tags: parseTags(tagInput.value) });
     const teardownEditor = () => {
       if (editCtl && typeof editCtl.destroy === "function") {
         try { editCtl.destroy(); } catch { /* 卸载失败不影响卡片恢复 */ }
       }
       editCtl = null;
     };
-
-    cancel.addEventListener("click", () => {
+    const token = takeToken();
+    let closed = false;
+    let watcher = 0;
+    const close = (latest) => {
+      if (closed) return;
+      closed = true;
+      window.clearInterval(watcher);
+      saver?.stop();
       teardownEditor();
-      editor.replaceWith(body);
-      actions.hidden = false;
+      if (!alive(token)) return;
+      if (latest) Object.assign(note, latest);
+      sortNotes();
+      renderList();
+    };
+
+    // 停手 1.5 秒自动保存（带 base_updated_at，别处改过会停下来问）；没有 NotesHistory 时退回手动保存。
+    const saver = window.NotesHistory?.autosave({
+      note, read: readAll, bar: saveBar,
+      onSaved: (updated) => { if (alive(token)) Object.assign(note, updated); },
+      onTheirs: (latest) => close(latest),
     });
-    save.addEventListener("click", async () => {
+    if (saver) {
+      const offer = saver.pendingDraft();
+      if (offer) {
+        error.hidden = false;
+        error.replaceChildren(
+          document.createTextNode(`这台设备上有一份（${window.NotesHistory.when(offer.at)}）没保存上的修改。`),
+        );
+        const restore = h("button", "恢复它", "notes-action");
+        restore.type = "button";
+        restore.addEventListener("click", () => {
+          titleInput.value = offer.title || "";
+          tagInput.value = (offer.tags || []).join(" ");
+          if (editCtl && typeof editCtl.setMarkdown === "function") editCtl.setMarkdown(offer.content);
+          else if (area) area.value = offer.content;
+          error.hidden = true;
+          saver.schedule();
+        });
+        const drop = h("button", "不要了", "notes-action");
+        drop.type = "button";
+        drop.addEventListener("click", () => { saver.discardDraft(); error.hidden = true; });
+        error.append(restore, drop);
+      }
+      const nudge = () => saver.schedule();
+      for (const type of ["input", "keyup", "paste", "drop", "change", "click"]) editor.addEventListener(type, nudge);
+      // 工具栏/斜杠菜单可能挂在编辑区外面：每 4 秒再对比一次内容，漏掉的改动也会被保存。
+      watcher = window.setInterval(() => { if (!closed) saver.schedule(); }, 4000);
+      editor.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && String(event.key).toLowerCase() === "s") {
+          event.preventDefault();
+          void saver.flush();
+        }
+      });
+    }
+
+    discard.addEventListener("click", async () => {
+      const changed = saver ? (saver.everSaved || saver.dirty()) : readBody() !== note.content;
+      if (changed && !(hooks?.confirm ? hooks.confirm("放弃这次打开编辑以来的所有修改，回到打开时的样子？（改过的内容会存进历史版本）") : true)) return;
+      discard.disabled = true;
+      try {
+        const restored = saver ? await saver.revert() : null;
+        close(restored);
+      } catch (requestError) {
+        discard.disabled = false;
+        error.hidden = false;
+        error.textContent = requestError?.message || "没能撤回，请稍后重试。";
+      }
+    });
+
+    done.addEventListener("click", async () => {
       const raw = readBody();
       const content = String(raw ?? "").trim();
       if (!content) {
@@ -913,28 +1013,30 @@
         error.textContent = `正文不能超过 ${NOTE_CONTENT_MAX} 字，请精简后再保存。`;
         return;
       }
-      const token = takeToken();
-      save.disabled = true;
+      done.disabled = true;
+      if (saver) {
+        const ok = await saver.flush();
+        if (!ok && saver.dirty()) {
+          done.disabled = false;
+          const leave = hooks?.confirm ? hooks.confirm("还没保存上（看编辑区下方的提示）。改动已经存在这台设备上，下次打开编辑会提示恢复。仍然收起吗？") : false;
+          if (!leave) return;
+        }
+        close();
+        return;
+      }
       try {
         const updated = await hooks.api(`/api/notes/${note.id}`, {
           method: "PUT",
-          body: JSON.stringify({
-            title: titleInput.value.trim(),
-            content: raw,
-            tags: parseTags(tagInput.value),
-          }),
+          body: JSON.stringify({ title: titleInput.value.trim(), content: raw, tags: parseTags(tagInput.value) }),
         });
         if (!alive(token)) return;
-        teardownEditor();
-        Object.assign(note, updated);
-        sortNotes();
-        renderList();
+        close(updated);
         hooks?.notify?.("笔记已更新。");
       } catch (requestError) {
         if (!alive(token)) return;
         error.hidden = false;
         error.textContent = requestError?.message || "保存失败，请稍后重试。";
-        save.disabled = false;
+        done.disabled = false;
       }
     });
   }
@@ -961,6 +1063,25 @@
       more.dataset.notesBound = "1";
       more.addEventListener("click", () => void loadMore());
     }
+    const composer = $("#notes-composer");
+    if (composer && !composer.dataset.notesDraftBound) {
+      composer.dataset.notesDraftBound = "1";
+      for (const type of ["input", "keyup", "paste", "drop", "change"]) composer.addEventListener(type, saveComposerDraft);
+      composer.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && String(event.key).toLowerCase() === "s") {
+          event.preventDefault();
+          void saveComposer();
+        }
+      });
+    }
+    const trash = $("#notes-trash");
+    if (trash && !trash.dataset.notesBound) {
+      trash.dataset.notesBound = "1";
+      trash.hidden = !window.NotesHistory;
+      trash.addEventListener("click", () => window.NotesHistory?.openTrash({
+        onRestored: () => void reloadList(),
+      }));
+    }
     mounted = true;
   }
 
@@ -974,6 +1095,7 @@
     await reloadList();
     if (!alive(token)) return;
     if (pendingPrefill) applyPrefill();
+    else restoreComposerDraft();
   }
 
   /** 登出 / 换账号：丢掉所有数据、作废在途请求。 */

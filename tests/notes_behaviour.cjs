@@ -318,12 +318,12 @@ test("置顶：PUT pinned 并按置顶排序；删除：confirm 后调 DELETE �
   const deleteButton = [...firstCard.querySelectorAll(".notes-action")].find((button) => button.textContent === "删除");
   deleteButton.click();
   await tick();
-  assert.deepEqual(state.confirms, ["确定删除这条笔记吗？删除后无法恢复。"]);
+  assert.deepEqual(state.confirms, ["删除这条笔记？删除后可以在「最近删除」里恢复。"]);
   assert.equal(lastCall(env).url, "/api/notes/1");
   assert.equal(lastCall(env).init.method, "DELETE");
   await respondLast(env, 200, { ok: true });
   assert.equal(Notes.snapshot().count, 1);
-  assert.ok(state.notified.includes("笔记已删除。"));
+  assert.ok(state.notified.includes("笔记已删除，可以在「最近删除」里恢复。"));
 });
 
 test("删除：confirm 点取消则不发请求", async () => {
@@ -383,7 +383,7 @@ for (const operation of ["保存", "置顶", "删除", "编辑"]) {
           actionNamed(card, "编辑").click();
           oldEditor = card.querySelector(".notes-editor");
           oldEditor.querySelector(".notes-edit-content").value = "旧用户修改";
-          oldEditSave = actionNamed(oldEditor, "保存");
+          oldEditSave = actionNamed(oldEditor, "完成");
           oldEditSave.click();
         } else actionNamed(card, operation).click();
       }

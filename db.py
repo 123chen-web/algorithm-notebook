@@ -1388,6 +1388,36 @@ def _apply_rank_default_opt_out(conn):
 
 
 MIGRATIONS.append((86, "公开榜单改为默认不参与（users.public_rank_opt_out 默认 1）", _apply_rank_default_opt_out))
+
+
+def _apply_note_revisions(conn):
+    """笔记历史版本（迁移 87）。
+
+    改正文/标题/标签时把“改之前”的样子存一份；同一条笔记 10 分钟内的连续修改
+    （自动保存）只留最早那份，每条最多 50 份（规则在 routers/note_history.py）。
+    跟着笔记删：笔记行被彻底删除时外键级联；注销账号按 user_id 显式删除。
+    幂等：表和索引都用 IF NOT EXISTS。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS note_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '',
+            saved_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_note_revisions_note ON note_revisions(note_id, id DESC)"
+    )
+
+
+MIGRATIONS.append((87, "笔记历史版本 note_revisions", _apply_note_revisions))
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

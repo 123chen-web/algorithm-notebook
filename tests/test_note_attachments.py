@@ -260,3 +260,33 @@ def test_export_lists_attachments_without_binary(client):
         "mime": "image/jpeg",
         "size_bytes": len(images.note_file_path(1, image["id"]).read_bytes()),
     }]
+
+
+# ── 画板里的图片也存成附件（场景里是 attachment:ID），历史版本里的引用同样算数 ──
+
+def test_images_used_by_drawings_or_note_versions_are_not_orphans(client):
+    register(client)
+    old = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(timespec="seconds")
+    in_drawing = upload(client, image_bytes(color=(4, 4, 4))).json()
+    in_version = upload(client, image_bytes(color=(5, 5, 5))).json()
+    orphan = upload(client, image_bytes(color=(6, 6, 6))).json()
+    drawing = client.post("/api/drawings", json={"title": "带图的画板"}).json()
+    scene = {"elements": [], "files": {"f1": {
+        "id": "f1", "mimeType": "image/png", "dataURL": f"attachment:{in_drawing['id']}",
+    }}}
+    assert client.put(f"/api/drawings/{drawing['id']}", json={"scene": scene, "version": drawing["version"]}).status_code == 200
+    note = client.post("/api/notes", json={"content": f"![](attachment:{in_version['id']})"}).json()
+    # 第一次修改一定会留下历史版本：正文里不再有这张图，但历史版本里还有。
+    assert client.put(f"/api/notes/{note['id']}", json={"content": "图片删掉了"}).status_code == 200
+    with connect(write=True) as conn:
+        for item in (in_drawing, in_version, orphan):
+            conn.execute("UPDATE note_attachments SET created_at=? WHERE id=?", (old, item["id"]))
+    assert upload(client, image_bytes(color=(7, 7, 7))).status_code == 201
+    with connect() as conn:
+        rows = {r["id"] for r in conn.execute("SELECT id FROM note_attachments")}
+    assert in_drawing["id"] in rows, "画板场景里引用的图片保留"
+    assert in_version["id"] in rows, "只在历史版本里引用的图片也保留，恢复版本时图片还在"
+    assert orphan["id"] not in rows
+    exported = client.get("/api/export").json()
+    (saved,) = exported["drawings"]
+    assert [item["id"] for item in saved["attachments"]] == [in_drawing["id"]]

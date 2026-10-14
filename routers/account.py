@@ -171,7 +171,20 @@ def export_data(user=Depends(security.current_user)):
             note = dict(row)
             note["tags"] = [tag for tag in note["tags"].split(",") if tag]
             note["pinned"] = bool(note["pinned"])
+            note["revisions"] = []
             notes.append(note)
+        # 笔记历史版本（迁移 87）：随笔记一起导出，按时间从旧到新。
+        notes_by_id = {note["id"]: note for note in notes}
+        for row in conn.execute(
+            "SELECT note_id, title, content, tags, saved_at, created_at FROM note_revisions "
+            "WHERE user_id = ? ORDER BY id", (user["id"],),
+        ):
+            revision = dict(row)
+            owner = notes_by_id.get(revision.pop("note_id"))
+            if owner is None:
+                continue
+            revision["tags"] = [tag for tag in revision["tags"].split(",") if tag]
+            owner["revisions"].append(revision)
 
         # N1 双向链接：只导出本人的链接关系（种类、原文目标文字、别名、是否悬空）。
         note_links = []
@@ -214,6 +227,17 @@ def export_data(user=Depends(security.current_user)):
         ):
             drawing = dict(row)
             scene_text = drawing.pop("scene_json") or ""
+            # 画板里的图片单独存成附件（场景里是 attachment:ID），和笔记一样列出清单。
+            drawing["attachments"] = [
+                {
+                    "id": int(ref),
+                    "filename": note_files.attachment_export_name(int(ref), attachment_map[int(ref)]["mime"]),
+                    "mime": attachment_map[int(ref)]["mime"],
+                    "size_bytes": attachment_map[int(ref)]["size_bytes"],
+                }
+                for ref in dict.fromkeys(note_files.ATTACHMENT_REF_RE.findall(scene_text))
+                if int(ref) in attachment_map
+            ]
             try:
                 drawing["scene"] = json.loads(scene_text) if scene_text else None
             except ValueError:

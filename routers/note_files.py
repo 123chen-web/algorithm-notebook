@@ -116,13 +116,16 @@ def _reencode(image):
 
 
 def _referenced_attachment_ids(conn, user_id):
-    rows = conn.execute(
-        "SELECT content FROM notes WHERE user_id = ?", (user_id,)
-    ).fetchall()
+    """仍被引用的附件：笔记正文（含回收站里的）、笔记历史版本、画板场景里的图片。"""
     referenced = set()
-    for row in rows:
-        for ref in ATTACHMENT_REF_RE.findall(row["content"] or ""):
-            referenced.add(int(ref))
+    for sql in (
+        "SELECT content AS text FROM notes WHERE user_id = ?",
+        "SELECT content AS text FROM note_revisions WHERE user_id = ?",
+        "SELECT scene_json AS text FROM note_drawings WHERE user_id = ?",
+    ):
+        for row in conn.execute(sql, (user_id,)):
+            for ref in ATTACHMENT_REF_RE.findall(row["text"] or ""):
+                referenced.add(int(ref))
     return referenced
 
 

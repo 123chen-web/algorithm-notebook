@@ -481,9 +481,28 @@ window.Notes?.configure({
   getDrawingIds: () => window.DrawHost?.ownedIds?.() ?? new Set(),
 });
 
+// 笔记的自动保存 / 本机草稿 / 历史版本 / 最近删除（static/notes-history.js）。
+window.NotesHistory?.configure({
+  api,
+  getUser: () => user,
+  confirm: (text) => window.confirm(text),
+  notify: (text) => message(text),
+  noteTitle: (note) => window.Notes?.noteTitle(note) || "笔记",
+  renderMarkdown: (markdown) => window.Notes.renderNoteMarkdown(markdown, {
+    drawingIds: window.DrawHost?.ownedIds?.() ?? new Set(),
+  }),
+});
+
 // 画板宿主（static/draw-host.js）：画板列表、iframe 面板与自动保存。
 window.DrawHost?.configure({
   api,
+  // 画板里的图片存成笔记附件：上传走 notes-rich 的同一条通道（带 CSRF 头），读取是普通 GET。
+  uploadImage: (blob) => window.NotesRich.uploadFile(new File([blob], "drawing-image", { type: blob.type })).then((data) => data.id),
+  fetchImageBlob: async (id) => {
+    const response = await fetch(`/api/notes/attachments/${id}`, { credentials: "same-origin" });
+    if (!response.ok) throw new Error("图片取不到");
+    return response.blob();
+  },
   getUser: () => user,
   getEpoch: () => sessionEpoch,
   getView: () => view,

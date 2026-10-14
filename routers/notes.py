@@ -268,6 +268,11 @@ class NoteUpdate(BaseModel):
     tags: list[NoteTag] | None = None
     problem_id: int | None = None
     pinned: bool | None = None
+    # 编辑器打开时看到的 updated_at：和库里不一致说明别处（另一个标签页/设备）改过，
+    # 返回 409 让前端提示，而不是悄悄覆盖。老客户端不传就不检查。
+    base_updated_at: str | None = None
+    # 冲突后选“保留我的”、或“放弃本次修改”时为 True：不管 10 分钟合并规则，先把库里的现状存进历史。
+    snapshot: bool = False
 
 
 def owned_note(conn, note_id, user_id):
@@ -672,47 +677,63 @@ def get_note_links(note_id: int, user=Depends(security.current_user)):
 
 @router.put("/api/notes/{note_id}")
 def update_note(note_id: int, data: NoteUpdate, user=Depends(security.current_user)):
-    tags = normalize_note_tags(data.tags) if data.tags is not None else None
-    now = time.utc_now()
     with db.connect(write=True) as conn:
         accounts.rvb_account(conn, user["id"])
-        before = owned_note(conn, note_id, user["id"])
-        old_title = (before["title"] or "").strip()
-        if data.problem_id is not None:
-            check_problem_ownership(conn, data.problem_id, user["id"])
-        updates: list[str] = []
-        params: list = []
-        if data.title is not None:
-            updates.append("title = ?")
-            params.append(data.title)
-        if data.content is not None:
-            updates.append("content = ?")
-            params.append(data.content)
-        if data.content is not None and _count_attachment_refs(data.content) > NOTE_REF_PER_NOTE_MAX:
-            raise HTTPException(422, f"每篇笔记最多引用 {NOTE_REF_PER_NOTE_MAX} 张图片附件")
-        if tags is not None:
-            updates.append("tags = ?")
-            params.append(",".join(tags))
-        if "problem_id" in data.model_fields_set:
-            updates.append("problem_id = ?")
-            params.append(data.problem_id)
-        if data.pinned is not None:
-            updates.append("pinned = ?")
-            params.append(1 if data.pinned else 0)
-        updates.append("updated_at = ?")
-        params.append(now)
-        params.append(note_id)
-        conn.execute(
-            f"UPDATE notes SET {', '.join(updates)} WHERE id = ?", params
-        )
-        warnings: list[str] = []
-        # 改标题联动：A→B 时改写其他笔记正文里的 [[A]]（别名不变），再同事务重解析。
-        if data.title is not None:
-            new_title = (data.title or "").strip()
-            warnings.extend(_rename_title_cascade(conn, user["id"], note_id, old_title, new_title))
-        # 内容可能变化（含标题联动改写他人笔记后自身链接也需重算）：先删后插重解析本笔记出链。
-        fresh = owned_note(conn, note_id, user["id"])
-        warnings.extend(_reparse_links(conn, note_id, user["id"], fresh["content"]))
+        return apply_note_update(conn, user["id"], note_id, data)
+
+
+def apply_note_update(conn, user_id, note_id, data, *, force_revision=False):
+    """在调用方的写事务里改一条笔记：存历史版本、改字段、改标题联动、重解析链接。
+
+    PUT 和“恢复历史版本”共用；force_revision=True 时不管 10 分钟合并规则，一定先存一份。
+    """
+    from routers import note_history
+
+    tags = normalize_note_tags(data.tags) if data.tags is not None else None
+    now = time.utc_now()
+    before = owned_note(conn, note_id, user_id)
+    if data.base_updated_at is not None and data.base_updated_at != before["updated_at"]:
+        raise HTTPException(409, "这条笔记在别处（另一个窗口或设备）改过了，请先看看最新内容再保存")
+    note_history.snapshot_before_update(
+        conn, user_id, before, title=data.title, content=data.content, tags=tags,
+        now=now, force=force_revision or data.snapshot,
+    )
+    old_title = (before["title"] or "").strip()
+    if data.problem_id is not None:
+        check_problem_ownership(conn, data.problem_id, user_id)
+    updates: list[str] = []
+    params: list = []
+    if data.title is not None:
+        updates.append("title = ?")
+        params.append(data.title)
+    if data.content is not None:
+        updates.append("content = ?")
+        params.append(data.content)
+    if data.content is not None and _count_attachment_refs(data.content) > NOTE_REF_PER_NOTE_MAX:
+        raise HTTPException(422, f"每篇笔记最多引用 {NOTE_REF_PER_NOTE_MAX} 张图片附件")
+    if tags is not None:
+        updates.append("tags = ?")
+        params.append(",".join(tags))
+    if "problem_id" in data.model_fields_set:
+        updates.append("problem_id = ?")
+        params.append(data.problem_id)
+    if data.pinned is not None:
+        updates.append("pinned = ?")
+        params.append(1 if data.pinned else 0)
+    updates.append("updated_at = ?")
+    params.append(now)
+    params.append(note_id)
+    conn.execute(
+        f"UPDATE notes SET {', '.join(updates)} WHERE id = ?", params
+    )
+    warnings: list[str] = []
+    # 改标题联动：A→B 时改写其他笔记正文里的 [[A]]（别名不变），再同事务重解析。
+    if data.title is not None:
+        new_title = (data.title or "").strip()
+        warnings.extend(_rename_title_cascade(conn, user_id, note_id, old_title, new_title))
+    # 内容可能变化（含标题联动改写他人笔记后自身链接也需重算）：先删后插重解析本笔记出链。
+    fresh = owned_note(conn, note_id, user_id)
+    warnings.extend(_reparse_links(conn, note_id, user_id, fresh["content"]))
     fresh["warnings"] = warnings
     return fresh
 

@@ -67,6 +67,90 @@
     return bytes;
   }
 
+  /* ---------- 画板里的图片：单独存成笔记附件，场景里只留 attachment:ID ----------
+   * Excalidraw 把图片以 dataURL 塞进场景的 files；整张画板只有 2MB，两三张照片就存不下。
+   * 保存前把能识别的图片（PNG/JPEG/WebP/GIF）传到 /api/notes/attachments（单张 ≤3MB，每人 ≤100MB，
+   * 服务器会重新编码、去掉 EXIF），场景里改成 attachment:ID；打开时再取回来还原成 dataURL 交给画板。
+   * 传不上（超限、断网）就照旧内嵌，行为和以前一样。 */
+  const ATTACHMENT_PREFIX = "attachment:";
+  const UPLOADABLE_IMAGE = /^data:image\/(png|jpeg|webp|gif);base64,/;
+  // Excalidraw 的文件 id → 附件 id：同一张图只传一次；登出/换号时清空。
+  const uploadedFiles = new Map();
+
+  // 网络请求都交给宿主注入的 hooks（uploadImage / fetchImageBlob），本文件不直接发请求。
+  async function uploadImageDataUrl(dataUrl) {
+    const upload = controller.hooks && controller.hooks.uploadImage;
+    if (typeof upload !== "function") throw new Error("没有图片上传通道");
+    const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
+    const id = await upload(new Blob([dataUrlToBytes(dataUrl)], { type: mime }));
+    if (!Number.isInteger(id)) throw new Error("图片上传失败");
+    return id;
+  }
+
+  /** 返回一份新场景：能上传的图片换成 attachment:ID；原场景对象不改。 */
+  async function externalizeFiles(scene, upload = uploadImageDataUrl) {
+    const files = scene && scene.files;
+    if (!files || typeof files !== "object") return scene;
+    const out = {};
+    for (const [key, file] of Object.entries(files)) {
+      if (!file || typeof file.dataURL !== "string" || !UPLOADABLE_IMAGE.test(file.dataURL)) {
+        out[key] = file;
+        continue;
+      }
+      const cacheKey = String(file.id || key);
+      let attachmentId = uploadedFiles.get(cacheKey);
+      if (!attachmentId) {
+        try {
+          attachmentId = await upload(file.dataURL);
+          uploadedFiles.set(cacheKey, attachmentId);
+        } catch (_error) {
+          out[key] = file; // 传不上就照旧内嵌
+          continue;
+        }
+      }
+      out[key] = { ...file, dataURL: ATTACHMENT_PREFIX + attachmentId };
+    }
+    return { ...scene, files: out };
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("读取图片失败"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function fetchAttachmentDataUrl(id) {
+    const fetchBlob = controller.hooks && controller.hooks.fetchImageBlob;
+    if (typeof fetchBlob !== "function") throw new Error("没有图片读取通道");
+    return blobToDataUrl(await fetchBlob(id));
+  }
+
+  /** 返回一份新场景：attachment:ID 换回 dataURL。取不到的图片原样保留引用（画板里显示为空图片框），
+   *  这样之后保存时引用还在，下次网络好了还能取回来，绝不会因为一次没取到就把图片弄丢。 */
+  async function hydrateFiles(scene, fetchImage = fetchAttachmentDataUrl) {
+    const files = scene && scene.files;
+    if (!files || typeof files !== "object") return scene;
+    const out = {};
+    await Promise.all(Object.entries(files).map(async ([key, file]) => {
+      const ref = file && typeof file.dataURL === "string" && file.dataURL.startsWith(ATTACHMENT_PREFIX)
+        ? Number(file.dataURL.slice(ATTACHMENT_PREFIX.length)) : null;
+      if (!Number.isInteger(ref) || ref <= 0) {
+        out[key] = file;
+        return;
+      }
+      try {
+        out[key] = { ...file, dataURL: await fetchImage(ref) };
+        uploadedFiles.set(String(file.id || key), ref);
+      } catch (_error) {
+        out[key] = file;
+      }
+    }));
+    return { ...scene, files: out };
+  }
+
   /**
    * 在 textarea 光标处插入文本；返回插入后的光标位置。纯 DOM 操作，
    * 便于在假 DOM 里单测。
@@ -245,6 +329,7 @@
   function reset() {
     // 登出/换号：关闭面板但不要触发任何网络请求（会话已失效）。
     closePanel(true, { reload: false });
+    uploadedFiles.clear();
     controller.items = [];
     controller.listLoaded = false;
     controller.listLoading = false;
@@ -697,9 +782,12 @@
     if (panel && panel.current) openDrawing(panel.current.id);
   }
 
-  function trySendLoad(panel) {
+  async function trySendLoad(panel) {
     if (!panel.ready || !panel.detailLoaded) return;
-    postToFrame(panel, { type: "draw:load", scene: panel.detail.scene || null, readOnly: false });
+    const id = panel.current && panel.current.id;
+    const scene = await hydrateFiles(panel.detail.scene || null);
+    if (panel.closed || !panel.ready || !panel.current || panel.current.id !== id) return;
+    postToFrame(panel, { type: "draw:load", scene, readOnly: false });
     setPanelLoading(panel, false);
     try {
       panel.frame.focus();
@@ -774,14 +862,18 @@
     if (panel.saving) return; // 在途请求回来后发现 pendingScene 变化会再存一次
     const scene = panel.pendingScene;
     const version = panel.current.version;
+    const drawingId = panel.current.id;
     const seq = panel.saveSeq + 1;
     panel.saveSeq = seq;
     panel.saving = true;
     setSaveState(panel, "saving");
     try {
+      // 先把图片传成附件；传图期间面板被关掉也要把这次保存发出去（关闭前的最后一笔不能丢）。
+      const stored = await externalizeFiles(scene);
+      if (seq !== panel.saveSeq) return;
       const data = await controller.hooks.api(
-        `/api/drawings/${panel.current.id}`,
-        { method: "PUT", body: JSON.stringify({ scene, version }) }
+        `/api/drawings/${drawingId}`,
+        { method: "PUT", body: JSON.stringify({ scene: stored, version }) }
       );
       if (panel.closed || seq !== panel.saveSeq) return;
       panel.current.version = data.version;
@@ -897,10 +989,35 @@
     });
   }
 
+  // 缩略图上传上限 300KB（服务器只收 PNG）。画板里有照片时导出的 PNG 常常更大：
+  // 先在浏览器里逐级缩小再传；缩到最小仍超限就原样交给服务器（会返回 413，和以前一样不影响场景）。
+  const THUMB_LIMIT_BYTES = 290 * 1024;
+  async function shrinkPngBytes(bytes, limit = THUMB_LIMIT_BYTES) {
+    if (bytes.length <= limit || typeof window.createImageBitmap !== "function") return bytes;
+    let bitmap;
+    try {
+      bitmap = await window.createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    } catch (_error) {
+      return bytes;
+    }
+    for (const side of [960, 720, 540, 400, 300]) {
+      const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) break;
+      const smaller = new Uint8Array(await blob.arrayBuffer());
+      if (smaller.length <= limit) return smaller;
+    }
+    return bytes;
+  }
+
   async function exportAndUploadThumb(panel) {
     const dataUrl = await requestPng(panel);
     if (!dataUrl || dataUrl.indexOf("data:image/png") !== 0) return;
-    const bytes = dataUrlToBytes(dataUrl);
+    const bytes = await shrinkPngBytes(dataUrlToBytes(dataUrl));
     await controller.hooks.api(
       `/api/drawings/${panel.current.id}/thumb`,
       { method: "PUT", headers: { "Content-Type": "image/png" }, body: bytes }
@@ -975,6 +1092,8 @@
     sanitizeTitleForMarkdown,
     thumbUrl,
     dataUrlToBytes,
+    externalizeFiles,
+    hydrateFiles,
     insertAtCursor,
     onFrameMessage,
     flushSave,

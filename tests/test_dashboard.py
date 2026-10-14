@@ -96,10 +96,10 @@ def test_sidebar_navigation_preserves_destinations_as_named_native_buttons(index
         node for node in index_document.within("app-sidebar")
         if node["tag"] == "button" and "data-view" in node["attrs"]
     ]
+    # 侧栏只放主入口（总览/今日/记录/笔记/分析）+“更多”；新增记录在顶栏，六个分析页在分析页的切换条里。
     expected = {
-        "home", "today", "all", "print", "new", "insights", "mastery", "clusters", "achievements", "weekly-recap",
-        "roadmap",
-        "groups", "forum", "notes", "whiteboard", "heatmap", "leaderboard", "plan", "admin",
+        "home", "today", "all", "notes", "insights",
+        "roadmap", "print", "whiteboard", "groups", "forum", "leaderboard", "plan", "admin",
     }
     assert Counter(entry["attrs"]["data-view"] for entry in entries) == Counter(expected)
     for entry in entries:
@@ -127,9 +127,10 @@ def test_tab_bar_and_more_sheet_together_reach_every_sidebar_destination(index_d
     sidebar = views("app-sidebar")
     tabs = views("app-tabbar")
     sheet = views("more-sheet")
-    assert tabs == {"today", "all", "new", "groups"}
-    assert "clusters" in sheet
-    assert tabs | sheet == sidebar
+    analysis = views("analysis-tabs")
+    assert tabs == {"today", "all", "new", "insights"}
+    assert {"clusters", "mastery", "heatmap", "achievements", "weekly-recap", "insights"} == analysis
+    assert tabs | sheet == sidebar | {"new"}
     assert not tabs & sheet, "an entry should live in exactly one of the tab bar and the sheet"
     for container in ("app-tabbar", "more-sheet"):
         for node in index_document.within(container):

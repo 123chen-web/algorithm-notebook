@@ -68,7 +68,7 @@ def test_index_loads_editor_assets_versioned_and_in_order():
     # 编辑器产物必须在笔记脚本之前；适配层在富渲染/画板之后、app.js 之前。
     # notes.js 版本号不写死（?v= 提升是改静态资源的规矩），只断言顺序。
     assert pos("vendor/editor/oy-editor.js?v=3") < pos("notes.js?v=")
-    assert pos("notes-rich.js?v=7") < pos("draw-host.js?v=") < pos("notes-editor.js?v=3") < pos("app.js?v=103")
+    assert pos("notes-rich.js?v=7") < pos("draw-host.js?v=") < pos("notes-editor.js?v=") < pos("app.js?v=")
 
 
 def test_index_has_no_inline_script_or_style():

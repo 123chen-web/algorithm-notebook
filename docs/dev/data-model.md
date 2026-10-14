@@ -65,6 +65,8 @@
 | 83 | 复仇成功标记（`mistakes.revenge_at`，NULL=从未触发） |
 | 84 | 小组薄弱点汇总的成员退出开关（`study_group_members.include_in_summary`，默认参与） |
 | 85 | 复习排期换成 FSRS：`mistakes.stability/difficulty`、`reviews.stability_before/difficulty_before`（撤销用），只加列不改数据 |
+| 86 | 公开榜单改为默认不参与：重建 `users.public_rank_opt_out`（默认 1），已有用户一并改为不参与 |
+| 87 | 笔记历史版本 `note_revisions`（改之前的标题/正文/标签；10 分钟内合并，每条最多 50 份；随笔记彻底删除级联） |
 
 25–27 为未发布功能撤回后的空缺，82、83 为第三轮其他项预留，不重用。
 

@@ -312,6 +312,9 @@
       getMarkdown() {
         try { return inst.getMarkdown(); } catch (error) { return ''; }
       },
+      setMarkdown(markdown) {
+        try { inst.setMarkdown(markdown || ''); } catch (error) { /* 恢复草稿失败时保留当前内容 */ }
+      },
       focus() {
         try { inst.focus(); } catch (error) { /* ignore */ }
       },

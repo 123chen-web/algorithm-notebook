@@ -34,7 +34,8 @@ def test_public_copy_has_no_obsolete_or_overbroad_billing_claims():
 
 
 def env_default(function, variable):
-    tree = ast.parse((ROOT / "main.py").read_text(encoding="utf-8"))
+    # 额度函数在拆分 main.py 后搬到了 ai_limits.py。
+    tree = ast.parse((ROOT / "ai_limits.py").read_text(encoding="utf-8"))
     body = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
     calls = [n for n in ast.walk(body) if isinstance(n, ast.Call)
              and isinstance(n.func, ast.Attribute) and n.func.attr == "getenv"
@@ -85,7 +86,7 @@ def test_complete_policy_has_one_location_and_links_resolve():
         assert requirement in text, requirement
     for relative in ["README.md", "docs/operations/deploy.md", "docs/operations/daily-digest.md",
                      "docs/integration/duck.md", ".env.example", "deploy/.env.prod.example",
-                     "static/index.html", "static/app.js", "static/plan.js", "static/duck-panel.js"]:
+                     "static/index.html", "static/app/review-grade.js", "static/plan.js", "static/duck-panel.js"]:
         copy = (ROOT / relative).read_text(encoding="utf-8")
         assert "ai-billing.html" in copy, relative
         if relative.endswith(".md"):

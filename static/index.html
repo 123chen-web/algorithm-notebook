@@ -27,7 +27,8 @@
   <link rel="stylesheet" href="/static/notes-rich.css?v=5">
   <link rel="stylesheet" href="/static/vendor/editor/oy-editor.css?v=3">
   <link rel="stylesheet" href="/static/notes-editor.css?v=1">
-  <link rel="stylesheet" href="/static/draw-host.css?v=202610121">
+  <link rel="stylesheet" href="/static/notes-history.css?v=1">
+  <link rel="stylesheet" href="/static/draw-host.css?v=202610122">
   <link rel="stylesheet" href="/static/shell.css?v=5">
   <link rel="stylesheet" href="/static/overview.css?v=5">
   <link rel="stylesheet" href="/static/inkdot.css?v=1">
@@ -137,14 +138,15 @@
   <script defer src="/static/heatmap.js?v=1"></script>
   <script defer src="/static/reminder.js?v=2"></script>
   <script defer src="/static/vendor/editor/oy-editor.js?v=3"></script>
-  <script defer src="/static/notes.js?v=7"></script>
+  <script defer src="/static/notes.js?v=8"></script>
   <script defer src="/static/notes-links.js?v=8"></script>
   <script defer src="/static/notes-rich.js?v=7"></script>
-  <script defer src="/static/draw-host.js?v=202610121"></script>
-  <script defer src="/static/notes-editor.js?v=3"></script>
+  <script defer src="/static/draw-host.js?v=202610125"></script>
+  <script defer src="/static/notes-editor.js?v=4"></script>
+  <script defer src="/static/notes-history.js?v=1"></script>
   <script defer src="/static/app/core-api.js?v=1"></script>
   <script defer src="/static/app/core-session.js?v=2"></script>
-  <script defer src="/static/app/core-ui.js?v=3"></script>
+  <script defer src="/static/app/core-ui.js?v=5"></script>
   <script defer src="/static/app/overview-growth.js?v=2"></script>
   <script defer src="/static/app/overview-home.js?v=2"></script>
   <script defer src="/static/app/overview-insights.js?v=2"></script>
@@ -1399,8 +1401,9 @@
           <header class="notes-head">
             <div>
               <h2 id="notes-title">笔记</h2>
-              <p class="notes-sub">写下学习笔记和想法：可以加标签、关联题目、插入公式和图片。选中文字就能加粗或加链接，输入 / 可插入标题、列表、表格等。</p>
+              <p class="notes-sub">写下学习笔记和想法：可以加标签、关联题目、插入公式和图片。选中文字就能加粗或加链接，输入 / 可插入标题、列表、表格等。编辑时停手就自动保存，改过的旧样子都在“历史”里。</p>
             </div>
+            <button id="notes-trash" type="button" class="notes-trash-button" hidden>最近删除</button>
           </header>
           <div class="notes-composer" id="notes-composer">
             <p class="notes-editor-hint" id="notes-editor-hint">输入 / 试试，选中文字可以加粗或加链接</p>
@@ -1464,6 +1467,7 @@
           <div class="draw-panel-bar">
             <span class="draw-panel-title" id="draw-panel-title">画板</span>
             <span class="draw-save-status" id="draw-save-status" aria-live="polite"></span>
+            <span class="draw-panel-hint">插图片：点工具栏的图片按钮，或直接粘贴 / 拖进来</span>
             <button type="button" id="draw-insert">插入到笔记</button>
             <button type="button" id="draw-close" aria-label="关闭画板">关闭</button>
           </div>
@@ -1995,6 +1999,7 @@
   <dialog id="account-dialog" aria-labelledby="account-dialog-title">
     <div id="account-dialog-content" class="account-dialog-content"></div>
   </dialog>
+  <dialog id="notes-history-dialog" class="notes-history-dialog" aria-labelledby="notes-history-title"></dialog>
   <dialog id="profile-dialog" class="profile-dialog" aria-labelledby="profile-title">
     <div id="profile-content"></div>
   </dialog>
