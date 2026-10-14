@@ -107,3 +107,234 @@
   }
 }
 @keyframes feel-progress-grow { to { transform: scaleX(1); } }
+
+/* ---------- 03 主角卡：倾斜 + 反光（只在可悬停设备、允许动画时） ---------- */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  /* perspective 只能写在父级上：用 :has() 找到直接包裹 [data-tilt] 的容器。 */
+  :has(> [data-tilt]) { perspective: 900px; }
+  /* transform 归 tilt() 所有（JS 每帧写 --rx/--ry），覆盖上面的悬停上浮；
+     transition 里去掉 transform，避免和逐帧写入打架。 */
+  [data-tilt], [data-tilt]:hover, [data-tilt]:active {
+    position: relative;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: box-shadow .5s var(--soft), border-color .35s;
+    will-change: transform;
+  }
+  [data-tilt]::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 50%), rgba(var(--glow, 14, 116, 144), .2), transparent 62%);
+    opacity: 0;
+    transition: opacity .45s var(--soft);
+  }
+  [data-tilt]:hover::after { opacity: 1; }
+}
+
+/* ---------- 05 图表生长：.feel-grow 的子项首次进入视口时从底部长出来 ---------- */
+/* 初始隐藏只在 html.feel-js 下生效（feel.js 启动时加）：无 JS 时内容保持可见。 */
+html.feel-js .feel-grow > * { transform: scaleY(0); transform-origin: bottom; }
+html.feel-js .feel-grow > .is-grown { transform: scaleY(1); }
+@media (prefers-reduced-motion: no-preference) {
+  html.feel-js .feel-grow > .is-grown { transition: transform .9s var(--spring); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.feel-js .feel-grow > *, html.feel-js .feel-grow > .is-grown { transform: none; }
+}
+
+/* ---------- 12 进度环：纯 CSS，调用者用 el.style.setProperty("--p", 0~1) 设置进度 ----------
+   中心文字槽位：.feel-ring 里放任意一个子元素即可（如 <span>62%</span>）。 */
+.feel-ring {
+  --p: 0;
+  --ring-size: 72px;
+  --ring-width: 9px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--ring-size);
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1turn), var(--line) 0);
+}
+.feel-ring::before {
+  content: "";
+  position: absolute;
+  inset: var(--ring-width);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.feel-ring > * {
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 10 复选框：方形盒，勾“画”出来 ----------
+   纯 CSS：appearance:none 后 input 不再是替换元素，::after 可用；
+   勾用 border 画“L”再旋转 45°，checked 时从 scale(0) 弹到 scale(1)，只动 transform/opacity。
+   （真·stroke-dashoffset 描边动画需要 SVG 元素在标记里，不改 HTML 就做不到，
+   这里用 transform-origin 偏向起笔点的缩放模拟“画出来”的感觉。） */
+input[type="checkbox"]:not(.switch) {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 0.3em;
+  background: var(--surface);
+  cursor: pointer;
+  position: relative;
+  vertical-align: -0.18em;
+}
+input[type="checkbox"]:not(.switch)::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 0.62em;
+  height: 0.34em;
+  border: solid var(--paper);
+  border-width: 0 0.16em 0.16em 0;
+  transform: translate(-50%, -50%) rotate(45deg) scale(0);
+  transform-origin: 30% 20%;
+  opacity: 0;
+  transition: transform .34s var(--spring), opacity .16s ease-out;
+}
+input[type="checkbox"]:not(.switch):checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:not(.switch):checked::after {
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+  opacity: 1;
+}
+input[type="checkbox"]:not(.switch):disabled { opacity: .55; cursor: not-allowed; }
+
+/* ---------- 10 开关：胶囊“水珠滑动” ----------
+   input[type="checkbox"].switch（显式启用）+ 设置页偏好开关（.account-rank-pref-row 里的）。
+   input 本体是轨道，::after 是水珠 thumb；原生 input 保持可聚焦、键盘可操作。
+   写在复选框规则之后：.account-rank-pref-row 的 input 两边都匹配，靠后来居上取胶囊样式。 */
+input[type="checkbox"].switch,
+.account-rank-pref-row input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  flex: none;
+  position: relative;
+  width: 2.75em;
+  height: 1.6em;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+  vertical-align: middle;
+}
+input[type="checkbox"].switch::after,
+.account-rank-pref-row input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.22em;
+  width: 1.16em;
+  height: 1.16em;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(var(--shadow-rgb), .35);
+  transform: translateY(-50%);
+  transform-origin: left center;
+  opacity: 1;
+  transition: transform .32s var(--spring);
+}
+input[type="checkbox"].switch:checked,
+.account-rank-pref-row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"].switch:checked::after,
+.account-rank-pref-row input[type="checkbox"]:checked::after {
+  transform: translateY(-50%) translateX(1.15em);
+  transform-origin: right center;
+}
+/* 按下时水珠拉长（未选中向右抻，选中向左抻）。 */
+input[type="checkbox"].switch:active::after,
+.account-rank-pref-row input[type="checkbox"]:active::after {
+  transform: translateY(-50%) scaleX(1.35);
+}
+input[type="checkbox"].switch:checked:active::after,
+.account-rank-pref-row input[type="checkbox"]:checked:active::after {
+  transform: translateY(-50%) translateX(1.15em) scaleX(1.35);
+}
+input[type="checkbox"].switch:disabled,
+.account-rank-pref-row input[type="checkbox"]:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* 笔记任务项的复选框保持原生（accent-color），不受上面的自定义样式影响。 */
+.notes-rich .notes-task-item input[type="checkbox"] {
+  -webkit-appearance: auto;
+  appearance: auto;
+}
+.notes-rich .notes-task-item input[type="checkbox"]::after { content: none; }
+
+/* ---------- 10 输入框聚焦：下划线从中间展开 ----------
+   input 是替换元素、没有 ::after，用 :has() 把线画在直接包裹它的 label 底部。
+   只动 transform（scaleX），transform-origin: center。 */
+:where(#new-page, #auth) label:has(> :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]), textarea, select)) {
+  position: relative;
+}
+:where(#new-page, #auth) label:has(> :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]), textarea, select))::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform .38s var(--soft);
+  pointer-events: none;
+}
+:where(#new-page, #auth) label:has(> :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]), textarea, select):focus)::after {
+  transform: scaleX(1);
+}
+
+/* ---------- 10 浮动标签（.float-label）：样式已备好，但当前标记不支持，暂不启用 ----------
+   #new-page 的字段是 label 直接包裹 input（没有 .field 包裹层），且 :placeholder-shown
+   需要 input 带 placeholder，改标记超出本任务范围（纯 CSS 约定）。
+   需要的结构：<div class="field float-label"><input placeholder=" "><label>标签</label></div> */
+.float-label { position: relative; }
+.float-label > label {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  transform-origin: left top;
+  color: var(--muted);
+  pointer-events: none;
+  transition: transform .25s var(--soft);
+}
+.float-label > input:focus + label,
+.float-label > input:not(:placeholder-shown) + label {
+  transform: translateY(-135%) scale(.78);
+  color: var(--accent);
+}
+
+/* ---------- 减少动画：上面所有控件过渡直接取消，给最终态 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"].switch::after,
+  .account-rank-pref-row input[type="checkbox"]::after,
+  input[type="checkbox"]:not(.switch)::after,
+  :where(#new-page, #auth) label:has(> :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]), textarea, select))::after {
+    transition: none;
+  }
+}

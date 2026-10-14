@@ -8,18 +8,43 @@ const { load, FakeEvent } = require("./js_harness.cjs");
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function setup({ reduced = false, hover = true } = {}) {
+function setup({ reduced = false, hover = true, io = null, mo = null } = {}) {
   const frames = { requested: 0 };
-  const env = load(["feel.js"], {
-    extra: {
-      matchMedia: (query) => ({
-        matches: query.includes("prefers-reduced-motion") ? reduced : query.includes("hover: hover") ? hover : false,
-        addEventListener() {},
-      }),
-      requestAnimationFrame: (callback) => { frames.requested += 1; return setTimeout(callback, 0); },
-      performance: { now: () => Date.now() },
-    },
-  });
+  const extra = {
+    matchMedia: (query) => ({
+      matches: query.includes("prefers-reduced-motion") ? reduced : query.includes("hover: hover") ? hover : false,
+      addEventListener() {},
+    }),
+    requestAnimationFrame: (callback) => { frames.requested += 1; return setTimeout(callback, 0); },
+    performance: { now: () => Date.now() },
+  };
+  if (io) {
+    extra.IntersectionObserver = class {
+      constructor(callback, options) {
+        this.callback = callback;
+        this.options = options;
+        this.targets = [];
+        io.push(this);
+      }
+      observe(el) { this.targets.push(el); }
+      unobserve(el) { this.targets = this.targets.filter((target) => target !== el); }
+      disconnect() { this.targets = []; }
+      fire(entries) { this.callback(entries, this); }
+    };
+  }
+  if (mo) {
+    extra.MutationObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+        this.observed = [];
+        mo.push(this);
+      }
+      observe(target, options) { this.observed.push([target, options]); }
+      disconnect() { this.observed = []; }
+      fire(records) { this.callback(records, this); }
+    };
+  }
+  const env = load(["feel.js"], { extra });
   return { env, frames, Feel: env.window.Feel };
 }
 
@@ -29,9 +54,28 @@ function pointer(env, target, x, y) {
   env.document.dispatchEvent(event);
 }
 
+/* 把元素的 style 换成可记录的替身：setProperty/removeProperty 的调用都记下来。 */
+function styled(el) {
+  const written = {};
+  const removed = [];
+  el.style = {
+    setProperty: (name, value) => { written[name] = value; },
+    removeProperty: (name) => { removed.push(name); delete written[name]; },
+  };
+  return { written, removed };
+}
+
+function tiltCard(env) {
+  const card = env.document.createElement("div");
+  card.setAttribute("data-tilt", "");
+  card.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100 });
+  env.document.body.append(card);
+  return card;
+}
+
 test("feel: exposes the public API", () => {
   const { Feel } = setup();
-  assert.deepEqual(Object.keys(Feel).sort(), ["countUp", "flip", "reduced", "toast"]);
+  assert.deepEqual(Object.keys(Feel).sort(), ["countUp", "flip", "reduced", "skeletonHide", "skeletonShow", "tilt", "toast"]);
 });
 
 test("feel: count-up ends on the exact final text and remembers the value", async () => {
@@ -151,4 +195,157 @@ test("feel: toast shows text with textContent and removes itself", async () => {
   assert.equal(box.attributes["aria-live"], "polite");
   await wait(60);
   assert.equal(box.children.length, 0, "toast removed after its time");
+});
+
+test("feel: tilt lerps toward the pointer target (clamped to ±7°), then stops and cleans up", async () => {
+  const { env, frames, Feel } = setup();
+  const card = tiltCard(env);
+  const { written, removed } = styled(card);
+  const cleanup = Feel.tilt(card);
+  assert.equal(typeof cleanup, "function");
+
+  pointer(env, card, 200, 100); // 右下角 → ry=+7°, rx=-7°
+  await wait(80);
+  const rx = parseFloat(written["--rx"]);
+  const ry = parseFloat(written["--ry"]);
+  assert.ok(Math.abs(rx) <= 7 && Math.abs(ry) <= 7, `clamped: --rx=${written["--rx"]} --ry=${written["--ry"]}`);
+  assert.ok(ry > 3, `lerped toward +7°: --ry=${written["--ry"]}`);
+  assert.ok(rx < -3, `lerped toward -7°: --rx=${written["--rx"]}`);
+  assert.equal(written["--mx"], "200.0px");
+  assert.equal(written["--my"], "100.0px");
+
+  pointer(env, env.document.body, 900, 900); // 移出卡片：回到 0
+  await wait(1000);
+  assert.ok(removed.includes("--rx") && removed.includes("--ry"), `vars cleaned: ${removed.join(",")}`);
+  const settledAt = frames.requested;
+  await wait(150);
+  assert.equal(frames.requested, settledAt, "idle: no more animation frames requested");
+  cleanup();
+});
+
+test("feel: tilt does nothing when motion is reduced or the device has no hover", async () => {
+  for (const options of [{ reduced: true }, { hover: false }]) {
+    const { env, frames, Feel } = setup(options);
+    const card = tiltCard(env);
+    const { written } = styled(card);
+    const cleanup = Feel.tilt(card);
+    assert.equal(typeof cleanup, "function");
+    pointer(env, card, 150, 50);
+    await wait(50);
+    assert.deepEqual(written, {}, JSON.stringify(options));
+    assert.equal(frames.requested, 0, "no frame is even requested");
+    cleanup();
+  }
+});
+
+test("feel: tilt cleanup removes the binding and stops the loop", async () => {
+  const { env, frames, Feel } = setup();
+  const card = tiltCard(env);
+  const { written, removed } = styled(card);
+  const cleanup = Feel.tilt(card);
+  pointer(env, card, 200, 50);
+  await wait(60);
+  assert.ok("--rx" in written, "tilt was active");
+  cleanup();
+  assert.ok(removed.includes("--rx"), "vars removed by cleanup");
+  const at = frames.requested;
+  pointer(env, card, 200, 50);
+  await wait(60);
+  assert.equal(frames.requested, at + 1, "pointermove still runs its own frame, but tilt no longer pumps");
+  assert.ok(!("--rx" in written), "no tilt writes after cleanup");
+});
+
+test("feel: tilt unbinds silently when the card is removed from the DOM", async () => {
+  const { env, Feel } = setup();
+  const card = tiltCard(env);
+  const { written } = styled(card);
+  Feel.tilt(card); // 故意不调清理函数：模拟只管接线不管卸载的调用方
+  pointer(env, card, 200, 50);
+  await wait(60);
+  assert.ok("--rx" in written, "tilt was active");
+  card.remove();
+  assert.ok(!card.isConnected, "card detached");
+  pointer(env, env.document.body, 200, 50); // 再来一帧 pump，把 detached 的清理掉
+  pointer(env, env.document.body, 10, 10);
+  await wait(80);
+  const { written: written2 } = styled(card);
+  pointer(env, card, 200, 50);
+  await wait(60);
+  assert.deepEqual(written2, {}, "detached card is unbound: no more tilt writes");
+});
+
+test("feel: grow adds .is-grown once when an item first enters the viewport", async () => {
+  const ios = [];
+  const mos = [];
+  const { env } = setup({ io: ios, mo: mos });
+  const wrap = env.document.createElement("div");
+  wrap.className = "feel-grow";
+  const bar = env.document.createElement("div");
+  wrap.append(bar);
+  env.document.body.append(wrap);
+  assert.equal(mos.length, 1, "auto-init observes the document for late nodes");
+  mos[0].fire([{ type: "childList", addedNodes: [wrap] }]);
+  assert.equal(ios.length, 1, "one IntersectionObserver created");
+  assert.ok(ios[0].targets.includes(bar), "bar is observed");
+  assert.ok(!bar.classList.contains("is-grown"), "not grown before entering");
+  ios[0].fire([{ target: bar, isIntersecting: true }]);
+  assert.ok(bar.classList.contains("is-grown"), "grown on first entry");
+  assert.ok(!ios[0].targets.includes(bar), "unobserved after the first entry");
+  ios[0].fire([{ target: bar, isIntersecting: true }]);
+  assert.ok(bar.classList.contains("is-grown"), "still grown: played only once");
+});
+
+test("feel: grow applies the final state immediately when motion is reduced", async () => {
+  const ios = [];
+  const mos = [];
+  const { env } = setup({ reduced: true, io: ios, mo: mos });
+  const wrap = env.document.createElement("div");
+  wrap.className = "feel-grow";
+  const bar = env.document.createElement("div");
+  wrap.append(bar);
+  env.document.body.append(wrap);
+  mos[0].fire([{ type: "childList", addedNodes: [wrap] }]);
+  assert.ok(bar.classList.contains("is-grown"), "final state without animation");
+  assert.equal(ios.length, 0, "no observer needed");
+});
+
+test("feel: skeletonShow swaps host content for a skeleton, skeletonHide clears it", () => {
+  const { env, Feel } = setup();
+  const host = env.document.createElement("div");
+  host.textContent = "加载中…";
+  env.document.body.append(host);
+  const box = Feel.skeletonShow(host, 4);
+  assert.equal(box.className, "feel-skeleton");
+  assert.equal(box.getAttribute("aria-hidden"), "true");
+  assert.equal(box.children.length, 4);
+  assert.ok(box.children.every((child) => child.tagName === "I"));
+  assert.equal(host.children.length, 1, "host content replaced");
+  Feel.skeletonHide(host);
+  assert.equal(host.children.length, 0, "host cleared for the caller to re-render");
+
+  const host2 = env.document.createElement("div");
+  assert.equal(Feel.skeletonShow(host2).children.length, 3, "default 3 rows");
+  assert.equal(Feel.skeletonShow(null), null, "null host is safe");
+  Feel.skeletonHide(null); // 不抛错
+});
+
+test("feel: auto-init binds tilt and countUp to nodes added later", async () => {
+  const mos = [];
+  const { env, Feel } = setup({ mo: mos });
+  assert.ok(env.document.documentElement.classList.contains("feel-js"), "feel-js marker set at startup");
+
+  const card = tiltCard(env);
+  const { written } = styled(card);
+  mos[0].fire([{ type: "childList", addedNodes: [card] }]);
+  pointer(env, card, 200, 50);
+  await wait(60);
+  assert.ok("--rx" in written && "--ry" in written, "tilt bound automatically");
+  assert.equal(typeof Feel.tilt(card), "function", "re-binding is a safe no-op");
+
+  const num = env.document.createElement("span");
+  num.setAttribute("data-countup", "");
+  num.textContent = "42";
+  env.document.body.append(num);
+  mos[0].fire([{ type: "childList", addedNodes: [num] }]);
+  assert.equal(num.dataset.feelValue, "42", "countUp picked it up");
 });
