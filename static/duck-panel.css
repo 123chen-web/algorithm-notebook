@@ -29,6 +29,8 @@
 }
 .duck-user { justify-self: end; background: var(--soft); color: var(--ink); }
 .duck-duck { justify-self: start; background: var(--paper-2); color: var(--ink); }
+/* 提示气泡：左边一道强调色竖线，和普通追问区分开；文字仍是正文色。 */
+.duck-tip { border-left: 3px solid var(--accent); }
 .duck-speaker { display: block; margin-bottom: 2px; font-size: var(--text-xs); font-weight: 600; }
 .duck-user .duck-speaker { color: var(--ink-2); }
 .duck-duck .duck-speaker { color: var(--ink-2); }

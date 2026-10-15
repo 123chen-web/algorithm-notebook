@@ -299,3 +299,30 @@ class TestSalvageReply:
 
     def test_valid_replies_are_left_alone(self):
         assert salvage_reply("你怎么想的？", False) is None
+
+
+class TestHints:
+    """三级提示：方向 → 小反例 → 指出哪一行；每级都保留“不给答案”的规则。"""
+
+    @pytest.mark.parametrize("level,word", [(1, "方向"), (2, "最小输入"), (3, "第几行")])
+    def test_each_level_has_its_own_rule_and_keeps_no_answer(self, level, word):
+        system = build_messages(PROBLEM, [{"role": "user", "text": "卡住了"}], False, level)[0]["content"]
+        assert word in system
+        assert "绝不给出答案" in system
+
+    def test_plain_chat_has_no_hint_rule(self):
+        system = build_messages(PROBLEM, [], False)[0]["content"]
+        assert "提示" not in system.split("绝不给出")[0]
+
+    def test_level_three_numbers_the_code_lines(self):
+        problem = dict(PROBLEM, code="a = 1\nb = 2")
+        block = build_messages(problem, [], False, 3)[1]["content"]
+        assert "1| a = 1" in block and "2| b = 2" in block
+        assert "1| a = 1" not in build_messages(problem, [], False, 2)[1]["content"]
+
+    def test_hint_replies_get_a_little_more_room_but_still_reject_answers(self):
+        text = "看第 3 行的 while lo < hi，" + "想" * 50 + "。"
+        assert validate_reply(text, False)[1] == "too_long"
+        assert validate_reply(text, False, 3)[0] is True
+        assert validate_reply("答案是把 < 改成 <=。", False, 3) == (False, "gave_answer")
+        assert validate_reply("想" * 90, False, 1)[1] == "too_long"

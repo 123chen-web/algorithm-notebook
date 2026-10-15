@@ -823,7 +823,7 @@ def cluster_mistakes(reference: dict) -> dict:
     return _parse_mistake_clusters(content.strip(), reference)
 
 
-def duck_ai_reply(item, turns, finish):
+def duck_ai_reply(item, turns, finish, hint=0):
     """一次请求内的橡皮鸭对话：只对传输层临时错误重试，输出不合格直接抛 502。
 
     item 是 owned_mistake() 读出的当前用户记录；turns 已通过 check_turns 校验。
@@ -843,7 +843,7 @@ def duck_ai_reply(item, turns, finish):
         "notes": notes,
         "code": item["code"],
     }
-    messages = build_messages(problem, turns, finish)
+    messages = build_messages(problem, turns, finish, hint)
     try:
         # 禁止 SDK 自动重试；统一只重试传输层临时错误。
         with OpenAI(api_key=api_key, base_url=base_url, timeout=90.0, max_retries=0) as client:
@@ -863,11 +863,11 @@ def duck_ai_reply(item, turns, finish):
             except (AttributeError, IndexError, TypeError):
                 content, complete = None, False
             text = content.strip() if complete and isinstance(content, str) else ""
-            ok, result = validate_reply(text, finish)
+            ok, result = validate_reply(text, finish, hint)
             if ok:
                 return result
             # 只是太长或带了两个问题时裁成一句合格的话，不让用户看到"没答好"。
-            salvaged = salvage_reply(text, finish)
+            salvaged = salvage_reply(text, finish, hint)
             logger.warning(
                 "duck reply rejected (%s, %d chars, model=%s, salvaged=%s)",
                 result, len(text), model, bool(salvaged),

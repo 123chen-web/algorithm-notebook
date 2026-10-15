@@ -11,6 +11,17 @@ MAX_USER_TURNS = 12       # 用户最多发言 12 轮；共享每日额度另行
 MAX_TOTAL_CHARS = 4000    # 对话文字总长度上限
 MAX_REPLY_LEN = 60        # 普通追问回复长度上限
 MAX_REPLY_LEN_FINISH = 120  # finish 总结回复长度上限
+MAX_REPLY_LEN_HINT = 80    # 提示回复：第 3 级要照抄一行代码片段，略放宽
+
+# 三级提示：一级比一级具体，但都不给答案、不给改法。
+HINT_RULES = {
+    1: "用户卡住了，请给第 1 级提示：只指出该往哪个方向想（比如该盯住哪个条件、哪种情况），"
+       "一句话，不点破具体错在哪。",
+    2: "用户还是卡住，请给第 2 级提示：给一个能让他的思路或代码出错的最小输入（具体的小数字），"
+       "请他自己代入走一遍；不说出错的原因。",
+    3: "用户仍然卡住，请给第 3 级提示：指出问题出在他代码的第几行，并照抄那一行里的关键片段，"
+       "只说“这里值得再看”，不说怎么改、不给正确写法。",
+}
 
 DATA_OPEN = "<用户资料>"
 DATA_CLOSE = "</用户资料>"
@@ -36,14 +47,16 @@ def _escape_data(text: str) -> str:
     return text.replace(DATA_OPEN, "＜用户资料＞").replace(DATA_CLOSE, "＜/用户资料＞")
 
 
-def _system_prompt(finish: bool) -> str:
+def _system_prompt(finish: bool, hint: int = 0) -> str:
     if finish:
-        length_rule = "这次是总结，回复不超过 120 个字，内容是：用户讲清了什么、还模糊什么。"
+        role_rule = "你只能提问或简短肯定，这次是总结，回复不超过 120 个字，内容是：用户讲清了什么、还模糊什么。"
+    elif hint:
+        role_rule = HINT_RULES[hint] + "回复不超过 80 个字。"
     else:
-        length_rule = "每次回复不超过 60 个字。"
+        role_rule = "你只能提问或简短肯定，每次回复不超过 60 个字。"
     return (
         "你是“小黄鸭”，一位橡皮鸭讲题伙伴。"
-        "你只能提问或简短肯定，" + length_rule +
+        + role_rule +
         "绝不给出答案、解法、代码或结论。"
         "不要使用 Markdown 和代码块。"
         "引用用户的代码或条件时，符号必须原样照抄（比如 i>0 不能写成 i0 或 i 0）。"
@@ -78,20 +91,26 @@ def check_turns(turns: list[dict]) -> None:
         raise ValueError(f"所有文字总长最多 {MAX_TOTAL_CHARS} 字")
 
 
-def build_messages(problem: dict, turns: list[dict], finish: bool) -> list[dict]:
-    """构造 OpenAI 聊天格式的消息列表。"""
+def _numbered(code: str) -> str:
+    """第 3 级提示要说“第几行”：给代码标上行号，免得模型数错。"""
+    return "\n".join(f"{index}| {line}" for index, line in enumerate(code.split("\n"), 1))
+
+
+def build_messages(problem: dict, turns: list[dict], finish: bool, hint: int = 0) -> list[dict]:
+    """构造 OpenAI 聊天格式的消息列表；hint=1/2/3 是第几级提示，0 是普通追问。"""
     check_turns(turns)
 
+    code = _clip(problem.get("code"), 3000)
     data_lines = [
         "标题：" + _clip(problem.get("title"), 200),
         "分区：" + _clip(problem.get("zone"), 50),
         "思路笔记：" + _clip(problem.get("notes"), 2000),
-        "代码：" + _clip(problem.get("code"), 3000),
+        "代码：" + ("（带行号）\n" + _numbered(code) if hint == 3 and code.strip() else code),
     ]
     data_block = DATA_OPEN + "\n" + _escape_data("\n".join(data_lines)) + "\n" + DATA_CLOSE
 
     messages = [
-        {"role": "system", "content": _system_prompt(finish)},
+        {"role": "system", "content": _system_prompt(finish, hint)},
         {"role": "user", "content": data_block},
     ]
     for turn in turns:
@@ -124,17 +143,17 @@ def _clean(text: str) -> str:
 _SENTENCE_END = "。！？!?；;"
 
 
-def salvage_reply(text: str, finish: bool) -> str | None:
+def salvage_reply(text: str, finish: bool, hint: int = 0) -> str | None:
     """回复只是"太长"或"问了不止一个问题"时，裁成合格的一句话，而不是整条作废。
 
     第一轮追问常常写得又长又带两个问题；整条丢掉用户只会看到"没答好"。
     只处理这两种可以安全裁剪的情况：含答案或代码的回复仍然不合格，返回 None。
     """
-    ok, reason = validate_reply(text, finish)
+    ok, reason = validate_reply(text, finish, hint)
     if ok or reason not in ("too_long", "too_many_questions"):
         return None
     cleaned = _clean(text.strip())
-    limit = MAX_REPLY_LEN_FINISH if finish else MAX_REPLY_LEN
+    limit = _reply_limit(finish, hint)
     if not finish:
         marks = [index for index, ch in enumerate(cleaned) if ch in _QUESTION_MARKS]
         if len(marks) > 1:
@@ -144,11 +163,17 @@ def salvage_reply(text: str, finish: bool) -> str | None:
         if cut <= 0:
             return None
         cleaned = cleaned[: cut + 1]
-    ok, result = validate_reply(cleaned, finish)
+    ok, result = validate_reply(cleaned, finish, hint)
     return result if ok else None
 
 
-def validate_reply(text: str, finish: bool) -> tuple[bool, str]:
+def _reply_limit(finish: bool, hint: int) -> int:
+    if finish:
+        return MAX_REPLY_LEN_FINISH
+    return MAX_REPLY_LEN_HINT if hint else MAX_REPLY_LEN
+
+
+def validate_reply(text: str, finish: bool, hint: int = 0) -> tuple[bool, str]:
     """校验 AI 回复，返回 (是否合格, 清理后的文本或不合格原因代码)。"""
     stripped = text.strip()
 
@@ -162,8 +187,7 @@ def validate_reply(text: str, finish: bool) -> tuple[bool, str]:
     if not any(ch.isalnum() for ch in cleaned):
         return False, "empty"
 
-    limit = MAX_REPLY_LEN_FINISH if finish else MAX_REPLY_LEN
-    if len(cleaned) > limit:
+    if len(cleaned) > _reply_limit(finish, hint):
         return False, "too_long"
 
     if not finish:

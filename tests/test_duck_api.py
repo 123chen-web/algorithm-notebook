@@ -471,3 +471,50 @@ def test_model_refusal_is_422_without_retry_or_refund(client, monkeypatch, kind)
     assert attempts(user_id) == 1
     assert len(provider.requests) == 1
     assert "PRIVATE_REFUSAL" not in result.text
+
+
+# ---------------- 三级提示 ----------------
+
+def duck_hint(client, mistake_id, turns, hint, finish=False):
+    return client.post(
+        f"/api/mistakes/{mistake_id}/duck",
+        json={"turns": turns, "finish": finish, "hint": hint},
+    )
+
+
+def test_hint_request_uses_the_level_rule_and_one_quota(client, monkeypatch):
+    provider = fake_ai(monkeypatch, FakeResponse("盯住区间只剩一个元素的时候。", "stop"))
+    register(client)
+    mistake_id = new_mistake(client)
+
+    response = duck_hint(client, mistake_id, [{"role": "user", "text": "我卡住了，给我第 1 级提示：只指方向。"}], 1)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["reply"] == "盯住区间只剩一个元素的时候。"
+    assert response.json()["ai_remaining"] == 1
+    assert "第 1 级提示" in provider.requests[0]["messages"][0]["content"]
+    assert attempts() == 1
+
+
+def test_level_three_hint_sees_numbered_code(client, monkeypatch):
+    provider = fake_ai(monkeypatch, FakeResponse("看第 2 行的 return -1。", "stop"))
+    register(client)
+    mistake_id = new_mistake(client)
+
+    response = duck_hint(client, mistake_id, [USER, DUCK, {"role": "user", "text": "问题在哪一行？"}], 3)
+
+    assert response.status_code == 200, response.text
+    assert "2|     return -1" in provider.requests[0]["messages"][1]["content"]
+
+
+@pytest.mark.parametrize("hint,finish", [(4, False), (-1, False), (1, True)])
+def test_bad_hint_requests_are_422_without_quota(client, monkeypatch, hint, finish):
+    provider = fake_ai(monkeypatch, GOOD)
+    register(client)
+    mistake_id = new_mistake(client)
+
+    turns = [USER, DUCK] if finish else [USER]
+    response = duck_hint(client, mistake_id, turns, hint, finish=finish)
+
+    assert response.status_code == 422
+    assert provider.requests == [] and attempts() == 0

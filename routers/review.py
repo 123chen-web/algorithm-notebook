@@ -401,6 +401,8 @@ def duck_panel_chat(mistake_id: int, data: DuckInput, user=Depends(security.curr
         raise HTTPException(422, str(exc)) from None
     if not turns:
         raise HTTPException(422, "对话不能为空")
+    if data.finish and data.hint:
+        raise HTTPException(422, "总结时不能同时要提示")
     if data.finish:
         if turns[-1]["role"] != "duck":
             raise HTTPException(422, "请先完成至少一轮对话，再结束并总结")
@@ -436,7 +438,7 @@ def duck_panel_chat(mistake_id: int, data: DuckInput, user=Depends(security.curr
 
         with refund_on_server_failure(user["id"], day, db.connect, duck=True):
             with ai_limits.track_call(user["id"], "duck"):
-                reply = ai.duck_ai_reply(item, turns, data.finish)
+                reply = ai.duck_ai_reply(item, turns, data.finish, data.hint)
 
     return {
         "reply": reply,

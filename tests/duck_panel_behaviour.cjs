@@ -620,3 +620,56 @@ test("helpers.failureInfo：429 锁额度、502 可重试、未知错误给通�
   assert.equal(failureInfo({ status: 500, message: "服务错误" }).text, "服务错误");
   assert.equal(failureInfo(null).retry, true);
 });
+
+/* ---------------- 三级提示 ---------------- */
+test("提示按钮一级一级往下给：请求带 hint、气泡标出第几级，三级用完后禁用", async () => {
+  const { env } = setup();
+  const tip = $(env, ".duck-tip-btn");
+  assert.match(tip.textContent, /1\/3 方向/);
+  type(env, "写了一半的话");
+  tip.click();
+  await tick();
+  const first = bodyOf(env.calls[0]);
+  assert.equal(first.hint, 1);
+  assert.equal(first.finish, false);
+  assert.match(first.turns.at(-1).text, /第 1 级提示/);
+  env.respond(env.calls[0], 200, reply("盯住区间只剩一个元素时。"));
+  await tick();
+  assert.equal($(env, ".duck-input").value, "写了一半的话", "输入框里的草稿不跟提示一起发、也不清空");
+  assert.match([...$$(env, ".duck-tip .duck-speaker")].at(-1).textContent, /提示 1\/3/);
+  assert.match(tip.textContent, /2\/3 小反例/);
+
+  tip.click();
+  await tick();
+  assert.equal(bodyOf(env.calls[1]).hint, 2);
+  assert.equal(bodyOf(env.calls[1]).turns.length, 3, "前一轮提示也是正常的一问一答");
+  env.respond(env.calls[1], 200, reply("试试 [1]、target=1。"));
+  await tick();
+  tip.click();
+  await tick();
+  assert.equal(bodyOf(env.calls[2]).hint, 3);
+  env.respond(env.calls[2], 200, reply("看 while lo < hi 那一行。"));
+  await tick();
+  assert.equal(tip.disabled, true);
+  assert.match(tip.textContent, /都用过了/);
+  assert.equal($$(env, ".duck-tip").length, 3);
+  assert.match($(env, ".duck-round").textContent, /第 4 \/ 12 轮/, "提示占轮次");
+});
+
+test("提示失败后重试仍是同一级；普通发送不带 hint；重新开始后从第 1 级算起", async () => {
+  const { env } = setup();
+  $(env, ".duck-tip-btn").click();
+  await tick();
+  env.respond(env.calls[0], 502, { detail: "x" });
+  await tick();
+  $(env, ".duck-retry").click();
+  await tick();
+  assert.equal(bodyOf(env.calls[1]).hint, 1);
+  env.respond(env.calls[1], 200, reply("方向：看边界。"));
+  await tick();
+  await exchange(env, "那我再讲讲", "嗯？");
+  assert.equal("hint" in bodyOf(env.calls[2]), false);
+  $(env, ".duck-restart").click();
+  assert.match($(env, ".duck-tip-btn").textContent, /1\/3/);
+  assert.equal($(env, ".duck-tip-btn").disabled, false);
+});

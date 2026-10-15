@@ -3,7 +3,8 @@
 /* 讲给小黄鸭听：错题详情页里的橡皮鸭对话面板。
    对外契约：window.DuckPanel = { configure({ api, getUser, getEpoch }), mount(container, mistake), unmount(), reset() }。
    - 请求只走宿主传入的 api()：POST /api/mistakes/{id}/duck，
-     请求体 { turns: [{ role: "user" | "duck", text }], finish: boolean }，
+     请求体 { turns: [{ role: "user" | "duck", text }], finish: boolean, hint?: 1 | 2 | 3 }，
+     hint 是“卡住了”时要的第几级提示（方向 → 小反例 → 指出哪一行），一级一级往下给，都不给答案；
      成功 200 { reply, turns_used, ai_remaining }；429 今日额度用完，503 AI 未配置，502 这次没答好（可重试）；
    - 每个响应都按 登录代次(epoch) + 账号 id + 面板代次(generation) + 错题 id + 请求序号 校验，
      登出换号、关闭面板、切换错题之后才回来的响应一律丢弃；
@@ -16,6 +17,11 @@
   const SUMMING = "小黄鸭在整理总结…";
   const RETRYABLE_FALLBACK = "小黄鸭这次没答好，可以再试一次。";
   const QUOTA_TEXT = "今天的小黄鸭额度用完了，明天再来讲吧。";
+  const HINTS = [
+    { label: "卡住了？给点提示 · 1/3 方向", ask: "我卡住了，给我第 1 级提示：只指方向。" },
+    { label: "再给提示 · 2/3 小反例", ask: "还是没想通，给我第 2 级提示：一个会出错的小例子。" },
+    { label: "最后提示 · 3/3 指出哪一行", ask: "还是卡住，给我第 3 级提示：问题在哪一行。" },
+  ];
 
   let hooks = null;
   let generation = 0; // mount / unmount / reset 都会加一：旧面板的迟到响应全部作废
@@ -43,6 +49,12 @@
     const used = countUserTurns(turns);
     if (used >= MAX_TURNS) return `第 ${MAX_TURNS} / ${MAX_TURNS} 轮 · 已讲完，点“结束并总结”收尾`;
     return `第 ${used + 1} / ${MAX_TURNS} 轮`;
+  }
+
+  /** 下一级提示（1 起）；三级都用过返回 0。 */
+  const nextHint = (used) => (used < HINTS.length ? used + 1 : 0);
+  function hintLabel(used) {
+    return nextHint(used) ? HINTS[used].label : "三级提示都用过了，试着自己讲讲";
   }
 
   function remainingText(length) {
@@ -84,10 +96,11 @@
   }
 
   /* ---------- 渲染 ---------- */
-  function appendBubble(role, text) {
-    const item = node("li", `duck-bubble duck-${role}`);
+  function appendBubble(role, text, hint = 0) {
+    const item = node("li", `duck-bubble duck-${role}${hint ? " duck-tip" : ""}`);
+    const speaker = role === "user" ? "我" : (hint ? `小黄鸭 · 提示 ${hint}/${HINTS.length}` : "小黄鸭");
     item.append(
-      node("span", "duck-speaker", role === "user" ? "我" : "小黄鸭"),
+      node("span", "duck-speaker", speaker),
       node("p", "duck-text", text),
     );
     panel.nodes.log.append(item);
@@ -107,19 +120,21 @@
   /** 按当前状态同步各控件的可用性与提示文字。 */
   function update() {
     if (!panel) return;
-    const { input, send, finish, restart, round, count } = panel.nodes;
+    const { input, send, finish, restart, round, count, hint } = panel.nodes;
     const used = countUserTurns(panel.turns);
     const full = used >= MAX_TURNS;
     input.disabled = panel.sending || panel.finished || panel.quotaOut || full;
     send.disabled = input.disabled || !input.value.trim();
     finish.disabled = panel.sending || panel.finished || panel.quotaOut || used === 0;
+    hint.disabled = panel.sending || panel.finished || panel.quotaOut || full || !nextHint(panel.hintsUsed);
+    hint.textContent = hintLabel(panel.hintsUsed);
     restart.disabled = false;
     round.textContent = roundText(panel.turns);
     count.textContent = remainingText(input.value.slice(0, MAX_CHARS).length);
   }
 
   /* ---------- 发送 ---------- */
-  async function send(kind) { // kind: "chat" | "finish"
+  async function send(kind) { // kind: "chat" | "hint" | "finish"
     if (!panel || panel.sending || panel.finished || panel.quotaOut) return;
     if (!hooks?.api || !hooks.getUser()) {
       showError({ text: "请先登录，再讲给小黄鸭听。", retry: false });
@@ -134,6 +149,11 @@
       }
       if (countUserTurns(panel.turns) >= MAX_TURNS) return;
     }
+    const level = kind === "hint" ? nextHint(panel.hintsUsed) : 0;
+    if (kind === "hint") {
+      if (!level || countUserTurns(panel.turns) >= MAX_TURNS) return;
+      draft = HINTS[level - 1].ask; // 输入框里写了一半的话留着，不跟提示请求一起发
+    }
     const request = takeTicket();
     panel.sending = true;
     panel.pending = { kind, draft };
@@ -144,20 +164,22 @@
       const data = await hooks.api(`/api/mistakes/${panel.mistakeId}/duck`, {
         method: "POST",
         body: JSON.stringify({
-          turns: payloadTurns(panel.turns, kind === "chat" ? draft : ""),
+          turns: payloadTurns(panel.turns, kind === "finish" ? "" : draft),
           finish: kind === "finish",
+          ...(level ? { hint: level } : {}),
         }),
       });
       if (!current(request)) return; // 登出换号 / 关闭面板 / 切换错题之后才回来：丢弃
       const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
       if (!reply) throw Object.assign(new Error(RETRYABLE_FALLBACK), { status: 502 });
       panel.pending = null;
-      if (kind === "chat") {
+      if (kind !== "finish") {
         panel.turns.push({ role: "user", text: draft }, { role: "duck", text: reply });
-        panel.nodes.input.value = "";
+        if (kind === "chat") panel.nodes.input.value = "";
+        if (level) panel.hintsUsed = level;
         appendBubble("user", draft);
-        appendBubble("duck", reply);
-        panel.nodes.status.textContent = `小黄鸭：${reply}`; // aria-live 播报新回复
+        appendBubble("duck", reply, level);
+        panel.nodes.status.textContent = level ? `小黄鸭的第 ${level} 级提示：${reply}` : `小黄鸭：${reply}`; // aria-live 播报新回复
       } else {
         panel.finished = true;
         panel.nodes.summary.hidden = false;
@@ -184,6 +206,7 @@
     if (!panel) return;
     sendSeq += 1; // 在飞的请求作废，迟到响应不再写入
     panel.turns = [];
+    panel.hintsUsed = 0;
     panel.sending = false;
     panel.finished = false;
     panel.pending = null;
@@ -262,7 +285,8 @@
     const sendBtn = button("发送", "primary duck-send");
     const finishBtn = button("结束并总结", "duck-finish");
     const restartBtn = button("重新开始", "duck-restart");
-    actions.append(sendBtn, finishBtn, restartBtn);
+    const hintBtn = button(hintLabel(0), "duck-tip-btn");
+    actions.append(sendBtn, hintBtn, finishBtn, restartBtn);
     row.append(count, actions);
     const hint = node("p", "duck-hint", `Enter 发送，Shift+Enter 换行。最多 ${MAX_TURNS} 轮；小黄鸭有独立每日额度（默认 10 次，管理员可调整），每次回复和总结各用 1 次，不占其他 AI 额度；其余规则见 `);
     const billing = node("a", "", "AI 额度与计费");
@@ -277,13 +301,14 @@
       root,
       mistakeId: mistake.id,
       turns: [],
+      hintsUsed: 0, // 已经给到第几级提示
       sending: false,
       finished: false,
       quotaOut: false,
       pending: null,
       voted: false,
       nodes: {
-        input, send: sendBtn, finish: finishBtn, restart: restartBtn,
+        input, send: sendBtn, finish: finishBtn, restart: restartBtn, hint: hintBtn,
         round: head.querySelector(".duck-round"), count, log, status,
         error, errorText, retry, summary, summaryText,
         feedback, feedbackYes, feedbackNo,
@@ -330,6 +355,7 @@
     input.addEventListener("input", update);
     sendBtn.addEventListener("click", () => send("chat"));
     finishBtn.addEventListener("click", () => send("finish"));
+    hintBtn.addEventListener("click", () => send("hint"));
     retry.addEventListener("click", () => { if (panel?.pending) send(panel.pending.kind); });
     restartBtn.addEventListener("click", restart);
 
@@ -354,6 +380,6 @@
     mount,
     unmount,
     reset,
-    helpers: { countUserTurns, roundText, remainingText, payloadTurns, failureInfo },
+    helpers: { countUserTurns, roundText, remainingText, payloadTurns, failureInfo, nextHint, hintLabel },
   };
 })();

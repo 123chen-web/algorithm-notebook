@@ -71,7 +71,7 @@ window.DuckPanel?.reset();
 
 ## 5. 后端契约（对接用）
 
-`POST /api/mistakes/{id}/duck`，请求体 `{"turns": [{"role": "user"|"duck", "text": str}], "finish": bool}`；
+`POST /api/mistakes/{id}/duck`，请求体 `{"turns": [{"role": "user"|"duck", "text": str}], "finish": bool, "hint": 0|1|2|3}`（hint 可省，默认 0；不能和 finish 同时用）；
 `turns` 是完整对话（含当前这句用户发言，user/duck 严格交替、以 user 开头，≤ 6 轮用户发言——与 `duck_prompt.check_turns` 一致）。
 额度与自动重试规则见 [AI 额度与计费](../../static/ai-billing.html)。
 
