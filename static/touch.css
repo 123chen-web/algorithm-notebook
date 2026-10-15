@@ -1,0 +1,14 @@
+/* touch.css —— 触屏设备上，所有按钮、下拉框、折叠标题的点按区域至少 44px 高（WCAG 2.5.5 / 苹果与安卓的建议值）。
+   各页面样式里有上百处 32–40px 的按钮高度，逐个改容易漏：这里统一兜底。
+   选择器前面的 :root:not(#_):not(#__) 只是为了提高优先级（相当于两个 id），让它压过页面里带 id 的按钮样式；
+   只在 pointer: coarse（手指操作）时生效，鼠标设备的紧凑布局不受影响。
+   正文里的行内按钮（提到的笔记/套路、错题链接）、日历格子保持原样，否则会把文字行撑开。 */
+@media (pointer: coarse) {
+  :root:not(#_):not(#__) :is(button, select, summary, [role="button"]):not(.nc-mention):not(.cal-cell):not(.hm-cellbtn):not(.zone-dot) {
+    min-height: 44px;
+  }
+  :root:not(#_):not(#__) :is(input[type="checkbox"], input[type="radio"]) {
+    min-width: 20px;
+    min-height: 20px;
+  }
+}

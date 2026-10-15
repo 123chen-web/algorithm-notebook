@@ -255,6 +255,26 @@
     return figure;
   }
 
+  // 总览页上山水图默认收成一行（标题 + 进度），点开才看大图；展开 / 收起按本机记住。
+  const FOLD_KEY = "oy:landscape-open";
+  function readOpen() {
+    try { return window.localStorage.getItem(FOLD_KEY) === "1"; } catch (_error) { return false; }
+  }
+  function wrapFold(figure, captionText) {
+    const fold = htmlEl("details", "ls-fold");
+    fold.open = readOpen();
+    const summary = htmlEl("summary", "ls-fold-summary");
+    summary.textContent = `学习山水 · ${captionText}`;
+    fold.append(summary, figure);
+    fold.addEventListener("toggle", () => {
+      try {
+        if (fold.open) window.localStorage.setItem(FOLD_KEY, "1");
+        else window.localStorage.removeItem(FOLD_KEY);
+      } catch (_error) { /* 存不了就只在这次有效 */ }
+    });
+    return fold;
+  }
+
   async function mount(target) {
     container = target;
     if (!container || !hooks) return;
@@ -262,10 +282,10 @@
     const mine = ++generation;
     const request = ticket();
     // 先画静态占位：不阻塞首屏，数据回来再补全。
-    container.replaceChildren(buildFigure({
+    container.replaceChildren(wrapFold(buildFigure({
       count: 0, total: TOTAL_FALLBACK, owners: new Map(), titles: new Map(),
       freshSlots: new Set(), captionText: "正在读取学习进度…",
-    }));
+    }), "正在读取学习进度…"));
     try {
       const [roadmap, catalog] = await Promise.all([hooks.api("/api/roadmap"), getCatalog()]);
       if (mine !== generation || !current(request)) return;
@@ -293,20 +313,20 @@
         mastered.filter((patternId) => !seen.has(patternId)).map((patternId) => hashId(patternId) % SLOTS.length),
       );
       saveSeen(request.userId, new Set([...seen, ...mastered]));
-      container.replaceChildren(buildFigure({
+      container.replaceChildren(wrapFold(buildFigure({
         count: mastered.length,
         total,
         owners,
         titles,
         freshSlots,
         captionText: captionFor(mastered.length, total),
-      }));
+      }), captionFor(mastered.length, total)));
     } catch {
       if (mine !== generation || !container) return;
-      container.replaceChildren(buildFigure({
+      container.replaceChildren(wrapFold(buildFigure({
         count: 0, total: TOTAL_FALLBACK, owners: new Map(), titles: new Map(),
         freshSlots: new Set(), captionText: "暂时读不到学习进度，山水先静静待着",
-      }));
+      }), "暂时读不到学习进度"));
     }
   }
 

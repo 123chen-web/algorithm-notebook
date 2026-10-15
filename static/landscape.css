@@ -113,3 +113,10 @@ html[data-theme="fog"] .ls-mist { fill: var(--paper-2); }
   .ls-caption { font-size: var(--text-xs); padding-left: var(--space-3); padding-right: var(--space-3); }
   .ls-tip { font-size: var(--text-xs); }
 }
+
+/* 总览页：山水图默认收成一行，点开才展开大图。 */
+.ls-fold { border: 1px solid var(--line); border-radius: var(--radius-home); background: var(--surface); }
+.ls-fold > .ls-fold-summary { min-height: 44px; padding: var(--space-3) var(--space-4); color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+.ls-fold > .ls-fold-summary:hover { color: var(--ink); }
+.ls-fold[open] > .ls-fold-summary { border-bottom: 1px solid var(--line); }
+.ls-fold > .ls-wrap { margin: 0; }

@@ -35,7 +35,7 @@ html[data-view="welcome"] .cursor-fx-canvas { mix-blend-mode: soft-light; }
   #scene-count { display: none; }
   .scene-capsule { gap: 0; }
   .scene-capsule button { flex-basis: 24px; width: 24px; min-height: 36px; font-size: 20px; }
-  .scene-readout { font-size: 10px; }
+  .scene-readout { font-size: 12px; }
 }
 @media (max-width: 380px) {
   .intro .intro-copy { padding: 20px 16px; }

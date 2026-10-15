@@ -169,3 +169,9 @@ Ripple Distortion（RippleDistortion）组件，Copyright (c) 2026 David Haz，�
 
 分享卡片使用的中文字体是 Noto Sans CJK SC 的子集，采用 SIL Open Font License 1.1，许可证随字体放在 `assets/fonts/OFL.txt`。
 
+
+## 字号与点按区域（10/15）
+
+- 正文类文字最小 12px（`--text-xs`）；只有角标数字、头像首字、印章编号这类装饰性小字保留更小字号。
+- 触屏设备（`pointer: coarse`）上所有按钮、下拉框、折叠标题至少 44px 高，统一由 `static/touch.css` 兜底（用 `:root:not(#_):not(#__)` 提高优先级压过各页面的紧凑高度）；正文里的行内按钮和日历格子除外。
+- 总览首屏只让“今日复习”用强调色；热力图磁贴改为中性底；学习山水默认收成一行，点开才看大图（展开状态按本机记住）。

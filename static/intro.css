@@ -160,7 +160,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .intro .sample-topline {
@@ -192,7 +192,7 @@
 .intro .sample-subject {
   margin: 25px 0 9px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   letter-spacing: .035em;
 }
@@ -250,7 +250,7 @@
 .intro .sample-mistake .sample-label {
   margin: 0;
   color: var(--accent);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -273,14 +273,14 @@
   padding: 12px 20px;
   border-top: 1px solid var(--line);
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .intro .intro-example figcaption {
   position: relative;
   margin-top: 13px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -357,7 +357,7 @@
 
 .intro .intro-difference .eyebrow {
   margin: 0 0 12px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .intro .intro-difference h3 {
@@ -380,7 +380,7 @@
 .intro .intro-difference-copy .intro-small {
   margin-top: 16px;
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .intro .intro-invitation {

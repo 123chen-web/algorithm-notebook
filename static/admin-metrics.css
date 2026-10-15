@@ -48,7 +48,7 @@
 .am-chart-wrap { width: 100%; min-width: 0; margin-top: var(--space-3); }
 .am-chart { display: block; width: 100%; height: auto; }
 .am-grid { stroke: var(--line); stroke-width: 1; }
-.am-tick { fill: var(--muted); font: 500 11px var(--am-mono); font-variant-numeric: tabular-nums; }
+.am-tick { fill: var(--muted); font: 500 12px var(--am-mono); font-variant-numeric: tabular-nums; }
 .am-area { fill: var(--tile-azurite); stroke: none; }
 .am-line { fill: none; stroke: var(--azurite); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .am-dot { fill: var(--surface); stroke: var(--azurite); stroke-width: 2; }

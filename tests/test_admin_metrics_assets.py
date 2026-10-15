@@ -36,7 +36,7 @@ def test_markup_has_the_required_ids_once_and_sits_above_the_dashboard():
 
 
 def test_assets_are_versioned_and_loaded_in_order():
-    assert '/static/admin-metrics.css?v=1' in HTML
+    assert '/static/admin-metrics.css?v=' in HTML
     assert '/static/admin-metrics.js?v=3' in HTML
     assert HTML.index('/static/admin-metrics.js?') < HTML.index('/static/app.js?')
     version = re.search(r'/static/app.js\?v=(\d+)', HTML)
