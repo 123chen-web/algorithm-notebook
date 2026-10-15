@@ -634,23 +634,57 @@
     parts.stage.focus({ preventScroll: true });
   }
 
+  // 评分“先翻页、后保存”：点下去立刻盖章、翻到下一张，请求在后台发；保存失败就把这张放回最前面，
+  // 别处已改过（409）就跳过它。每张卡在保存回来之前不能再评一次（pending）。
   async function gradeCurrent(quality, mode = "recall", evidence = "") {
     // 评分请求回来时，这一轮可能已经被关掉、甚至换成了新的一轮：所有收尾都认准发请求时的那一轮。
     const active = session;
     const item = current();
-    if (!active || !item || active.submitting) return;
+    if (!active || !item) return;
+    if (!active.pending) active.pending = new Set();
+    if (active.pending.has(item.id)) return;
     // 只回忆要先看错因再自评；做题验证（默写、重做、类似题）不需要先看答案。
     if (modern() && !active.revealed && mode === "recall") return;
     // 算法题的自评没有“很熟”。
     if (mode === "recall" && quality === 5 && item.zone === "算法") return;
     const valid = capture(active);
     if (!valid()) return;
-    active.submitting = true;
-    parts.grades.setAttribute("aria-busy", "true");
-    let message = "";
     const payload = { quality, version: item.version };
     if (mode !== "recall") payload.mode = mode;
     if (evidence) payload.evidence = evidence;
+
+    // —— 先翻页 ——
+    active.pending.add(item.id);
+    active.finished.add(item.id);
+    active.done += 1;
+    active.graded += 1;
+    const entry = { id: item.id, quality, next: null };
+    active.results.push(entry);
+    const stamp = STAMPS.get(quality);
+    if (stamp && typeof window.stampSeal === "function") {
+      const button = parts.grades.querySelector(`[data-quality="${quality}"]`);
+      window.stampSeal(stamp, { anchor: button, tone: quality <= 2 ? "ink" : undefined });
+      window.ReviewFeel?.buzz();
+    }
+    active.revealed = modern() && !hiddenByDefault();
+    // 评分已提交：停掉可能还在跑的重做计时器。
+    if (active.redoTimer) { active.redoTimer.cancel(); active.redoTimer = null; }
+    render();
+    parts.stage.focus({ preventScroll: true });
+
+    const undoOptimistic = () => {
+      active.finished.delete(item.id);
+      active.order = [item.id, ...active.order.filter((id) => id !== item.id)];
+      if (active.zone && active.zone !== item.zone) active.zone = item.zone;
+      active.done = Math.max(0, active.done - 1);
+      active.graded = Math.max(0, active.graded - 1);
+      active.results = active.results.filter((result) => result !== entry);
+      active.revealed = modern() && !hiddenByDefault();
+      active.summaryAnnounced = false;
+      render();
+    };
+
+    // —— 后保存 ——
     try {
       const response = await request(`/api/mistakes/${item.id}/review`, {
         method: "POST", credentials: "same-origin",
@@ -669,57 +703,46 @@
       }
       if (response.status === 409) {
         // 别处已经评过分或还没到期：跳过这一条，不算本轮成绩。
-        active.finished.add(item.id);
-        message = typeof data.detail === "string" ? data.detail : "这一条已在别处更新，已跳过。";
-      } else if (!response.ok) {
-        parts.status.textContent = typeof data.detail === "string" ? data.detail : "评分没有保存，请再试一次。";
+        active.done = Math.max(0, active.done - 1);
+        active.graded = Math.max(0, active.graded - 1);
+        active.results = active.results.filter((result) => result !== entry);
+        render();
+        parts.status.textContent = typeof data.detail === "string" ? data.detail : "这一条已在别处更新，已跳过。";
         return;
-      } else {
-        active.finished.add(item.id);
-        active.done += 1;
-        active.graded += 1;
-        active.results.push({ id: item.id, quality, next: data.interval_days });
-        if (modern()) window.ReviewExtras.rememberReview({ item, result: data, quality, isCurrent: valid,
-          onUndo: (result) => {
-            if (!valid()) return;
-            active.items.set(item.id, { ...item, ...result });
-            active.order = [item.id, ...active.order.filter((id) => id !== item.id)];
-            if (active.zone && active.zone !== item.zone) active.zone = item.zone;
-            active.finished.delete(item.id);
-            active.results = active.results.filter((entry) => entry.id !== item.id);
-            active.done = Math.max(0, active.done - 1);
-            active.graded = Math.max(0, active.graded - 1);
-            active.revealed = !hiddenByDefault();
-            active.summaryAnnounced = false;
-            render();
-            parts.status.textContent = "已撤销";
-            parts.stage.focus({ preventScroll: true });
-          } });
-        const stamp = STAMPS.get(quality);
-        if (stamp && typeof window.stampSeal === "function") {
-          const button = parts.grades.querySelector(`[data-quality="${quality}"]`);
-          window.stampSeal(stamp, { anchor: button, tone: quality <= 2 ? "ink" : undefined });
-          window.ReviewFeel?.buzz();
-        }
-        message = `已保存，下次复习约 ${data.interval_days} 天后`;
-        if (data.leech_suspended) {
-          message = "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。";
-        }
       }
-      active.revealed = modern() && !hiddenByDefault();
-      // 评分已提交：停掉可能还在跑的重做计时器。
-      if (active.redoTimer) { active.redoTimer.cancel(); active.redoTimer = null; }
-      render();
+      if (!response.ok) {
+        undoOptimistic();
+        parts.status.textContent = `${typeof data.detail === "string" ? data.detail : "评分没有保存"}（这张已经放回来了，请再评一次）`;
+        return;
+      }
+      entry.next = data.interval_days;
+      if (modern()) window.ReviewExtras.rememberReview({ item, result: data, quality, isCurrent: valid,
+        onUndo: (result) => {
+          if (!valid()) return;
+          active.items.set(item.id, { ...item, ...result });
+          active.order = [item.id, ...active.order.filter((id) => id !== item.id)];
+          if (active.zone && active.zone !== item.zone) active.zone = item.zone;
+          active.finished.delete(item.id);
+          active.results = active.results.filter((result) => result.id !== item.id);
+          active.done = Math.max(0, active.done - 1);
+          active.graded = Math.max(0, active.graded - 1);
+          active.revealed = !hiddenByDefault();
+          active.summaryAnnounced = false;
+          render();
+          parts.status.textContent = "已撤销";
+          parts.stage.focus({ preventScroll: true });
+        } });
+      let message = `已保存，下次复习约 ${data.interval_days} 天后`;
+      if (data.leech_suspended) message = "这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。";
+      // 已经翻到下一张：提示写成“上一张”，别让人以为说的是眼前这张。
+      if (current() && current().id !== item.id && !data.leech_suspended) message = `上一张${message}`;
       parts.status.textContent = message;
-      parts.stage.focus({ preventScroll: true });
     } catch (error) {
-      if (valid()) parts.status.textContent = error.message || "网络出错，评分没有保存，请再试一次。";
+      if (!valid()) return;
+      undoOptimistic();
+      parts.status.textContent = `${error.message || "网络出错，评分没有保存"}（这张已经放回来了，请再评一次）`;
     } finally {
-      active.submitting = false;
-      if (valid()) {
-        parts.grades.removeAttribute("aria-busy");
-        for (const button of parts.gradeButtons) button.disabled = false;
-      }
+      active.pending.delete(item.id);
     }
   }
 

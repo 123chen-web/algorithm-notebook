@@ -177,10 +177,22 @@ test("focus feel: closing a session makes remembered undo stale", async () => {
   const old = env.memory.last; env.window.FocusReview.close();
   assert.equal(old.isCurrent(), false);
 });
-test("focus feel: errors retain Chinese API detail in the status", async () => {
+test("focus feel: grading flips to the next card at once; a failed save puts the card back with the Chinese detail", async () => {
   const env = setup(); await begin(env); reveal(env); key(env, "4");
+  assert.equal(env.document.querySelector("#focus-title").textContent, "题目2", "不等服务器，立刻翻到下一张");
+  assert.equal(env.calls.filter((call) => call.url.endsWith("/review")).length, 1);
   env.respond(env.calls.at(-1), 503, { detail: "服务暂时不可用，请稍后再试" }); await tick();
-  assert.equal(env.document.querySelector("#focus-status").textContent, "服务暂时不可用，请稍后再试");
+  assert.equal(env.document.querySelector("#focus-title").textContent, "题目1", "没保存上就放回最前面");
+  assert.match(env.document.querySelector("#focus-status").textContent, /^服务暂时不可用，请稍后再试（这张已经放回来了/);
+  assert.match(env.document.querySelector(".focus-count").textContent, /第 1 \/ 2 条/);
+  env.window.FocusReview.close();
+});
+
+test("focus feel: a successful background save reports the interval as the previous card's", async () => {
+  const env = setup(); await begin(env); reveal(env); key(env, "4");
+  env.respond(env.calls.at(-1), 200, { interval_days: 6, version: 4 }); await tick();
+  assert.equal(env.document.querySelector("#focus-title").textContent, "题目2");
+  assert.equal(env.document.querySelector("#focus-status").textContent, "上一张已保存，下次复习约 6 天后");
   env.window.FocusReview.close();
 });
 test("focus feel: 409 skips the conflicted card while preserving the exact Chinese detail after render", async () => {

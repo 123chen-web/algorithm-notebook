@@ -58,9 +58,9 @@ def test_grading_uses_the_existing_review_endpoint_with_the_item_version(script)
     assert 'if (mode !== "recall") payload.mode = mode;' in script
     assert 'if (evidence) payload.evidence = evidence;' in script
     assert '"X-CSRF-Protection": "1"' in script
-    # 评分不经过 app.js 的 run()，不会触发全局禁用按钮；防重复提交靠这一轮自己的标记
-    # （挂在发出请求时那一轮上，晚到的回应不会误伤后来新开的一轮）。
-    assert "active.submitting" in script
+    # 评分不经过 app.js 的 run()，不会触发全局禁用按钮；先翻页、后保存，防重复提交靠这一轮自己的
+    # 每张卡“保存中”标记（挂在发出请求时那一轮上，晚到的回应不会误伤后来新开的一轮）。
+    assert "active.pending" in script
     assert "submitting: false" in script
 
 
