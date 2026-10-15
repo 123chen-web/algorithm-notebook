@@ -1,0 +1,101 @@
+/* notes-connect.css —— 笔记阅读视图的“内置积木”：荧光笔、提示框、折叠答案、章节标题，
+   以及“串联”（正文里提到的笔记/套路下划线、预览卡、相关面板）。只用主题令牌，深色主题自动跟随。 */
+
+/* ── 阅读视图骨架 ── */
+#notes-page .notes-reader { display: grid; gap: var(--space-3); }
+#notes-page .notes-reader-title { flex: 1 1 16rem; min-width: 0; margin: 0; font: 500 clamp(20px, 2.2vw, 26px)/1.3 var(--serif); overflow-wrap: anywhere; }
+#notes-page .notes-reader-body { max-width: 72ch; cursor: text; }
+
+/* ── 荧光笔 ==文字== ── */
+.notes-rich mark.nm-hl {
+  padding: 0 .15em;
+  border-radius: var(--radius-xs, 4px);
+  background: color-mix(in srgb, var(--gamboge) 38%, transparent);
+  color: var(--ink);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ── 中文章节标题（一、二、…）：左边一道彩色竖线，比正文显眼 ── */
+.notes-rich .nm-cn-heading { padding-left: var(--space-3); border-left: 4px solid var(--accent); }
+.notes-rich h3.nm-cn-heading { border-left-color: var(--azurite); }
+
+/* ── 自测行 ── */
+.notes-rich .nm-selftest { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--soft); color: var(--ink); font-weight: 600; }
+
+/* ── 折叠答案（“答案：…”）── */
+.notes-rich details.nm-answer { margin: var(--space-2) 0; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--paper-2); }
+.notes-rich details.nm-answer > summary { min-height: 40px; padding: var(--space-2) var(--space-3); color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+.notes-rich details.nm-answer[open] > summary { color: var(--accent-hover); }
+.notes-rich details.nm-answer > p { margin: 0; padding: 0 var(--space-3) var(--space-3); }
+
+/* ── 提示框 > [!类型] ── */
+.notes-rich .nm-callout { margin: var(--space-3) 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-left-width: 4px; border-radius: var(--radius-sm); background: var(--paper-2); }
+.notes-rich .nm-callout-title { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-weight: 700; }
+.notes-rich summary.nm-callout-title { min-height: 32px; cursor: pointer; }
+.notes-rich .nm-callout-icon { flex: none; line-height: 1; }
+.notes-rich .nm-callout-body:not(:empty) { margin-top: var(--space-2); }
+.notes-rich .nm-callout-body > :first-child { margin-top: 0; }
+.notes-rich .nm-callout-body > :last-child { margin-bottom: 0; }
+.notes-rich .nm-callout-tip { border-color: var(--azurite); background: var(--soft); }
+.notes-rich .nm-callout-warn { border-color: var(--gamboge); background: var(--notice-surface); }
+.notes-rich .nm-callout-warn .nm-callout-title { color: var(--gamboge-ink); }
+.notes-rich .nm-callout-danger { border-color: var(--danger-line); background: var(--danger-soft); }
+.notes-rich .nm-callout-danger .nm-callout-title { color: var(--danger-ink); }
+.notes-rich .nm-callout-example { border-color: var(--group-line); background: var(--group-soft); }
+.notes-rich .nm-callout-example .nm-callout-title { color: var(--group-ink); }
+.notes-rich .nm-callout-ok { border-color: var(--success-line); background: var(--success-soft); }
+.notes-rich .nm-callout-ok .nm-callout-title { color: var(--success-ink); }
+.notes-rich .nm-callout-def { border-color: var(--line-strong); background: var(--quiet-surface); }
+.notes-rich .nm-callout-answer { border-color: var(--summary-line); border-style: dashed; background: var(--summary-surface); }
+
+/* ── 正文里“提到了”的笔记 / 套路 ── */
+.notes-rich .nc-mention {
+  display: inline;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1.5px dotted var(--azurite);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.notes-rich .nc-mention.nc-pattern { border-bottom-color: var(--accent); }
+.notes-rich .nc-mention:hover, .notes-rich .nc-mention:focus-visible { background: var(--soft); transform: none; }
+.notes-rich .nc-mention:focus-visible { outline: 2px solid var(--azurite); outline-offset: 1px; }
+
+/* ── 预览卡 ── */
+.nc-pop { position: absolute; z-index: 60; display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); box-shadow: 0 var(--space-2) var(--space-6) rgba(var(--shadow-rgb), .18); }
+.nc-pop[hidden] { display: none; }
+.nc-pop-kind { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+.nc-pop-title { font-size: var(--text-md); }
+.nc-pop-text { margin: 0; color: var(--ink); font-size: var(--text-sm); line-height: 1.6; }
+.nc-pop-signals { margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); line-height: 1.6; }
+.nc-pop-open { justify-self: start; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--accent-hover); font-size: var(--text-sm); }
+
+/* ── 串联面板 ── */
+#notes-page .nc-panel { display: grid; gap: var(--space-3); margin-top: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+#notes-page .nc-panel[hidden] { display: none; }
+#notes-page .nc-panel-title { margin: 0; font: 600 var(--text-md)/1.4 var(--serif); }
+#notes-page .nc-section { display: grid; gap: var(--space-1); }
+#notes-page .nc-section-title { margin: 0; color: var(--ink-2); font-size: var(--text-sm); font-weight: 600; }
+#notes-page .nc-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+#notes-page .nc-item { display: grid; gap: 2px; width: 100%; min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-weight: 400; text-align: left; }
+#notes-page .nc-item:hover:not(:disabled) { border-color: var(--azurite); background: var(--paper-2); transform: none; }
+#notes-page .nc-item-label { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+#notes-page .nc-item-sub { overflow: hidden; color: var(--ink-2); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+#notes-page .nc-mistake { border-left: 3px solid var(--danger-line); }
+#notes-page .nc-pattern-item { border-left: 3px solid var(--accent); }
+
+@media (min-width: 1200px) {
+  #notes-page .nc-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .notes-rich .nc-mention, #notes-page .nc-item { transition: background var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease); }
+}
+
+/* 编辑时的“插入积木”一行 */
+#notes-page .notes-block-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

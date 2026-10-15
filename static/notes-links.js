@@ -303,6 +303,8 @@
   function locateNoteByTitle(title) {
     if (!hooks?.showView) return;
     void hooks.showView("notes").then(() => {
+      // 新版笔记页：按标题找到就直接在右边打开。
+      if (window.Notes && typeof window.Notes.openByTitle === "function") return window.Notes.openByTitle(title);
       const search = document.querySelector("#notes-search");
       if (search) {
         search.value = title;
@@ -792,6 +794,6 @@
     codeRanges, parseLinkTokens, detectLinkQuery, buildLinkInsertion,
     selectGraphNodes, computeLayout, hashString,
     setKnownTargets, attachInlineLinks, openLinkTarget,
-    configure, enterNotesView, reset, SOLUTION_TEMPLATE,
+    configure, enterNotesView, reset, SOLUTION_TEMPLATE, renderRelated,
   });
 })();

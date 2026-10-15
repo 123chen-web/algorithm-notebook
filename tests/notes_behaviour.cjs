@@ -20,7 +20,7 @@ const note = (id, extra = {}) => ({
 
 /** 配好假 api 的 Notes 环境：请求全部记下来，由测试逐个回应。 */
 function setup(envNotes = {}) {
-  const env = load(["notes.js"]);
+  const env = load(["notes-pane.js", "notes.js"]);
   const state = {
     user: { id: 7, username: "陈默" }, epoch: 1, view: "notes",
     confirms: [], confirmed: true, notified: [],
@@ -210,14 +210,15 @@ test("composer: 保存成功 → 断言 POST body，插到列表顶部并清空�
   assert.deepEqual(JSON.parse(call.init.body), { content: "hello **world**", tags: ["算法", "二分"] });
   const created = note(101, { content: "hello **world**", tags: ["算法", "二分"] });
   await respondLast(env, 201, created);
+  await tick(); await tick();
   assert.equal(Notes.snapshot().count, 1);
   assert.equal(document.querySelector("#notes-content").value, "");
   assert.equal(document.querySelector("#notes-tags-input").value, "");
-  // 正文由 DOM 节点构造；检查实际节点内容与样式结构。
+  // 列表里一篇一行：标题取正文首行；保存后右边直接打开这篇的阅读视图。
   const card = document.querySelector("#notes-list").querySelector(".notes-card");
-  // N5：无显式标题、且正文首行不是标题块时，卡片头部不再重复显示“标题=正文第一句”。
-  assert.equal(card.querySelector(".notes-card-title strong"), null);
-  const body = card.querySelector(".notes-body");
+  assert.equal(card.querySelector(".notes-card-title strong").textContent, "hello world");
+  assert.equal(Notes.currentNoteId(), 101);
+  const body = document.querySelector("#notes-pane-note").querySelector(".notes-reader-body");
   assert.equal(body.textContent, "hello world");
   assert.equal(body.querySelector("strong").textContent, "world");
   assert.equal(body.querySelector("script"), null);
@@ -262,8 +263,8 @@ test("load: 先拉题目下拉再拉列表；标签 chip 点击 → 按该标签
   assert.equal(Notes.snapshot().count, 2);
   assert.equal(document.querySelector("#notes-problem").querySelectorAll("option").length, 2); // 不关联 + 1 道题
 
-  const chip = document.querySelector("#notes-list").querySelector('[data-tag="算法"]');
-  assert.ok(chip, "列表里有算法标签 chip");
+  const chip = document.querySelector("#notes-tag-row").querySelector('[data-tag="算法"]');
+  assert.ok(chip, "左边标签栏里有算法标签");
   chip.click();
   await tick();
   assert.match(lastCall(env).url, /tag=%E7%AE%97%E6%B3%95/);
@@ -304,8 +305,8 @@ test("置顶：PUT pinned 并按置顶排序；删除：confirm 后调 DELETE �
     note(2, { pinned: false, updated_at: iso(60 * 1000) }),
   ], total: 2 });
 
-  const cards = document.querySelector("#notes-list").querySelectorAll(".notes-card");
-  const pinButton = [...cards[0].querySelectorAll(".notes-action")].find((button) => button.textContent === "置顶");
+  const pane = await openInPane(document, 1);
+  const pinButton = actionNamed(pane, "置顶");
   pinButton.click();
   await tick();
   assert.equal(lastCall(env).url, "/api/notes/1");
@@ -314,9 +315,9 @@ test("置顶：PUT pinned 并按置顶排序；删除：confirm 后调 DELETE �
   await respondLast(env, 200, note(1, { pinned: true }));
   const firstCard = document.querySelector("#notes-list").querySelector(".notes-card");
   assert.ok(firstCard.classList.contains("is-pinned"));
+  assert.equal(actionNamed(pane, "取消置顶").textContent, "取消置顶");
 
-  const deleteButton = [...firstCard.querySelectorAll(".notes-action")].find((button) => button.textContent === "删除");
-  deleteButton.click();
+  actionNamed(pane, "删除").click();
   await tick();
   assert.deepEqual(state.confirms, ["删除这条笔记？删除后可以在「最近删除」里恢复。"]);
   assert.equal(lastCall(env).url, "/api/notes/1");
@@ -324,15 +325,15 @@ test("置顶：PUT pinned 并按置顶排序；删除：confirm 后调 DELETE �
   await respondLast(env, 200, { ok: true });
   assert.equal(Notes.snapshot().count, 1);
   assert.ok(state.notified.includes("笔记已删除，可以在「最近删除」里恢复。"));
+  assert.equal(Notes.currentNoteId(), null, "删掉的这篇从右边收起");
 });
 
 test("删除：confirm 点取消则不发请求", async () => {
   const { env, document, state, Notes } = setup({ confirm: () => { state.confirms.push("x"); return false; } });
   await loadWith(env, [], { notes: [note(1)], total: 1 });
+  const pane = await openInPane(document, 1);
   const callsBefore = env.calls.length;
-  const deleteButton = [...document.querySelector("#notes-list").querySelector(".notes-card").querySelectorAll(".notes-action")]
-    .find((button) => button.textContent === "删除");
-  deleteButton.click();
+  actionNamed(pane, "删除").click();
   await tick();
   assert.equal(env.calls.length, callsBefore);
   assert.equal(Notes.snapshot().count, 1);
@@ -361,6 +362,24 @@ test("加载更多：offset 累加追加；登出代次变化后迟到响应被�
   assert.equal(Notes.snapshot().count, 3);
 });
 
+/** 点列表里的一篇，等右边打开阅读视图；返回编辑区容器。 */
+async function openInPane(document, id) {
+  const card = document.querySelector("#notes-list").querySelector(`.notes-card[data-note-id="${id}"]`);
+  assert.ok(card, `列表里有笔记 ${id}`);
+  card.querySelector(".notes-card-open").click();
+  await tick(); await tick();
+  return document.querySelector("#notes-pane-note");
+}
+
+/** 在右边点“编辑”，等编辑器出来；返回 .notes-editor。 */
+async function editInPane(document, pane) {
+  actionNamed(pane, "编辑").click();
+  await tick(); await tick();
+  const editor = document.querySelector("#notes-pane-note").querySelector(".notes-editor");
+  assert.ok(editor, "进入编辑");
+  return editor;
+}
+
 /* 异步回归：请求的归属、筛选顺序和提交时的草稿都必须保持明确。 */
 const actionNamed = (card, label) => [...card.querySelectorAll(".notes-action")]
   .find((button) => button.textContent === label);
@@ -378,14 +397,13 @@ for (const operation of ["保存", "置顶", "删除", "编辑"]) {
         document.querySelector("#notes-content").value = "旧用户提交";
         document.querySelector("#notes-save").click();
       } else {
-        const card = document.querySelector("#notes-list").querySelector(".notes-card");
+        const pane = await openInPane(document, 1);
         if (operation === "编辑") {
-          actionNamed(card, "编辑").click();
-          oldEditor = card.querySelector(".notes-editor");
+          oldEditor = await editInPane(document, pane);
           oldEditor.querySelector(".notes-edit-content").value = "旧用户修改";
           oldEditSave = actionNamed(oldEditor, "完成");
           oldEditSave.click();
-        } else actionNamed(card, operation).click();
+        } else actionNamed(pane, operation).click();
       }
       await tick();
       const oldRequest = lastCall(env);
@@ -401,9 +419,8 @@ for (const operation of ["保存", "置顶", "删除", "编辑"]) {
       const newRequest = lastCall(env);
       assert.equal(newRequest.init.method, "POST");
       assert.equal(document.querySelector("#notes-save").disabled, true);
-      const newCard = document.querySelector("#notes-list").querySelector(".notes-card");
-      actionNamed(newCard, "编辑").click();
-      const newEditor = newCard.querySelector(".notes-editor");
+      const newPane = await openInPane(document, 90);
+      const newEditor = await editInPane(document, newPane);
       newEditor.querySelector(".notes-edit-content").value = "新用户正在编辑的草稿";
       const before = plain(Notes.snapshot());
       const notificationCount = state.notified.length;
@@ -416,8 +433,8 @@ for (const operation of ["保存", "置顶", "删除", "编辑"]) {
 
       assert.deepEqual(plain(Notes.snapshot()), before);
       assert.deepEqual(cardTitles(document), ["新用户笔记"]);
-      assert.ok(document.querySelector("#notes-list").querySelector(".notes-editor") === newEditor,
-        "迟到响应不得重新渲染列表，丢弃新用户编辑草稿");
+      assert.ok(document.querySelector("#notes-pane-note").querySelector(".notes-editor") === newEditor,
+        "迟到响应不得收起新用户正在编辑的那篇"); 
       assert.equal(newEditor.querySelector(".notes-edit-content").value, "新用户正在编辑的草稿");
       assert.equal(document.querySelector("#notes-content").value, "新用户在途草稿");
       assert.equal(document.querySelector("#notes-composer-notice").textContent, noticeBefore);

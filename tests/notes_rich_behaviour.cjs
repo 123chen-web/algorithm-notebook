@@ -154,11 +154,11 @@ test("静态契约: KaTeX 用 MathML 输出，避免内联 style 触发 CSP", ()
 test("静态契约: 加载顺序与版本号", () => {
   const vendorEditor = html.indexOf("vendor/editor/oy-editor.js?v=3");
   // notes.js 的版本号不写死：只断言加载顺序（?v= 跟随 index.html 提升）。
-  const notesJs = html.indexOf("notes.js?v=");
-  const linksJs = html.indexOf("notes-links.js?v=8");
+  const notesJs = html.indexOf("/static/notes.js?v=");
+  const linksJs = html.indexOf("/static/notes-links.js?v=");
   const richJs = html.indexOf("notes-rich.js?v=7");
   const editorJs = html.indexOf("notes-editor.js?v=");
-  const appJs = html.indexOf("app.js?v=103");
+  const appJs = html.indexOf("/static/app.js?v=");
   assert.ok(vendorEditor > -1 && vendorEditor < notesJs, "oy-editor.js 在 notes.js 前");
   assert.ok(notesJs > -1 && linksJs > notesJs, "notes-links.js 在 notes.js 后");
   assert.ok(richJs > linksJs, "notes-rich.js 在 notes-links.js 后");

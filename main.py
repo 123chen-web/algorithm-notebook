@@ -280,6 +280,7 @@ import routers.forum
 import routers.admin
 import routers.recommend
 import routers.note_history
+import routers.note_connections
 import routers.notes
 import routers.note_files
 import routers.drawings
@@ -309,6 +310,7 @@ app.include_router(routers.admin.router)
 app.include_router(routers.recommend.router)
 # 回收站 /api/notes/trash 必须排在 notes 的 /api/notes/{note_id} 前面，否则会被当成 id 解析。
 app.include_router(routers.note_history.router)
+app.include_router(routers.note_connections.router)
 app.include_router(routers.notes.router)
 app.include_router(routers.note_files.router)
 app.include_router(routers.drawings.router)

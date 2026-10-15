@@ -246,6 +246,10 @@
       schedule, flush, revert, stop, dirty,
       get conflict() { return conflict; },
       get everSaved() { return everSaved; },
+      /** 别的操作（如置顶）改了服务器上的 updated_at 但没动正文：跟上新版本号，免得下次保存误报冲突。 */
+      rebase(updatedAt) {
+        if (updatedAt) base = updatedAt;
+      },
       pendingDraft() {
         const saved = drafts.read(key);
         if (!saved || typeof saved.content !== "string") return null;

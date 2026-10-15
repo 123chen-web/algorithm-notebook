@@ -218,6 +218,28 @@
 
   /* ---------- 渲染：列表 ---------- */
 
+  // 从别的页面（笔记里的套路预览卡）跳过来：清掉筛选、只看这个套路并展开它。
+  let pendingFocus = null;
+  function focusPattern(patternId) {
+    pendingFocus = patternId;
+    if (byId && byId.has(patternId)) applyPendingFocus();
+  }
+  function applyPendingFocus() {
+    const pattern = pendingFocus && byId ? byId.get(pendingFocus) : null;
+    if (!pattern) return;
+    pendingFocus = null;
+    category = "";
+    level = "";
+    status = "";
+    query = pattern.title;
+    $("#roadmap-cat").value = "";
+    $("#roadmap-level").value = "";
+    $("#roadmap-state").value = "";
+    $("#roadmap-q").value = query;
+    renderList();
+    jumpTo(pattern.id);
+  }
+
   function jumpTo(patternId) {
     const card = $("#roadmap-list").querySelector(`[data-pattern-id="${patternId}"]`);
     if (!card) return;
@@ -347,6 +369,7 @@
       byId = new Map(patterns.map((pattern) => [pattern.id, pattern]));
       renderFilters();
       render(); // 先按"全部未学"画出来，进度读到后再重画一次。
+      applyPendingFocus();
     } catch {
       if (mine !== generation) return;
       setStatus("套路库加载失败，请稍后重试。", { retry: true });
@@ -412,7 +435,7 @@
         bound = true;
       }
     },
-    load, reset,
+    load, reset, focusPattern,
     // 纯函数，供行为测试直接断言
     statusOf, weakPatterns, categoryStats,
   };

@@ -22,12 +22,13 @@
   <link rel="stylesheet" href="/static/groups.css?v=3">
   <link rel="stylesheet" href="/static/group-extras.css?v=2">
   <link rel="stylesheet" href="/static/forum.css?v=7">
-  <link rel="stylesheet" href="/static/notes.css?v=3">
+  <link rel="stylesheet" href="/static/notes.css?v=5">
   <link rel="stylesheet" href="/static/notes-links.css?v=5">
   <link rel="stylesheet" href="/static/notes-rich.css?v=5">
   <link rel="stylesheet" href="/static/vendor/editor/oy-editor.css?v=3">
   <link rel="stylesheet" href="/static/notes-editor.css?v=1">
   <link rel="stylesheet" href="/static/notes-history.css?v=1">
+  <link rel="stylesheet" href="/static/notes-connect.css?v=2">
   <link rel="stylesheet" href="/static/draw-host.css?v=202610122">
   <link rel="stylesheet" href="/static/shell.css?v=5">
   <link rel="stylesheet" href="/static/overview.css?v=5">
@@ -94,7 +95,7 @@
   <script defer src="/static/mastery.js?v=5"></script>
   <script defer src="/static/pattern-render.js?v=2"></script>
   <script defer src="/static/pattern-picker.js?v=2"></script>
-  <script defer src="/static/roadmap.js?v=2"></script>
+  <script defer src="/static/roadmap.js?v=3"></script>
   <script defer src="/static/inbox.js?v=2"></script>
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
@@ -138,15 +139,17 @@
   <script defer src="/static/heatmap.js?v=1"></script>
   <script defer src="/static/reminder.js?v=2"></script>
   <script defer src="/static/vendor/editor/oy-editor.js?v=3"></script>
-  <script defer src="/static/notes.js?v=8"></script>
-  <script defer src="/static/notes-links.js?v=8"></script>
+  <script defer src="/static/notes.js?v=12"></script>
+  <script defer src="/static/notes-links.js?v=9"></script>
   <script defer src="/static/notes-rich.js?v=7"></script>
   <script defer src="/static/draw-host.js?v=202610125"></script>
   <script defer src="/static/notes-editor.js?v=4"></script>
-  <script defer src="/static/notes-history.js?v=1"></script>
+  <script defer src="/static/notes-history.js?v=2"></script>
+  <script defer src="/static/notes-pane.js?v=2"></script>
+  <script defer src="/static/notes-connect.js?v=1"></script>
   <script defer src="/static/app/core-api.js?v=1"></script>
   <script defer src="/static/app/core-session.js?v=2"></script>
-  <script defer src="/static/app/core-ui.js?v=5"></script>
+  <script defer src="/static/app/core-ui.js?v=6"></script>
   <script defer src="/static/app/overview-growth.js?v=2"></script>
   <script defer src="/static/app/overview-home.js?v=2"></script>
   <script defer src="/static/app/overview-insights.js?v=2"></script>
@@ -1397,50 +1400,68 @@
       </section>
 
       <section id="notes-page" aria-labelledby="notes-title" hidden>
-        <div class="notes-wrap">
+        <div class="notes-wrap notes-workspace">
           <header class="notes-head">
             <div>
               <h2 id="notes-title">笔记</h2>
-              <p class="notes-sub">写下学习笔记和想法：可以加标签、关联题目、插入公式和图片。选中文字就能加粗或加链接，输入 / 可插入标题、列表、表格等。编辑时停手就自动保存，改过的旧样子都在“历史”里。</p>
+              <p class="notes-sub">左边挑一篇就能直接改，停手自动保存；改过的旧样子都在“历史”里。输入 / 插入标题、代码、公式、表格、画板。</p>
             </div>
             <button id="notes-trash" type="button" class="notes-trash-button" hidden>最近删除</button>
           </header>
-          <div class="notes-composer" id="notes-composer">
-            <p class="notes-editor-hint" id="notes-editor-hint">输入 / 试试，选中文字可以加粗或加链接</p>
-            <div class="notes-field notes-content-field">
-              <label class="notes-sr-only" for="notes-content">笔记内容</label>
-              <div id="notes-editor-host" class="notes-editor-host"></div>
-              <textarea id="notes-content" rows="4" maxlength="20000" placeholder="记下你的想法或学习笔记…" hidden></textarea>
+          <div class="notes-layout" id="notes-layout" data-pane-open="false">
+            <nav class="notes-rail" aria-label="按标签筛选笔记">
+              <p class="notes-rail-title" aria-hidden="true">标签</p>
+              <div id="notes-tag-row" class="notes-tag-row" role="group" aria-label="按标签筛选"></div>
+            </nav>
+            <div class="notes-col">
+              <div class="notes-col-head">
+                <label class="notes-search">
+                  <span class="notes-sr-only">搜索笔记</span>
+                  <input id="notes-search" type="search" maxlength="200" placeholder="搜索标题或内容" autocomplete="off">
+                </label>
+                <details class="notes-new-menu" id="notes-new-menu">
+                  <summary class="notes-new-button">＋ 新建</summary>
+                  <div class="notes-new-options" id="notes-new-options" role="group" aria-label="从模板新建"></div>
+                </details>
+              </div>
+              <div id="notes-list" class="notes-list" aria-live="polite"></div>
+              <p id="notes-status" class="notes-status" role="status" hidden></p>
+              <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
             </div>
-            <p id="notes-editor-fallback" class="notes-editor-fallback" role="status" hidden></p>
-            <div class="notes-composer-row">
-              <label class="notes-field notes-tags-field">
-                <span class="notes-sr-only">标签</span>
-                <input id="notes-tags-input" type="text" maxlength="200" placeholder="标签，用逗号或空格分隔" autocomplete="off">
-              </label>
-              <label class="notes-field notes-problem-field">
-                <span class="notes-sr-only">关联题目</span>
-                <select id="notes-problem" aria-label="关联题目"><option value="">不关联</option></select>
-              </label>
-              <button id="notes-solution-template" type="button">解法对比模板</button>
-              <button id="notes-save" type="button" class="primary">保存</button>
+            <div class="notes-pane" id="notes-pane" data-mode="new">
+              <div class="notes-pane-bar">
+                <button id="notes-pane-back" type="button" class="notes-pane-back">← 笔记列表</button>
+                <span id="notes-pane-label" class="notes-pane-label">新笔记</span>
+              </div>
+              <div class="notes-composer" id="notes-composer">
+                <div class="notes-template-row" id="notes-template-row" role="group" aria-label="用模板开头"></div>
+                <p class="notes-editor-hint" id="notes-editor-hint">输入 / 试试，选中文字可以加粗或加链接</p>
+                <div class="notes-field notes-content-field">
+                  <label class="notes-sr-only" for="notes-content">笔记内容</label>
+                  <div id="notes-editor-host" class="notes-editor-host"></div>
+                  <textarea id="notes-content" rows="4" maxlength="20000" placeholder="记下你的想法或学习笔记…" hidden></textarea>
+                </div>
+                <p id="notes-editor-fallback" class="notes-editor-fallback" role="status" hidden></p>
+                <div class="notes-composer-row">
+                  <label class="notes-field notes-tags-field">
+                    <span class="notes-sr-only">标签</span>
+                    <input id="notes-tags-input" type="text" maxlength="200" placeholder="标签，用逗号或空格分隔" autocomplete="off">
+                  </label>
+                  <label class="notes-field notes-problem-field">
+                    <span class="notes-sr-only">关联题目</span>
+                    <select id="notes-problem" aria-label="关联题目"><option value="">不关联</option></select>
+                  </label>
+                  <button id="notes-save" type="button" class="primary">保存</button>
+                </div>
+                <p id="notes-composer-notice" class="notes-notice" role="status" hidden></p>
+              </div>
+              <div class="notes-pane-note" id="notes-pane-note" hidden></div>
             </div>
-            <p id="notes-composer-notice" class="notes-notice" role="status" hidden></p>
           </div>
-          <div class="notes-toolbar">
-            <label class="notes-search">
-              <span class="notes-sr-only">搜索笔记</span>
-              <input id="notes-search" type="search" maxlength="200" placeholder="搜索标题或内容" autocomplete="off">
-            </label>
-            <div id="notes-tag-row" class="notes-tag-row" role="group" aria-label="按标签筛选"></div>
-          </div>
-          <div id="notes-list" class="notes-list" aria-live="polite"></div>
-          <p id="notes-status" class="notes-status" role="status" hidden></p>
           <details id="notes-graph-fold" class="notes-graph-fold">
             <summary>笔记关系图：看哪些笔记互相链接（点开）</summary>
             <section id="notes-graph" class="notes-graph" aria-label="笔记关系图谱"></section>
           </details>
-          <div class="notes-foot"><button id="notes-more" type="button" hidden>加载更多</button></div>
         </div>
 
       </section>

@@ -12,7 +12,8 @@ NL_JS = (STATIC / "notes-links.js").read_text(encoding="utf-8")
 APP = app_source()
 MAIN = (ROOT / "main.py").read_text(encoding="utf-8")
 
-IDS = ("notes-graph", "notes-solution-template")
+# “解法对比”模板按钮已并入笔记页的模板行（#notes-template-row，由 notes-pane.js 填充）。
+IDS = ("notes-graph", "notes-template-row")
 
 
 def test_markup_has_each_required_id_exactly_once():

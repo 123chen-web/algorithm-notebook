@@ -481,6 +481,24 @@ window.Notes?.configure({
   getDrawingIds: () => window.DrawHost?.ownedIds?.() ?? new Set(),
 });
 
+// 笔记“串联”（static/notes-connect.js）：正文里提到的笔记 / 套路加下划线，下面列出相关错题等。
+window.NotesConnect?.configure({
+  api,
+  today: () => user?.today || "",
+  noteTitle: (note) => window.Notes?.noteTitle(note) || "笔记",
+  previewText: (note, max) => window.NotesPane?.previewText(note, max) || "",
+  fetchPatterns: () => fetch("/static/data/patterns.json", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : [])),
+  openNote: (id) => run(async () => {
+    if (view !== "notes") await showView("notes");
+    await window.Notes?.openNoteById(id);
+  }),
+  openMistake: (id) => document.dispatchEvent(new CustomEvent("app:navigate", { detail: { recordId: id } })),
+  openPattern: (pattern) => run(async () => {
+    window.Roadmap?.focusPattern?.(pattern.id);
+    await showView("roadmap");
+  }),
+});
+
 // 笔记的自动保存 / 本机草稿 / 历史版本 / 最近删除（static/notes-history.js）。
 window.NotesHistory?.configure({
   api,

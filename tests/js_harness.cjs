@@ -15,6 +15,12 @@ class TextNode {
     this.textContent = String(text);
     this.parentNode = null;
   }
+  get nodeValue() { return this.textContent; }
+  set nodeValue(value) { this.textContent = String(value); }
+  remove() {
+    if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+    this.parentNode = null;
+  }
 }
 
 /* ---- 选择器：tag、#id、.class、[attr]、[attr="v"]、:not(...)、:disabled，逗号并列，空格表示后代 ---- */
@@ -142,6 +148,20 @@ class FakeElement {
     this.children.push(...taken);
   }
   appendChild(node) { this.append(node); return node; }
+  get childNodes() { return this.children; }
+  insertBefore(node, reference) {
+    this._text = null;
+    const taken = this._take([node]);
+    const index = reference ? this.children.indexOf(reference) : -1;
+    if (index < 0) this.children.push(...taken);
+    else this.children.splice(index, 0, ...taken);
+    return node;
+  }
+  removeChild(node) {
+    this.children = this.children.filter((child) => child !== node);
+    node.parentNode = null;
+    return node;
+  }
   prepend(...items) {
     this._text = null;
     const taken = this._take(items);

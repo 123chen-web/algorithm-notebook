@@ -20,6 +20,18 @@
   // 与后端 routers/notes.py 的 NOTE_CONTENT_MAX 保持一致（Pydantic max_length）。
   // 前端先拦一道，给出中文提示，避免超长提交后才收到 422。
   const NOTE_CONTENT_MAX = 20000;
+  // 提示框类型：中英文都认，归到 7 种颜色。
+  const CALLOUT_KINDS = {
+    提示: "tip", tip: "tip", note: "tip", info: "tip", hint: "tip", 笔记: "tip",
+    注意: "warn", 警告: "warn", warning: "warn", caution: "warn", attention: "warn",
+    易错: "danger", 错误: "danger", 坑: "danger", danger: "danger", bug: "danger", error: "danger", failure: "danger",
+    例子: "example", 例题: "example", 示例: "example", example: "example",
+    结论: "ok", 总结: "ok", 要点: "ok", summary: "ok", abstract: "ok", tldr: "ok", success: "ok",
+    定义: "def", 概念: "def", 定理: "def", quote: "def", definition: "def",
+    答案: "answer", 自测: "answer", 思考: "answer", question: "answer", answer: "answer", faq: "answer",
+  };
+  const CALLOUT_LABELS = { tip: "提示", warn: "注意", danger: "易错", example: "例子", ok: "结论", def: "定义", answer: "答案（想好了再点开）" };
+  const CALLOUT_ICONS = { tip: "💡", warn: "⚠️", danger: "🚩", example: "🧪", ok: "✅", def: "📘", answer: "🤔" };
 
   let hooks = null;
   let generation = 0;
@@ -199,6 +211,10 @@
           } else {
             buf += m[0]; // 非 http(s) 链接按纯文本显示
           }
+        } else if ((m = /^==([^=\n]+)==/.exec(rest))) {
+          const mark = h("mark", null, "nm-hl");
+          inline(mark, m[1]);
+          push(mark);
         } else if ((m = /^\*\*([^*]+)\*\*/.exec(rest))) {
           push(h("strong", m[1]));
         } else if ((m = /^\*([^*\n]+)\*/.exec(rest))) {
@@ -269,7 +285,7 @@
       if ((m = /^(\s*)([-*+])\s+\[([ xX])\]\s+(.*)$/.exec(line))) {
         return { indent: m[1].length, marker: "task", checked: m[3].toLowerCase() === "x", content: m[4] };
       }
-      if ((m = /^(\s*)([-*+])\s+(.*)$/.exec(line))) {
+      if ((m = /^(\s*)\\?([-*+])\s+(.*)$/.exec(line))) {
         return { indent: m[1].length, marker: "ul", content: m[3] };
       }
       if ((m = /^(\s*)\d+[.)]\s+(.*)$/.exec(line))) {
@@ -319,6 +335,29 @@
       return { node: list, next: i };
     }
 
+    // 提示框：引用块第一行是 [!类型] 标题（与 Obsidian 写法一致，中英文类型名都认）。
+    // [!类型]- 默认折起，[!类型]+ 默认展开；“答案/自测”类默认折起。
+    function buildCallout(quoted) {
+      // 所见即所得编辑器保存时会把 [ ] 转义成 \[ \]，这里两种写法都认。
+      const first = String(quoted[0] || "").trim().replace(/\\([[\]])/g, "$1");
+      const head = /^\[!([^\]\s]{1,12})\]([+-]?)\s*(.*)$/.exec(first);
+      if (!head) return null;
+      const kind = CALLOUT_KINDS[head[1].toLowerCase()] || "tip";
+      const label = head[3] || CALLOUT_LABELS[kind] || head[1];
+      const foldable = head[2] === "-" || head[2] === "+" || kind === "answer";
+      const box = h(foldable ? "details" : "div", null, `nm-callout nm-callout-${kind}`);
+      if (foldable && head[2] === "+") box.open = true;
+      const title = h(foldable ? "summary" : "p", null, "nm-callout-title");
+      title.append(h("span", CALLOUT_ICONS[kind] || "💡", "nm-callout-icon"));
+      const titleText = h("span");
+      inline(titleText, label);
+      title.append(titleText);
+      const body = h("div", null, "nm-callout-body");
+      body.append(parseBlocks(quoted.slice(1)));
+      box.append(title, body);
+      return box;
+    }
+
     // 块级解析：围栏代码 → 分割线 → 引用 → 表格 → 列表 → 标题/段落。
     function parseBlocks(textLines) {
       const fragment = document.createDocumentFragment();
@@ -353,6 +392,11 @@
             quoted.push(textLines[index].replace(/^\s{0,3}>\s?/, ""));
             index += 1;
           }
+          const callout = buildCallout(quoted);
+          if (callout) {
+            fragment.append(callout);
+            continue;
+          }
           const bq = h("blockquote");
           if (quoted.length === 1) inline(bq, quoted[0]);
           else bq.replaceChildren(parseBlocks(quoted));
@@ -372,9 +416,46 @@
           continue;
         }
         if (!line.trim()) { index += 1; continue; }
+        const underline = index + 1 < textLines.length ? /^\s{0,3}(={3,}|-{3,})\s*$/.exec(textLines[index + 1]) : null;
+        if (underline) {
+          // 纯文本里常见的“标题下面一行 ====”写法（Markdown 叫 setext 标题）。
+          const block = h(underline[1][0] === "=" ? "h2" : "h3");
+          inline(block, line.trim());
+          fragment.append(block);
+          index += 2;
+          continue;
+        }
+        if (/^\s{0,3}={3,}\s*$/.test(line)) {
+          fragment.append(document.createElement("hr"));
+          index += 1;
+          continue;
+        }
+        const answer = /^\s*(答案|参考答案|答)[:：]\s*(.+)$/.exec(line);
+        if (answer) {
+          // “答案：…”默认折起，先自己想，想好了再点开（不打分、不记录，只是帮你忍住不偷看）。
+          const fold = h("details", null, "nm-answer");
+          fold.append(h("summary", `${answer[1]}（想好了再点开）`));
+          const body = h("p");
+          inline(body, answer[2]);
+          fold.append(body);
+          fragment.append(fold);
+          index += 1;
+          continue;
+        }
+        const cnHeading = /^\s*([一二三四五六七八九十]+、|（[一二三四五六七八九十]+）)\s*([^。！？!?]{1,30})$/.exec(line);
         const heading = line.match(/^(#{1,3})\s+(.*)$/);
-        const block = h(heading ? `h${heading[1].length}` : "p");
-        inline(block, heading ? heading[2] : line);
+        let block;
+        if (heading) {
+          block = h(`h${heading[1].length}`);
+          inline(block, heading[2]);
+        } else if (cnHeading) {
+          block = h(cnHeading[1].endsWith("、") ? "h2" : "h3", null, "nm-cn-heading");
+          inline(block, line.trim());
+        } else {
+          block = h("p");
+          if (/^\s*自测[:：]/.test(line)) block.className = "nm-selftest";
+          inline(block, line);
+        }
         fragment.append(block);
         index += 1;
       }
@@ -475,7 +556,18 @@
     if (focus) focusComposer();
   }
 
+  // 对外的“聚焦新建区”：右边正开着某一篇时先收起它（会先保存），再切到新建区。
   function focusComposer() {
+    if (paneState) {
+      void showComposer({ focus: true });
+      return;
+    }
+    window.NotesPane?.setMode("new");
+    window.NotesPane?.setOpen(true);
+    focusComposerEditor();
+  }
+
+  function focusComposerEditor() {
     const ed = composerEditor();
     if (ed && typeof ed.focusComposer === "function") ed.focusComposer();
     else $("#notes-content")?.focus();
@@ -530,77 +622,32 @@
     void reloadList();
   }
 
+  // 列表里一篇一行：标题、两行预览、时间和标签；点一下在右边打开（直接可编辑）。
   function renderNoteCard(note) {
     const card = h("article", null, "notes-card");
     card.setAttribute("data-note-id", String(note.id));
     if (note.pinned) card.classList.add("is-pinned");
-
-    const head = h("div", null, "notes-card-head");
-    const titleWrap = h("div", null, "notes-card-title");
+    const open = h("button", null, "notes-card-open");
+    open.type = "button";
+    const title = h("span", null, "notes-card-title");
     if (note.pinned) {
       const pin = h("span", "📌", "notes-pin");
       pin.setAttribute("aria-label", "已置顶");
-      titleWrap.append(pin);
+      title.append(pin);
     }
-    // N5：没有显式标题、且正文首行不是标题块时，不再把正文开头重复当标题显示。
-    const heading = cardHeading(note);
-    if (heading) titleWrap.append(h("strong", heading));
-    head.append(titleWrap);
-    head.append(h("time", noteTime(note.updated_at || note.created_at), "notes-time"));
-    card.append(head);
-
-    // notes-rich：静态正文排版与所见即所得编辑器共用同一套样式（见 notes-rich.css）。
-    const body = h("div", null, "notes-body notes-rich");
-    const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
-    body.replaceChildren(renderNoteMarkdown(bodyWithoutDerivedTitle(note), { drawingIds }));
-    card.append(body);
-
-    // N1：关联区（出链 + 反向链接）占位，由 window.NotesLinks 异步填充。
-    const related = h("div", null, "nl-related");
-    related.setAttribute("data-nl-related", "");
-    card.append(related);
-
-    const meta = h("div", null, "notes-meta");
-    for (const tag of note.tags || []) {
-      const chip = h("button", `#${tag}`, "notes-chip notes-chip-sm");
-      chip.type = "button";
-      chip.dataset.tag = tag;
-      chip.setAttribute("aria-label", `按标签 ${tag} 筛选`);
-      chip.addEventListener("click", () => setTagFilter(tag));
-      meta.append(chip);
+    title.append(h("strong", noteTitle(note) || "（无标题）"));
+    const preview = h("span", window.NotesPane ? window.NotesPane.previewText(note) : "", "notes-card-preview");
+    const foot = h("span", null, "notes-card-foot");
+    foot.append(h("time", noteTime(note.updated_at || note.created_at), "notes-time"));
+    for (const tag of (note.tags || []).slice(0, 3)) foot.append(h("span", `#${tag}`, "notes-card-tag"));
+    if (note.problem_id) foot.append(h("span", `📝 ${note.problem_title || `题目 ${note.problem_id}`}`, "notes-card-problem"));
+    open.append(title, preview, foot);
+    open.addEventListener("click", () => void openNote(note));
+    if (currentNoteId === note.id) {
+      card.classList.add("is-current");
+      open.setAttribute("aria-current", "true");
     }
-    if (note.problem_id) {
-      // 本应用没有独立的题目详情路由（详情是易错点视角），关联题目 chip 用"按题目筛选笔记"代替跳转。
-      const problemChip = h("button", `📝 ${note.problem_title || `题目 ${note.problem_id}`}`, "notes-chip notes-chip-sm notes-problem-chip");
-      problemChip.type = "button";
-      problemChip.setAttribute("aria-label", `只看关联「${note.problem_title || note.problem_id}」的笔记`);
-      problemChip.addEventListener("click", () => setProblemFilter(note.problem_id, note.problem_title));
-      meta.append(problemChip);
-    }
-    card.append(meta);
-
-    const actions = h("div", null, "notes-actions");
-    const pinButton = h("button", note.pinned ? "取消置顶" : "置顶", "notes-action");
-    pinButton.type = "button";
-    pinButton.setAttribute("aria-label", note.pinned ? "取消置顶" : "置顶这条笔记");
-    pinButton.addEventListener("click", () => togglePin(note));
-    const editButton = h("button", "编辑", "notes-action");
-    editButton.type = "button";
-    editButton.setAttribute("aria-label", "编辑这条笔记");
-    editButton.addEventListener("click", () => startEdit(card, note));
-    const historyButton = h("button", "历史", "notes-action");
-    historyButton.type = "button";
-    historyButton.setAttribute("aria-label", "查看这条笔记的历史版本");
-    historyButton.hidden = !window.NotesHistory;
-    historyButton.addEventListener("click", () => window.NotesHistory?.openHistory(note, {
-      onRestored: (updated) => { Object.assign(note, updated); sortNotes(); renderList(); },
-    }));
-    const deleteButton = h("button", "删除", "notes-action is-danger");
-    deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", "删除这条笔记");
-    deleteButton.addEventListener("click", () => removeNote(note));
-    actions.append(pinButton, editButton, historyButton, deleteButton);
-    card.append(actions);
+    card.append(open);
     return card;
   }
 
@@ -615,7 +662,7 @@
     if (status) {
       status.hidden = false;
       if (!notes.length) {
-        status.textContent = filtersOn ? "没有符合筛选的笔记，换个条件试试。" : "还没有笔记，在上面写下第一条吧。";
+        status.textContent = filtersOn ? "没有符合筛选的笔记，换个条件试试。" : "还没有笔记。点“＋ 新建”选个模板，或直接在新建区写第一条。";
       } else {
         status.textContent = `共 ${total} 条${filtersOn ? "（已筛选）" : ""}`;
       }
@@ -720,6 +767,12 @@
 
   function applyPrefill() {
     if (!pendingPrefill) return;
+    if (paneState) {
+      void showComposer().then((ok) => { if (ok) applyPrefill(); });
+      return;
+    }
+    window.NotesPane?.setMode("new");
+    window.NotesPane?.setOpen(true);
     fillProblemOptions();
     const select = $("#notes-problem");
     if (select) select.value = String(pendingPrefill.id);
@@ -814,13 +867,19 @@
       hasMore = notes.length < total;
       sortNotes();
       // 只有保存期间用户没有改动草稿才清空；失败 / 改过都保留内容。
-      if (getComposerContent() === draft.content
+      const untouched = getComposerContent() === draft.content
           && $("#notes-tags-input")?.value === draft.tags
-          && $("#notes-problem")?.value === draft.problem) clearComposer();
+          && $("#notes-problem")?.value === draft.problem;
+      if (untouched) clearComposer();
       if (filtered) await reloadList();
       else renderList();
       if (!alive(token)) return;
-      hooks?.notify?.("笔记已保存。");
+      hooks?.notify?.("笔记已保存，之后的修改会自动保存。");
+      // 新建区没被继续改动时，直接在右边打开刚建好的这篇，接着写就是自动保存。
+      if (untouched) {
+        const fresh = notes.find((item) => item.id === created.id) || created;
+        await openNote(fresh);
+      }
     } catch (error) {
       if (!alive(token)) return;
       composerNotice(error?.message || "保存失败，请稍后重试。");
@@ -857,6 +916,10 @@
     try {
       await hooks.api(`/api/notes/${note.id}`, { method: "DELETE" });
       if (!alive(token)) return;
+      if (paneState && paneState.note.id === note.id) {
+        await closeNote({ force: true });
+        window.NotesPane?.setOpen(false);
+      }
       const index = notes.findIndex((item) => item.id === note.id);
       if (index >= 0) notes.splice(index, 1);
       total = Math.max(0, total - 1);
@@ -868,18 +931,262 @@
     }
   }
 
-  function startEdit(card, note) {
-    const body = card.querySelector(".notes-body");
-    const actions = card.querySelector(".notes-actions");
-    if (!body || !actions) return;
-    actions.hidden = true;
+  /* ───────────── 右侧编辑区：选中的笔记直接可编辑 ───────────── */
+  // paneState：当前在右侧打开的那篇 { note, flush, dirty, teardown, saver, refreshHead }；没有打开时为 null。
+  let paneState = null;
+  let currentNoteId = null;
+
+  function markSelected() {
+    for (const card of document.querySelectorAll("#notes-list .notes-card")) {
+      const on = currentNoteId !== null && card.getAttribute("data-note-id") === String(currentNoteId);
+      card.classList.toggle("is-current", on);
+      const open = card.querySelector(".notes-card-open");
+      if (!open) continue;
+      if (on) open.setAttribute("aria-current", "true");
+      else open.removeAttribute("aria-current");
+    }
+  }
+
+  /** 关掉右侧正在编辑的那篇：先把没保存的改动发出去；发不出去时问一句（改动已在本机）。
+      返回 false 表示用户选择留下。force=true 时不保存直接收起（登出、删除之后）。 */
+  async function closeNote({ force = false } = {}) {
+    const state = paneState;
+    if (!state) return true;
+    if (!force) {
+      const ok = await state.flush();
+      if (paneState !== state) return true; // 保存期间已被别的操作收起
+      if (!ok && state.dirty()) {
+        const leave = hooks?.confirm
+          ? hooks.confirm("这篇还没保存上（看编辑区下方的提示）。改动已经存在这台设备上，下次打开会提示恢复。仍然离开吗？")
+          : false;
+        if (!leave) return false;
+      }
+    }
+    state.teardown();
+    return true;
+  }
+
+  /** 右侧切回“新笔记”。手机上同时把编辑区盖到列表上（open=true）或收回列表（open=false）。 */
+  async function showComposer({ focus = false, open = true } = {}) {
+    if (!(await closeNote())) return false;
+    window.NotesPane?.setMode("new");
+    window.NotesPane?.setOpen(open);
+    if (focus) focusComposerEditor();
+    return true;
+  }
+
+  function startNewFromTemplate(key) {
+    const text = window.NotesPane ? window.NotesPane.templateText(key) : "";
+    void showComposer().then((ok) => {
+      if (!ok) return;
+      const menu = $("#notes-new-menu");
+      if (menu) menu.open = false;
+      if (text) {
+        if (String(getComposerContent()).trim()) insertComposerTemplate(text);
+        else setComposerContent(text);
+      }
+      focusComposerEditor();
+    });
+  }
+
+  /** 打开一篇：先显示排好版的阅读视图（提示框、荧光笔、折叠答案、串联），点“编辑”或双击正文进入编辑。 */
+  async function openNote(note) {
+    if (paneState && paneState.note.id === note.id && paneState.mode === "read") {
+      window.NotesPane?.setOpen(true);
+      return;
+    }
+    if (!(await closeNote())) return;
+    const host = $("#notes-pane-note");
+    if (!host) return;
+    currentNoteId = note.id;
+    markSelected();
+    window.NotesPane?.setMode("note", noteTitle(note) || "笔记");
+    window.NotesPane?.setOpen(true);
+
+    const view = h("article", null, "notes-reader");
+    const head = h("div", null, "notes-pane-head");
+    head.append(h("h3", noteTitle(note) || "（无标题）", "notes-reader-title"));
+    const tools = h("div", null, "notes-pane-tools");
+    const editButton = h("button", "编辑", "notes-action primary");
+    editButton.type = "button";
+    editButton.setAttribute("aria-label", "编辑这条笔记");
+    const pinButton = h("button", note.pinned ? "取消置顶" : "置顶", "notes-action");
+    pinButton.type = "button";
+    const historyButton = h("button", "历史", "notes-action");
+    historyButton.type = "button";
+    historyButton.setAttribute("aria-label", "查看这条笔记的历史版本");
+    historyButton.hidden = !window.NotesHistory;
+    const deleteButton = h("button", "删除", "notes-action is-danger");
+    deleteButton.type = "button";
+    deleteButton.setAttribute("aria-label", "删除这条笔记");
+    // 粘贴进来的纯文本（==== 下划线、一、二、、\* 列表、答案：）一键整理成正经格式；改动进历史，能撤回。
+    const tidied = window.NotesPane ? window.NotesPane.tidyMarkdown(note.content || "") : note.content;
+    const tidyButton = h("button", "整理格式", "notes-action");
+    tidyButton.type = "button";
+    tidyButton.title = "把粘贴进来的纯文本整理成标题、列表、折叠答案（原样子会存进历史）";
+    tidyButton.hidden = !tidied || tidied === note.content;
+    tools.append(editButton, tidyButton, pinButton, historyButton, deleteButton);
+    head.append(tools);
+
+    const meta = h("div", null, "notes-pane-meta");
+    for (const tag of note.tags || []) {
+      const chip = h("button", `#${tag}`, "notes-chip notes-chip-sm");
+      chip.type = "button";
+      chip.dataset.tag = tag;
+      chip.setAttribute("aria-label", `按标签 ${tag} 筛选`);
+      chip.addEventListener("click", () => setTagFilter(tag));
+      meta.append(chip);
+    }
+    if (note.problem_id) {
+      const problemChip = h("button", `📝 ${note.problem_title || `题目 ${note.problem_id}`}`, "notes-chip notes-chip-sm notes-problem-chip");
+      problemChip.type = "button";
+      problemChip.setAttribute("aria-label", `只看关联「${note.problem_title || note.problem_id}」的笔记`);
+      problemChip.addEventListener("click", () => setProblemFilter(note.problem_id, note.problem_title));
+      meta.append(problemChip);
+    }
+    meta.append(h("time", `更新于 ${noteTime(note.updated_at || note.created_at)}`, "notes-time"));
+    const toc = h("div", null, "notes-pane-toc");
+    const body = h("div", null, "notes-body notes-rich notes-reader-body");
+    const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
+    body.append(renderNoteMarkdown(bodyWithoutDerivedTitle(note), { drawingIds }));
+    body.title = "双击进入编辑";
+    const connect = h("div", null, "nc-panel");
+    connect.hidden = true;
+    const related = h("div", null, "nl-related");
+    related.setAttribute("data-nl-related", "");
+    view.append(head, meta, toc, body, connect, related);
+    host.replaceChildren(view);
+    window.NotesPane?.renderToc(toc, note.content || "", body);
+    window.NotesLinks?.renderRelated?.(view, note.id);
+    const paneEl = $("#notes-pane");
+    if (paneEl) paneEl.scrollTop = 0;
+
+    const state = {
+      note,
+      mode: "read",
+      flush: async () => true,
+      dirty: () => false,
+      teardown: () => {
+        if (paneState !== state) return;
+        paneState = null;
+        currentNoteId = null;
+        host.replaceChildren();
+        markSelected();
+        window.NotesPane?.setMode("new");
+      },
+      refreshHead: () => { pinButton.textContent = note.pinned ? "取消置顶" : "置顶"; },
+    };
+    paneState = state;
+
+    // 串联：提到的笔记 / 套路加下划线，下面列出相关错题、套路、笔记（取不到就不显示）。
+    if (window.NotesConnect) {
+      void window.NotesConnect.load(note.id).then((data) => {
+        if (paneState !== state || !data) return;
+        window.NotesConnect.decorate(body, data);
+        window.NotesConnect.renderPanel(connect, data);
+      });
+    }
+
+    editButton.addEventListener("click", () => void editNote(note));
+    tidyButton.addEventListener("click", async () => {
+      tidyButton.disabled = true;
+      try {
+        const updated = await hooks.api(`/api/notes/${note.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ content: tidied, base_updated_at: note.updated_at, snapshot: true }),
+        });
+        if (paneState !== state) return;
+        Object.assign(note, updated);
+        state.teardown();
+        refreshAfterClose();
+        await openNote(note);
+        hooks?.notify?.("格式整理好了；原来的样子在“历史”里。");
+      } catch (error) {
+        tidyButton.disabled = false;
+        hooks?.notify?.(error?.message || "整理失败，请稍后重试。");
+      }
+    });
+    body.addEventListener("dblclick", (event) => {
+      if (event.target.closest && event.target.closest("button, a, summary, details")) return;
+      void editNote(note);
+    });
+    pinButton.addEventListener("click", async () => {
+      await togglePin(note);
+      state.refreshHead();
+    });
+    historyButton.addEventListener("click", () => {
+      window.NotesHistory?.openHistory(note, {
+        onRestored: (updated) => {
+          Object.assign(note, updated);
+          state.teardown();
+          refreshAfterRestore(note);
+        },
+      });
+    });
+    deleteButton.addEventListener("click", () => void removeNote(note));
+  }
+
+  /** 按 id 打开（从“串联”面板、预览卡跳过来）：列表里有就用列表里的，没有就单独取一次。 */
+  async function openNoteById(id) {
+    let note = notes.find((item) => item.id === id);
+    if (!note && hooks?.api) {
+      try { note = await hooks.api(`/api/notes/${id}`); } catch (_error) { note = null; }
+    }
+    if (note) await openNote(note);
+  }
+
+  async function editNote(note) {
+    if (paneState && paneState.note.id === note.id && paneState.mode === "edit") {
+      window.NotesPane?.setOpen(true);
+      return;
+    }
+    if (!(await closeNote())) return;
+    const host = $("#notes-pane-note");
+    if (!host) return;
+    const owner = hooks?.getUser ? hooks.getUser()?.id : null;
+    const epoch = hooks?.getEpoch ? hooks.getEpoch() : null;
+    currentNoteId = note.id;
+    markSelected();
+    window.NotesPane?.setMode("note", noteTitle(note) || "笔记");
+    window.NotesPane?.setOpen(true);
+
     const editor = h("div", null, "notes-editor");
+    const head = h("div", null, "notes-pane-head");
     const titleInput = h("input", null, "notes-edit-title");
     titleInput.type = "text";
     titleInput.maxLength = 200;
     titleInput.value = note.title || "";
     titleInput.placeholder = "标题（可选，空则取正文首行）";
     titleInput.setAttribute("aria-label", "笔记标题");
+    const tools = h("div", null, "notes-pane-tools");
+    const pinButton = h("button", note.pinned ? "取消置顶" : "置顶", "notes-action");
+    pinButton.type = "button";
+    const historyButton = h("button", "历史", "notes-action");
+    historyButton.type = "button";
+    historyButton.setAttribute("aria-label", "查看这条笔记的历史版本");
+    historyButton.hidden = !window.NotesHistory;
+    const deleteButton = h("button", "删除", "notes-action is-danger");
+    deleteButton.type = "button";
+    deleteButton.setAttribute("aria-label", "删除这条笔记");
+    tools.append(pinButton, historyButton, deleteButton);
+    head.append(titleInput, tools);
+
+    const meta = h("div", null, "notes-pane-meta");
+    const tagInput = h("input", null, "notes-edit-tags");
+    tagInput.type = "text";
+    tagInput.value = (note.tags || []).join(" ");
+    tagInput.placeholder = "标签，用逗号或空格分隔";
+    tagInput.setAttribute("aria-label", "笔记标签");
+    meta.append(tagInput);
+    if (note.problem_id) {
+      // 本应用没有独立的题目详情路由，关联题目用“只看关联这题的笔记”代替跳转。
+      const problemChip = h("button", `📝 ${note.problem_title || `题目 ${note.problem_id}`}`, "notes-chip notes-chip-sm notes-problem-chip");
+      problemChip.type = "button";
+      problemChip.setAttribute("aria-label", `只看关联「${note.problem_title || note.problem_id}」的笔记`);
+      problemChip.addEventListener("click", () => setProblemFilter(note.problem_id, note.problem_title));
+      meta.append(problemChip);
+    }
+    const toc = h("div", null, "notes-pane-toc");
 
     // N5：正文优先挂所见即所得编辑器；OYEditor 缺失或初始化抛错时回退到 textarea。
     const bodyHost = h("div", null, "notes-edit-body");
@@ -895,22 +1202,36 @@
     }
     if (!editCtl) {
       area = h("textarea", null, "notes-edit-content");
-      area.rows = 6;
+      area.rows = 12;
       area.maxLength = NOTE_CONTENT_MAX;
       area.value = note.content || "";
       area.setAttribute("aria-label", "笔记正文");
       bodyHost.append(area);
     }
 
-    const tagInput = h("input", null, "notes-edit-tags");
-    tagInput.type = "text";
-    tagInput.value = (note.tags || []).join(" ");
-    tagInput.placeholder = "标签，用逗号或空格分隔";
-    tagInput.setAttribute("aria-label", "笔记标签");
+    const blocks = h("div", null, "notes-block-row");
+    blocks.setAttribute("role", "group");
+    blocks.setAttribute("aria-label", "插入积木");
+    blocks.append(h("span", "插入：", "notes-template-label"));
+    for (const block of window.NotesPane ? window.NotesPane.BLOCKS : []) {
+      const add = h("button", block.label, "notes-chip notes-chip-sm");
+      add.type = "button";
+      add.dataset.block = block.key;
+      add.addEventListener("click", () => {
+        const current = String(readBody() ?? "").replace(/\s+$/, "");
+        const next = current ? `${current}\n\n${block.text}` : block.text;
+        if (editCtl && typeof editCtl.setMarkdown === "function") editCtl.setMarkdown(next);
+        else if (area) area.value = next;
+        if (editCtl && typeof editCtl.focus === "function") editCtl.focus();
+        else area?.focus();
+        state?.saver?.schedule();
+      });
+      blocks.append(add);
+    }
     const row = h("div", null, "notes-editor-row");
     const done = h("button", "完成", "notes-action primary");
     done.type = "button";
-    done.title = "保存并收起编辑（Ctrl/⌘ + S 随时保存）";
+    done.title = "保存并收起（Ctrl/⌘ + S 随时保存）";
     const discard = h("button", "放弃本次修改", "notes-action");
     discard.type = "button";
     const saveBar = h("p", null, "notes-save-bar");
@@ -918,40 +1239,73 @@
     error.hidden = true;
     error.setAttribute("role", "status");
     row.append(done, discard, saveBar);
-    editor.append(titleInput, bodyHost, tagInput, row, error);
-    body.replaceWith(editor);
-    if (editCtl && typeof editCtl.focus === "function") editCtl.focus();
-    else area.focus();
+    // N1：关联区（出链 + 反向链接），由 NotesLinks 异步填充。
+    const related = h("div", null, "nl-related");
+    related.setAttribute("data-nl-related", "");
+    editor.append(head, meta, toc, blocks, bodyHost, row, error, related);
+    host.replaceChildren(editor);
+    window.NotesLinks?.renderRelated?.(editor, note.id);
+    window.NotesPane?.renderToc(toc, note.content || "", bodyHost);
+    // 打开时不抢焦点（会把整页滚走）；编辑区从顶部开始显示。
+    const paneEl = $("#notes-pane");
+    if (paneEl) paneEl.scrollTop = 0;
 
     const readBody = () => (editCtl ? editCtl.getMarkdown() : area.value);
     const readAll = () => ({ title: titleInput.value, content: String(readBody() ?? ""), tags: parseTags(tagInput.value) });
-    const teardownEditor = () => {
-      if (editCtl && typeof editCtl.destroy === "function") {
-        try { editCtl.destroy(); } catch { /* 卸载失败不影响卡片恢复 */ }
-      }
-      editCtl = null;
-    };
-    const token = takeToken();
-    let closed = false;
     let watcher = 0;
-    const close = (latest) => {
-      if (closed) return;
-      closed = true;
-      window.clearInterval(watcher);
-      saver?.stop();
-      teardownEditor();
-      if (!alive(token)) return;
-      if (latest) Object.assign(note, latest);
+    let state = null;
+    const current = () => paneState === state && state !== null
+      && (hooks?.getUser ? hooks.getUser()?.id === owner : true)
+      && (hooks?.getEpoch ? hooks.getEpoch() === epoch : true);
+    const refreshList = () => {
+      if (!current()) return;
       sortNotes();
       renderList();
+      window.NotesPane?.setMode("note", noteTitle(note) || "笔记");
     };
 
     // 停手 1.5 秒自动保存（带 base_updated_at，别处改过会停下来问）；没有 NotesHistory 时退回手动保存。
     const saver = window.NotesHistory?.autosave({
       note, read: readAll, bar: saveBar,
-      onSaved: (updated) => { if (alive(token)) Object.assign(note, updated); },
-      onTheirs: (latest) => close(latest),
+      onSaved: (updated) => {
+        if (!current()) return;
+        Object.assign(note, updated);
+        window.NotesPane?.renderToc(toc, updated.content || "", bodyHost);
+        refreshList();
+      },
+      onTheirs: (latest) => {
+        if (!current()) return;
+        Object.assign(note, latest);
+        state.teardown();
+        void openNote(note);
+      },
     });
+
+    state = {
+      note,
+      mode: "edit",
+      saver,
+      flush: async () => (saver ? saver.flush() : readBody() === note.content),
+      dirty: () => (saver ? saver.dirty() : readBody() !== note.content),
+      teardown: () => {
+        if (watcher) window.clearInterval(watcher);
+        saver?.stop();
+        if (editCtl && typeof editCtl.destroy === "function") {
+          try { editCtl.destroy(); } catch { /* 卸载失败不影响收起 */ }
+        }
+        editCtl = null;
+        if (paneState === state) {
+          paneState = null;
+          currentNoteId = null;
+          host.replaceChildren();
+          markSelected();
+          window.NotesPane?.setMode("new");
+        }
+      },
+      refreshHead: () => { pinButton.textContent = note.pinned ? "取消置顶" : "置顶"; },
+    };
+    paneState = state;
+
     if (saver) {
       const offer = saver.pendingDraft();
       if (offer) {
@@ -977,7 +1331,7 @@
       const nudge = () => saver.schedule();
       for (const type of ["input", "keyup", "paste", "drop", "change", "click"]) editor.addEventListener(type, nudge);
       // 工具栏/斜杠菜单可能挂在编辑区外面：每 4 秒再对比一次内容，漏掉的改动也会被保存。
-      watcher = window.setInterval(() => { if (!closed) saver.schedule(); }, 4000);
+      watcher = window.setInterval(() => { if (paneState === state) saver.schedule(); }, 4000);
       editor.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && String(event.key).toLowerCase() === "s") {
           event.preventDefault();
@@ -986,13 +1340,35 @@
       });
     }
 
+    pinButton.addEventListener("click", async () => {
+      await state.flush();
+      await togglePin(note);
+      saver?.rebase?.(note.updated_at);
+      state.refreshHead();
+    });
+    historyButton.addEventListener("click", async () => {
+      await state.flush();
+      window.NotesHistory?.openHistory(note, {
+        onRestored: (updated) => {
+          Object.assign(note, updated);
+          state.teardown();
+          refreshAfterRestore(note);
+        },
+      });
+    });
+    deleteButton.addEventListener("click", () => void removeNote(note));
+
     discard.addEventListener("click", async () => {
       const changed = saver ? (saver.everSaved || saver.dirty()) : readBody() !== note.content;
       if (changed && !(hooks?.confirm ? hooks.confirm("放弃这次打开编辑以来的所有修改，回到打开时的样子？（改过的内容会存进历史版本）") : true)) return;
       discard.disabled = true;
       try {
         const restored = saver ? await saver.revert() : null;
-        close(restored);
+        if (!current()) return;
+        if (restored) Object.assign(note, restored);
+        state.teardown();
+        refreshList();
+        void openNote(note);
       } catch (requestError) {
         discard.disabled = false;
         error.hidden = false;
@@ -1002,8 +1378,7 @@
 
     done.addEventListener("click", async () => {
       const raw = readBody();
-      const content = String(raw ?? "").trim();
-      if (!content) {
+      if (!String(raw ?? "").trim()) {
         error.hidden = false;
         error.textContent = "至少写点什么";
         return;
@@ -1015,13 +1390,13 @@
       }
       done.disabled = true;
       if (saver) {
-        const ok = await saver.flush();
-        if (!ok && saver.dirty()) {
+        if (!(await closeNote())) {
           done.disabled = false;
-          const leave = hooks?.confirm ? hooks.confirm("还没保存上（看编辑区下方的提示）。改动已经存在这台设备上，下次打开编辑会提示恢复。仍然收起吗？") : false;
-          if (!leave) return;
+          return;
         }
-        close();
+        refreshAfterClose();
+        window.NotesConnect?.forget?.(note.id);
+        void openNote(note);
         return;
       }
       try {
@@ -1029,16 +1404,40 @@
           method: "PUT",
           body: JSON.stringify({ title: titleInput.value.trim(), content: raw, tags: parseTags(tagInput.value) }),
         });
-        if (!alive(token)) return;
-        close(updated);
+        if (!current()) return;
+        Object.assign(note, updated);
+        state.teardown();
+        refreshAfterClose();
+        void openNote(note);
         hooks?.notify?.("笔记已更新。");
       } catch (requestError) {
-        if (!alive(token)) return;
+        if (!current()) return;
         error.hidden = false;
         error.textContent = requestError?.message || "保存失败，请稍后重试。";
         done.disabled = false;
       }
     });
+  }
+
+  function refreshAfterClose() {
+    sortNotes();
+    renderList();
+  }
+
+  function refreshAfterRestore(note) {
+    sortNotes();
+    renderList();
+    void openNote(note);
+  }
+
+  /** 从别的笔记的 [[链接]] 跳过来：按标题搜，正好有这一篇就直接在右边打开。 */
+  async function openByTitle(title) {
+    const search = $("#notes-search");
+    if (search) search.value = title;
+    query = String(title ?? "");
+    await reloadList();
+    const hit = notes.find((note) => noteTitle(note) === title);
+    if (hit) await openNote(hit);
   }
 
   function bindDom() {
@@ -1074,6 +1473,34 @@
         }
       });
     }
+    const newOptions = $("#notes-new-options");
+    if (newOptions && !newOptions.dataset.notesBound && window.NotesPane) {
+      newOptions.dataset.notesBound = "1";
+      for (const template of window.NotesPane.TEMPLATES) {
+        const option = h("button", template.label, "notes-new-option");
+        option.type = "button";
+        option.dataset.template = template.key;
+        option.addEventListener("click", () => startNewFromTemplate(template.key));
+        newOptions.append(option);
+      }
+    }
+    const templateRow = $("#notes-template-row");
+    if (templateRow && !templateRow.dataset.notesBound && window.NotesPane) {
+      templateRow.dataset.notesBound = "1";
+      templateRow.append(h("span", "用模板开头：", "notes-template-label"));
+      for (const template of window.NotesPane.TEMPLATES.filter((item) => item.key !== "blank")) {
+        const option = h("button", template.label, "notes-chip notes-chip-sm");
+        option.type = "button";
+        option.dataset.template = template.key;
+        option.addEventListener("click", () => startNewFromTemplate(template.key));
+        templateRow.append(option);
+      }
+    }
+    const back = $("#notes-pane-back");
+    if (back && !back.dataset.notesBound) {
+      back.dataset.notesBound = "1";
+      back.addEventListener("click", () => void showComposer({ open: false }));
+    }
     const trash = $("#notes-trash");
     if (trash && !trash.dataset.notesBound) {
       trash.dataset.notesBound = "1";
@@ -1100,6 +1527,11 @@
 
   /** 登出 / 换账号：丢掉所有数据、作废在途请求。 */
   function reset() {
+    if (paneState) paneState.teardown();
+    paneState = null;
+    currentNoteId = null;
+    window.NotesPane?.setMode("new");
+    window.NotesPane?.setOpen(false);
     generation += 1;
     listRequest += 1;
     const saveButton = $("#notes-save");
@@ -1139,6 +1571,7 @@
   window.Notes = Object.freeze({
     escapeHtml, parseTags, noteTitle, cardHeading, buildNotesQuery, renderNoteMarkdown, collectTags, noteTime,
     configure, load, loadMore, openWithProblem, reset, snapshot,
+    openNote, openNoteById, editNote, openByTitle, showComposer, currentNoteId: () => currentNoteId,
     NOTE_CONTENT_MAX,
     getComposerContent, setComposerContent, focusComposer, insertComposerTemplate,
     generation: () => generation,
