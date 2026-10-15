@@ -15,6 +15,7 @@ from fastapi import Depends
 
 import db
 import pattern_match
+import problem_progress
 from core import security
 from routers import notes
 import tags
@@ -161,3 +162,79 @@ def note_connections(note_id: int, user=Depends(security.current_user)):
         "mistakes": mistakes,
         "same_tag": same_tag[:SAME_TAG_MAX],
     }
+
+
+RELATED_NOTES_MAX = 6
+
+
+@router.get("/api/problems/{problem_id}/related-notes")
+def problem_related_notes(problem_id: int, user=Depends(security.current_user)):
+    """复习某道错题时顺带看到的笔记：关联这道题的、[[题:…]] 链接到它的、正文提到题名的、写同一个套路的。
+
+    每条带一个“为什么相关”的说明和两行预览；最多 6 条。只读，不产生任何任务。
+    """
+    user_id = user["id"]
+    with db.connect() as conn:
+        problem = problem_progress.owned_problem(conn, problem_id, user_id)
+        title = (problem["title"] or "").strip()
+        reasons = {}
+
+        def add(note_id, reason):
+            reasons.setdefault(note_id, reason)
+
+        for row in conn.execute(
+            "SELECT id FROM notes WHERE user_id = ? AND deleted_at IS NULL AND problem_id = ?",
+            (user_id, problem_id),
+        ):
+            add(row["id"], "关联了这道题")
+        for row in conn.execute(
+            "SELECT DISTINCT l.source_note_id FROM note_links l JOIN notes n ON n.id = l.source_note_id "
+            "WHERE l.user_id = ? AND l.target_problem_id = ? AND n.deleted_at IS NULL",
+            (user_id, problem_id),
+        ):
+            add(row["source_note_id"], "链接到了这道题")
+
+        pattern_terms = []
+        pattern_ids = {
+            row["pattern_id"] for row in conn.execute(
+                "SELECT pattern_id FROM problem_patterns WHERE problem_id = ?", (problem_id,)
+            )
+        }
+        for entry in pattern_match._catalog():
+            if entry["id"] in pattern_ids:
+                main = re.split(r"[（(]", entry["title"], maxsplit=1)[0].strip()
+                pattern_terms.append((main, entry["terms"]))
+
+        rows = conn.execute(
+            "SELECT id, title, content, updated_at FROM notes WHERE user_id = ? AND deleted_at IS NULL "
+            "ORDER BY updated_at DESC",
+            (user_id,),
+        ).fetchall()
+        by_id = {row["id"]: row for row in rows}
+        for row in rows:
+            text = _plain(row["content"]) + "\n" + (row["title"] or "")
+            if len(title) >= PROBLEM_TITLE_MIN and title in text:
+                add(row["id"], "提到了这道题")
+                continue
+            lowered = text.lower()
+            for main, terms in pattern_terms:
+                if any(term in lowered for term in terms):
+                    add(row["id"], f"同一个套路：{main}")
+                    break
+
+    items = []
+    for note_id, reason in reasons.items():
+        row = by_id.get(note_id)
+        if row is None:
+            continue
+        preview = re.sub(r"\s+", " ", _plain(row["content"])).strip()
+        items.append({
+            "id": note_id,
+            "title": notes._display_title(row["title"], row["content"]),
+            "reason": reason,
+            "preview": preview[:80] + ("…" if len(preview) > 80 else ""),
+            "updated_at": row["updated_at"],
+        })
+        if len(items) >= RELATED_NOTES_MAX:
+            break
+    return {"items": items}

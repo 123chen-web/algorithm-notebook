@@ -111,6 +111,23 @@ function renderDetail(item, options = {}) {
   root.append(original);
   state.answers.push(original);
 
+  // 串联：复习时顺带看到自己写过的相关笔记（和错因一起，显示错因后才出现，不提前剧透）。
+  const relatedNotes = element("div", "", "related-notes-host");
+  relatedNotes.hidden = true;
+  root.append(relatedNotes);
+  state.answers.push(relatedNotes);
+  void window.RelatedNotes?.mount(relatedNotes, item, {
+    api,
+    isCurrent: () => state.isCurrent(),
+    openNote: (id) => run(async () => {
+      await showView("notes");
+      await window.Notes?.openNoteById(id);
+    }),
+  }).then(() => {
+    // mount 结束时还没显示错因：继续藏着，等 rvfRevealDetail 一起放出来。
+    if (!state.revealed && relatedNotes.childNodes?.length) relatedNotes.hidden = true;
+  });
+
   const duckHost = element("div", "", "duck-panel-host");
   root.append(duckHost);
   window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
@@ -234,7 +251,8 @@ function renderDetail(item, options = {}) {
   noteButton.addEventListener("click", () => run(async () => {
     message();
     await showView("notes");
-    window.Notes?.openWithProblem(item.problem_id, item.title);
+    // 套“错题复盘”模板，并把自己当时记的错因、最小反例先填进去（都是用户自己写的内容）。
+    window.Notes?.openWithProblem(item.problem_id, item.title, { content: rvfReviewNoteDraft(item) });
   }));
   toolbar.append(noteButton);
 
@@ -319,6 +337,16 @@ function renderDetail(item, options = {}) {
   // 复习=重做：显示错因后（或一开始就显示时）异步选默认复习方式。
   if (state.redo) run(() => rvfInitRedoModes(state));
   if (offline) window.OfflineReview?.restrictDetail(root); // 禁用推迟/暂停、AI、变体保存、删除并说明原因
+}
+
+function rvfReviewNoteDraft(item) {
+  const lines = [
+    `# 复盘：${item.title}`, "", "## 题目", `[[题:${item.title}]]`, "",
+    "## 我当时怎么想的", "", "## 错在哪", (item.description || "").trim(), "",
+  ];
+  if ((item.counterexample || "").trim()) lines.push("## 最小反例", "```", item.counterexample.trim(), "```", "");
+  lines.push("## 这次改对的关键", "");
+  return lines.join("\n");
 }
 
 function addMistakeInput() {

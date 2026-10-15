@@ -777,8 +777,9 @@
     const select = $("#notes-problem");
     if (select) select.value = String(pendingPrefill.id);
     // N1：新建笔记正文预填 [[题:题目标题]]，直接建立题目双向链接（编辑器或 textarea 同路）。
-    if (pendingPrefill.title && !getComposerContent().trim()) {
-      setComposerContent(`[[题:${pendingPrefill.title}]]`);
+    if (!getComposerContent().trim()) {
+      if (pendingPrefill.content) setComposerContent(pendingPrefill.content);
+      else if (pendingPrefill.title) setComposerContent(`[[题:${pendingPrefill.title}]]`);
     }
     if (hooks?.getView?.() === "notes") focusComposer();
     pendingPrefill = null;
@@ -786,9 +787,9 @@
 
   /** 从题目详情"记笔记"进入：先切到笔记页（showView 是 async，load 可能还没跑完），
       只把意图记在 pendingPrefill 里；已经 load 完就直接预填，否则 load() 结尾消费，避免竞态。 */
-  function openWithProblem(problemId, problemTitle) {
+  function openWithProblem(problemId, problemTitle, extra = {}) {
     if (!problemId) return;
-    pendingPrefill = { id: problemId, title: problemTitle || "" };
+    pendingPrefill = { id: problemId, title: problemTitle || "", ...(extra.content ? { content: String(extra.content) } : {}) };
     if (problemsLoaded) applyPrefill();
   }
 

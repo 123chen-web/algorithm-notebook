@@ -50,3 +50,43 @@ def test_connections_are_private(client):
     client.post("/api/auth/logout")
     register(client, username="bob")
     assert client.get(f"/api/notes/{note['id']}/connections").status_code == 404
+
+
+def test_problem_related_notes_lists_linked_mentioned_and_same_pattern_notes(client):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    problem_id = client.get(f"/api/mistakes/{mistake_id}").json()["problem_id"]
+    linked = client.post("/api/notes", json={"content": "复盘这道题", "problem_id": problem_id}).json()
+    wiki = make_note(client, "见 [[题:二分查找]]", title="索引")
+    mention = make_note(client, "今天又在二分查找上栽了", title="周记")
+    make_note(client, "和这道题无关", title="并查集")
+    data = client.get(f"/api/problems/{problem_id}/related-notes").json()["items"]
+    reasons = {item["id"]: item["reason"] for item in data}
+    assert reasons[linked["id"]] == "关联了这道题"
+    assert reasons[wiki["id"]] == "链接到了这道题"
+    assert reasons[mention["id"]] == "提到了这道题"
+    assert len(data) == 3, "无关的笔记不出现"
+    assert all(item["preview"] is not None for item in data)
+
+
+def test_problem_related_notes_are_private(client):
+    register(client)
+    mistake_id = new_problem(client)[0]
+    problem_id = client.get(f"/api/mistakes/{mistake_id}").json()["problem_id"]
+    client.post("/api/auth/logout")
+    register(client, username="bob")
+    assert client.get(f"/api/problems/{problem_id}/related-notes").status_code == 404
+
+
+def test_problem_related_notes_include_notes_about_the_same_pattern(client):
+    register(client)
+    response = client.post("/api/problems", json={
+        "title": "搜索插入位置", "zone": "算法", "language": "Python", "code": "pass",
+        "thinking": "边界没想清", "mistakes": ["右边界写错"], "pattern_ids": ["binary-search-basic"],
+    })
+    assert response.status_code == 201, response.text
+    mistake_id = response.json()["mistake_ids"][0]
+    problem_id = client.get(f"/api/mistakes/{mistake_id}").json()["problem_id"]
+    pattern_note = make_note(client, "二分查找：先想区间开闭", title="二分套路")
+    items = client.get(f"/api/problems/{problem_id}/related-notes").json()["items"]
+    assert [(item["id"], item["reason"].startswith("同一个套路")) for item in items] == [(pattern_note["id"], True)]

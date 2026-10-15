@@ -205,3 +205,39 @@ test("NotesConnect.renderPanel：分组列出，点相关错题走打开错题�
   env.window.NotesConnect.renderPanel(box, { mistakes: [], patterns: [], note_mentions: [], mentioned_by: [], same_tag: [] });
   assert.equal(box.hidden, true, "什么都没有就不显示");
 });
+
+test("RelatedNotes：复习时折叠显示相关笔记，点一下打开；一条都没有就不显示", async () => {
+  const env = load(["related-notes.js"]);
+  const host = env.document.createElement("div");
+  const opened = [];
+  let reply;
+  const api = (path) => new Promise((resolve) => { reply = { path, resolve }; });
+  const pending = env.window.RelatedNotes.mount(host, { problem_id: 12 }, { api, openNote: (id) => opened.push(id), isCurrent: () => true });
+  assert.equal(reply.path, "/api/problems/12/related-notes");
+  reply.resolve({ items: [{ id: 4, title: "二分套路", reason: "同一个套路：二分查找", preview: "先想区间开闭" }] });
+  await pending;
+  assert.equal(host.hidden, false);
+  assert.match(host.querySelector("summary").textContent, /我写过的相关笔记（1）/);
+  assert.match(host.querySelector(".related-note-reason").textContent, /同一个套路/);
+  host.querySelector(".related-note").click();
+  assert.deepEqual(opened, [4]);
+
+  const empty = env.document.createElement("div");
+  const second = env.window.RelatedNotes.mount(empty, { problem_id: 13 }, { api, isCurrent: () => true });
+  reply.resolve({ items: [] });
+  await second;
+  assert.equal(empty.hidden, true);
+});
+
+test("从复习页“记笔记”：带上复盘草稿时新建区直接放草稿，并关联这道题", async () => {
+  const { env, document, Notes } = setup();
+  Notes.openWithProblem(42, "二分查找", { content: "# 复盘：二分查找\n\n## 错在哪\n漏了 left == right" });
+  const loading = Notes.load();
+  await tick();
+  env.respond(env.calls.at(-1), 200, { problems: [] });
+  await tick(); await tick();
+  env.respond(env.calls.at(-1), 200, { notes: [], total: 0 });
+  await loading;
+  assert.match(document.querySelector("#notes-content").value, /^# 复盘：二分查找/);
+  assert.equal(document.querySelector("#notes-problem").value, "42");
+});
