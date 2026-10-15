@@ -136,3 +136,37 @@ test("复习方式有四种，类似题有中文标签", () => {
   assert.deepEqual([...RedoFlow.MODES], ["recall", "rewrite", "redo", "similar"]);
   assert.equal(RedoFlow.MODE_LABEL.similar, "类似题");
 });
+
+test("startTimer 按真实时间算：后台变慢也不少算，暂停的时间不算进用时", () => {
+  let clock = 1_000_000;
+  const ticks = [];
+  let done = false;
+  const timer = RedoFlow.startTimer(600, (left, state) => ticks.push([left, Boolean(state && state.paused)]), () => { done = true; }, { now: () => clock });
+  clock += 125_000; // 切到原题标签页做了两分钟多，定时器可能根本没跑
+  assert.equal(timer.elapsed(), 125);
+  timer.pause();
+  assert.equal(timer.isPaused(), true);
+  assert.deepEqual(ticks.at(-1), [475, true]);
+  clock += 300_000; // 暂停 5 分钟
+  assert.equal(timer.elapsed(), 125, "暂停期间不计时");
+  timer.resume();
+  assert.deepEqual(ticks.at(-1), [475, false]);
+  clock += 5_000;
+  assert.equal(timer.elapsed(), 130);
+  assert.equal(done, false);
+  timer.cancel();
+  assert.equal(timer.isDone(), true);
+});
+
+test("formatCountdown 标出暂停状态", () => {
+  assert.equal(RedoFlow.formatCountdown(125), "剩余 2:05");
+  assert.equal(RedoFlow.formatCountdown(125, { paused: true }), "已暂停 · 剩余 2:05");
+});
+
+test("problemUrl 认来源链接、补 https、老题思路里的判题网站链接", () => {
+  assert.equal(RedoFlow.problemUrl({ source_url: " https://leetcode.cn/problems/two-sum/ " }), "https://leetcode.cn/problems/two-sum/");
+  assert.equal(RedoFlow.problemUrl({ source_url: "codeforces.com/problemset/problem/1/A" }), "https://codeforces.com/problemset/problem/1/A");
+  assert.equal(RedoFlow.problemUrl({ source_url: "", thinking: "题目链接：https://www.luogu.com.cn/problem/P1001。\n思路……" }), "https://www.luogu.com.cn/problem/P1001");
+  assert.equal(RedoFlow.problemUrl({ source_url: "", thinking: "参考 https://oi-wiki.org/ds/stack/ 这篇" }), "", "不是判题网站的链接不当原题");
+  assert.equal(RedoFlow.problemUrl({}), "");
+});

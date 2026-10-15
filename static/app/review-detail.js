@@ -514,7 +514,7 @@ function rvfDetailKeydown(event) {
 function rvfRedoAvailability(item) {
   return {
     rewrite: Boolean((item.correct_code || "").trim()),
-    redo: Boolean((item.source_url || "").trim()),
+    redo: Boolean(window.RedoFlow ? window.RedoFlow.problemUrl(item) : (item.source_url || "").trim()),
     similar: true,
   };
 }
@@ -551,7 +551,7 @@ function rvfBuildRedoSection(state, item) {
   const buttons = {};
   const row = element("div", "", "redo-modes");
   for (const [mode, label, ok, why] of [
-    ["redo", "去原题限时重做", avail.redo, "该题没有来源链接，限时重做不可用"],
+    ["redo", "去原题限时重做", avail.redo, "这道题还没有原题链接：点下面“编辑题目”填上来源链接就能用"],
     ["similar", "做一道类似题", avail.similar, ""],
     ["rewrite", "默写关键代码", avail.rewrite, "该题没有正确代码，默写不可用"],
     ["recall", "只回忆（自评）", true, ""],
@@ -656,8 +656,8 @@ function rvfBuildRewritePanel(state) {
   return panel;
 }
 
-function rvfFormatCountdown(remaining) {
-  return `剩余 ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+function rvfFormatCountdown(remaining, state) {
+  return window.RedoFlow.formatCountdown(remaining, state);
 }
 
 function rvfBuildRedoPanel(state) {
@@ -694,20 +694,22 @@ function rvfBuildRedoPanel(state) {
       },
     }));
   };
+  const pause = window.RedoFlow.buildPauseButton(() => state.redo.timer);
   start.addEventListener("click", () => {
     if (!state.isCurrent()) return;
-    window.open(item.source_url, "_blank", "noopener");
+    window.RedoFlow.openProblem(window.RedoFlow.problemUrl(item));
     const limitSeconds = Number(select.value) * 60;
     start.disabled = true;
     select.disabled = true;
     state.redo.timer = window.RedoFlow.startTimer(
       limitSeconds,
-      (remaining) => { timerEl.textContent = rvfFormatCountdown(remaining); },
-      () => { timerEl.textContent = "时间到"; showAsk(); },
+      (remaining, tick) => { timerEl.textContent = rvfFormatCountdown(remaining, tick); },
+      () => { timerEl.textContent = "时间到"; pause.sync(); showAsk(); },
     );
+    pause.sync();
     showAsk();
   });
-  panel.append(limitRow, start, timerEl, askHost);
+  panel.append(limitRow, start, timerEl, pause, askHost);
   return panel;
 }
 

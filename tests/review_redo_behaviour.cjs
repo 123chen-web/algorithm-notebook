@@ -210,7 +210,7 @@ test("默写：对照 diff 后评分带 mode 与 evidence 入库", async () => {
 test("限时重做：选择时限、开始、做对后建议分入库", async () => {
   const env = environment();
   const opened = [];
-  env.window.open = (url) => { opened.push(url); return null; };
+  env.window.RedoFlow.openProblem = (url) => { opened.push(url); return true; };
   env.render();
   env.$("#review-reveal").click();
   await env.settleRedo();
@@ -224,6 +224,13 @@ test("限时重做：选择时限、开始、做对后建议分入库", async ()
   start.click();
   await tick();
   assert.deepEqual(opened, ["https://example.com/problem/1"]);
+  const pause = panel.querySelector(".redo-pause");
+  assert.ok(pause && !pause.hidden, "开始后出现暂停按钮");
+  pause.click();
+  assert.equal(pause.textContent, "继续计时");
+  assert.match(panel.querySelector(".redo-timer").textContent, /^已暂停/);
+  pause.click();
+  assert.equal(pause.textContent, "暂停计时");
   const results = [...panel.querySelectorAll(".redo-result")].map((b) => b.dataset.result);
   assert.deepEqual(results, ["clean", "retry", "hinted", "failed"]);
   assert.equal(panel.querySelectorAll(".review-grade").length, 0, "不再有二次选分的按钮");
@@ -262,7 +269,7 @@ test("重做：看了提示算很吃力，没做出来算答错，客户端和�
 test("做类似题：找题、限时、做错时顺手记成新错题，成绩由结果算出", async () => {
   const env = environment();
   const opened = [], added = [];
-  env.window.open = (url) => { opened.push(url); return null; };
+  env.window.RedoFlow.openProblem = (url) => { opened.push(url); return true; };
   env.window.Similar = { configure() {}, quickAdd: async (item) => { added.push(item.title); } };
   env.render();
   env.$("#review-reveal").click();

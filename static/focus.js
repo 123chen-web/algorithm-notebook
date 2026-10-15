@@ -407,7 +407,7 @@
   function focusRedoAvailable(item) {
     return {
       rewrite: Boolean((item.correct_code || "").trim()),
-      redo: Boolean((item.source_url || "").trim()),
+      redo: Boolean(window.RedoFlow ? window.RedoFlow.problemUrl(item) : (item.source_url || "").trim()),
       similar: true,
     };
   }
@@ -575,19 +575,21 @@
         },
       }));
     };
+    const pause = window.RedoFlow.buildPauseButton(() => session.redoTimer);
     start.addEventListener("click", () => {
-      window.open(item.source_url, "_blank", "noopener");
+      window.RedoFlow.openProblem(window.RedoFlow.problemUrl(item));
       const limitSeconds = Number(select.value) * 60;
       start.disabled = true;
       select.disabled = true;
       session.redoTimer = window.RedoFlow.startTimer(
         limitSeconds,
-        (remaining) => { timerEl.textContent = `剩余 ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`; },
-        () => { timerEl.textContent = "时间到"; showAsk(); },
+        (remaining, tick) => { timerEl.textContent = window.RedoFlow.formatCountdown(remaining, tick); },
+        () => { timerEl.textContent = "时间到"; pause.sync(); showAsk(); },
       );
+      pause.sync();
       showAsk();
     });
-    panel.append(limitRow, start, timerEl, askHost);
+    panel.append(limitRow, start, timerEl, pause, askHost);
     return panel;
   }
 

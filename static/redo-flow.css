@@ -181,3 +181,8 @@
   font-size: var(--text-sm);
   color: var(--ink);
 }
+
+/* 暂停 / 继续计时：被打断时按一下，暂停的时间不算进用时。 */
+.redo-pause { min-height: 40px; margin-left: var(--space-2); }
+.redo-pause[hidden] { display: none; }
+.redo-pause[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-hover); }

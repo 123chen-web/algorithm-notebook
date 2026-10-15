@@ -168,43 +168,130 @@
     return Boolean(data && data.hint);
   }
 
-  // 倒计时：页面不可见时自动暂停（无 document 的环境跳过监听）。
-  // 返回 { cancel, elapsed }。
-  function startTimer(totalSeconds, onTick, onDone) {
-    let remaining = totalSeconds;
+  /* 倒计时：按真实时间算（不是数 setInterval 的次数），所以浏览器把后台标签页的定时器放慢、
+     或者你切到原题标签页去做题时，时间都照常走——以前页面一隐藏就停表，等于去做题时根本不计时。
+     想停一下（被打断、去倒水）就按“暂停计时”：pause()/resume()，暂停的时间不算进用时。
+     onTick(剩余秒数, { paused }) 在每秒、暂停、继续时都会调用。opts.now 只给测试注入时钟用。 */
+  function startTimer(totalSeconds, onTick, onDone, opts = {}) {
+    const now = typeof opts.now === "function" ? opts.now : () => Date.now();
+    const startedAt = now();
+    let pausedTotal = 0;
+    let pausedAt = null;
+    let endedAt = null; // 结束或取消的时刻：之后用时不再增长
     let timer = null;
     let done = false;
     const hasDocument = typeof document !== "undefined";
+    const usedMs = () => (endedAt !== null ? endedAt : pausedAt !== null ? pausedAt : now()) - startedAt - pausedTotal;
+    // 四舍五入：setInterval 每次早晚几毫秒，第 n 次回调时按 n 秒算。
+    const remaining = () => Math.max(0, totalSeconds - Math.round(usedMs() / 1000));
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const detach = () => { if (hasDocument) document.removeEventListener("visibilitychange", onVisible); };
     const finish = () => {
       if (done) return;
+      endedAt = pausedAt !== null ? pausedAt : now();
       done = true;
       stop();
-      if (hasDocument) document.removeEventListener("visibilitychange", onVisibility);
+      detach();
       onDone();
     };
-    const onVisibility = () => {
-      if (!hasDocument) return;
-      if (document.hidden) stop();
-      else if (!done && !timer) timer = setInterval(tick, 1000);
-    };
     const tick = () => {
-      remaining -= 1;
-      onTick(Math.max(remaining, 0));
-      if (remaining <= 0) finish();
+      if (done || pausedAt !== null) return;
+      const left = remaining();
+      onTick(left, { paused: false });
+      if (left <= 0) finish();
     };
-    if (hasDocument) document.addEventListener("visibilitychange", onVisibility);
+    // 切回本页时立刻刷新一次，不用等下一秒。
+    const onVisible = () => { if (hasDocument && !document.hidden) tick(); };
+    if (hasDocument) document.addEventListener("visibilitychange", onVisible);
     timer = setInterval(tick, 1000);
-    onTick(remaining);
+    onTick(totalSeconds, { paused: false });
     return {
       cancel: () => {
         if (done) return;
+        endedAt = pausedAt !== null ? pausedAt : now();
         done = true;
         stop();
-        if (hasDocument) document.removeEventListener("visibilitychange", onVisibility);
+        detach();
       },
-      elapsed: () => totalSeconds - Math.max(remaining, 0),
+      pause: () => {
+        if (done || pausedAt !== null) return;
+        pausedAt = now();
+        onTick(remaining(), { paused: true });
+      },
+      resume: () => {
+        if (done || pausedAt === null) return;
+        pausedTotal += now() - pausedAt;
+        pausedAt = null;
+        onTick(remaining(), { paused: false });
+      },
+      isPaused: () => pausedAt !== null,
+      isDone: () => done,
+      elapsed: () => Math.min(totalSeconds, Math.max(0, Math.round(usedMs() / 1000))),
     };
+  }
+
+  function formatCountdown(remaining, { paused = false } = {}) {
+    const text = `剩余 ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+    return paused ? `已暂停 · ${text}` : text;
+  }
+
+  /** “暂停计时 / 继续计时”按钮；getTimer() 返回当前计时器（还没开始或已结束时按钮隐藏）。 */
+  function buildPauseButton(getTimer) {
+    const button = el("button", "暂停计时", "redo-pause");
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    const sync = () => {
+      const timer = getTimer();
+      const active = Boolean(timer) && !timer.isDone();
+      const paused = active && timer.isPaused();
+      button.hidden = !active;
+      button.textContent = paused ? "继续计时" : "暂停计时";
+      button.setAttribute("aria-pressed", paused ? "true" : "false");
+    };
+    button.addEventListener("click", () => {
+      const timer = getTimer();
+      if (!timer || timer.isDone()) return sync();
+      if (timer.isPaused()) timer.resume();
+      else timer.pause();
+      sync();
+    });
+    button.sync = sync;
+    sync();
+    return button;
+  }
+
+  /* 原题链接：优先用题目的“来源链接”；老题的链接可能只写在思路里（“题目链接：…”），
+     或者少了 https:// 前缀，这里一并认出来。认不出返回 ""。 */
+  const OJ_HOSTS = /^https?:\/\/([\w-]+\.)*(leetcode\.(cn|com)|codeforces\.com|atcoder\.jp|luogu\.com\.cn|nowcoder\.com|acwing\.com|vjudge\.net|hdu\.edu\.cn|poj\.org|lanqiao\.cn|kattis\.com|hackerrank\.com|codechef\.com)\//i;
+  function problemUrl(item) {
+    const source = String((item && item.source_url) || "").trim();
+    if (/^https?:\/\//i.test(source)) return source;
+    if (/^[\w-]+(\.[\w-]+)+\/\S*$/.test(source)) return `https://${source}`;
+    // 思路 / 题面里的链接只认常见判题网站，免得把参考博客当成原题打开。
+    for (const raw of [item && item.thinking, item && item.statement]) {
+      const pattern = /https?:\/\/[^\s<>"'）)】]+/gi;
+      let match;
+      while ((match = pattern.exec(String(raw || "")))) {
+        const url = match[0].replace(/[。，,.;；]+$/, "");
+        if (OJ_HOSTS.test(url)) return url;
+      }
+    }
+    return "";
+  }
+
+  /** 用真实的 <a target=_blank> 打开（比 window.open 更不容易被浏览器 / 内置浏览器拦截）。 */
+  function openProblem(url) {
+    if (!/^https?:\/\//i.test(String(url || ""))) return false;
+    if (typeof document === "undefined") return false;
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    return true;
   }
 
   // 按做题结果算成绩（0 答错 / 3 很吃力 / 4 记得 / 5 很熟），规则与服务端一致：
@@ -335,18 +422,20 @@
           },
         }), label);
       };
+      const pause = buildPauseButton(() => timer);
       start.addEventListener("click", () => {
-        window.open(item.url, "_blank", "noopener");
+        window.RedoFlow.openProblem(item.url); // 走对外入口，测试可以替换
         start.disabled = true; select.disabled = true; other.disabled = true;
         timer = startTimer(
           limitSeconds(),
-          (remaining) => { timerEl.textContent = `剩余 ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`; },
-          () => { timerEl.textContent = "时间到"; showAsk(); },
+          (remaining, state) => { timerEl.textContent = formatCountdown(remaining, state); },
+          () => { timerEl.textContent = "时间到"; pause.sync(); showAsk(); },
         );
         if (onTimer) onTimer(timer);
+        pause.sync();
         showAsk();
       });
-      body.append(limitRow, start, other, timerEl, askHost);
+      body.append(limitRow, start, other, timerEl, pause, askHost);
     }
 
     body.append(el("p", "正在找一道类似题…", "muted"));
@@ -370,7 +459,7 @@
   window.RedoFlow = {
     MODES, MODE_LABEL, REDO_LIMITS, DEFAULT_REDO_LIMIT,
     normalize, diffLines, similarityToGrade, redoGradeSuggest, qualityFromEvidence,
-    buildEvidence, fetchHint, startTimer,
+    buildEvidence, fetchHint, startTimer, formatCountdown, buildPauseButton, problemUrl, openProblem,
     RESULT_OPTIONS, QUALITY_LABEL, buildResultAsk, buildRewriteSubmit, buildSimilarPanel,
   };
 })();
