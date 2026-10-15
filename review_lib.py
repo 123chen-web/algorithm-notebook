@@ -20,11 +20,36 @@ def rvb_review_queue(items, today, cap, done_today, ignore_cap=False):
     ))
     remaining = None if cap is None or ignore_cap else max(0, cap - done_today)
     selected = ordered if remaining is None else ordered[:remaining]
+    # 今天做哪些仍按“最该复习”挑；挑出来之后穿插着排，同一个套路 / 同一道题尽量不挨着
+    # （交错练习：先认出该用哪个套路，比连做同类题记得牢）。只改顺序，不加不减。
+    selected = interleave(selected)
     return {
         "today": today.isoformat(), "cap": cap, "done_today": done_today,
         "remaining_today": remaining, "total_due": len(ordered),
         "capped": len(ordered) > len(selected), "items": selected,
     }
+
+
+def _interleave_key(item):
+    patterns = item.get("pattern_ids") or []
+    if patterns:
+        return f"pattern:{patterns[0]}"
+    if item.get("problem_id") is not None:
+        return f"problem:{item['problem_id']}"
+    return f"item:{item.get('id')}"
+
+
+def interleave(items):
+    """按原顺序贪心地取：每次取第一条和上一条“不同类”的；实在只剩同类才挨着放。稳定、不丢不重。"""
+    pending = list(items)
+    result = []
+    last = None
+    while pending:
+        index = next((i for i, item in enumerate(pending) if _interleave_key(item) != last), 0)
+        chosen = pending.pop(index)
+        result.append(chosen)
+        last = _interleave_key(chosen)
+    return result
 
 
 def redo_overconfident_hint(conn, mistake_id, since_iso):

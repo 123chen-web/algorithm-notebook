@@ -902,3 +902,19 @@ def test_new_account_queue_starts_with_the_default_daily_cap(client):
     queued = assert_ok(client.get(QUEUE))
     assert queued["cap"] == 20 and queued["total_due"] == 25
     assert len(queued["items"]) == 20 and queued["capped"] is True
+
+
+def test_queue_interleaves_patterns_without_changing_which_items_are_due_today():
+    def item(identity, pattern, overdue):
+        return {**queue_item(identity, overdue=overdue), "pattern_ids": [pattern] if pattern else [], "problem_id": identity}
+    items = [item(1, "two-pointers", 9), item(2, "two-pointers", 8), item(3, "two-pointers", 7),
+             item(4, "binary-search-basic", 6), item(5, "binary-search-basic", 5), item(6, None, 1)]
+    result = review_lib.rvb_review_queue(items, TODAY, 5, 0)
+    ids = [entry["id"] for entry in result["items"]]
+    assert sorted(ids) == [1, 2, 3, 4, 5], "今天做哪几条仍按最该复习挑，第 6 条留到之后"
+    assert ids[0] == 1, "最该复习的仍然排第一"
+    keys = [next(entry for entry in items if entry["id"] == i)["pattern_ids"][0] for i in ids]
+    assert all(a != b for a, b in zip(keys, keys[1:])), keys
+    assert review_lib.interleave([]) == []
+    same = [item(7, "dp", 1), item(8, "dp", 1)]
+    assert [entry["id"] for entry in review_lib.interleave(same)] == [7, 8], "只剩同类时照原顺序挨着"
