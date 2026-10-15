@@ -100,7 +100,7 @@ def test_requires_login(client):
 
 def test_new_account_has_an_empty_roadmap(client):
     register(client)
-    assert get_roadmap(client) == {"progress": {}, "examples_done": {}, "mistake_counts": {}}
+    assert get_roadmap(client) == {"progress": {}, "examples_done": {}, "mistake_counts": {}, "notes": {}}
 
 
 def test_progress_examples_and_mistake_counts_round_trip(client):

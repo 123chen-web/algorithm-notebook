@@ -90,3 +90,13 @@ def test_problem_related_notes_include_notes_about_the_same_pattern(client):
     pattern_note = make_note(client, "二分查找：先想区间开闭", title="二分套路")
     items = client.get(f"/api/problems/{problem_id}/related-notes").json()["items"]
     assert [(item["id"], item["reason"].startswith("同一个套路")) for item in items] == [(pattern_note["id"], True)]
+
+
+def test_roadmap_lists_my_notes_under_each_pattern(client):
+    register(client)
+    note = make_note(client, "二分查找：区间开闭先想清楚", title="二分套路")
+    make_note(client, "代码里提到 ```二分查找``` 不算", title="无关")
+    data = client.get("/api/roadmap").json()
+    hits = [pattern_id for pattern_id, items in data["notes"].items() if any(item["id"] == note["id"] for item in items)]
+    assert any(pattern_id.startswith("binary-search") for pattern_id in hits)
+    assert all(len(items) <= 5 for items in data["notes"].values())

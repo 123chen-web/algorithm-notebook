@@ -25,6 +25,7 @@
   let progress = {};        // {pattern_id: "learning" | "mastered"}；没有记录 = 未学
   let examplesDone = {};    // {pattern_id: Set(key)}
   let mistakeCounts = {};   // {pattern_id: n}
+  let notesByPattern = {};  // {pattern_id: [{id, title}]}：提到这个套路的我的笔记
 
   let category = "";
   let level = "";
@@ -73,6 +74,10 @@
     for (const [patternId, value] of Object.entries(data.mistake_counts || {})) {
       const count = Number(value);
       if (Number.isFinite(count) && count > 0) mistakeCounts[patternId] = count;
+    }
+    notesByPattern = {};
+    for (const [patternId, list] of Object.entries(data.notes || {})) {
+      if (Array.isArray(list)) notesByPattern[patternId] = list.filter((entry) => entry && Number.isInteger(entry.id));
     }
   }
 
@@ -261,6 +266,16 @@
       status: statusOf(pattern.id),
       doneKeys: examplesDone[pattern.id] || new Set(),
       mistakeCount: mistakeCounts[pattern.id] || 0,
+      notes: notesByPattern[pattern.id] || [],
+      onOpenNote: (id) => {
+        if (typeof window.showView !== "function") return;
+        void window.showView("notes").then(() => window.Notes?.openNoteById(id));
+      },
+      onWriteNote: (target) => {
+        if (typeof window.showView !== "function") return;
+        const base = String(target.title || "").split(/[（(]/)[0];
+        void window.showView("notes").then(() => window.Notes?.newFromTemplate("pattern", { "# 套路：": `# 套路：${base}` }));
+      },
       onStatus: putStatus,
       onExample: putExample,
       onJumpRelated: jumpTo,
@@ -397,6 +412,7 @@
     progress = {};
     examplesDone = {};
     mistakeCounts = {};
+    notesByPattern = {};
     $("#roadmap-list").replaceChildren();
     $("#roadmap-cats").replaceChildren();
     $("#roadmap-weak").hidden = true;

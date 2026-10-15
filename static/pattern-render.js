@@ -233,6 +233,7 @@
     const {
       byId = new Map(), status = "none", doneKeys = new Set(), mistakeCount = 0,
       onStatus = null, onExample = null, onJumpRelated = null, onMistakeClick = null,
+      notes = null, onOpenNote = null, onWriteNote = null,
       withStatus = Boolean(onStatus),
     } = options;
 
@@ -302,6 +303,32 @@
         box.append(link);
       }
       body.append(box);
+    }
+
+    // 串联：我写过的、提到这个套路的笔记；没有就给一个“用模板写一篇”（只在应用里，套路库静态页没有）。
+    if (Array.isArray(notes) && (onOpenNote || onWriteNote)) {
+      const mine = node("div", "pattern-notes");
+      if (notes.length && onOpenNote) {
+        const list = node("ul", "pattern-notes-list");
+        for (const entry of notes) {
+          const li = node("li");
+          const open = node("button", "pattern-note-link", entry.title || "（无标题）");
+          open.type = "button";
+          open.addEventListener("click", () => onOpenNote(entry.id));
+          li.append(open);
+          list.append(li);
+        }
+        mine.append(list);
+      } else {
+        mine.append(node("p", "pattern-notes-empty", "还没有写过这个套路的笔记。"));
+      }
+      if (onWriteNote) {
+        const write = node("button", "pattern-note-write", "用“套路笔记”模板写一篇");
+        write.type = "button";
+        write.addEventListener("click", () => onWriteNote(pattern));
+        mine.append(write);
+      }
+      body.append(section(`我的笔记（${notes.length}）`, mine));
     }
 
     const copy = copyButton("复制为笔记模板", "pattern-copy", () => noteMarkdown(pattern));

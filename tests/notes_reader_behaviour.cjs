@@ -302,3 +302,11 @@ test("NotesPane：代码块加语言名和复制；遮住看点一块显示一�
   assert.equal(root.classList.contains("is-covered"), false);
   assert.equal(para.classList.contains("nm-uncovered"), false, "关掉后清掉“已显示”标记");
 });
+
+test("模板里没有空代码块（所见即所得编辑器读不进空代码块，整篇会变空白）", () => {
+  const { window } = load(["notes-pane.js"]);
+  for (const template of window.NotesPane.TEMPLATES) {
+    const text = window.NotesPane.templateText(template.key);
+    assert.doesNotMatch(text, /```[\w-]*\n\s*```/, template.key);
+  }
+});

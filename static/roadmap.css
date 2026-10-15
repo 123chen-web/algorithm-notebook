@@ -45,3 +45,11 @@
 @media (prefers-reduced-motion: reduce) {
   .roadmap-weak-go, .roadmap-filters select { transition: none; }
 }
+
+/* 串联：套路卡片里“我的笔记” */
+.pattern-notes { display: grid; gap: var(--space-2); }
+.pattern-notes-list { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.pattern-note-link { min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-left: 3px solid var(--azurite); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-size: var(--text-sm); }
+.pattern-note-link:hover:not(:disabled) { border-color: var(--azurite); background: var(--paper-2); transform: none; }
+.pattern-notes-empty { margin: 0; color: var(--ink-2); font-size: var(--text-sm); }
+.pattern-note-write { justify-self: start; min-height: 40px; padding: 0 var(--space-3); border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: transparent; color: var(--accent-hover); font-size: var(--text-sm); }

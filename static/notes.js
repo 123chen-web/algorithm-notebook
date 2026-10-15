@@ -1154,6 +1154,16 @@
     deleteButton.addEventListener("click", () => void removeNote(note));
   }
 
+  /** 从别的页面用模板新建（如学习路线的“用套路笔记模板写一篇”）；replacements 把模板里的整行替换掉。 */
+  async function newFromTemplate(key, replacements = {}) {
+    const base = window.NotesPane ? window.NotesPane.templateText(key) : "";
+    const text = base.split("\n").map((line) => (Object.hasOwn(replacements, line) ? replacements[line] : line)).join("\n");
+    if (!(await showComposer())) return;
+    if (String(getComposerContent()).trim()) insertComposerTemplate(text);
+    else setComposerContent(text);
+    focusComposerEditor();
+  }
+
   /** 按 id 打开（从“串联”面板、预览卡跳过来）：列表里有就用列表里的，没有就单独取一次。 */
   async function openNoteById(id) {
     let note = notes.find((item) => item.id === id);
@@ -1599,7 +1609,7 @@
   window.Notes = Object.freeze({
     escapeHtml, parseTags, noteTitle, cardHeading, buildNotesQuery, renderNoteMarkdown, collectTags, noteTime,
     configure, load, loadMore, openWithProblem, reset, snapshot,
-    openNote, openNoteById, editNote, openByTitle, showComposer, currentNoteId: () => currentNoteId,
+    openNote, openNoteById, editNote, openByTitle, showComposer, newFromTemplate, currentNoteId: () => currentNoteId,
     NOTE_CONTENT_MAX,
     getComposerContent, setComposerContent, focusComposer, insertComposerTemplate,
     generation: () => generation,

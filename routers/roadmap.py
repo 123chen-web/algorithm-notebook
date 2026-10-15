@@ -21,6 +21,7 @@ from starlette import concurrency
 import json
 import pattern_match
 import problem_progress
+from routers import note_connections, notes
 from models import InputModel
 import pattern_match
 
@@ -86,6 +87,18 @@ def get_roadmap(user=Depends(security.current_user)):
                 (user["id"],),
             )
         }
+        # 串联：每个套路下“我写过的笔记”（正文或标题提到这个套路的名称/别名），每个最多 5 篇。
+        notes_by_pattern = {}
+        for row in conn.execute(
+            "SELECT id, title, content FROM notes WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC",
+            (user["id"],),
+        ):
+            text = note_connections._plain(row["content"]) + "\n" + (row["title"] or "")
+            hits, _ids, _aliases = note_connections._pattern_hits(text)
+            for pattern_id, _title, _category, _term in hits:
+                bucket = notes_by_pattern.setdefault(pattern_id, [])
+                if len(bucket) < 5:
+                    bucket.append({"id": row["id"], "title": notes._display_title(row["title"], row["content"])})
     # 套路被下架（清单里没有了）时，历史记录不再下发，前端也就不会渲染出空白卡片。
     progress = {key: value for key, value in progress.items() if pattern_match.pattern_is_known(key)}
     examples_done = {key: value for key, value in examples_done.items() if pattern_match.pattern_is_known(key)}
@@ -94,6 +107,7 @@ def get_roadmap(user=Depends(security.current_user)):
         "progress": progress,
         "examples_done": examples_done,
         "mistake_counts": mistake_counts,
+        "notes": {key: value for key, value in notes_by_pattern.items() if pattern_match.pattern_is_known(key)},
     }
 
 
