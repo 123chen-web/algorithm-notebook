@@ -1026,7 +1026,21 @@
     tidyButton.type = "button";
     tidyButton.title = "把粘贴进来的纯文本整理成标题、列表、折叠答案（原样子会存进历史）";
     tidyButton.hidden = !tidied || tidied === note.content;
-    tools.append(editButton, tidyButton, pinButton, historyButton, deleteButton);
+    // 遮住看：只露标题，正文点一下才显示（可选的看法，不打分、不记录）。
+    const coverButton = h("button", "遮住看", "notes-action");
+    coverButton.type = "button";
+    coverButton.setAttribute("aria-pressed", "false");
+    coverButton.title = "先遮住正文，自己回想，点哪一块显示哪一块";
+    const exportButton = h("button", "导出", "notes-action");
+    exportButton.type = "button";
+    exportButton.title = "把这一篇存成 .md 文件";
+    // 不常用的收进“更多”，顶上只留最常用的三个。
+    const more = h("details", null, "notes-more-menu");
+    more.append(h("summary", "更多", "notes-action"));
+    const moreList = h("div", null, "notes-more-list");
+    moreList.append(pinButton, historyButton, exportButton, deleteButton);
+    more.append(moreList);
+    tools.append(editButton, tidyButton, coverButton, more);
     head.append(tools);
 
     const meta = h("div", null, "notes-pane-meta");
@@ -1058,6 +1072,7 @@
     view.append(head, meta, toc, body, connect, related);
     host.replaceChildren(view);
     window.NotesPane?.renderToc(toc, note.content || "", body);
+    window.NotesPane?.enhanceCode(body, hooks?.notify);
     window.NotesLinks?.renderRelated?.(view, note.id);
     const paneEl = $("#notes-pane");
     if (paneEl) paneEl.scrollTop = 0;
@@ -1089,6 +1104,17 @@
     }
 
     editButton.addEventListener("click", () => void editNote(note));
+    coverButton.addEventListener("click", () => {
+      const on = coverButton.getAttribute("aria-pressed") !== "true";
+      coverButton.setAttribute("aria-pressed", on ? "true" : "false");
+      coverButton.textContent = on ? "全部显示" : "遮住看";
+      window.NotesPane?.setCovered(body, on);
+    });
+    exportButton.addEventListener("click", () => {
+      more.open = false;
+      const name = window.NotesPane?.downloadMarkdown(note, noteTitle(note));
+      if (name) hooks?.notify?.(`已导出「${name}」。`);
+    });
     tidyButton.addEventListener("click", async () => {
       tidyButton.disabled = true;
       try {
@@ -1109,6 +1135,7 @@
     });
     body.addEventListener("dblclick", (event) => {
       if (event.target.closest && event.target.closest("button, a, summary, details")) return;
+      if (body.classList.contains("is-covered")) return; // 遮住看时双击是在掀开，不进编辑
       void editNote(note);
     });
     pinButton.addEventListener("click", async () => {

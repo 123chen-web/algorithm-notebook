@@ -484,6 +484,7 @@ window.Notes?.configure({
 // 笔记“串联”（static/notes-connect.js）：正文里提到的笔记 / 套路加下划线，下面列出相关错题等。
 window.NotesConnect?.configure({
   api,
+  tagLabel: (tag) => window.TagEditor?.label?.(tag) || tag,
   today: () => user?.today || "",
   noteTitle: (note) => window.Notes?.noteTitle(note) || "笔记",
   previewText: (note, max) => window.NotesPane?.previewText(note, max) || "",

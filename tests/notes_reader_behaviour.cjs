@@ -241,3 +241,64 @@ test("从复习页“记笔记”：带上复盘草稿时新建区直接放草�
   assert.match(document.querySelector("#notes-content").value, /^# 复盘：二分查找/);
   assert.equal(document.querySelector("#notes-problem").value, "42");
 });
+
+test("NotesConnect：单独一行的 [[题:…]] 变成活的错题卡，句子里的变成能点开错题的链接", () => {
+  const env = load(["notes-connect.js"]);
+  const doc = env.document;
+  const opened = [];
+  env.window.NotesConnect.configure({ openMistake: (id) => opened.push(id), today: () => "2026-10-15", tagLabel: (tag) => ({ boundary: "边界/特例" })[tag] || tag });
+  const root = doc.createElement("div");
+  const link = (title) => {
+    const a = doc.createElement("a");
+    a.setAttribute("data-note-link", "problem");
+    a.setAttribute("data-link-target", title);
+    a.textContent = title;
+    return a;
+  };
+  const alone = doc.createElement("p");
+  alone.append(link("二分查找"));
+  const inSentence = doc.createElement("p");
+  inSentence.append(doc.createTextNode("和 "), link("二分查找"), doc.createTextNode(" 一样"));
+  const unknown = doc.createElement("p");
+  unknown.append(link("没记过的题"));
+  root.append(alone, inSentence, unknown);
+  env.window.NotesConnect.decorate(root, { mistakes: [{ id: 9, title: "二分查找", zone: "算法", tags: ["boundary"], due_date: "2026-10-15" }] });
+  const card = root.querySelector(".nc-mistake-card");
+  assert.ok(card, "单独一行变成错题卡");
+  assert.match(card.textContent, /二分查找/);
+  assert.match(card.textContent, /边界\/特例/, "错因显示中文名");
+  assert.match(card.textContent, /今天该复习/);
+  const inline = inSentence.querySelector(".nc-mistake-link");
+  assert.ok(inline && inline.textContent === "二分查找");
+  assert.ok(unknown.querySelector('a[data-note-link="problem"]'), "找不到的题保持原样");
+  card.click();
+  inline.click();
+  assert.deepEqual(opened, [9, 9]);
+});
+
+test("NotesPane：代码块加语言名和复制；遮住看点一块显示一块，标题始终可见", () => {
+  const env = load(["notes-pane.js"]);
+  const doc = env.document;
+  const root = doc.createElement("div");
+  const heading = doc.createElement("h2");
+  heading.textContent = "标题";
+  const pre = doc.createElement("pre");
+  const code = doc.createElement("code");
+  code.className = "language-python";
+  code.textContent = "print(1)";
+  pre.append(code);
+  const para = doc.createElement("p");
+  para.textContent = "要回想的内容";
+  root.append(heading, pre, para);
+  assert.equal(env.window.NotesPane.enhanceCode(root), 1);
+  assert.equal(root.querySelector(".nm-code-lang").textContent, "python");
+  assert.ok(root.querySelector(".nm-code-copy"));
+  assert.equal(env.window.NotesPane.enhanceCode(root), 0, "重复调用不会再包一层");
+  env.window.NotesPane.setCovered(root, true);
+  assert.ok(root.classList.contains("is-covered"));
+  root.dispatchEvent(new (require("./js_harness.cjs").FakeEvent)("click", { props: { target: para } }));
+  assert.ok(para.classList.contains("nm-uncovered"), "点哪块显示哪块");
+  env.window.NotesPane.setCovered(root, false);
+  assert.equal(root.classList.contains("is-covered"), false);
+  assert.equal(para.classList.contains("nm-uncovered"), false, "关掉后清掉“已显示”标记");
+});

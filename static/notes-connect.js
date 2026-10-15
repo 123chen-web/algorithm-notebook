@@ -70,9 +70,41 @@
     return out;
   }
 
+  /** 正文里的 [[题:…]]：单独占一行的换成一张活的错题卡（题名、错因、下次复习），
+      夹在句子里的点一下直接打开那道错题。找不到对应错题的保持原样。 */
+  function upgradeProblemLinks(root, data) {
+    const byTitle = new Map();
+    for (const item of data.mistakes || []) if (!byTitle.has(item.title)) byTitle.set(item.title, item);
+    let count = 0;
+    for (const anchor of [...root.querySelectorAll('a[data-note-link="problem"]')]) {
+      const mistake = byTitle.get(anchor.getAttribute("data-link-target") || "");
+      if (!mistake) continue;
+      const parent = anchor.parentNode;
+      const alone = parent && parent.tagName === "P"
+        && [...(parent.childNodes || [])].every((node) => node === anchor || (node.nodeType === 3 && !String(node.nodeValue ?? node.textContent).trim()));
+      if (alone) {
+        const card = button("", "nc-mistake-card", () => hooks?.openMistake?.(mistake.id));
+        card.append(h("span", "错题", "nc-mistake-kind"), h("strong", mistake.title, "nc-mistake-title"));
+        const sub = [mistake.zone, tagText(mistake.tags), mistake.suspended ? "已暂停" : dueText(mistake.due_date, hooks?.today ? hooks.today() : "")]
+          .filter(Boolean).join(" · ");
+        if (sub) card.append(h("span", sub, "nc-mistake-sub"));
+        card.setAttribute("aria-label", `打开错题「${mistake.title}」`);
+        parent.replaceWith(card);
+      } else {
+        const inline = button(anchor.textContent, "nc-mention nc-mistake-link", () => hooks?.openMistake?.(mistake.id));
+        inline.dataset.kind = "mistake";
+        inline.dataset.id = String(mistake.id);
+        anchor.replaceWith(inline);
+      }
+      count += 1;
+    }
+    return count;
+  }
+
   /** 每个词只在第一次出现处标一次；长词优先，避免“二分”抢了“二分查找”。 */
   function decorate(root, data) {
     if (!root || !data) return 0;
+    upgradeProblemLinks(root, data);
     const terms = [];
     for (const note of data.note_mentions || []) terms.push({ text: note.title, kind: "note", id: note.id, label: note.title });
     for (const item of data.patterns || []) terms.push({ text: item.term, kind: "pattern", id: item.id, label: item.title });
@@ -107,7 +139,7 @@
       root.dataset.ncBound = "1";
       root.addEventListener("click", (event) => {
         const target = event.target.closest ? event.target.closest(".nc-mention") : null;
-        if (!target) return;
+        if (!target || target.dataset.kind === "mistake") return; // 错题链接自己处理点击
         event.preventDefault();
         open(target.dataset.kind, target.dataset.id, target);
       });
@@ -230,6 +262,12 @@
     return li;
   }
 
+  // 错因标签存的是固定词表 code（boundary 等），显示时换成中文名。
+  function tagText(tags) {
+    const label = hooks?.tagLabel || ((tag) => tag);
+    return (tags || []).slice(0, 2).map((tag) => label(tag) || tag).join("、");
+  }
+
   function dueText(due, today) {
     if (!due) return "";
     if (today && due <= today) return "今天该复习";
@@ -245,7 +283,7 @@
     if (data.mistakes?.length) {
       sections.push(section("相关错题", data.mistakes.map((item) => row(
         item.title,
-        [item.tags?.length ? item.tags.slice(0, 2).join("、") : "", item.suspended ? "已暂停" : dueText(item.due_date, today)].filter(Boolean).join(" · "),
+        [tagText(item.tags), item.suspended ? "已暂停" : dueText(item.due_date, today)].filter(Boolean).join(" · "),
         () => hooks?.openMistake?.(item.id), "nc-mistake",
       ))));
     }

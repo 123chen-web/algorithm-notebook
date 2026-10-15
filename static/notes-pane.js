@@ -221,5 +221,84 @@
     container.append(fold);
   }
 
-  window.NotesPane = Object.freeze({ TEMPLATES, BLOCKS, templateText, tidyMarkdown, headings, previewText, setMode, setOpen, renderToc });
+  /* ---------- 阅读视图的小工具：代码块复制、遮住看、导出 ---------- */
+
+  /** 每个代码块加一条头：语言名 + “复制”。复制走剪贴板 API，失败时提示手动选中。 */
+  function enhanceCode(root, notify) {
+    if (!root) return 0;
+    let count = 0;
+    for (const pre of [...root.querySelectorAll("pre")]) {
+      if (pre.parentNode && pre.parentNode.classList && pre.parentNode.classList.contains("nm-code")) continue;
+      const code = pre.querySelector("code");
+      if (!code) continue;
+      const lang = (/language-([\w+#-]+)/.exec(code.className || "") || [])[1] || "代码";
+      const wrap = document.createElement("div");
+      wrap.className = "nm-code";
+      const bar = document.createElement("div");
+      bar.className = "nm-code-bar";
+      const label = document.createElement("span");
+      label.className = "nm-code-lang";
+      label.textContent = lang;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "nm-code-copy";
+      copy.textContent = "复制";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(code.textContent || "");
+          copy.textContent = "已复制";
+          window.setTimeout(() => { copy.textContent = "复制"; }, 1500);
+        } catch (_error) {
+          notify?.("浏览器没让复制，请手动选中代码复制。");
+        }
+      });
+      bar.append(label, copy);
+      pre.replaceWith(wrap);
+      wrap.append(bar, pre);
+      count += 1;
+    }
+    return count;
+  }
+
+  /** 遮住看：只露出标题，正文每一块先模糊，点一下这一块就显示。可选的看法，不打分、不记录。 */
+  function setCovered(root, on) {
+    if (!root) return;
+    root.classList.toggle("is-covered", Boolean(on));
+    for (const block of [...(root.children || [])]) block.classList.remove("nm-uncovered");
+    if (!root.dataset.coverBound) {
+      root.dataset.coverBound = "1";
+      root.addEventListener("click", (event) => {
+        if (!root.classList.contains("is-covered")) return;
+        let block = event.target;
+        while (block && block.parentNode !== root) block = block.parentNode;
+        if (!block || /^H[1-3]$/.test(block.tagName) || block.classList.contains("nm-uncovered")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        block.classList.add("nm-uncovered");
+      }, true);
+    }
+  }
+
+  /** 把一篇笔记存成 .md 文件（文件名用标题，去掉不能当文件名的字符）。 */
+  function downloadMarkdown(note, title) {
+    const name = `${String(title || "笔记").replace(/[\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 60) || "笔记"}.md`;
+    const head = note.title ? `# ${note.title}\n\n` : "";
+    const tags = (note.tags || []).length ? `\n\n标签：${note.tags.map((tag) => `#${tag}`).join(" ")}\n` : "\n";
+    const blob = new Blob([`${head}${note.content || ""}${tags}`], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return name;
+  }
+
+  window.NotesPane = Object.freeze({
+    TEMPLATES, BLOCKS, templateText, tidyMarkdown, headings, previewText, setMode, setOpen, renderToc,
+    enhanceCode, setCovered, downloadMarkdown,
+  });
 })();
