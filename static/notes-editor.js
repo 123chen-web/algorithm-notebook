@@ -223,6 +223,8 @@
     }
     try {
       composerInst = OY.create(r.host, buildOptions(''));
+      // 编辑时也显示荧光笔、提示框（只是显示，不改内容；挂不上就算了）。
+      try { window.NotesLive?.attach(composerInst.editor); } catch (error) { /* 显示增强失败不影响编辑 */ }
       fallback = false;
       r.host.hidden = false;
       r.textarea.hidden = true;
@@ -307,6 +309,7 @@
       return null;
     }
     activeEdit = { inst, host };
+    try { window.NotesLive?.attach(inst.editor); } catch (error) { /* 显示增强失败不影响编辑 */ }
     registerDrawingInserter();
     return {
       getMarkdown() {

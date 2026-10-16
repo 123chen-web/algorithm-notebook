@@ -224,3 +224,23 @@
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
 }
+
+/* 编辑时的积木效果（static/notes-live.js 加的装饰）：和阅读视图同一套颜色，只是显示，不改内容。 */
+.oy-editor .ProseMirror .oy-live-hl {
+  padding: 0 .1em;
+  border-radius: var(--radius-xs, 4px);
+  background: color-mix(in srgb, var(--gamboge) 38%, transparent);
+  color: var(--ink);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.oy-editor .ProseMirror .oy-live-marker { color: var(--ink-2); font-weight: 400; }
+.oy-editor .ProseMirror blockquote.oy-live-callout { border-left-width: 4px; border-left-style: solid; color: var(--ink); }
+.oy-editor .ProseMirror blockquote.oy-live-callout > :first-child { font-weight: 600; }
+.oy-editor .ProseMirror blockquote.oy-live-callout-tip { border-left-color: var(--azurite); background: var(--soft); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-warn { border-left-color: var(--gamboge); background: var(--notice-surface); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-danger { border-left-color: var(--danger-line); background: var(--danger-soft); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-example { border-left-color: var(--group-line); background: var(--group-soft); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-ok { border-left-color: var(--success-line); background: var(--success-soft); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-def { border-left-color: var(--line-strong); background: var(--quiet-surface); }
+.oy-editor .ProseMirror blockquote.oy-live-callout-answer { border-left-color: var(--summary-line); border-left-style: dashed; background: var(--summary-surface); }
