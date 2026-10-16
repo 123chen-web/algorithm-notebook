@@ -14,9 +14,9 @@ function shapes() {
   return load(["draw-shapes.js"]).window.DrawShapes;
 }
 
-test("十种图形都能生成，元素字段齐全、数值有限、整组共用一个 groupId", () => {
+test("所有图形都能生成，元素字段齐全、数值有限、整组共用一个 groupId", () => {
   const api = shapes();
-  assert.equal(api.SHAPES.length, 10);
+  assert.equal(api.SHAPES.length, 11);
   for (const { kind } of api.SHAPES) {
     const elements = plain(api.build(kind, { x: 300, y: 200 }));
     assert.ok(elements.length >= 3, kind);

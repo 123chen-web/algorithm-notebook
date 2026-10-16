@@ -22,6 +22,7 @@
     { kind: "dp-grid", label: "DP 表格" },
     { kind: "hash-table", label: "哈希表" },
     { kind: "call-stack", label: "递归调用栈" },
+    { kind: "trace-table", label: "变量追踪表" },
   ]);
 
   function defaultRandom() {
@@ -212,6 +213,25 @@
         f.text(value, x + 110, y + i * 46 + 23, { fontSize: 16 });
       });
       f.text("调用栈（上面先返回）", x + 110, y - 22, { fontSize: 14, strokeColor: MUTED });
+    },
+    /* 手动模拟循环：每走一步填一行，边界错误（少走一步、多走一步）最容易在这里现形。 */
+    "trace-table"(f, x, y) {
+      const columns = [["步", 44], ["i", 56], ["lo", 56], ["hi", 56], ["mid", 56], ["条件 / 说明", 150]];
+      const rowHeight = 36;
+      const rows = 6;
+      f.text("变量追踪表（每走一步填一行）", x + 120, y - 22, { fontSize: 14, strokeColor: MUTED });
+      let left = x;
+      for (const [title, width] of columns) {
+        f.rect(left, y, width, rowHeight, { roundness: null, backgroundColor: FILL });
+        f.text(title, left + width / 2, y + rowHeight / 2, { fontSize: 16 });
+        for (let row = 1; row < rows; row += 1) {
+          f.rect(left, y + row * rowHeight, width, rowHeight, { roundness: null });
+        }
+        left += width;
+      }
+      for (let row = 1; row < rows; row += 1) {
+        f.text(String(row - 1), x + columns[0][1] / 2, y + row * rowHeight + rowHeight / 2, { fontSize: 14, strokeColor: MUTED });
+      }
     },
   };
 
