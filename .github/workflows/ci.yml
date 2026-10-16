@@ -59,6 +59,20 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  host-scripts:
+    # backup.py 和 deploy/bin/*.py 在服务器本机的 python3 上跑（Ubuntu 22.04 自带 3.10，不在容器里），
+    # 真出事时的恢复也靠它们：必须只用标准库、能被 Python 3.10 编译和运行。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+      - name: Compile and start host scripts with Python 3.10
+        run: |
+          python -m py_compile backup.py deploy/bin/*.py
+          python backup.py --help > /dev/null
+
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true

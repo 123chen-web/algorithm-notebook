@@ -1,4 +1,8 @@
-"""在线备份 SQLite 与头像，并在独立目录校验、恢复。"""
+"""在线备份 SQLite 与头像，并在独立目录校验、恢复。
+
+恢复演练和灾难恢复时它在服务器本机的 python3 上跑（Ubuntu 22.04 是 3.10，不是容器里的 3.13）：
+只用标准库，不用 3.11+ 的写法（比如 f-string 花括号里再用同一种引号），CI 的 host-scripts 用 3.10 守着。
+"""
 
 import argparse
 import hashlib
@@ -206,7 +210,7 @@ def create_backup(output_dir=None, keep=None, *, database_path=None, avatar_dir=
         os.replace(temporary_archive, created)
         removed = _prune_archives(output, created, keep)
         policy = "全部保留" if keep == 0 else f"保留最近 {keep} 份"
-        print(f"备份完成：{created}；{created.stat().st_size} 字节；schema {version}；头像 {len(avatar_paths)} 个；笔记图片 {len(extra_paths["note_files"])} 个；画板缩略图 {len(extra_paths["drawings"])} 个；{policy}，删除旧归档 {removed} 份。")
+        print(f"备份完成：{created}；{created.stat().st_size} 字节；schema {version}；头像 {len(avatar_paths)} 个；笔记图片 {len(extra_paths['note_files'])} 个；画板缩略图 {len(extra_paths['drawings'])} 个；{policy}，删除旧归档 {removed} 份。")
         return created
     finally:
         for path in temporary_paths:
