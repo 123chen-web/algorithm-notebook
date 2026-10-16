@@ -825,10 +825,16 @@
     if (!panel || panel.closed || !panel.ready || !panel.detailLoaded || !window.DrawShapes) return false;
     const current = panel.lastScene || (panel.detail && panel.detail.scene) || {};
     const existing = Array.isArray(current.elements) ? current.elements : [];
-    const added = window.DrawShapes.build(kind, window.DrawShapes.originBeside(existing));
+    const origin = window.DrawShapes.originBeside(existing);
+    const added = window.DrawShapes.build(kind, origin);
     if (!added.length) return false;
-    // 不带 appState / files：画板只换元素，视口、主题和已载入的图片都不动。
-    postToFrame(panel, { type: "draw:load", scene: { elements: [...existing, ...added] } });
+    const elements = [...existing, ...added];
+    // 新图形放在已有内容右边，常常在屏幕外：顺手把画面移过去（按 100% 缩放，新图形出现在左上、工具栏下面）。
+    // appState 只带滚动和缩放，画板按 React setState 合并，主题等其他设置不动；不带 files，已载入的图片不动。
+    const view = { scrollX: 60 - origin.x, scrollY: 150 - origin.y, zoom: { value: 1 } };
+    postToFrame(panel, { type: "draw:load", scene: { elements, appState: view } });
+    // 画板的 draw:change 要停顿一下才发回来；先记下插入后的场景，连着插第二个图形时不会把第一个冲掉。
+    panel.lastScene = { ...current, elements };
     try {
       panel.frame.focus();
     } catch (_error) {

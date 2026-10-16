@@ -524,3 +524,28 @@ test("浏览器后退：有未保存更改且选择取消时，面板保持打�
   assert.equal(h.history.pushed, 2, "取消后要补回一格历史，下一次后退仍先关画板");
   assert.equal(h.history.backs, 0);
 });
+
+/* ───────────── 算法图形 ───────────── */
+
+test("算法图形：插入时把图形追加到当前场景；连着插两个，第二次不会冲掉第一个", async () => {
+  const ctx = setup(["draw-shapes.js", "draw-host.js"]);
+  const existing = { id: "mine", type: "rectangle", x: 0, y: 0, width: 100, height: 50, isDeleted: false };
+  const mount = await openReady(ctx, 5, { id: 5, title: "草图", version: 1, scene: { elements: [existing], appState: {}, files: {} } });
+  const before = mount.posted.length;
+  assert.equal(ctx.DrawHost.insertShape("array"), true);
+  // 画板的 draw:change 还没回来就再插一个
+  assert.equal(ctx.DrawHost.insertShape("binary-tree"), true);
+  const loads = mount.posted.slice(before).map((entry) => entry.message);
+  assert.equal(loads.length, 2);
+  for (const message of loads) {
+    assert.equal(message.type, "draw:load");
+    assert.deepEqual(Object.keys(message.scene.appState).sort(), ["scrollX", "scrollY", "zoom"], "appState 只带视口，把画面移到新图形");
+    assert.equal("files" in message.scene, false, "不带 files，图片不动");
+  }
+  const last = loads[1].scene.elements;
+  assert.equal(last[0].id, "mine", "原来的元素还在");
+  const groups = new Set(last.slice(1).map((el) => el.groupIds[0]));
+  assert.equal(groups.size, 2, "两个图形都在");
+  assert.ok(last.slice(1).every((el) => el.x >= 100), "放在已有内容右边");
+  assert.equal(ctx.DrawHost.insertShape("nope"), false);
+});
