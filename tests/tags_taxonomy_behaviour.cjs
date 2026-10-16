@@ -115,3 +115,34 @@ test("taxonomy: label() maps code to Chinese name", async () => {
   assert.equal(env.window.TagEditor.label("boundary"), "边界/特例");
   assert.equal(env.window.TagEditor.label("unknown-code"), "unknown-code");
 });
+
+test("老毛病：有同错因的旧题时，标签下面列出题名，点一下打开那条；题名是纯文字", async () => {
+  const env = setup();
+  const opened = [];
+  env.window.openMistake = (id) => { opened.push(id); return Promise.resolve(); };
+  const editor = await renderEditor(env, { id: 9, tags: ["boundary"], pending_reason: false });
+  const call = env.calls.find((entry) => entry.url === "/api/mistakes/9/same-cause");
+  assert.ok(call, "有标签时去取老毛病");
+  env.respond(call, 200, { groups: [{ tag: "boundary", total: 5, items: [
+    { id: 3, problem_id: 2, title: "<b>二分</b>", description: "漏了 left == right" },
+    { id: 4, problem_id: 3, title: "搜索插入位置", description: "" },
+  ] }] });
+  await settle();
+  const box = editor.querySelector(".tag-recurrence");
+  assert.equal(box.hidden, false);
+  assert.match(box.textContent, /老毛病「边界\/特例」：你在 《<b>二分<\/b>》、《搜索插入位置》 等 5 道题里也是这样错的。/);
+  assert.equal(editor.querySelector(".tag-recurrence b"), null, "题名不会变成 HTML");
+  editor.querySelector(".tag-recurrence-link").click();
+  assert.deepEqual(opened, [3]);
+});
+
+test("老毛病：没有同错因的旧题或请求失败时不显示；没选标签时不去请求", async () => {
+  const env = setup();
+  const editor = await renderEditor(env, { id: 9, tags: ["boundary"], pending_reason: false });
+  env.respond(env.calls.find((entry) => entry.url === "/api/mistakes/9/same-cause"), 500, {});
+  await settle();
+  assert.equal(editor.querySelector(".tag-recurrence").hidden, true);
+  const env2 = setup();
+  await renderEditor(env2, { id: 10, tags: [], pending_reason: true });
+  assert.equal(env2.calls.some((entry) => entry.url.includes("same-cause")), false);
+});

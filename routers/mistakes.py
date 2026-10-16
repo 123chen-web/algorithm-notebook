@@ -161,6 +161,54 @@ def set_mistake_tags(mistake_id: int, data: MistakeTags, user=Depends(security.c
     return {"tags": tags}
 
 
+# 老毛病：同一个错因下，别的题里记过的易错点（每个错因最多列 3 道题，最近的在前）。
+# 只是串联：不提醒、不打分、不进队列。“其他”太笼统，不算。
+SAME_CAUSE_PER_TAG = 3
+SAME_CAUSE_SKIP = {"other"}
+
+
+@router.get("/api/mistakes/{mistake_id}/same-cause")
+def same_cause_mistakes(mistake_id: int, user=Depends(security.current_user)):
+    with db.connect() as conn:
+        item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
+        tags = [
+            row["tag"] for row in conn.execute(
+                "SELECT tag FROM mistake_tags WHERE mistake_id = ? AND user_id = ? ORDER BY rowid",
+                (mistake_id, user["id"]),
+            )
+        ]
+        groups = []
+        for tag in tags:
+            if tag in SAME_CAUSE_SKIP:
+                continue
+            base = (
+                "FROM mistake_tags t JOIN mistakes m ON m.id = t.mistake_id "
+                "JOIN problems p ON p.id = m.problem_id "
+                "WHERE t.user_id = ? AND p.user_id = ? AND t.tag = ? AND m.problem_id != ?"
+            )
+            params = (user["id"], user["id"], tag, item["problem_id"])
+            # 按题算：同一道旧题里有几条同错因的易错点，也只列一次（取最近的那条）。
+            total = conn.execute(f"SELECT COUNT(DISTINCT m.problem_id) {base}", params).fetchone()[0]
+            if not total:
+                continue
+            rows = conn.execute(
+                # SQLite 里和 MAX() 一起选的普通列取自 MAX 那一行，description 就是最近那条的。
+                f"SELECT MAX(m.id) AS id, m.problem_id, m.description, p.title {base} "
+                "GROUP BY m.problem_id ORDER BY id DESC LIMIT ?",
+                (*params, SAME_CAUSE_PER_TAG),
+            ).fetchall()
+            groups.append({
+                "tag": tag,
+                "total": total,
+                "items": [
+                    {"id": row["id"], "problem_id": row["problem_id"], "title": row["title"],
+                     "description": (row["description"] or "")[:80]}
+                    for row in rows
+                ],
+            })
+    return {"groups": groups}
+
+
 @router.get("/api/mistakes/{mistake_id}")
 def get_mistake(mistake_id: int, user=Depends(security.current_user)):
     with db.connect() as conn:

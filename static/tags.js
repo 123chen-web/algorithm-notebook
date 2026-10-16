@@ -161,6 +161,49 @@
     const status = node("p", "tag-status");
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
+    // 老毛病：同一个错因，以前在别的题里也犯过。只是把它们串起来，点题名就能看那条。
+    const recurrence = node("div", "tag-recurrence");
+    recurrence.hidden = true;
+    let recurrenceSeq = 0;
+
+    async function showRecurrence() {
+      const mine = ++recurrenceSeq;
+      const startEpoch = epoch;
+      if (!tags.length) {
+        recurrence.hidden = true;
+        recurrence.replaceChildren();
+        return;
+      }
+      let data = null;
+      try {
+        const response = await fetch(`/api/mistakes/${item.id}/same-cause`, {
+          credentials: "same-origin", headers: { "X-CSRF-Protection": "1" },
+        });
+        if (response.ok) data = await response.json();
+      } catch { data = null; }
+      if (mine !== recurrenceSeq || startEpoch !== epoch || !section.isConnected) return;
+      const groups = Array.isArray(data?.groups) ? data.groups : [];
+      recurrence.replaceChildren();
+      for (const group of groups) {
+        const line = node("p", "tag-recurrence-line");
+        line.append(node("span", "tag-recurrence-badge", "老毛病"), document.createTextNode(`「${label(group.tag)}」：你在 `));
+        group.items.forEach((entry, index) => {
+          if (index) line.append(document.createTextNode("、"));
+          const link = node("button", "tag-recurrence-link", `《${entry.title || "未命名"}》`);
+          link.type = "button";
+          if (entry.description) link.title = entry.description;
+          link.setAttribute("aria-label", `打开《${entry.title || "未命名"}》这条易错点`);
+          link.addEventListener("click", () => {
+            if (typeof window.openMistake === "function") void window.openMistake(entry.id);
+          });
+          line.append(link);
+        });
+        const more = group.total > group.items.length ? ` 等 ${group.total} 道题里` : " 里";
+        line.append(document.createTextNode(`${more}也是这样错的。`));
+        recurrence.append(line);
+      }
+      recurrence.hidden = !recurrence.childNodes.length;
+    }
 
     function draw() {
       const selected = new Set(tags.map((tag) => tag.toLowerCase()));
@@ -242,6 +285,7 @@
         item.tags = tags;
         status.textContent = doneText;
         draw();
+        void showRecurrence();
         document.dispatchEvent(new CustomEvent("mistake:tags-changed", { detail: { id: item.id, tags } }));
         refresh();
       } catch {
@@ -252,8 +296,9 @@
       }
     }
 
-    section.append(title, hint, groupsWrap, status);
+    section.append(title, hint, groupsWrap, status, recurrence);
     draw();
+    void showRecurrence();
     // 词表取回来再画一次。
     loadTaxonomy().then(() => { if (section.isConnected) draw(); });
     load().then(() => { if (section.isConnected) draw(); });

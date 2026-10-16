@@ -4,7 +4,7 @@
    只在 pointer: coarse（手指操作）时生效，鼠标设备的紧凑布局不受影响。
    正文里的行内按钮（提到的笔记/套路、错题链接）、日历格子保持原样，否则会把文字行撑开。 */
 @media (pointer: coarse) {
-  :root:not(#_):not(#__) :is(button, select, summary, [role="button"]):not(.nc-mention):not(.cal-cell):not(.hm-cellbtn):not(.zone-dot) {
+  :root:not(#_):not(#__) :is(button, select, summary, [role="button"]):not(.nc-mention):not(.tag-recurrence-link):not(.cal-cell):not(.hm-cellbtn):not(.zone-dot) {
     min-height: 44px;
   }
   :root:not(#_):not(#__) :is(input[type="checkbox"], input[type="radio"]) {

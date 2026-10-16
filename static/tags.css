@@ -88,3 +88,11 @@
   .tag-seal { min-height: 44px; }
   .tag-pill { min-height: 44px; }
 }
+
+/* 老毛病：同一个错因在别的题里也出现过。一行小字，题名可点；不弹窗、不打扰。 */
+.tag-recurrence { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
+.tag-recurrence[hidden] { display: none; }
+.tag-recurrence-line { margin: 0; color: var(--ink-2); font-size: var(--text-sm); line-height: var(--lh-ui, 1.6); overflow-wrap: anywhere; }
+.tag-recurrence-badge { display: inline-block; margin-right: var(--space-1); padding: 0 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); font-size: var(--text-xs); }
+.tag-recurrence-link { display: inline; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent-ink, var(--ink)); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tag-recurrence-link:hover, .tag-recurrence-link:focus-visible { color: var(--ink); }
