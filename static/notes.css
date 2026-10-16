@@ -3,7 +3,7 @@
    与所见即所得编辑器共用同一套样式；本文件只负责页面骨架、卡片、表单、按钮、状态。 */
 #notes-page .notes-wrap { display: grid; gap: var(--space-5); max-width: 860px; margin: 0 auto; padding: var(--space-2) 0 var(--space-8); }
 
-/* ── 三栏：标签 | 列表 | 编辑区（≥1024px）；更窄时列表一屏，点开后编辑区占满（data-pane-open） ── */
+/* ── 三栏：标签 | 列表 | 编辑区；按笔记区宽度在三栏 / 两栏 / 一栏之间切换（见下面的容器查询）；一栏时点开后编辑区占满（data-pane-open） ── */
 #notes-page .notes-wrap.notes-workspace { max-width: 1360px; }
 #notes-page .notes-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 #notes-page .notes-layout { display: grid; gap: var(--space-4); align-items: start; }
@@ -27,19 +27,34 @@
 #notes-page .notes-template-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 #notes-page .notes-template-label { color: var(--ink-2); font-size: var(--text-xs); }
 
-@media (min-width: 1024px) {
+/* 按笔记区实际有多宽来排（容器查询），不按整个窗口：左边侧栏会吃掉一块，
+   1024px 的窗口里笔记区只剩 780px 左右，三栏会把右边编辑区挤成一条。
+   宽 ≥ 1040：标签 / 列表 / 右侧 三栏；700–1039：标签变成列表上方一排可横滑的小标签，列表 + 右侧两栏；< 700：一栏，右侧盖在列表上（手机同款）。 */
+#notes-page { container: notes-page / inline-size; }
+@container notes-page (min-width: 700px) {
+  #notes-page .notes-pane { position: sticky; top: calc(64px + var(--space-3)); max-height: calc(100dvh - 64px - var(--space-6)); overflow-y: auto; padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  #notes-page .notes-pane .notes-composer { padding: 0; border: 0; background: transparent; }
+  #notes-page .notes-col .notes-list { max-height: calc(100dvh - 64px - 140px); overflow-y: auto; padding-right: var(--space-1); }
+}
+@container notes-page (min-width: 1040px) {
   #notes-page .notes-layout { grid-template-columns: minmax(120px, 160px) minmax(240px, 320px) minmax(0, 1fr); }
   #notes-page .notes-rail { position: sticky; top: calc(64px + var(--space-3)); }
   #notes-page .notes-rail-title { display: block; }
   #notes-page .notes-rail .notes-tag-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
   #notes-page .notes-rail .notes-chip { text-align: left; border-radius: var(--radius-sm); }
-  #notes-page .notes-pane { position: sticky; top: calc(64px + var(--space-3)); max-height: calc(100dvh - 64px - var(--space-6)); overflow-y: auto; padding: var(--space-5) var(--space-6); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-  #notes-page .notes-pane .notes-composer { padding: 0; border: 0; background: transparent; }
-  #notes-page .notes-col .notes-list { max-height: calc(100dvh - 64px - 140px); overflow-y: auto; padding-right: var(--space-1); }
 }
-@media (max-width: 1023px) {
+@container notes-page (min-width: 700px) and (max-width: 1039px) {
+  #notes-page .notes-layout { grid-template-columns: minmax(220px, 260px) minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  #notes-page .notes-rail { grid-column: 1; grid-row: 1; }
+  #notes-page .notes-col { grid-column: 1; grid-row: 2; }
+  #notes-page .notes-pane { grid-column: 2; grid-row: 1 / span 2; }
+  #notes-page .notes-col .notes-list { max-height: calc(100dvh - 64px - 200px); }
+}
+@container notes-page (max-width: 1039px) {
   #notes-page .notes-rail .notes-tag-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); }
   #notes-page .notes-rail .notes-chip { flex: 0 0 auto; }
+}
+@container notes-page (max-width: 699px) {
   #notes-page .notes-layout[data-pane-open="false"] .notes-pane { display: none; }
   #notes-page .notes-layout[data-pane-open="true"] .notes-rail,
   #notes-page .notes-layout[data-pane-open="true"] .notes-col { display: none; }
@@ -102,7 +117,7 @@
 #notes-page .notes-pane-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 #notes-page .notes-pane-head .notes-edit-title { flex: 1 1 16rem; min-width: 0; min-height: 48px; border-color: transparent; background: transparent; font: 500 clamp(20px, 2.2vw, 26px)/1.3 var(--serif); }
 #notes-page .notes-pane-head .notes-edit-title:hover { border-color: var(--line); }
-#notes-page .notes-pane-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+#notes-page .notes-pane-tools { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: var(--space-2); }
 #notes-page .notes-pane-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 #notes-page .notes-pane-meta .notes-edit-tags { flex: 1 1 14rem; min-width: 0; }
 #notes-page .notes-pane-toc[hidden] { display: none; }
