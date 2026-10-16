@@ -371,3 +371,42 @@ test("编辑时“看效果”：在正文下面显示排好版的样子，改�
   assert.equal(preview.hidden, true);
   assert.equal(toggle.textContent, "看效果");
 });
+
+test("打开笔记编辑、一个字没改：编辑器换了写法（[ ] 转义）也不算改动，不会自动保存出一份历史", async () => {
+  const env = load(["notes-pane.js", "notes-history.js", "notes.js"]);
+  const api = async (path, options = {}) => {
+    const response = await env.window.fetch(path, options);
+    const body = await response.json();
+    if (!response.ok) { const error = new Error(body.detail); error.status = response.status; throw error; }
+    return body;
+  };
+  env.window.NotesHistory.configure({ api, getUser: () => ({ id: 7 }), notify() {}, confirm: () => true });
+  env.window.Notes.configure({
+    api, getUser: () => ({ id: 7 }), getEpoch: () => 1, getView: () => "notes", confirm: () => true, notify() {},
+  });
+  // 假的所见即所得编辑器：读进来就把 [ ] 转义（真编辑器就是这样）。
+  let typed = null;
+  env.window.NotesEditor = {
+    mountEdit(host, markdown) {
+      host.append(env.document.createElement("div"));
+      return {
+        getMarkdown: () => typed ?? markdown.replace(/([[\]])/g, "\\$1"),
+        setMarkdown(value) { typed = value; }, focus() {}, destroy() {},
+      };
+    },
+  };
+  await loadNotes(env, [{ ...NOTE, content: "> [!易错] 下标\n> 从 0 开始" }]);
+  const pane = env.document.querySelector("#notes-pane-note");
+  env.document.querySelector("#notes-list").querySelector(".notes-card-open").click();
+  await tick(); await tick();
+  [...pane.querySelectorAll(".notes-action")].find((button) => button.textContent === "编辑").click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  assert.ok(pane.querySelector(".notes-editor"), "进入了编辑区");
+  const before = env.calls.length;
+  // “完成”：有改动就先保存再收起；没改动直接收起（同时停掉编辑时的定时检查）。
+  [...pane.querySelectorAll(".notes-action")].find((button) => button.textContent === "完成").click();
+  await tick(); await tick(); await tick();
+  const puts = env.calls.slice(before).filter((call) => call.init?.method === "PUT");
+  assert.equal(puts.length, 0, "没改就不保存，也就不会多出一份历史版本");
+  assert.ok(pane.querySelector(".notes-reader"), "直接回到阅读视图");
+});

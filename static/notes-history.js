@@ -250,6 +250,11 @@
       rebase(updatedAt) {
         if (updatedAt) base = updatedAt;
       },
+      /** 编辑器读进笔记时会换一种写法（比如把 [ ] 转义成 \[ \]），意思没变：打开后、还没动手前，
+          把编辑器读到的样子当作起点，免得一打开就自动保存、多出一份没意义的历史版本。 */
+      acceptLoaded() {
+        if (!everSaved && !saving) lastSaved = serialize(read());
+      },
       pendingDraft() {
         const saved = drafts.read(key);
         if (!saved || typeof saved.content !== "string") return null;

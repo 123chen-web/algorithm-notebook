@@ -1368,6 +1368,7 @@
         void openNote(note);
       },
     });
+    saver?.acceptLoaded?.();
 
     state = {
       note,
