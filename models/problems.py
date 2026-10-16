@@ -1,17 +1,10 @@
 """pydantic 输入/输出模型。纯数据定义，不依赖业务模块。"""
-import re
-import unicodedata
 from urllib.parse import urlsplit
-from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, StringConstraints, field_validator, model_validator
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from pydantic import Field, StrictBool, StringConstraints, field_validator, model_validator
 
 from core.config import (
-    ALLOWED_IMAGE_FORMATS,
-    MAX_PATTERNS_PER_PROBLEM,
-    PATTERN_STATUSES,
     PROBLEM_ZONES,
 )
 import error_taxonomy

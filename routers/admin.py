@@ -10,7 +10,7 @@ from models.payments import ManualGrant
 from models.payments import ManualPaymentSettings
 from models.payments import NewRedeemCodes
 from models.payments import RejectManualClaim
-from pydantic import Field, StrictBool, field_validator
+from pydantic import Field, field_validator
 import accounts
 import db
 import forum_lib

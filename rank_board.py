@@ -3,7 +3,7 @@
 只用聚合 SQL（查询次数不随用户数增长）和进程内按日缓存，不调用 AI。
 “昨日”固定按北京时间（Asia/Shanghai，无夏令时）的自然日算，与用户自己的时区无关。
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import rank_cache

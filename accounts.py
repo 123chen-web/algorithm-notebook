@@ -2,7 +2,6 @@
 import logging
 import time
 
-import db
 import images
 from core import config, security
 

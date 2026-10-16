@@ -1,7 +1,4 @@
 """复习域服务：复习队列、离线操作回放、掌握信号。"""
-import time
-import uuid
-from datetime import timedelta
 
 import accounts
 import db

@@ -19,7 +19,6 @@ main 命名空间下的名字一律用 main.<name> 在调用时取属性，
 """
 from core import security, time
 import db
-import review_lib
 
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo

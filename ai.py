@@ -10,7 +10,7 @@ from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
-    InternalServerError,
+    InternalServerError,  # noqa: F401  测试通过 ai.InternalServerError 构造上游 5xx
     OpenAI,
     RateLimitError,
 )

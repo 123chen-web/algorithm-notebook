@@ -26,7 +26,6 @@ from scheduler import today_in_timezone
 from tags import TAGS_PER_MISTAKE
 from tags import TAG_MAX_LENGTH
 from tags import TagError
-from tags import normalize_tags
 from tags import replace_tags
 from tags import tags_for_mistakes
 from tags import user_tag_counts

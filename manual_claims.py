@@ -6,7 +6,7 @@
 import hashlib
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import mailer
 from payments import activate_plan

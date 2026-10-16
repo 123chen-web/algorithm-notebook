@@ -5,14 +5,13 @@ Names living in main's namespace are referenced as ``main.<name>``
 in tests keeps affecting the moved code.
 """
 from core import security
-from pydantic import Field, StrictBool, field_validator
+from pydantic import StrictBool
 import accounts
 import db
 from models import InputModel
 import secrets
 
 from fastapi import Depends
-from fastapi import HTTPException
 from fastapi import APIRouter
 from fastapi import Query
 from typing import Annotated

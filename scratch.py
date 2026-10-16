@@ -2,7 +2,6 @@
 import json
 import re
 
-import db
 from core import config
 
 _SCRATCH_CONTROL_CHAR = re.compile(r"[\x00-\x1f\x7f]")

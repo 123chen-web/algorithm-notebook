@@ -1,6 +1,5 @@
 """鉴权与账号安全：密码/令牌/会话/限流相关的共享函数。"""
 import hashlib
-import hmac
 import logging
 import threading
 from collections import defaultdict
