@@ -256,6 +256,13 @@ function renderDetail(item, options = {}) {
   }));
   toolbar.append(noteButton);
 
+  // 变强轨迹：复习记录画成一条时间线（和复习历史一起，显示错因后才出现）。
+  const growth = window.GrowthTrack?.render(item);
+  if (growth) {
+    root.append(growth);
+    state.answers.push(growth);
+  }
+
   if (item.reviews.length) {
     const history = document.createElement("details");
     history.className = "review-history";

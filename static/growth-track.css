@@ -1,0 +1,16 @@
+/* 一道题的“变强轨迹”（static/growth-track.js）：一排小圆点连成线，颜色按那次评分；只用主题令牌。 */
+.growth-track { display: grid; gap: var(--space-2); margin: var(--space-4) 0 0; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.growth-track[hidden] { display: none; }
+.growth-track-title { margin: 0; font-size: var(--text-sm); }
+.growth-track-summary { margin: 0; color: var(--ink); font-size: var(--text-sm); line-height: var(--lh-ui, 1.6); }
+.growth-track-list { display: flex; gap: 0; margin: 0; padding: var(--space-2) 0 var(--space-1); overflow-x: auto; list-style: none; scrollbar-width: thin; }
+.growth-step { position: relative; display: grid; justify-items: center; gap: 4px; min-width: 88px; padding: 0 var(--space-2); text-align: center; }
+/* 点与点之间的连线：从这个点画到下一个点 */
+.growth-step:not(:last-child)::after { content: ""; position: absolute; top: 7px; left: 50%; width: 100%; height: 2px; background: var(--line-strong); }
+.growth-dot { position: relative; z-index: 1; width: 16px; height: 16px; border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+.growth-low .growth-dot { background: var(--danger-ink); }
+.growth-mid .growth-dot { background: var(--gamboge); }
+.growth-good .growth-dot { background: var(--success-ink); }
+.growth-step:last-child .growth-dot { box-shadow: 0 0 0 2px var(--accent); }
+.growth-step-label { color: var(--ink); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
+.growth-step-meta { color: var(--ink-2); font-size: var(--text-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
