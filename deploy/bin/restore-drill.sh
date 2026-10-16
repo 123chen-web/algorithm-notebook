@@ -122,7 +122,9 @@ if result != "ok":
 names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 for table in ("users", "problems", "mistakes", "reviews"):
     if table in names:
-        print(f"rows {table}: {con.execute(f'SELECT COUNT(*) FROM \"{table}\"').fetchone()[0]}")
+        # 表名来自上面固定的元组；不在 f-string 的花括号里写反斜杠（Python 3.12 以前是语法错误）。
+        count = con.execute('SELECT COUNT(*) FROM "%s"' % table).fetchone()[0]
+        print(f"rows {table}: {count}")
     else:
         print(f"rows {table}: 表不存在")
 con.close()
