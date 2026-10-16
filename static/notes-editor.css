@@ -229,7 +229,8 @@
 .oy-editor .ProseMirror .oy-live-hl {
   padding: 0 .1em;
   border-radius: var(--radius-xs, 4px);
-  background: color-mix(in srgb, var(--gamboge) 38%, transparent);
+  background: var(--notice-surface); /* 编辑器样式只用主题令牌（不混色）；阅读视图的荧光笔是同一个色系 */
+  box-shadow: inset 0 -2px 0 var(--gamboge);
   color: var(--ink);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
