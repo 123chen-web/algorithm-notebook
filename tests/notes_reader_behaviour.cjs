@@ -346,3 +346,28 @@ test("revealMatch：正文里第一个命中被标成当前命中，折叠里的
   assert.ok(root.textContent.includes("关键是 lowbit"), "拆开文字节点后原文不变");
   assert.equal(env.window.NotesPane.revealMatch(root, "没有的词"), null);
 });
+
+test("编辑时“看效果”：在正文下面显示排好版的样子，改了正文会跟着变，收起后不再刷新", async () => {
+  const { env, document } = setup();
+  await loadNotes(env, [{ ...NOTE, content: "要点 ==边界== 别忘" }]);
+  document.querySelector("#notes-list").querySelector(".notes-card-open").click();
+  await tick(); await tick();
+  const pane = document.querySelector("#notes-pane-note");
+  [...pane.querySelectorAll(".notes-action")].find((button) => button.textContent === "编辑").click();
+  await tick(); await tick();
+  const toggle = pane.querySelector(".notes-preview-toggle");
+  const preview = pane.querySelector(".notes-edit-preview");
+  assert.ok(toggle && preview);
+  assert.equal(preview.hidden, true, "默认收着");
+  toggle.click();
+  assert.equal(preview.hidden, false);
+  assert.equal(toggle.getAttribute("aria-pressed"), "true");
+  assert.equal(preview.querySelector("mark").textContent, "边界", "荧光笔显示成真的荧光笔");
+  pane.querySelector(".notes-edit-content").value = "> [!易错] 小心\n> 下标从 0 开始";
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  assert.equal(preview.querySelector("mark"), null);
+  assert.ok(preview.textContent.includes("下标从 0 开始"), "改了正文，预览跟着变");
+  toggle.click();
+  assert.equal(preview.hidden, true);
+  assert.equal(toggle.textContent, "看效果");
+});

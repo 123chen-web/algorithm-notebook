@@ -1278,6 +1278,38 @@
       });
       blocks.append(add);
     }
+    // 看效果：编辑器（外部打包，没有源码）里荧光笔、提示框、折叠答案只显示成 Markdown 原文；
+    // 打开后在正文下面实时显示排好版的样子，边写边看。只是看，不改内容、不存状态。
+    const previewToggle = h("button", "看效果", "notes-chip notes-chip-sm notes-preview-toggle");
+    previewToggle.type = "button";
+    previewToggle.setAttribute("aria-pressed", "false");
+    previewToggle.title = "在下面实时显示排好版的样子（荧光笔、提示框、折叠答案）";
+    blocks.append(previewToggle);
+    const preview = h("div", null, "notes-body notes-rich notes-edit-preview");
+    preview.hidden = true;
+    preview.setAttribute("aria-label", "排版效果预览");
+    let previewTimer = 0;
+    let previewShown = null;
+    const paintPreview = () => {
+      const text = String(readBody() ?? "");
+      if (text === previewShown) return;
+      previewShown = text;
+      const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
+      preview.replaceChildren(renderNoteMarkdown(bodyWithoutDerivedTitle({ ...note, title: titleInput.value, content: text }), { drawingIds }));
+      window.NotesPane?.enhanceCode(preview, hooks?.notify);
+    };
+    previewToggle.addEventListener("click", () => {
+      const on = preview.hidden;
+      preview.hidden = !on;
+      previewToggle.setAttribute("aria-pressed", on ? "true" : "false");
+      previewToggle.textContent = on ? "收起效果" : "看效果";
+      if (previewTimer) window.clearInterval(previewTimer);
+      previewTimer = 0;
+      if (!on) return;
+      previewShown = null;
+      paintPreview();
+      previewTimer = window.setInterval(() => { if (paneState === state) paintPreview(); }, 700);
+    });
     const row = h("div", null, "notes-editor-row");
     const done = h("button", "完成", "notes-action primary");
     done.type = "button";
@@ -1292,7 +1324,7 @@
     // N1：关联区（出链 + 反向链接），由 NotesLinks 异步填充。
     const related = h("div", null, "nl-related");
     related.setAttribute("data-nl-related", "");
-    editor.append(head, meta, toc, blocks, bodyHost, row, error, related);
+    editor.append(head, meta, toc, blocks, bodyHost, preview, row, error, related);
     host.replaceChildren(editor);
     window.NotesLinks?.renderRelated?.(editor, note.id);
     window.NotesPane?.renderToc(toc, note.content || "", bodyHost);
@@ -1339,6 +1371,7 @@
       dirty: () => (saver ? saver.dirty() : readBody() !== note.content),
       teardown: () => {
         if (watcher) window.clearInterval(watcher);
+        if (previewTimer) window.clearInterval(previewTimer);
         saver?.stop();
         if (editCtl && typeof editCtl.destroy === "function") {
           try { editCtl.destroy(); } catch { /* 卸载失败不影响收起 */ }

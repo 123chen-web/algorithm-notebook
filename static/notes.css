@@ -162,3 +162,8 @@
 }
 #notes-page mark.notes-search-hit.is-current { box-shadow: 0 2px 0 var(--accent); }
 #notes-page .notes-card-preview.is-snippet { -webkit-line-clamp: 3; }
+
+/* 编辑时“看效果”：正文下面的排版预览，和阅读视图同一套样式，用虚线框和编辑区分开。 */
+#notes-page .notes-edit-preview { margin-top: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px dashed var(--line); border-radius: var(--radius-sm); background: var(--paper-2, var(--surface)); }
+#notes-page .notes-edit-preview[hidden] { display: none; }
+#notes-page .notes-preview-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); }

@@ -345,6 +345,8 @@ function load(files, { extra = {} } = {}) {
     fetch: fetchStub,
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
     requestAnimationFrame: (callback) => setTimeout(callback, 0),
     cancelAnimationFrame: clearTimeout,
     addEventListener() {},
