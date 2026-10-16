@@ -686,10 +686,14 @@
     const token = takeToken();
     const request = ++listRequest;
     loading = true;
+    // 列表还空着（刚进笔记页）时，慢的话先放骨架；筛选/搜索时保留旧列表，不闪。
+    const listEl = $("#notes-list");
+    const skeleton = listEl && !listEl.childNodes.length ? window.Feel?.skeletonCards?.(listEl, 5) : null;
     try {
       const data = await hooks.api(buildNotesQuery({
         q: query, tag: activeTag, problemId: problemFilter?.id ?? "", offset: 0,
       }));
+      skeleton?.cancel();
       if (!alive(token) || request !== listRequest) return;
       notes.length = 0;
       notes.push(...(data?.notes || []));
@@ -702,7 +706,9 @@
       sortNotes();
       renderList();
     } catch (error) {
+      const shown = skeleton?.cancel();
       if (!alive(token) || request !== listRequest) return;
+      if (shown) listEl.replaceChildren();
       const status = $("#notes-status");
       if (status) { status.hidden = false; status.textContent = error?.message || "加载笔记失败，请稍后重试。"; }
     } finally {

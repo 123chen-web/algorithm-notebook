@@ -254,6 +254,9 @@ async function loadList() {
     + (listCreatedOn ? `&created_on=${encodeURIComponent(listCreatedOn)}` : "");
   let data;
   let offlineToday = false;
+  // 第一次打开、或在“今日复习 / 全部记录”之间切换时，旧卡片不该留着冒充新列表：慢的时候先放骨架。
+  const cardsHost = $("#cards");
+  const skeleton = (!cardsHost.childNodes.length || cardsHost.dataset?.listView !== view) ? window.Feel?.skeletonCards?.(cardsHost, 6) : null;
   const listRequest = api(`/api/mistakes?${query}`);
   // 今日复习同时取队列：上限内放出哪几条由服务端按逾期程度排好；取不到（老后端/出错）就不截断。
   const queuePromise = view === "today" ? rvfSettle(api(`/api/review/queue?${rvfQueueParams(zoneParam, tagParam)}`)) : null;
@@ -265,9 +268,14 @@ async function loadList() {
       data = await window.OfflineReview?.todayFallback();
       if (data) offlineToday = true;
     }
-    if (!offlineToday) throw error;
+    if (!offlineToday) {
+      if (skeleton?.cancel() && valid()) cardsHost.replaceChildren();
+      throw error;
+    }
   }
+  skeleton?.cancel();
   if (!valid()) return;
+  if (cardsHost.dataset) cardsHost.dataset.listView = view; // #cards 里现在画的是哪个视图
   // 与 SQLite NOCASE 一致，只折叠 ASCII 大写标签字符。
   const tagKey = tagParam.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
   let scheduleChanged = false;

@@ -3,7 +3,7 @@
 /* 「手感层」：聚光灯、磁吸按钮、数字滚动、列表挪位（FLIP）、提示条、
    主角卡倾斜反光、图表生长、骨架屏。
    对外：window.Feel = { countUp(el), flip(container, mutate), toast(text, options),
-   reduced(), tilt(el), skeletonShow(host, rows), skeletonHide(host) }。
+   reduced(), tilt(el), skeletonShow(host, rows), skeletonHide(host), skeletonCards(host, count, delay) }。
    规则：只有一个全局 pointermove 监听（rAF 节流）；指针静止、没有磁吸/倾斜元素在动时没有任何 rAF；
    减少动画（prefers-reduced-motion）和触屏（hover: none）下全部关闭，数字、列表和图表直接给最终状态。
    启动时自动：给 [data-tilt] 绑 tilt，[data-countup] 跑 countUp，.feel-grow 的子项用
@@ -307,6 +307,35 @@
     if (host) host.replaceChildren();
   }
 
+  /** 列表首次加载用的卡片骨架：等 delay 毫秒还没拿到数据才出现（快的时候不闪一下）。
+      返回 { cancel() → 骨架是否已经出现过 }；拿到数据或出错时先 cancel，再渲染真实内容。 */
+  function skeletonCards(host, count = 4, delay = 150) {
+    if (!host) return { cancel: () => false };
+    let shown = false;
+    const timer = window.setTimeout(() => {
+      shown = true;
+      const grid = document.createElement("div");
+      grid.className = "feel-skeleton-cards";
+      grid.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < Math.min(12, Math.max(1, count)); i += 1) {
+        const card = document.createElement("div");
+        card.className = "feel-skeleton-card";
+        const lines = document.createElement("div");
+        lines.className = "feel-skeleton";
+        for (let j = 0; j < 3; j += 1) lines.append(document.createElement("i"));
+        card.append(lines);
+        grid.append(card);
+      }
+      host.replaceChildren(grid);
+    }, delay);
+    return {
+      cancel() {
+        window.clearTimeout(timer);
+        return shown;
+      },
+    };
+  }
+
   /* ---------- 图表生长（05） ----------
      .feel-grow 的子项首次进入视口时加 .is-grown（CSS 做 scaleY 生长），每页只播一次。
      减少动画或不支持 IntersectionObserver 时直接给最终态（不做 transition）。 */
@@ -380,5 +409,5 @@
     late.observe(document.body, { childList: true, subtree: true });
   }
 
-  window.Feel = { countUp, flip, toast, reduced, tilt, skeletonShow, skeletonHide };
+  window.Feel = { countUp, flip, toast, reduced, tilt, skeletonShow, skeletonHide, skeletonCards };
 })();

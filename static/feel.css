@@ -76,6 +76,9 @@
 .feel-skeleton > i:nth-child(3) { width: 55%; }
 @keyframes feel-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .feel-skeleton > i { animation: none; } }
+/* 列表首次加载的卡片骨架（Feel.skeletonCards）：外形像一张卡片，里面三条闪光线。 */
+.feel-skeleton-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: var(--space-3, 12px); }
+.feel-skeleton-card { min-height: 84px; padding: var(--space-4, 16px); border: 1px solid var(--line); border-radius: var(--radius, 12px); background: var(--surface); }
 
 /* ---------- 提示条（Feel.toast） ---------- */
 .feel-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 90; display: grid; gap: 8px; max-width: min(92vw, 380px); pointer-events: none; }

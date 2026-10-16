@@ -377,8 +377,11 @@
     const mine = ++generation;
     page.setAttribute("aria-busy", "true");
     setStatus("正在加载学习路线…");
+    const listEl = $("#roadmap-list");
+    const skeleton = !listEl.childNodes.length ? window.Feel?.skeletonCards?.(listEl, 6) : null;
     try {
       const data = await loadCatalog();
+      skeleton?.cancel();
       if (mine !== generation) return;
       patterns = [...data].sort(
         (a, b) => R.LEVEL_ORDER.indexOf(a.level) - R.LEVEL_ORDER.indexOf(b.level)
@@ -390,6 +393,7 @@
       render(); // 先按"全部未学"画出来，进度读到后再重画一次。
       applyPendingFocus();
     } catch {
+      if (skeleton?.cancel() && mine === generation) listEl.replaceChildren();
       if (mine !== generation) return;
       setStatus("套路库加载失败，请稍后重试。", { retry: true });
       page.setAttribute("aria-busy", "false");

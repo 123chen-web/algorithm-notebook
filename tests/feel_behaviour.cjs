@@ -75,7 +75,7 @@ function tiltCard(env) {
 
 test("feel: exposes the public API", () => {
   const { Feel } = setup();
-  assert.deepEqual(Object.keys(Feel).sort(), ["countUp", "flip", "reduced", "skeletonHide", "skeletonShow", "tilt", "toast"]);
+  assert.deepEqual(Object.keys(Feel).sort(), ["countUp", "flip", "reduced", "skeletonCards", "skeletonHide", "skeletonShow", "tilt", "toast"]);
 });
 
 test("feel: count-up ends on the exact final text and remembers the value", async () => {
@@ -348,4 +348,20 @@ test("feel: auto-init binds tilt and countUp to nodes added later", async () => 
   env.document.body.append(num);
   mos[0].fire([{ type: "childList", addedNodes: [num] }]);
   assert.equal(num.dataset.feelValue, "42", "countUp picked it up");
+});
+
+test("feel: skeletonCards 慢了才出现，cancel 之后不再出现，并告诉调用者出现过没有", async () => {
+  const env = load(["feel.js"]);
+  const Feel = env.window.Feel;
+  const fast = env.document.createElement("div");
+  const quick = Feel.skeletonCards(fast, 3, 30);
+  assert.equal(quick.cancel(), false, "数据来得快：没出现过");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(fast.childNodes.length, 0, "取消后不会再冒出来");
+  const slow = env.document.createElement("div");
+  const late = Feel.skeletonCards(slow, 3, 10);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(slow.querySelectorAll(".feel-skeleton-card").length, 3);
+  assert.equal(slow.firstChild.getAttribute("aria-hidden"), "true", "读屏软件不读骨架");
+  assert.equal(late.cancel(), true);
 });
