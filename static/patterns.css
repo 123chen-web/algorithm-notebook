@@ -60,3 +60,8 @@
 @media (prefers-reduced-motion: reduce) {
   .pattern-card, .pattern-state, .pattern-tab { transition: none; }
 }
+
+/* 模板代码默认收起，先想触发信号再展开。 */
+.pattern-template-fold > summary { cursor: pointer; color: var(--ink-2); font-size: var(--text-sm); min-height: 32px; }
+.pattern-template-fold[open] > summary { margin-bottom: var(--space-2); }
+@media (pointer: coarse) { .pattern-template-fold > summary { min-height: 44px; } }

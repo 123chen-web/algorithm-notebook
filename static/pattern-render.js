@@ -6,6 +6,35 @@
    对外契约见文件末尾的 window.PatternRender。 */
 (() => {
   const LEVEL_ORDER = ["入门", "进阶", "竞赛"];
+
+  /* 28 个细分类收成 13 个大类（只是显示和筛选，套路数据本身的 category 不动）。
+     “图论 / 图遍历 / 最短路”这类互相重叠、只有一两个套路的小类，并到一起更好找。 */
+  const GROUPS = [
+    ["数组与双指针", ["数组", "双指针", "前缀和与差分", "技巧"]],
+    ["二分", ["二分"]],
+    ["链表", ["链表"]],
+    ["栈、队列与堆", ["栈", "单调结构", "堆"]],
+    ["哈希与字符串", ["哈希", "字符串"]],
+    ["树", ["树"]],
+    ["图", ["图论", "图遍历", "最短路"]],
+    ["搜索与回溯", ["搜索", "回溯"]],
+    ["动态规划", ["动态规划"]],
+    ["贪心与分治", ["贪心", "分治", "分治与倍增"]],
+    ["数学与位运算", ["数学", "位运算", "几何"]],
+    ["数据结构与设计", ["数据结构", "设计题"]],
+    ["易错陷阱", ["实现陷阱", "工程陷阱"]],
+  ];
+  const GROUP_OF = new Map(GROUPS.flatMap(([group, members]) => members.map((name) => [name, group])));
+  const GROUP_ORDER = GROUPS.map(([group]) => group);
+  /** 细分类所属的大类；没登记的新分类原样当一个大类。 */
+  const groupOf = (category) => GROUP_OF.get(category) || String(category || "");
+  /** 按固定顺序列出这些套路出现过的大类。 */
+  function groupsOf(patterns) {
+    const present = new Set((patterns || []).map((pattern) => groupOf(pattern.category)));
+    const known = GROUP_ORDER.filter((group) => present.has(group));
+    const extra = [...present].filter((group) => !GROUP_ORDER.includes(group)).sort((a, b) => a.localeCompare(b, "zh"));
+    return [...known, ...extra];
+  }
   const STATUS_ORDER = ["none", "learning", "mastered"];
   const STATUS_LABELS = { none: "未学", learning: "学习中", mastered: "已掌握" };
   const SOURCE_NAMES = { "leetcode-cn": "力扣", luogu: "洛谷", codeforces: "Codeforces" };
@@ -39,15 +68,15 @@
 
   function searchText(pattern) {
     return [
-      pattern.title, pattern.category, pattern.level, pattern.idea, pattern.complexity,
+      pattern.title, pattern.category, groupOf(pattern.category), pattern.level, pattern.idea, pattern.complexity,
       ...(pattern.signals || []), ...(pattern.pitfalls || []), pattern.confusions || "",
       ...(pattern.examples || []).map((example) => `${example.id} ${example.title} ${sourceLabel(example)}`),
     ].join("\n").toLowerCase();
   }
 
-  /** 分类 / 难度 / 关键词三道筛选；status 由调用方另有状态表，不在这里比。 */
+  /** 分类 / 难度 / 关键词三道筛选；status 由调用方另有状态表，不在这里比。分类既认大类也认细分类。 */
   function matches(pattern, { category = "", level = "", query = "" } = {}) {
-    if (category && pattern.category !== category) return false;
+    if (category && pattern.category !== category && groupOf(pattern.category) !== category) return false;
     if (level && pattern.level !== level) return false;
     const needle = String(query || "").trim().toLowerCase();
     return !needle || searchText(pattern).includes(needle);
@@ -245,7 +274,8 @@
     const summary = node("summary", "pattern-summary");
     summary.append(
       node("span", "pattern-title", pattern.title),
-      node("span", "pattern-chip", pattern.category),
+      node("span", "pattern-chip", groupOf(pattern.category) === pattern.category
+        ? pattern.category : `${groupOf(pattern.category)} · ${pattern.category}`),
       node("span", "pattern-chip pattern-level", pattern.level),
     );
     if (mistakeCount > 0) {
@@ -278,7 +308,10 @@
       );
       body.append(section("样例（两份模板都能跑出这个结果）", sample));
     }
-    body.append(section("模板代码", templates(pattern)));
+    // 模板默认收起：先对着“什么时候该想到它”想一想，再展开看代码，免得一上来就背模板。
+    const templateFold = node("details", "pattern-template-fold");
+    templateFold.append(node("summary", "pattern-template-summary", "先想想触发信号，再展开看模板代码"), templates(pattern));
+    body.append(section("模板代码", templateFold));
 
     let hint = null;
     const { list } = examplesList(pattern, {
@@ -358,7 +391,7 @@
   }
 
   window.PatternRender = {
-    LEVEL_ORDER, STATUS_ORDER, STATUS_LABELS, SOURCE_NAMES,
+    LEVEL_ORDER, STATUS_ORDER, STATUS_LABELS, SOURCE_NAMES, GROUPS, groupOf, groupsOf,
     node, exampleKey, searchText, matches, renderCard, templates,
     examplesList, statusGroup, noteMarkdown, copyText,
   };

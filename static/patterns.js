@@ -22,7 +22,7 @@
 
   function renderCategories() {
     const box = $("#patterns-cats");
-    const names = [...new Set(patterns.map((pattern) => pattern.category))];
+    const names = R.groupsOf(patterns);
     const make = (name, label) => {
       const button = R.node("button", "patterns-cat", label);
       button.type = "button";

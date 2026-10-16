@@ -28,7 +28,9 @@
   let notesByPattern = {};  // {pattern_id: [{id, title}]}：提到这个套路的我的笔记
 
   let category = "";
-  let level = "";
+  // 默认只看“入门”：150 个套路一次全摆出来对新手太多；难度选“全部难度”看进阶和竞赛。
+  const DEFAULT_LEVEL = "入门";
+  let level = DEFAULT_LEVEL;
   let status = "";
   let query = "";
 
@@ -126,12 +128,13 @@
   function categoryStats() {
     const map = new Map();
     for (const pattern of patterns) {
-      const entry = map.get(pattern.category) || { total: 0, mastered: 0, learning: 0 };
+      const name = R.groupOf(pattern.category);
+      const entry = map.get(name) || { total: 0, mastered: 0, learning: 0 };
       entry.total += 1;
       const state = statusOf(pattern.id);
       if (state === "mastered") entry.mastered += 1;
       else if (state === "learning") entry.learning += 1;
-      map.set(pattern.category, entry);
+      map.set(name, entry);
     }
     return map;
   }
@@ -287,8 +290,9 @@
       },
       withStatus: true,
     })));
+    const onlyIntro = level === DEFAULT_LEVEL && !query && !status;
     $("#roadmap-count").textContent = shown.length
-      ? `共 ${shown.length} 个套路`
+      ? `共 ${shown.length} 个套路${onlyIntro ? "（先看入门；难度选“全部难度”看进阶和竞赛）" : ""}`
       : "没有符合条件的套路，放宽筛选试试。";
   }
 
@@ -346,9 +350,9 @@
   }
 
   function renderFilters() {
-    fillSelect($("#roadmap-cat"), [...new Set(patterns.map((p) => p.category))].sort(
-      (a, b) => a.localeCompare(b, "zh")), "全部分类");
+    fillSelect($("#roadmap-cat"), R.groupsOf(patterns), "全部分类");
     fillSelect($("#roadmap-level"), R.LEVEL_ORDER, "全部难度");
+    $("#roadmap-level").value = level;
     const stateSelect = $("#roadmap-state");
     stateSelect.replaceChildren();
     const all = node("option", "", "全部状态");
