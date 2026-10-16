@@ -79,3 +79,12 @@
 /* 面板栏里的“怎么插图片”提示：窄屏收起，工具栏本身有图片按钮。 */
 .draw-panel-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 720px) { .draw-panel-hint { display: none; } }
+
+/* 算法图形菜单：顶栏里一个下拉，点开列出可插入的图形。 */
+.draw-shapes { position: relative; flex: none; }
+.draw-shapes > summary { display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-size: var(--text-sm); cursor: pointer; list-style: none; }
+.draw-shapes > summary::-webkit-details-marker { display: none; }
+.draw-shapes[open] > summary { border-color: var(--accent); }
+.draw-shapes-list { position: absolute; z-index: 5; top: calc(100% + 4px); right: 0; display: grid; gap: 2px; min-width: 160px; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: 0 6px 20px rgba(0, 0, 0, .12); }
+.draw-panel-bar .draw-shapes-list button { justify-content: flex-start; min-height: 36px; text-align: left; }
+@media (pointer: coarse) { .draw-shapes > summary, .draw-panel-bar .draw-shapes-list button { min-height: 44px; } }

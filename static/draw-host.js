@@ -353,6 +353,7 @@
     document.getElementById("draw-list").addEventListener("click", onListClick);
     document.getElementById("draw-close").addEventListener("click", () => requestClose(false));
     document.getElementById("draw-insert").addEventListener("click", insertIntoNote);
+    bindShapeMenu();
     document.getElementById("draw-retry").addEventListener("click", () => {
       const panel = controller.panel;
       if (!panel) return;
@@ -796,6 +797,46 @@
     }
   }
 
+  /* ---------- 算法图形：一键插入数组、链表、树等示意图（static/draw-shapes.js 生成元素） ---------- */
+  function bindShapeMenu() {
+    const menu = document.getElementById("draw-shapes");
+    const list = document.getElementById("draw-shapes-list");
+    if (!menu || !list || !window.DrawShapes) {
+      if (menu) menu.hidden = true;
+      return;
+    }
+    list.replaceChildren();
+    for (const shape of window.DrawShapes.SHAPES) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.textContent = shape.label;
+      item.dataset.shape = shape.kind;
+      item.addEventListener("click", () => {
+        menu.open = false;
+        insertShape(shape.kind);
+      });
+      list.append(item);
+    }
+  }
+
+  /** 把图形追加到当前场景（放在已有内容右边）后整份发回画板；画板随后发 draw:change，照常自动保存。 */
+  function insertShape(kind) {
+    const panel = controller.panel;
+    if (!panel || panel.closed || !panel.ready || !panel.detailLoaded || !window.DrawShapes) return false;
+    const current = panel.lastScene || (panel.detail && panel.detail.scene) || {};
+    const existing = Array.isArray(current.elements) ? current.elements : [];
+    const added = window.DrawShapes.build(kind, window.DrawShapes.originBeside(existing));
+    if (!added.length) return false;
+    // 不带 appState / files：画板只换元素，视口、主题和已载入的图片都不动。
+    postToFrame(panel, { type: "draw:load", scene: { elements: [...existing, ...added] } });
+    try {
+      panel.frame.focus();
+    } catch (_error) {
+      /* 焦点失败不影响使用 */
+    }
+    return true;
+  }
+
   function teardownPanelSession(panel) {
     if (panel.readyTimer) window.clearTimeout(panel.readyTimer);
     if (panel.slowTimer) window.clearTimeout(panel.slowTimer);
@@ -1085,6 +1126,7 @@
     setNoteInserter,
     clearNoteInserter,
     ownedIds,
+    insertShape,
     // 纯函数与内部句柄暴露给 node 行为测试。
     isTrustedFrameMessage,
     parseDrawingTarget,

@@ -30,7 +30,7 @@
   <link rel="stylesheet" href="/static/notes-history.css?v=1">
   <link rel="stylesheet" href="/static/notes-connect.css?v=4">
   <link rel="stylesheet" href="/static/touch.css?v=1">
-  <link rel="stylesheet" href="/static/draw-host.css?v=202610122">
+  <link rel="stylesheet" href="/static/draw-host.css?v=202610123">
   <link rel="stylesheet" href="/static/shell.css?v=5">
   <link rel="stylesheet" href="/static/overview.css?v=6">
   <link rel="stylesheet" href="/static/inkdot.css?v=1">
@@ -143,7 +143,8 @@
   <script defer src="/static/notes.js?v=16"></script>
   <script defer src="/static/notes-links.js?v=9"></script>
   <script defer src="/static/notes-rich.js?v=7"></script>
-  <script defer src="/static/draw-host.js?v=202610125"></script>
+  <script defer src="/static/draw-shapes.js?v=1"></script>
+  <script defer src="/static/draw-host.js?v=202610126"></script>
   <script defer src="/static/notes-editor.js?v=4"></script>
   <script defer src="/static/notes-history.js?v=2"></script>
   <script defer src="/static/notes-pane.js?v=5"></script>
@@ -1491,6 +1492,10 @@
             <span class="draw-panel-title" id="draw-panel-title">画板</span>
             <span class="draw-save-status" id="draw-save-status" aria-live="polite"></span>
             <span class="draw-panel-hint">插图片：点工具栏的图片按钮，或直接粘贴 / 拖进来</span>
+            <details class="draw-shapes" id="draw-shapes">
+              <summary>算法图形</summary>
+              <div class="draw-shapes-list" id="draw-shapes-list" role="group" aria-label="插入算法图形"></div>
+            </details>
             <button type="button" id="draw-insert">插入到笔记</button>
             <button type="button" id="draw-close" aria-label="关闭画板">关闭</button>
           </div>
