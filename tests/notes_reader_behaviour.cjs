@@ -310,3 +310,39 @@ test("模板里没有空代码块（所见即所得编辑器读不进空代码�
     assert.doesNotMatch(text, /```[\w-]*\n\s*```/, template.key);
   }
 });
+
+/* ---------------- 搜索命中片段 ---------------- */
+test("searchSnippet：在去掉 Markdown 的正文里找第一个命中，前后留一点并加省略号", () => {
+  const env = load(["notes-pane.js"]);
+  const pane = env.window.NotesPane;
+  const note = { title: "二分", content: "# 二分\n" + "前面很长的铺垫".repeat(10) + "\n- **左闭右开** 时 while lo < hi\n后面" };
+  const snip = pane.searchSnippet(note, "左闭右开", 6);
+  assert.equal(snip.hit, "左闭右开");
+  assert.ok(snip.before.startsWith("…") && snip.before.length === 7, snip.before);
+  assert.ok(!snip.before.includes("*") && !snip.after.includes("*"), "Markdown 符号不进片段");
+  assert.equal(pane.searchSnippet(note, "LO < HI", 4).hit, "lo < hi", "不分大小写，片段保留原文大小写");
+  assert.equal(pane.searchSnippet(note, "不存在"), null);
+  assert.equal(pane.searchSnippet(note, "  "), null);
+});
+
+test("markInto：每处命中都包进 mark，用户写的 <b> 只是文字", () => {
+  const env = load(["notes-pane.js"]);
+  const el = env.document.createElement("span");
+  const count = env.window.NotesPane.markInto(el, "<b>栈</b> 和 单调栈", "栈");
+  assert.equal(count, 2);
+  assert.equal(el.querySelectorAll("mark").length, 2);
+  assert.equal(el.querySelector("b"), null);
+  assert.equal(el.textContent, "<b>栈</b> 和 单调栈");
+});
+
+test("revealMatch：正文里第一个命中被标成当前命中，折叠里的会先展开", () => {
+  const { root, env } = render("开头\n\n> [!答案]- 点开看\n> 关键是 lowbit\n\n结尾 lowbit");
+  const mark = env.window.NotesPane.revealMatch(root, "LOWBIT");
+  assert.ok(mark && mark.classList.contains("is-current"));
+  assert.equal(mark.textContent, "lowbit");
+  assert.equal(root.querySelectorAll("mark.notes-search-hit").length, 1, "只标第一个");
+  const details = root.querySelector("details");
+  if (details) assert.equal(details.open, true);
+  assert.ok(root.textContent.includes("关键是 lowbit"), "拆开文字节点后原文不变");
+  assert.equal(env.window.NotesPane.revealMatch(root, "没有的词"), null);
+});

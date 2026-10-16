@@ -635,8 +635,18 @@
       pin.setAttribute("aria-label", "已置顶");
       title.append(pin);
     }
-    title.append(h("strong", noteTitle(note) || "（无标题）"));
-    const preview = h("span", window.NotesPane ? window.NotesPane.previewText(note) : "", "notes-card-preview");
+    const pane = window.NotesPane;
+    const strong = h("strong", noteTitle(note) || "（无标题）");
+    if (query.trim() && pane) pane.markInto(strong, strong.textContent, query);
+    title.append(strong);
+    const preview = h("span", pane ? pane.previewText(note) : "", "notes-card-preview");
+    // 搜索时预览换成“命中的那一句”，关键词用荧光色标出来；只命中标题时仍显示普通预览。
+    const snippet = query.trim() && pane ? pane.searchSnippet(note, query) : null;
+    if (snippet) {
+      const hit = h("mark", snippet.hit, "notes-search-hit");
+      preview.replaceChildren(document.createTextNode(snippet.before), hit, document.createTextNode(snippet.after));
+      preview.classList.add("is-snippet");
+    }
     const foot = h("span", null, "notes-card-foot");
     foot.append(h("time", noteTime(note.updated_at || note.created_at), "notes-time"));
     for (const tag of (note.tags || []).slice(0, 3)) foot.append(h("span", `#${tag}`, "notes-card-tag"));
@@ -1076,6 +1086,8 @@
     window.NotesLinks?.renderRelated?.(view, note.id);
     const paneEl = $("#notes-pane");
     if (paneEl) paneEl.scrollTop = 0;
+    // 从搜索结果打开：滚到正文里第一个命中处并标出来。
+    if (query.trim()) window.NotesPane?.revealMatch?.(body, query);
 
     const state = {
       note,

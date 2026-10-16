@@ -1,6 +1,7 @@
 /* notes-pane.js —— 笔记页“列表 + 编辑区”布局的小工具：模板、目录、列表预览文字、手机上编辑区的开合。
  *
- * 对外：window.NotesPane = { TEMPLATES, templateText, headings, previewText, setMode, setOpen, renderToc }。
+ * 对外：window.NotesPane = { TEMPLATES, templateText, headings, previewText, setMode, setOpen, renderToc,
+ *   searchSnippet / markInto / revealMatch（搜索命中片段与跳到命中处）… }。
  * 纯函数（headings / previewText / templateText）不碰 DOM，Node 测试直接调用；
  * 编辑器本身、自动保存仍由 notes.js + notes-history.js 负责。用户文字一律 textContent。
  */
@@ -171,6 +172,97 @@
     return joined.length > max ? `${joined.slice(0, max)}…` : joined;
   }
 
+  /** 搜索用的纯文本：保留代码块里的内容（常有人搜代码），去掉 Markdown 符号，压成一行。 */
+  function plainForSearch(content) {
+    return String(content ?? "").split("\n")
+      .filter((raw) => !/^\s*(```|~~~)/.test(raw) && !/^\s*(={3,}|-{3,})\s*$/.test(raw))
+      .map((raw) => cleanInline(raw.trim()
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^>\s*\\?\[![^\]\\]+\\?\]\s*/, "")
+        .replace(/^(?:[-*+>]|\d+[.)]|- \[[ xX]\])\s+/, ""))
+        .replace(/==/g, ""))
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ");
+  }
+
+  /** 搜索命中片段：正文里第一个命中，前后各留 radius 个字；没命中返回 null（比如只有标题命中）。 */
+  function searchSnippet(note, query, radius = 28) {
+    const q = String(query ?? "").trim();
+    if (!q) return null;
+    const plain = plainForSearch(note?.content);
+    const at = plain.toLowerCase().indexOf(q.toLowerCase());
+    if (at < 0) return null;
+    const start = Math.max(0, at - radius);
+    const end = Math.min(plain.length, at + q.length + radius);
+    return {
+      before: (start > 0 ? "…" : "") + plain.slice(start, at),
+      hit: plain.slice(at, at + q.length),
+      after: plain.slice(at + q.length, end) + (end < plain.length ? "…" : ""),
+    };
+  }
+
+  /** 把 text 放进 el，命中 query 的部分（不分大小写，可能多处）包进 <mark>；全程 textContent。 */
+  function markInto(el, text, query) {
+    const value = String(text ?? "");
+    const q = String(query ?? "").trim().toLowerCase();
+    el.replaceChildren();
+    if (!q) { el.append(document.createTextNode(value)); return 0; }
+    const lower = value.toLowerCase();
+    let from = 0;
+    let count = 0;
+    for (let at = lower.indexOf(q); at >= 0; at = lower.indexOf(q, at + q.length)) {
+      if (at > from) el.append(document.createTextNode(value.slice(from, at)));
+      const mark = document.createElement("mark");
+      mark.className = "notes-search-hit";
+      mark.textContent = value.slice(at, at + q.length);
+      el.append(mark);
+      from = at + q.length;
+      count += 1;
+    }
+    if (from < value.length) el.append(document.createTextNode(value.slice(from)));
+    return count;
+  }
+
+  /** 从搜索结果打开笔记：在阅读视图里找到第一个命中，标出来并滚到那里；找不到什么也不做。 */
+  function revealMatch(container, query) {
+    const q = String(query ?? "").trim().toLowerCase();
+    if (!container || !q) return null;
+    const visit = (node) => {
+      for (const child of [...(node.childNodes || [])]) {
+        if (child.nodeType === 3) {
+          const text = String(child.nodeValue ?? "");
+          const at = text.toLowerCase().indexOf(q);
+          if (at < 0) continue;
+          const parent = child.parentNode;
+          const mark = document.createElement("mark");
+          mark.className = "notes-search-hit is-current";
+          mark.textContent = text.slice(at, at + q.length);
+          if (at > 0) parent.insertBefore(document.createTextNode(text.slice(0, at)), child);
+          parent.insertBefore(mark, child);
+          const rest = text.slice(at + q.length);
+          if (rest) parent.insertBefore(document.createTextNode(rest), child);
+          parent.removeChild(child);
+          return mark;
+        }
+        if (child.nodeType === 1 && !/^(SCRIPT|STYLE|BUTTON)$/.test(child.tagName || "")) {
+          const found = visit(child);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const mark = visit(container);
+    if (!mark) return null;
+    // 命中在折叠的“答案”/提示框里时先展开，不然滚过去也看不见。
+    for (let el = mark.parentNode; el && el !== container; el = el.parentNode) {
+      if (el.tagName === "DETAILS") el.open = true;
+    }
+    const reduce = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+    mark.scrollIntoView?.({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    return mark;
+  }
+
   /** 右侧编辑区显示“新笔记”还是“某一篇”。 */
   function setMode(mode, label) {
     const pane = document.getElementById("notes-pane");
@@ -299,6 +391,6 @@
 
   window.NotesPane = Object.freeze({
     TEMPLATES, BLOCKS, templateText, tidyMarkdown, headings, previewText, setMode, setOpen, renderToc,
-    enhanceCode, setCovered, downloadMarkdown,
+    enhanceCode, setCovered, downloadMarkdown, searchSnippet, markInto, revealMatch,
   });
 })();
