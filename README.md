@@ -14,21 +14,29 @@
   完整记录；每道题可拆成多条易错点，分别复习，还可以自己补一份“正确代码”（网站不生成答案）。也可以用[浏览器扩展](static/extension.html)（网站里有下载和安装说明；接口见[扩展 API](docs/features/plugin-api.md)）
   在洛谷、力扣、牛客、Codeforces、AtCoder 的题目页一键收录。
 - **复习**：同一道题只显示一张卡，卡片背景按复习完成度从左向右涂色；先自己回忆、再看错因、
-  再打分；每档评分都会预览下次间隔，支持撤销、推迟、暂停和每日上限；专注模式一次只看一张卡。
-  算法题推荐用做题来复习（原题限时重做、做一道类似题、默写），成绩由做题结果决定；只自评最高算“记得”，详见[做题验证复习](docs/features/review-verified.md)。排期用 FSRS 算法。
-- **笔记**：所见即所得编辑器——输入 `/` 选标题、列表、待办、代码、公式、表格，选中文字加粗或加链接，
-  粘贴图片；用 `[[ ]]` 链接另一篇笔记或一道错题，并能看到笔记关系图；自带画板（Excalidraw，自托管）。
+  再打分；每档评分按钮上直接写着下次复习是哪天，支持撤销、推迟、暂停；新账号默认每天最多 20 条（可改，也可“今天全部显示”）；
+  当天的题按套路和题目穿插着出，同一类不会连着来；专注模式一次只看一张卡，评分后立刻翻下一张、后台保存。
+  算法题推荐用做题来复习（原题限时重做、做一道类似题、默写），成绩由做题结果决定；只自评最高算“记得”，
+  重做计时可以暂停，详见[做题验证复习](docs/features/review-verified.md)。排期用 FSRS-6 算法。
+- **串联**：错因标签下面会提示“老毛病”——以前在哪些题里也是同一个错因，点题名就能看（[说明](docs/features/same-cause.md)）；
+  复习一道题时，看完错因会顺带列出你写过的相关笔记。只串联，不加任务、不加提醒。
+- **笔记**：三栏布局（标签 / 列表 / 右侧阅读与编辑）；所见即所得编辑器——输入 `/` 选标题、列表、待办、代码、公式、表格，
+  粘贴图片；内置荧光笔 `==重点==`、七种颜色的提示框（易错 / 答案 / 技巧…，可折叠）、“答案：”折叠和一键整理格式，
+  编辑时点“看效果”实时看排版；用 `[[ ]]` 链接另一篇笔记或一道错题（单独一行会变成错题卡片），
+  提到的笔记和套路自动加下划线、下面列出相关错题和套路；“遮住看”先遮正文自己回想。
+  停手自动保存，有历史版本和“最近删除”；搜索时结果里显示命中的那一句并标出关键词。
+  自带画板（Excalidraw，自托管），能插图片，也能一键插入数组、链表、二叉树、图、DP 表格等算法图形。
 - **学习路线**：登录后左侧栏的“学习路线”把常见算法套路做成一份可打卡的清单——每个套路标记
-  未学 / 学习中 / 已掌握，按分类和总体显示进度；每个套路有触发信号、核心思路、Python 与 C++ 模板
-  （都经过自动测试真实运行）、常见坑和经典例题（可勾选、可跳转）；记录错题时可以标明属于哪个套路，
-  错得多却还没学的套路会提醒你先学。没登录也能看只读的[套路库](static/patterns.html)（目前 150 个，持续补充）。
-- **AI 辅助**：橡皮鸭讲题（你讲、它追问，有独立的每日次数）、变体题（会参考你自己补的正确代码，
+  未学 / 学习中 / 已掌握，按 13 个大类和总体显示进度，默认先只列入门套路；每个套路有触发信号、核心思路、
+  Python 与 C++ 模板（默认收起，先想信号再展开；都经过自动测试真实运行）、常见坑和经典例题（可勾选、可跳转），
+  还列出你写过的相关笔记；记录错题时可以标明属于哪个套路，错得多却还没学的套路会提醒你先学。没登录也能看只读的[套路库](static/patterns.html)（目前 150 个，持续补充）。
+- **AI 辅助**：橡皮鸭讲题（你讲、它追问，有独立的每日次数；卡住时可以要三级提示：方向 → 小反例 → 哪一行，都不给答案）、变体题（会参考你自己补的正确代码，
   按“错在哪一行 → 最小反例 → 一句话规则”讲）、薄弱点分析、拍照识别手写题、AI 讨论要点；
   每次回答后可以点“有用 / 没用”，只记布尔值、不收文字；额度规则见[AI 额度与计费](static/ai-billing.html)。
 - **看清自己**：总览与趋势、掌握度、“我的三大典型失误”和考前一页纸、目标计划卡、
   草稿演算区、每日推荐题、榜单与昨日之星；总览页的“今日一签”（像撕日历的今日宜忌，来自你自己的复习数据）和“今日一读”（每天 5 张论文/技术新闻小卡片，一句话中文摘要，详见 [docs/features/today-sign-briefing.md](docs/features/today-sign-briefing.md)）。
 - **一起学**：学习小组（每周小目标、组内今日动态）、讨论区（采纳、有用、AI 要点）、
-  榜单（可填榜单显示名，也可匿名）。
+  榜单（默认不参与，想上榜自己点“加入公开榜单”；可填榜单显示名，也可匿名）。
 - **随身带**：手机“添加到主屏幕”像 App 一样用，断网也能评分，联网后自动补交。
 - **提醒与导出**：每日邮件或微信提醒；整本 JSON 导出、导出到 Anki。
 - **收款**：手动收款（个人收款码 + 站长确认）和兑换码；支付宝、微信支付的代码已接好。
@@ -40,11 +48,12 @@
 FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI 兼容”接口，
 线上使用 DeepSeek。Web 进程不执行用户代码；可选的独立运行服务支持 Python、C++，
 未配置时保持关闭，详见 [代码运行服务](docs/operations/code-runner.md)。用 Docker + Caddy 部署，自动 HTTPS，
-每天自动备份（可选再加密传到腾讯云对象存储做异地备份），带宕机告警和公开状态页。
+每天自动备份（可选再加密传到腾讯云对象存储做异地备份，2026-10-16 做过一次完整还原演练），带宕机告警和公开状态页。
+所有依赖（含间接依赖）的版本都钉在 `requirements.lock` 里，每次部署装到的是同一套。
 
 - 部署与升级：[docs/operations/deploy.md](docs/operations/deploy.md)
 - 零基础上线手册（买服务器到上线）：[deploy/README-零基础上线手册.md](deploy/README-零基础上线手册.md)
-- 备份与恢复：[docs/operations/backup-and-restore.md](docs/operations/backup-and-restore.md)
+- 备份与恢复：[docs/operations/backup-and-restore.md](docs/operations/backup-and-restore.md)（服务器本机跑的 `backup.py`、`deploy/bin/*.py` 只用标准库、兼容 Python 3.10）
 - SSH 加固与异地加密备份：[docs/operations/security-and-offsite-backup.md](docs/operations/security-and-offsite-backup.md)
 - 宕机告警与状态页：[docs/operations/watchdog.md](docs/operations/watchdog.md)
 - 手动收款：[docs/operations/manual-payment.md](docs/operations/manual-payment.md)
@@ -54,7 +63,7 @@ FastAPI + SQLite + 原生 JavaScript（没有构建步骤）。AI 走“OpenAI �
 
 ## 环境
 
-Python 3.11 或更高版本。
+Python 3.12 或更高版本（线上 Docker 镜像是 3.13）。
 
 ## Windows 启动
 
@@ -62,11 +71,12 @@ Python 3.11 或更高版本。
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.lock
 Copy-Item .env.example .env
 ```
 
-只想运行网站用 `requirements.txt`；要跑自动化测试、依赖审计，改用 `requirements-dev.txt`（它包含 `requirements.txt` 并额外装 pytest、pip-audit）。
+只想运行网站用 `requirements.lock`（钉死版本的完整依赖）；要跑自动化测试、依赖审计，改用 `requirements-dev.txt`（它包含 `requirements.lock` 并额外装 pytest、pip-audit）。
+要加或升级依赖时改 `requirements.txt`，再按 [docs/dev/dependencies.md](docs/dev/dependencies.md) 重新生成锁文件。
 
 编辑 `.env`：
 
@@ -85,7 +95,7 @@ Copy-Item .env.example .env
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.lock
 cp .env.example .env
 ```
 
@@ -98,6 +108,13 @@ cp .env.example .env
 浏览器打开 http://127.0.0.1:8000 。
 
 SQLite 文件和表结构会在第一次启动时自动创建。
+
+跑测试：
+
+```bash
+PYTHONUTF8=1 python -m pytest -p no:cacheprovider -q -n auto   # 后端
+node --test tests/*_behaviour.cjs                               # 前端行为（假浏览器）
+```
 
 ## 验证完整闭环
 
@@ -116,13 +133,13 @@ AI 调用第三方模型服务（我们线上使用 DeepSeek），会产生 API 
 
 ## 详细文档
 
-- 学习：[调度与五档评分](docs/features/scheduling.md)、[撤销与暂停](docs/features/review-feel.md)、[私人笔记](docs/features/notes.md)、[成长功能](docs/features/growth.md)。
+- 学习：[调度与五档评分](docs/features/scheduling.md)、[撤销与暂停](docs/features/review-feel.md)、[私人笔记](docs/features/notes.md)、[老毛病](docs/features/same-cause.md)、[学习路线](docs/features/roadmap.md)、[成长功能](docs/features/growth.md)。
 - AI：[功能与额度](docs/features/ai.md)、[AI 额度与计费](static/ai-billing.html)、[有用/没用反馈](docs/features/ai-feedback.md)。
 - 社区：[讨论区](docs/features/forum.md)、[学习小组](docs/features/groups.md)、[榜单](docs/features/leaderboard.md)。
 - 数据：[模型与完整迁移表](docs/dev/data-model.md)、[数据导出](docs/features/export.md)、[Markdown/JSON 导入](docs/features/import-notes.md)。
-- 开发：[测试与样本环境](docs/dev/testing.md)、[界面与原创场景](docs/features/ui-style.md)、[移动与离线](docs/features/mobile.md)。
+- 开发：[测试与样本环境](docs/dev/testing.md)、[依赖版本](docs/dev/dependencies.md)、[界面与原创场景](docs/features/ui-style.md)、[移动与离线](docs/features/mobile.md)。
 - 账号：[账号安全](docs/features/account-security.md)、[个人资料与榜单显示名](docs/features/profile.md)、[头像](docs/features/avatar.md)、[体验账号](docs/operations/trial-accounts.md)、[提醒](docs/features/reminders.md)。
 - 操作：[支付](docs/operations/payments.md)、[扩展 API](docs/features/plugin-api.md)、[推荐定时任务](docs/operations/recommend.md)、[离线支付检查](docs/operations/payment-config-check.md)。
 - 其他：[徽章](docs/features/achievements.md)、[目标卡](docs/features/goal-card.md)、[小黄鸭](docs/features/duck.md)、[草稿](docs/features/scratch.md)、[专注与考前复盘](docs/features/focus-mode.md)。
 
-迁移当前到 **85**（85 复习排期换成 FSRS）；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记、73 正确代码、74 AI 反馈、75 学习路线、76 新题第一次复习顺延、77 题目链接搬到来源字段、80 错因固定词表/判题类型/最小反例、81–84 复习重做/复仇/小组汇总），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
+迁移当前到 **87**（85 复习排期换成 FSRS、86 公开榜单改为默认不参与、87 笔记历史版本）；1–22 的已发布迁移保持原样。编号有意留有空缺（23/24/28 加固与提醒、40–41 小组、50–52 反馈批、70–72 笔记、73 正确代码、74 AI 反馈、75 学习路线、76 新题第一次复习顺延、77 题目链接搬到来源字段、80 错因固定词表/判题类型/最小反例、81–84 复习重做/复仇/小组汇总），不要为了填空重排。新增功能见上述文档，真实 AI、SMTP、支付、独立运行服务与服务器任务仍需站长另行配置和验收。
