@@ -85,3 +85,15 @@ def test_an_old_problem_with_two_matching_mistakes_is_listed_once(client):
     group = same_cause(client, now)[0]
     assert group["total"] == 1, "按题算，不按易错点条数算"
     assert [(item["id"], item["description"]) for item in group["items"]] == [(second, "右边界错。")]
+
+
+def test_limit_lets_the_note_draft_take_up_to_twenty(client):
+    register(client)
+    ids = [record(client, f"题 {index}")[0] for index in range(6)]
+    for mistake_id in ids:
+        tag(client, mistake_id, "careless")
+    response = client.get(f"/api/mistakes/{ids[0]}/same-cause?limit=20")
+    group = response.json()["groups"][0]
+    assert len(group["items"]) == 5 and group["total"] == 5
+    assert len(client.get(f"/api/mistakes/{ids[0]}/same-cause?limit=999").json()["groups"][0]["items"]) == 5
+    assert len(client.get(f"/api/mistakes/{ids[0]}/same-cause?limit=0").json()["groups"][0]["items"]) == 1, "小于 1 按 1"

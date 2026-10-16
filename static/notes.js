@@ -1182,6 +1182,16 @@
     focusComposerEditor();
   }
 
+  /** 用一段现成的 Markdown 开一篇新笔记草稿（比如错因标签下的“汇成笔记”）：只放进新建区，用户写完自己保存。 */
+  async function newFromText(markdown) {
+    const text = String(markdown ?? "");
+    if (!(await showComposer())) return false;
+    if (String(getComposerContent()).trim()) insertComposerTemplate(text);
+    else setComposerContent(text);
+    focusComposerEditor();
+    return true;
+  }
+
   /** 按 id 打开（从“串联”面板、预览卡跳过来）：列表里有就用列表里的，没有就单独取一次。 */
   async function openNoteById(id) {
     let note = notes.find((item) => item.id === id);
@@ -1661,7 +1671,7 @@
   window.Notes = Object.freeze({
     escapeHtml, parseTags, noteTitle, cardHeading, buildNotesQuery, renderNoteMarkdown, collectTags, noteTime,
     configure, load, loadMore, openWithProblem, reset, snapshot,
-    openNote, openNoteById, editNote, openByTitle, showComposer, newFromTemplate, currentNoteId: () => currentNoteId,
+    openNote, openNoteById, editNote, openByTitle, showComposer, newFromTemplate, newFromText, currentNoteId: () => currentNoteId,
     NOTE_CONTENT_MAX,
     getComposerContent, setComposerContent, focusComposer, insertComposerTemplate,
     generation: () => generation,

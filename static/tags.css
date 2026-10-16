@@ -96,3 +96,5 @@
 .tag-recurrence-badge { display: inline-block; margin-right: var(--space-1); padding: 0 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); font-size: var(--text-xs); }
 .tag-recurrence-link { display: inline; min-height: 0; padding: 0; border: 0; background: none; color: var(--accent-ink, var(--ink)); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .tag-recurrence-link:hover, .tag-recurrence-link:focus-visible { color: var(--ink); }
+.tag-recurrence-gather { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font-size: var(--text-xs); cursor: pointer; vertical-align: baseline; }
+.tag-recurrence-gather:hover:not(:disabled), .tag-recurrence-gather:focus-visible { border-color: var(--accent); }

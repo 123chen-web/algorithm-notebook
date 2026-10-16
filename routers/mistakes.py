@@ -164,11 +164,13 @@ def set_mistake_tags(mistake_id: int, data: MistakeTags, user=Depends(security.c
 # 老毛病：同一个错因下，别的题里记过的易错点（每个错因最多列 3 道题，最近的在前）。
 # 只是串联：不提醒、不打分、不进队列。“其他”太笼统，不算。
 SAME_CAUSE_PER_TAG = 3
+SAME_CAUSE_MAX = 20  # “汇成笔记”时一次最多取这么多道
 SAME_CAUSE_SKIP = {"other"}
 
 
 @router.get("/api/mistakes/{mistake_id}/same-cause")
-def same_cause_mistakes(mistake_id: int, user=Depends(security.current_user)):
+def same_cause_mistakes(mistake_id: int, limit: int = SAME_CAUSE_PER_TAG, user=Depends(security.current_user)):
+    limit = max(1, min(int(limit), SAME_CAUSE_MAX))
     with db.connect() as conn:
         item = problem_progress.owned_mistake(conn, mistake_id, user["id"])
         tags = [
@@ -195,7 +197,7 @@ def same_cause_mistakes(mistake_id: int, user=Depends(security.current_user)):
                 # SQLite 里和 MAX() 一起选的普通列取自 MAX 那一行，description 就是最近那条的。
                 f"SELECT MAX(m.id) AS id, m.problem_id, m.description, p.title {base} "
                 "GROUP BY m.problem_id ORDER BY id DESC LIMIT ?",
-                (*params, SAME_CAUSE_PER_TAG),
+                (*params, limit),
             ).fetchall()
             groups.append({
                 "tag": tag,

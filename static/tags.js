@@ -144,6 +144,28 @@
     return wrap;
   }
 
+  /** “汇成笔记”的草稿：标题、每道题一行 [[题:题名]]：当时的错因、留一节“我的对策”给自己写。只用自己记过的内容。 */
+  function recurrenceNote(current, group) {
+    const title = (value) => String(value || "未命名").replace(/[[\]|]/g, " ").replace(/\s+/g, " ").trim() || "未命名";
+    const why = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const line = (entry) => `- [[题:${title(entry.title)}]]${why(entry.description) ? `：${why(entry.description)}` : ""}`;
+    const name = label(group.tag);
+    const entries = [current, ...(group.items || [])];
+    const count = Number(group.total || (group.items || []).length) + 1;
+    return [
+      `# 我的老毛病：${name}`,
+      "",
+      `「${name}」这类错，我在 ${count} 道题里都犯过：`,
+      "",
+      ...entries.map(line),
+      "",
+      "## 我的对策",
+      "",
+      "- 下次看到……，先……",
+      "",
+    ].join("\n");
+  }
+
   /* ---------- 详情页的标签编辑器 ---------- */
   function render(item) {
     let tags = [...(item.tags || [])];
@@ -165,6 +187,31 @@
     const recurrence = node("div", "tag-recurrence");
     recurrence.hidden = true;
     let recurrenceSeq = 0;
+
+    /** 点“汇成笔记”：取这个错因下最多 20 道题，拼成草稿放进笔记的新建区。 */
+    async function gatherNote(tag, button) {
+      if (typeof window.showView !== "function" || !window.Notes?.newFromText) return;
+      button.disabled = true;
+      const startEpoch = epoch;
+      try {
+        const response = await fetch(`/api/mistakes/${item.id}/same-cause?limit=20`, {
+          credentials: "same-origin", headers: { "X-CSRF-Protection": "1" },
+        });
+        const data = response.ok ? await response.json() : null;
+        if (startEpoch !== epoch) return;
+        const group = (data?.groups || []).find((entry) => entry.tag === tag);
+        if (!group) {
+          status.textContent = "没取到同错因的题，稍后再试。";
+          return;
+        }
+        await window.showView("notes");
+        await window.Notes.newFromText(recurrenceNote(item, group));
+      } catch {
+        status.textContent = "网络出错，没能汇成笔记。";
+      } finally {
+        button.disabled = false;
+      }
+    }
 
     async function showRecurrence() {
       const mine = ++recurrenceSeq;
@@ -200,6 +247,11 @@
         });
         const more = group.total > group.items.length ? ` 等 ${group.total} 道题里` : " 里";
         line.append(document.createTextNode(`${more}也是这样错的。`));
+        const gather = node("button", "tag-recurrence-gather", "汇成笔记");
+        gather.type = "button";
+        gather.title = "把这几道题和当时写的错因放进一篇新笔记草稿，自己写对策；不保存就不会留下";
+        gather.addEventListener("click", () => void gatherNote(group.tag, gather));
+        line.append(document.createTextNode(" "), gather);
         recurrence.append(line);
       }
       recurrence.hidden = !recurrence.childNodes.length;
@@ -345,6 +397,6 @@
   // 新增/删除/评分之后各标签的数量会变。
   document.addEventListener("app:data-changed", () => { if (sidebar || select) refresh(); });
 
-  window.TagEditor = { render, chips, label, verdictLabel };
+  window.TagEditor = { render, chips, label, verdictLabel, recurrenceNote };
   window.TagFilters = { mountSidebar, bindSelect, refresh, setSelected, tags: () => state.tags, reset };
 })();

@@ -146,3 +146,42 @@ test("老毛病：没有同错因的旧题或请求失败时不显示；没选�
   await renderEditor(env2, { id: 10, tags: [], pending_reason: true });
   assert.equal(env2.calls.some((entry) => entry.url.includes("same-cause")), false);
 });
+
+
+test("老毛病“汇成笔记”：取最多 20 道同错因的题，拼成草稿放进笔记新建区；题名里的 [ ] | 不会弄坏链接", async () => {
+  const env = setup();
+  const views = [];
+  const drafts = [];
+  env.window.showView = (view) => { views.push(view); return Promise.resolve(); };
+  env.window.Notes = { newFromText: (text) => { drafts.push(text); return Promise.resolve(true); } };
+  const editor = await renderEditor(env, { id: 9, title: "x 的平方根", description: "右边界写成 n", tags: ["boundary"], pending_reason: false });
+  env.respond(env.calls.find((entry) => entry.url === "/api/mistakes/9/same-cause"), 200, { groups: [{ tag: "boundary", total: 1, items: [
+    { id: 3, problem_id: 2, title: "二分[左闭]|右开", description: "漏了\nleft == right" },
+  ] }] });
+  await settle();
+  editor.querySelector(".tag-recurrence-gather").click();
+  await tick();
+  const full = env.calls.find((entry) => entry.url === "/api/mistakes/9/same-cause?limit=20");
+  assert.ok(full, "汇成笔记时多取一些");
+  env.respond(full, 200, { groups: [{ tag: "boundary", total: 2, items: [
+    { id: 3, problem_id: 2, title: "二分[左闭]|右开", description: "漏了\nleft == right" },
+    { id: 4, problem_id: 3, title: "搜索插入位置", description: "" },
+  ] }] });
+  await settle(); await settle();
+  assert.deepEqual(views, ["notes"]);
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0], [
+    "# 我的老毛病：边界/特例",
+    "",
+    "「边界/特例」这类错，我在 3 道题里都犯过：",
+    "",
+    "- [[题:x 的平方根]]：右边界写成 n",
+    "- [[题:二分 左闭 右开]]：漏了 left == right",
+    "- [[题:搜索插入位置]]",
+    "",
+    "## 我的对策",
+    "",
+    "- 下次看到……，先……",
+    "",
+  ].join("\n"));
+});
