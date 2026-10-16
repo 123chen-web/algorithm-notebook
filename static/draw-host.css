@@ -88,3 +88,9 @@
 .draw-shapes-list { position: absolute; z-index: 5; top: calc(100% + 4px); right: 0; display: grid; gap: 2px; min-width: 160px; padding: var(--space-1); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: 0 6px 20px rgba(0, 0, 0, .12); }
 .draw-panel-bar .draw-shapes-list button { justify-content: flex-start; min-height: 36px; text-align: left; }
 @media (pointer: coarse) { .draw-shapes > summary, .draw-panel-bar .draw-shapes-list button { min-height: 44px; } }
+/* 手机上顶栏换行后“算法图形”在最左边：菜单改成左对齐，不然会伸出屏幕左边。 */
+@media (max-width: 720px) { .draw-shapes-list { left: 0; right: auto; max-width: calc(100vw - 16px); } }
+
+/* 画板全屏打开时，手机底部导航栏（#app-tabbar，在 .container 外面、层级更高）不能盖在画板底部的缩放/撤销按钮上：
+   画板在 .container（z-index 1）里面，层级再高也压不过它，所以打开时直接把导航栏收起。 */
+body:has(#draw-panel:not([hidden])) #app-tabbar { display: none; }
