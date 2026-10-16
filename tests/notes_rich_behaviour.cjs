@@ -165,7 +165,7 @@ test("静态契约: 加载顺序与版本号", () => {
   assert.ok(editorJs > richJs && appJs > editorJs, "notes-editor.js 在 rich 后、app 前");
   assert.ok(html.includes("vendor/editor/oy-editor.css?v=3"), "引入 oy-editor.css");
   assert.ok(html.includes("notes-rich.css?v=5"), "引入 notes-rich.css");
-  assert.ok(html.includes("notes-editor.css?v=1"), "引入 notes-editor.css");
+  assert.ok(/\/static\/notes-editor\.css\?v=\d+/.test(html), "引入 notes-editor.css（版本号跟随 index.html 提升，不写死）");
 });
 
 test("静态契约: CSS 只用主题令牌、动效/hover/手机断点包裹", () => {

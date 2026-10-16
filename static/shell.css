@@ -180,7 +180,7 @@ html[data-view="app"] .topbar-look { display: block; }
   html[data-view="app"] .header .user-meta > .topbar-new { order: 2; }
   html[data-view="app"] .header .user-meta > .my-avatar-wrap { order: 3; }
   html[data-view="app"] .header .user-meta > .topbar-icon-button { order: 4; }
-  html[data-view="app"] .home-quota { width: 168px; padding-left: 0; border-left: 0; text-align: left; }
+  html[data-view="app"] .home-quota { flex-shrink: 0; width: 168px; padding-left: 0; border-left: 0; text-align: left; }
   html[data-view="app"] .home-quota-hint { display: none; }
   html[data-view="app"] .topbar-only { display: inline-flex; }
   html[data-view="app"] .topbar-new {
@@ -203,9 +203,16 @@ html[data-view="app"] .topbar-look { display: block; }
   html[data-view="app"] .account-summary-name { max-width: 110px; }
 }
 
-/* 1024–1279：侧栏更窄，额度条收起，顶栏只留最重要的控件。 */
+/* 1024–1279：顶栏挤，额度不许被旁边的控件压扁（以前会被压到 39px 宽、竖着溢出顶栏）；
+   改成一行短写法“AI 剩余 10 / 10 次”，完整名字“今日 AI 生成额度”只留给读屏软件。搜索框去让位。 */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  html[data-view="app"] .home-quota { flex: 0 0 auto; width: auto; }
+  html[data-view="app"] .home-quota-heading { flex-wrap: nowrap; }
+  html[data-view="app"] .home-quota-heading label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  html[data-view="app"] .home-quota-heading span { white-space: nowrap; }
+  html[data-view="app"] .home-quota-heading span::before { content: "AI "; color: var(--ink); }
+}
 @media (min-width: 1024px) and (max-width: 1199px) {
-  html[data-view="app"] .home-quota { width: 132px; }
   html[data-view="app"] .topbar-search-key { display: none; }
 }
 
