@@ -16,7 +16,7 @@ def test_runtime_and_development_dependencies_are_separate():
     runtime = source("requirements.txt")
     development = source("requirements-dev.txt").splitlines()
     assert not re.search(r"(?mi)^\s*pytest(?:\s|[<>=!~]|$)", runtime)
-    assert development[0] == "-r requirements.txt"
+    assert development[0] == "-r requirements.lock", "开发环境也装钉死的版本"
     assert "pytest>=8.0,<10.0" in development
     assert "pip-audit>=2.7,<3.0" in development
 
@@ -28,6 +28,7 @@ def test_dockerfile_runs_as_non_root_and_checks_health():
     assert "--uid 10001" in dockerfile
     assert re.search(r"(?m)^HEALTHCHECK\s", dockerfile)
     assert "/healthz" in dockerfile
+    assert "pip install --no-cache-dir -r requirements.lock" in dockerfile, "镜像从锁文件装依赖"
     assert not re.search(r"(?mi)^COPY\s+[^\n]*\.env(?:\s|$)", dockerfile)
     command = re.search(r"(?m)^CMD\s+(\[[^\n]+\])$", dockerfile)
     assert command

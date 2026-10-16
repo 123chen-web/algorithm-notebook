@@ -3,8 +3,9 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# 从钉死版本的 requirements.lock 安装：每次构建装到的都是同一套版本（怎么更新见 docs/dev/dependencies.md）。
+COPY requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY *.py ./
 COPY static/ ./static/

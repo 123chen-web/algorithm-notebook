@@ -1,4 +1,4 @@
--r requirements.txt
+-r requirements.lock
 pytest>=8.0,<10.0
 pytest-xdist>=3.6,<4.0  # -n auto 多进程并行跑测试
 pip-audit>=2.7,<3.0
