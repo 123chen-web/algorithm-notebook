@@ -78,6 +78,13 @@ function renderVariant(variant, isCodeZone) {
     "summary",
     `变体 #${variant.id} · ${resultLabels[variant.result]}`
   );
+  // AI 出的题没法自动验证对错和难度：标出来，提醒先核对（10/14 评估建议）。
+  summary.append(element("span", "AI 出题 · 未验证", "variant-badge"));
+  const unverified = element(
+    "p",
+    "这道题是 AI 按你的错因出的，题意、样例和参考答案都没有经过自动验证。做之前先核对一遍；拿不准时以原题和真实 OJ 为准。",
+    "variant-unverified"
+  );
   const savedAt = element(
     "p",
     variant.result_updated_at
@@ -157,6 +164,7 @@ function renderVariant(variant, isCodeZone) {
 
   box.append(
     summary,
+    unverified,
     renderVariantDescription(variant.description),
     savedAt,
     form,
