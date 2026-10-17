@@ -416,5 +416,6 @@ window.PendingReason?.configure({ ...rvfHooks, showView, openMistake,
 document.addEventListener("keydown", rvfDetailKeydown);
 $("#review-daily-cap").addEventListener("change", rvfSetDailyCap);
 $("#review-cap-toggle")?.addEventListener("click", () => run(rvfToggleShowAll));
+$("#review-spread")?.addEventListener("click", () => run(rvfSpreadBacklog));
 
 addMistakeInput();

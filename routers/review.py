@@ -8,6 +8,7 @@ from core import config, ratelimit, security, time
 from models.ai import DuckInput
 from models.review import ReviewInput
 from models.review import RvbSnoozeInput
+from models.review import SpreadUndoInput
 from models.review import RvbVersionInput
 from models.review import VariantResult
 import accounts
@@ -81,6 +82,59 @@ def rvb_get_queue(
         review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
         done_today = review_days.get(today, 0)
     return review_lib.rvb_review_queue(items, today, fresh["daily_review_cap"], done_today, ignore_cap)
+
+
+@router.post("/api/review/spread")
+def spread_backlog(user=Depends(security.current_user)):
+    """补欠账：今天上限放不下的逾期记录，按“最该复习”的先后排进明天起的日子，每天不超过上限。
+
+    和 Anki 的“推迟”一样只改到期日（记忆状态不动）；返回每条原来的到期日和新版本号，前端可一键撤销。
+    所有分区一起摊，不看筛选。没设每日上限时没有“欠账”可言，返回 409。
+    """
+    with db.connect(write=True) as conn:
+        fresh = accounts.rvb_account(conn, user["id"])
+        cap = fresh["daily_review_cap"]
+        if cap is None:
+            raise HTTPException(409, "先设一个每日上限，才知道每天摊多少条")
+        today = time.today_for(fresh)
+        rows = conn.execute(
+            "SELECT m.id, m.due_date, m.interval_days, m.version FROM mistakes m "
+            "JOIN problems p ON p.id = m.problem_id "
+            "WHERE p.user_id = ? AND m.suspended_at IS NULL AND m.due_date <= ?",
+            (user["id"], today.isoformat()),
+        ).fetchall()
+        ordered = review_lib.queue_order([dict(row) for row in rows], today)
+        review_days, _, _ = day_counts(conn, user["id"], fresh["timezone"])
+        keep = max(0, cap - review_days.get(today, 0))
+        load = {
+            row[0]: row[1] for row in conn.execute(
+                "SELECT m.due_date, COUNT(*) FROM mistakes m JOIN problems p ON p.id = m.problem_id "
+                "WHERE p.user_id = ? AND m.suspended_at IS NULL AND m.due_date > ? GROUP BY m.due_date",
+                (user["id"], today.isoformat()),
+            )
+        }
+        plan = review_lib.spread_plan(ordered[keep:], today, cap, load)
+        moved = []
+        for item, due in plan:
+            conn.execute("UPDATE mistakes SET due_date = ?, version = version + 1 WHERE id = ?", (due, item["id"]))
+            moved.append({"id": item["id"], "from": item["due_date"], "to": due, "version": item["version"] + 1})
+    days = sorted({entry["to"] for entry in moved})
+    return {"moved": moved, "days": len(days), "last": days[-1] if days else None, "cap": cap}
+
+
+@router.post("/api/review/spread/undo")
+def spread_backlog_undo(data: SpreadUndoInput, user=Depends(security.current_user)):
+    """撤销补欠账：版本号对得上（摊开后没复习、没改过）的才改回原来的到期日。"""
+    restored = 0
+    with db.connect(write=True) as conn:
+        for entry in data.items:
+            cursor = conn.execute(
+                "UPDATE mistakes SET due_date = ?, version = version + 1 "
+                "WHERE id = ? AND version = ? AND problem_id IN (SELECT id FROM problems WHERE user_id = ?)",
+                (entry.due_date, entry.id, entry.version, user["id"]),
+            )
+            restored += cursor.rowcount
+    return {"restored": restored, "skipped": len(data.items) - restored}
 
 
 @router.post("/api/mistakes/{mistake_id}/review")

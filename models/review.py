@@ -99,6 +99,17 @@ class RvbVersionInput(InputModel):
     version: int = Field(strict=True, ge=0)
 
 
+class SpreadUndoItem(InputModel):
+    id: StrictInt
+    due_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    version: StrictInt
+
+
+class SpreadUndoInput(InputModel):
+    # 撤销“补欠账”：把摊出去的记录改回原来的到期日；只改没再动过的（版本号对得上）。
+    items: list[SpreadUndoItem] = Field(max_length=5000)
+
+
 class RvbSnoozeInput(RvbVersionInput):
     days: StrictInt
 

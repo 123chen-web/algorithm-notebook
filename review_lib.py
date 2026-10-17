@@ -6,15 +6,43 @@ import problem_progress
 from core import config, time as core_time
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fastapi import HTTPException
-def rvb_review_queue(items, today, cap, done_today, ignore_cap=False):
-    """对已过滤的到期候选排序/截断；不修改输入或调度状态。"""
-    ordered = sorted(items, key=lambda item: (
+def queue_order(items, today):
+    """“最该复习”的先后：逾期天数 / 间隔 越大越靠前，再按到期日、id。"""
+    return sorted(items, key=lambda item: (
         -max(0, (today - date.fromisoformat(item["due_date"])).days)
         / max(item["interval_days"], 1),
         item["due_date"], item["id"],
     ))
+
+
+SPREAD_MAX_DAYS = 3650  # 防御：理论上每天至少放得下 1 条，不会走到这么远
+
+
+def spread_plan(excess, today, cap, load_by_day):
+    """补欠账：把今天放不下的逾期记录（excess，已按最该复习排好）依次排进明天起的日子，
+    每天连同原本就排在那天的（load_by_day：{日期字符串: 条数}）不超过 cap 条。
+    返回 [(item, 新的到期日字符串)]，越该复习的排得越早。纯函数，不改输入。"""
+    if not excess or not cap or cap < 1:
+        return []
+    plan = []
+    pending = list(excess)
+    offset = 1
+    while pending and offset <= SPREAD_MAX_DAYS:
+        day = (today + timedelta(days=offset)).isoformat()
+        free = max(0, cap - int(load_by_day.get(day, 0)))
+        for _ in range(free):
+            if not pending:
+                break
+            plan.append((pending.pop(0), day))
+        offset += 1
+    return plan
+
+
+def rvb_review_queue(items, today, cap, done_today, ignore_cap=False):
+    """对已过滤的到期候选排序/截断；不修改输入或调度状态。"""
+    ordered = queue_order(items, today)
     remaining = None if cap is None or ignore_cap else max(0, cap - done_today)
     selected = ordered if remaining is None else ordered[:remaining]
     # 今天做哪些仍按“最该复习”挑；挑出来之后穿插着排，同一个套路 / 同一道题尽量不挨着

@@ -115,6 +115,45 @@ function rvfRenderCapNote(queue) {
     toggle.hidden = !queue.capped || !queue.today;
     toggle.textContent = showAll ? "恢复上限" : "今天全部显示";
   }
+  // 补欠账：今天上限放不下的，真的排到之后几天（只改到期日，可撤销）。
+  const spread = $("#review-spread");
+  if (spread) {
+    const later = Math.max(0, (queue.total_due ?? 0) - (queue.items || []).length);
+    spread.hidden = !queue.capped || showAll || !later || queue.cap == null;
+    spread.textContent = `把这 ${later} 条摊到之后几天`;
+  }
+}
+
+/** 补欠账：确认后让服务端把上限放不下的逾期记录排进明天起的日子；提示条上可以一键撤销。 */
+async function rvfSpreadBacklog() {
+  if (view !== "today" || !user || !rvfQueue || rvfQueue.cap == null) return;
+  const ok = window.confirm(
+    `把今天上限放不下的逾期记录（所有分区）按“最该复习”的先后排到之后几天，每天最多 ${rvfQueue.cap} 条？\n`
+    + "只改到期日，记忆状态不变；摊完可以撤销。"
+  );
+  if (!ok) return;
+  const isCurrent = rvfPageGuard();
+  const result = await api("/api/review/spread", { method: "POST" });
+  if (!isCurrent()) return;
+  notifyDataChanged("spread");
+  await loadList();
+  if (!isCurrent() || !result.moved?.length) return;
+  const items = result.moved.map((entry) => ({ id: entry.id, due_date: entry.from, version: entry.version }));
+  const where = result.days === 1 ? "明天" : `之后 ${result.days} 天`;
+  window.ReviewExtras?.notify(`已把 ${result.moved.length} 条摊到${where}，每天最多 ${result.cap} 条`, {
+    actionLabel: "撤销",
+    isCurrent,
+    onAction: async () => {
+      const undone = await api("/api/review/spread/undo", { method: "POST", body: JSON.stringify({ items }) });
+      if (!isCurrent()) return;
+      notifyDataChanged("spread-undo");
+      await loadList();
+      if (!isCurrent()) return;
+      window.ReviewExtras?.notify(undone.skipped
+        ? `已撤销 ${undone.restored} 条；${undone.skipped} 条之后又复习或改过，保持现在的样子`
+        : `已撤销，${undone.restored} 条回到原来的到期日`, { isCurrent });
+    },
+  });
 }
 
 // 上限内放出哪几条由服务端按逾期程度排好（queue.items）；列表里多出来的先收起，
