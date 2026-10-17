@@ -12,7 +12,7 @@ HEX_COLOR = re.compile(r'#[0-9a-fA-F]{3,8}\b')
 def test_inkdot_assets_referenced_once_with_load_order():
     assert INDEX.count('/static/inkdot.css?v=1') == 1
     assert INDEX.count('/static/inkdot.js?v=1') == 1
-    assert INDEX.index('overview.js?v=7') < INDEX.index('inkdot.js?v=1')
+    assert INDEX.index('/static/overview.js?v=') < INDEX.index('inkdot.js?v=1'), '版本号跟随 index.html 提升，不写死'
     assert 'id="streak-ink"' in INDEX
     assert 'id="streak-ticks"' not in INDEX
 

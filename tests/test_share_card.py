@@ -29,6 +29,8 @@ EMPTY_METRICS = {
     "mistake_count": 0,
     "recorded_zone_count": 0,
     "generated_practice_count": 0,
+    "verified_pass_count": 0,
+    "revenge_count": 0,
     "has_weakness_analysis": False,
 }
 FULL_METRICS = {
@@ -36,6 +38,8 @@ FULL_METRICS = {
     "mistake_count": 100,
     "recorded_zone_count": 5,
     "generated_practice_count": 100,
+    "verified_pass_count": 50,
+    "revenge_count": 10,
     "has_weakness_analysis": True,
 }
 FONT_PATHS = [
@@ -141,7 +145,7 @@ def test_next_goal_uses_smallest_remaining_instead_of_first_locked_badge(drawn_t
         **EMPTY_METRICS, "generated_practice_count": 1, "has_weakness_analysis": True,
     }
     badges = evaluate_achievements(metrics)
-    # 首个锁定项还差 3 天；易错点和练习各差 1，沿原顺序选择易错点。
+    # 首个锁定项还差 3 天；易错点、做题验证、复仇各差 1，沿原顺序选择易错点。
     assert_png(render_achievement_card("alice", metrics, badges, TODAY))
     text = "\n".join(drawn_text)
     assert "第一份收获" in text
@@ -149,14 +153,14 @@ def test_next_goal_uses_smallest_remaining_instead_of_first_locked_badge(drawn_t
     assert "三日启程" not in text
 
 
-def test_all_fourteen_badges_show_congratulations(drawn_text):
+def test_all_sixteen_badges_show_congratulations(drawn_text):
     badges = evaluate_achievements(FULL_METRICS)
-    assert len(badges) == 14
+    assert len(badges) == 16
     assert all(badge["unlocked"] for badge in badges)
 
     assert_png(render_achievement_card("alice", FULL_METRICS, badges, TODAY))
     text = "\n".join(drawn_text)
-    assert "全部 14 枚徽章" in text
+    assert "全部 16 枚徽章" in text
     assert "下一个目标" not in text
 
 

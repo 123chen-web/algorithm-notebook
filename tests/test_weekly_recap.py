@@ -182,7 +182,8 @@ def test_mistakes_use_parent_problem_created_at_and_count_points_not_problems(cl
     assert data["reviews_completed"] == 0
 
 
-@pytest.mark.parametrize("last_day_offset,expected_streak", [(0, 12), (1, 12), (2, 0)])
+# 宽松口径：最近一次复习在两天前（昨天歇了、今天还没过完）也没断；三天前才断。
+@pytest.mark.parametrize("last_day_offset,expected_streak", [(0, 12), (1, 12), (2, 12), (3, 0)])
 def test_streak_reuses_global_days_with_yesterday_grace(client, last_day_offset, expected_streak):
     user_id = register(client)["id"]
     mistake_id = seed_problem(user_id, timestamp(30))[0]

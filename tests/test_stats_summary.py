@@ -444,22 +444,23 @@ def test_daily_reviews_include_zero_days_in_order(client, me):
 def test_streak_follows_the_existing_rule(client, me):
     mistake = seed_mistakes(me)[0]
     assert summary(client)["streak_days"] == 0
-    seed_reviews(mistake, *[at(TODAY - timedelta(days=offset)) for offset in (1, 2, 3, 5)])
-    assert summary(client)["streak_days"] == 3  # 今天还没复习，昨天复习了 → 不断
-    seed_reviews(mistake, at(TODAY))
+    seed_reviews(mistake, *[at(TODAY - timedelta(days=offset)) for offset in (1, 2, 3, 5, 8)])
+    # 今天还没复习不算断；4 天前歇了一天也不算断（宽松口径）；6、7 天前连着两天没复习，8 天前那次接不上。
     assert summary(client)["streak_days"] == 4
+    seed_reviews(mistake, at(TODAY))
+    assert summary(client)["streak_days"] == 5
 
 
 def test_streak_longer_than_any_range_is_counted_in_full(client, me):
     mistake = seed_mistakes(me)[0]
     seed_reviews(mistake, *[at(TODAY - timedelta(days=offset)) for offset in range(0, 800)])
-    seed_reviews(mistake, at(TODAY - timedelta(days=801)))  # 断了一天，再往前的不算
+    seed_reviews(mistake, at(TODAY - timedelta(days=802)))  # 连着两天（800、801 天前）没复习，再往前的不算
     assert summary(client, days=7)["streak_days"] == 800
 
 
 def test_streak_matches_the_overview_endpoint(client, me):
     mistake = seed_mistakes(me)[0]
-    seed_reviews(mistake, *[at(TODAY - timedelta(days=offset)) for offset in (0, 1, 2, 4, 5)])
+    seed_reviews(mistake, *[at(TODAY - timedelta(days=offset)) for offset in (0, 1, 2, 5, 6)])
     assert summary(client)["streak_days"] == client.get("/api/overview").json()["streak_days"] == 3
 
 
