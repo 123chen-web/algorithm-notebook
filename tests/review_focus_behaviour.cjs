@@ -298,3 +298,16 @@ test("focus integration: Escape closes the menu, shifted Tab traps focus and toa
   key(env, "Tab", undo); assert.equal(env.document.activeElement.className, "focus-exit");
   env.window.FocusReview.close(); env.window.ReviewExtras.reset();
 });
+
+
+test("focus feel: 连续第 3 张评“记得”时轻轻提示一次，中间答错就重新数", async () => {
+  const env = setup();
+  const toasts = [];
+  env.window.Feel = { toast: (text) => toasts.push(text) };
+  await begin(env, {}, [card(1), card(2), card(3), card(4), card(5), card(6)]);
+  for (const grade of ["4", "4", "2", "4", "4"]) { reveal(env); key(env, grade); await tick(); }
+  assert.deepEqual(toasts, [], "两次“记得”被一次“答错”打断，还没连到 3 张");
+  reveal(env); key(env, "4"); await tick();
+  assert.deepEqual(toasts, ["连续 3 张都记得 ✓"]);
+  env.window.FocusReview.close();
+});

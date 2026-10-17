@@ -636,6 +636,13 @@
 
   // 评分“先翻页、后保存”：点下去立刻盖章、翻到下一张，请求在后台发；保存失败就把这张放回最前面，
   // 别处已改过（409）就跳过它。每张卡在保存回来之前不能再评一次（pending）。
+  /** 本轮最后连续几张评了“记得 / 很熟”（4 分及以上）。 */
+  function goodStreak(results) {
+    let run = 0;
+    for (let index = results.length - 1; index >= 0 && results[index].quality >= 4; index -= 1) run += 1;
+    return run;
+  }
+
   async function gradeCurrent(quality, mode = "recall", evidence = "") {
     // 评分请求回来时，这一轮可能已经被关掉、甚至换成了新的一轮：所有收尾都认准发请求时的那一轮。
     const active = session;
@@ -660,6 +667,11 @@
     active.graded += 1;
     const entry = { id: item.id, quality, next: null };
     active.results.push(entry);
+    // 连续记得：第 3 张、之后每 5 张轻轻提示一下（右下角一闪而过，不打断、不计分）。
+    const run = goodStreak(active.results);
+    if ((run === 3 || (run > 3 && run % 5 === 0)) && typeof window.Feel?.toast === "function") {
+      window.Feel.toast(`连续 ${run} 张都记得 ✓`, { duration: 1800 });
+    }
     const stamp = STAMPS.get(quality);
     if (stamp && typeof window.stampSeal === "function") {
       const button = parts.grades.querySelector(`[data-quality="${quality}"]`);

@@ -110,3 +110,9 @@ body.focus-open { overflow: hidden; }
   .focus-grade-label { font-size: var(--text-xs); }
   .focus-grade-row { gap: 6px; }
 }
+
+/* 评分按钮按下时微微下沉（专注复习和普通详情的评分按钮都算）；不喜欢动效的人不动。 */
+@media (prefers-reduced-motion: no-preference) {
+  .focus-grade, .review-grade { transition: transform 90ms ease-out; }
+  .focus-grade:active:not(:disabled), .review-grade:active:not(:disabled) { transform: translateY(2px) scale(.97); }
+}
