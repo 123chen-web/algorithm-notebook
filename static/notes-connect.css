@@ -137,3 +137,6 @@
 .notes-rich .nc-mistake-kind { color: var(--danger-ink); font-size: var(--text-xs); font-weight: 600; }
 .notes-rich .nc-mistake-sub { color: var(--ink-2); font-size: var(--text-xs); }
 .notes-rich .nc-mistake-link { border-bottom-color: var(--danger-line); }
+
+/* 套路小卡上“我在这里错过几道、常错在哪”。 */
+.nc-pop-mine { margin: 0; padding: var(--space-1) var(--space-2); border-left: 3px solid var(--danger-line); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--ink); font-size: var(--text-sm); }

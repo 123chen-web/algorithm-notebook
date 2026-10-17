@@ -13,6 +13,7 @@
 
   let hooks = null;
   let patternsPromise = null;
+  let myStatsPromise = null; // 我在各套路上记过几道错题、常错在哪（GET /api/roadmap 的 mistake_counts / causes）
   const noteCache = new Map();
   let popover = null;
   let hideTimer = 0;
@@ -43,6 +44,24 @@
     } catch (_error) {
       return null; // 串联是锦上添花：取不到就不显示，不影响看笔记
     }
+  }
+
+  function myPatternStats() {
+    if (!myStatsPromise) {
+      myStatsPromise = (hooks?.api ? hooks.api("/api/roadmap") : Promise.resolve(null))
+        .then((data) => ({ counts: data?.mistake_counts || {}, causes: data?.causes || {} }))
+        .catch(() => { myStatsPromise = null; return { counts: {}, causes: {} }; });
+    }
+    return myStatsPromise;
+  }
+
+  /** 小卡上的一行：“你在这里错过 3 道 · 常错在：边界/特例 ×2”；没错过就不显示。 */
+  function myPatternLine(stats, id) {
+    const count = Number(stats?.counts?.[id]) || 0;
+    if (!count) return null;
+    const label = (code) => (window.TagEditor?.label ? window.TagEditor.label(code) : code);
+    const causes = (stats.causes?.[id] || []).map((entry) => `${label(entry.tag)} ×${entry.count}`).join("、");
+    return h("p", `你在这里错过 ${count} 道${causes ? ` · 常错在：${causes}` : ""}`, "nc-pop-mine");
   }
 
   function patterns() {
@@ -232,6 +251,8 @@
         for (const signal of signals) list.append(h("li", signal));
         body.push(h("p", "看到这些就该想到它：", "nc-pop-kind"), list);
       }
+      const mine = myPatternLine(await myPatternStats(), id);
+      if (mine) body.push(mine);
       body.push(button("在学习路线里看", "nc-pop-open", () => { hidePopover(); hooks.openPattern?.(item); }));
     } else {
       return;
@@ -311,8 +332,12 @@
 
   function reset() {
     noteCache.clear();
+    myStatsPromise = null;
     hidePopover();
   }
+
+  // 记了新错题 / 改了标签之后，小卡上的“错过几道”重新取。
+  document.addEventListener("app:data-changed", () => { myStatsPromise = null; });
 
   window.NotesConnect = Object.freeze({ configure, load, decorate, renderPanel, reset, forget: (id) => noteCache.delete(id) });
 })();

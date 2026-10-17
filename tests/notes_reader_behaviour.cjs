@@ -410,3 +410,41 @@ test("打开笔记编辑、一个字没改：编辑器换了写法（[ ] 转义�
   assert.equal(puts.length, 0, "没改就不保存，也就不会多出一份历史版本");
   assert.ok(pane.querySelector(".notes-reader"), "直接回到阅读视图");
 });
+
+
+test("NotesConnect 套路小卡：除了触发信号，还写“你在这里错过几道 · 常错在哪”；没错过就不写", async () => {
+  const env = load(["notes-connect.js"]);
+  const doc = env.document;
+  const calls = [];
+  env.window.TagEditor = { label: (code) => ({ boundary: "边界/特例" })[code] || code };
+  env.window.NotesConnect.configure({
+    api: async (path) => {
+      calls.push(path);
+      return { mistake_counts: { "binary-search-basic": 3 }, causes: { "binary-search-basic": [{ tag: "boundary", count: 2 }] } };
+    },
+    fetchPatterns: async () => [
+      { id: "binary-search-basic", title: "二分查找（左闭右闭）", category: "二分", idea: "每次砍一半", signals: ["数组有序"] },
+      { id: "union-find", title: "并查集", category: "数据结构", idea: "合并集合", signals: [] },
+    ],
+    openPattern() {},
+  });
+  const root = doc.createElement("div");
+  const p = doc.createElement("p");
+  p.append(doc.createTextNode("二分查找和并查集"));
+  root.append(p);
+  doc.body.append(root);
+  env.window.NotesConnect.decorate(root, {
+    patterns: [
+      { id: "binary-search-basic", title: "二分查找（左闭右闭）", term: "二分查找" },
+      { id: "union-find", title: "并查集", term: "并查集" },
+    ],
+  });
+  const [binary, dsu] = root.querySelectorAll(".nc-mention");
+  binary.click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  assert.match(doc.querySelector(".nc-pop-mine").textContent, /你在这里错过 3 道 · 常错在：边界\/特例 ×2/);
+  dsu.click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  assert.equal(doc.querySelector(".nc-pop-mine"), null, "没错过的套路不写这一行");
+  assert.deepEqual(calls, ["/api/roadmap"], "统计只取一次");
+});
