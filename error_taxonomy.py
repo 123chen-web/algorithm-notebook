@@ -17,7 +17,7 @@ CAUSE_GROUPS = (
     ("reasoning", "想错了"),
     ("implementation", "写错了"),
     ("performance", "跑得慢"),
-    ("environment", "环境与其他"),
+    ("environment", "其他"),
 )
 
 # 错因：(code, 中文名, 大类 code, 一句提示)。总数 14，不超过上限。
@@ -33,8 +33,9 @@ CAUSES = (
     ("overflow", "溢出/精度", "implementation", "int 撑不住、浮点精度丢了"),
     ("complexity", "算法复杂度", "performance", "算法本身太慢，复杂度太高"),
     ("perf_io", "常数与输入输出慢", "performance", "常数大、IO 太慢被卡掉"),
-    ("uninit", "未初始化", "environment", "本机能过、评测机上翻车"),
-    ("untested", "测试没覆盖", "environment", "样例没测到这个情况"),
+    # 未初始化、测试没覆盖本质是代码写得不周到，归“写错了”（10/14 评估建议；只影响统计分组，不改已存的标签）。
+    ("uninit", "未初始化", "implementation", "本机能过、评测机上翻车"),
+    ("untested", "测试没覆盖", "implementation", "样例没测到这个情况"),
     ("other", "其他", "environment", "以上都不是，先记下来"),
 )
 
