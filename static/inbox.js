@@ -733,7 +733,7 @@
         return row;
       }));
       if (!problems.length) {
-        list.append(node("li", "inbox-results-empty", "这道套路下还没有归类好的题"));
+        list.append(node("li", "inbox-results-empty", "这道套路下还没有归类好的题。在上面的待分类列表里给题目选上这个套路就行。"));
       }
       setStatus("");
       announce(`《${title}》的分类结果：${problems.length} 道题`);

@@ -107,7 +107,7 @@
       row.append(actions);
       list.append(row);
     }
-    $("#rank-admin-status").textContent = items.length ? "" : "还没有任何记录。";
+    $("#rank-admin-status").textContent = items.length ? "" : "还没有任何记录。用户开始复习后，这里会列出可以上榜的账号。";
   }
 
   function formValues() {

@@ -368,7 +368,7 @@ function renderGroupCoachSummary(host, data) {
     }
     patternBlock.append(list);
   } else {
-    patternBlock.append(element("p", "还没有套路关联数据。", "muted"));
+    patternBlock.append(element("p", "还没有套路关联数据：组员记录错题时选上套路，这里就会出现。", "muted"));
   }
   const roadmap = element("p", "", "muted");
   roadmap.textContent = `全组学习路线：${data.roadmap.mastered} 个已掌握 / ${data.roadmap.learning} 个学习中`;

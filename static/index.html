@@ -99,12 +99,12 @@
   <script defer src="/static/pattern-render.js?v=4"></script>
   <script defer src="/static/pattern-picker.js?v=2"></script>
   <script defer src="/static/roadmap.js?v=6"></script>
-  <script defer src="/static/inbox.js?v=2"></script>
+  <script defer src="/static/inbox.js?v=3"></script>
   <script defer src="/static/clusters.js?v=7"></script>
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=6"></script>
-  <script defer src="/static/overview.js?v=8"></script>
+  <script defer src="/static/overview.js?v=9"></script>
   <script defer src="/static/inkdot.js?v=1"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
@@ -113,7 +113,7 @@
   <script defer src="/static/admin-metrics.js?v=3"></script>
   <script defer src="/static/rank.js?v=4"></script>
   <script defer src="/static/group-extras.js?v=2"></script>
-  <script defer src="/static/rank-admin.js?v=1"></script>
+  <script defer src="/static/rank-admin.js?v=2"></script>
   <script defer src="/static/capture.js?v=3"></script>
   <script defer src="/static/onboarding.js?v=1"></script>
   <script defer src="/static/plan.js?v=4"></script>
@@ -159,7 +159,7 @@
   <script defer src="/static/app/overview-growth.js?v=3"></script>
   <script defer src="/static/app/overview-home.js?v=2"></script>
   <script defer src="/static/app/overview-insights.js?v=2"></script>
-  <script defer src="/static/app/overview-revenge.js?v=1"></script>
+  <script defer src="/static/app/overview-revenge.js?v=2"></script>
   <script defer src="/static/app/review-list.js?v=6"></script>
   <script defer src="/static/app/review-detail.js?v=5"></script>
   <script defer src="/static/app/review-grade.js?v=6"></script>
@@ -168,7 +168,7 @@
   <script defer src="/static/app/forum-post.js?v=1"></script>
   <script defer src="/static/app/forum-comments.js?v=1"></script>
   <script defer src="/static/app/forum-map.js?v=1"></script>
-  <script defer src="/static/app/groups.js?v=2"></script>
+  <script defer src="/static/app/groups.js?v=3"></script>
   <script defer src="/static/app/rank.js?v=3"></script>
   <script defer src="/static/app/account.js?v=1"></script>
   <script defer src="/static/app/admin.js?v=1"></script>
@@ -640,7 +640,7 @@
             </div>
             <div class="ov-tile-actions">
               <button type="button" id="tile-review-start" class="ov-btn ov-btn-light" data-view="today" data-magnetic>开始复习</button>
-              <button type="button" id="tile-review-focus" class="ov-btn ov-btn-ghost" hidden>专注模式</button>
+              <button type="button" id="tile-review-focus" class="ov-btn ov-btn-ghost" hidden title="一次只看一张卡，键盘就能评分">专注复习</button>
             </div>
           </section>
 
@@ -1004,7 +1004,7 @@
           </div>
           <div class="list-tools">
             <button id="list-import" type="button" hidden>导入错题</button>
-            <button id="list-focus" type="button" class="list-focus" hidden>专注模式</button>
+            <button id="list-focus" type="button" class="list-focus" hidden title="一次只看一张卡，键盘就能评分">专注复习</button>
             <label class="zone-filter">
               分区
               <select id="zone-filter">

@@ -77,7 +77,7 @@ def test_inbox_script_is_versioned(document):
         if node["tag"] == "script" and node["attrs"].get("src", "").split("?", 1)[0] == "/static/inbox.js"
     ]
     assert len(scripts) == 1
-    assert scripts[0]["src"] == "/static/inbox.js?v=2"
+    assert re.fullmatch(r"/static/inbox\.js\?v=\d+", scripts[0]["src"]), "带版本号（数字跟随 index.html 提升，不写死）"
 
 
 def test_inbox_selectors_are_scoped_to_inbox_or_roadmap_page(stylesheet):

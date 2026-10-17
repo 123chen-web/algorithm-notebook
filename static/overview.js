@@ -400,12 +400,12 @@
       streak: {
         kind: "heat", cells: dailyPoints, peak: reviewPeak,
         empty: dailyPoints.length === 0 ? "暂时没有复习记录数据。"
-          : (reviewPeak === 0 ? `近 ${days} 天还没有复习记录。` : ""),
+          : (reviewPeak === 0 ? `近 ${days} 天还没有复习记录。今天复习一次，这里就会长出第一根柱子。` : ""),
       },
       reviews: {
         kind: "area", points: dailyPoints, max: reviewPeak, ...countTicks(reviewPeak),
         empty: dailyPoints.length === 0 ? "暂时没有复习记录数据。"
-          : (reviewPeak === 0 ? `近 ${days} 天还没有复习记录。` : ""),
+          : (reviewPeak === 0 ? `近 ${days} 天还没有复习记录。今天复习一次，这里就会长出第一根柱子。` : ""),
       },
       retention: {
         kind: "line", points: weeklyPoints, target: TREND_TARGET_RATE,

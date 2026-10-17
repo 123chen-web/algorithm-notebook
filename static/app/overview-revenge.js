@@ -46,7 +46,7 @@
     if (expanded) {
       const list = el("ul", "", "revenge-list");
       if (!items.length) {
-        list.append(el("li", "还没有复仇成功的记录。", "revenge-empty"));
+        list.append(el("li", "还没有复仇成功的记录。以前错过的题，隔一阵用重做或默写亲手做对，就会出现在这里。", "revenge-empty"));
       }
       for (const item of items) {
         const li = el("li", "", "revenge-item");
