@@ -87,6 +87,24 @@ def get_roadmap(user=Depends(security.current_user)):
                 (user["id"],),
             )
         }
+        # 串联：每个套路下我最常错在哪（按题计，每个套路取前 3 个错因；“其他”太笼统不算）。
+        causes_by_pattern = {}
+        for row in conn.execute(
+            """
+            SELECT pp.pattern_id AS pattern_id, t.tag AS tag, COUNT(DISTINCT p.id) AS total
+            FROM problem_patterns pp
+            JOIN problems p ON p.id = pp.problem_id
+            JOIN mistakes m ON m.problem_id = p.id
+            JOIN mistake_tags t ON t.mistake_id = m.id
+            WHERE p.user_id = ? AND t.tag != 'other'
+            GROUP BY pp.pattern_id, t.tag
+            ORDER BY pp.pattern_id, total DESC, t.tag
+            """,
+            (user["id"],),
+        ):
+            bucket = causes_by_pattern.setdefault(row["pattern_id"], [])
+            if len(bucket) < 3:
+                bucket.append({"tag": row["tag"], "count": row["total"]})
         # 串联：每个套路下“我写过的笔记”（正文或标题提到这个套路的名称/别名），每个最多 5 篇。
         notes_by_pattern = {}
         for row in conn.execute(
@@ -108,6 +126,7 @@ def get_roadmap(user=Depends(security.current_user)):
         "examples_done": examples_done,
         "mistake_counts": mistake_counts,
         "notes": {key: value for key, value in notes_by_pattern.items() if pattern_match.pattern_is_known(key)},
+        "causes": {key: value for key, value in causes_by_pattern.items() if pattern_match.pattern_is_known(key)},
     }
 
 

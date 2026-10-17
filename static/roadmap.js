@@ -26,6 +26,7 @@
   let examplesDone = {};    // {pattern_id: Set(key)}
   let mistakeCounts = {};   // {pattern_id: n}
   let notesByPattern = {};  // {pattern_id: [{id, title}]}：提到这个套路的我的笔记
+  let causesByPattern = {}; // {pattern_id: [{tag, count}]}：我在这个套路上最常错在哪
 
   let category = "";
   // 默认只看“入门”：150 个套路一次全摆出来对新手太多；难度选“全部难度”看进阶和竞赛。
@@ -76,6 +77,10 @@
     for (const [patternId, value] of Object.entries(data.mistake_counts || {})) {
       const count = Number(value);
       if (Number.isFinite(count) && count > 0) mistakeCounts[patternId] = count;
+    }
+    causesByPattern = {};
+    for (const [patternId, list] of Object.entries(data.causes || {})) {
+      if (Array.isArray(list)) causesByPattern[patternId] = list.filter((entry) => entry && entry.tag && Number(entry.count) > 0);
     }
     notesByPattern = {};
     for (const [patternId, list] of Object.entries(data.notes || {})) {
@@ -269,6 +274,8 @@
       status: statusOf(pattern.id),
       doneKeys: examplesDone[pattern.id] || new Set(),
       mistakeCount: mistakeCounts[pattern.id] || 0,
+      causes: causesByPattern[pattern.id] || [],
+      causeLabel: (code) => (window.TagEditor?.label ? window.TagEditor.label(code) : code),
       notes: notesByPattern[pattern.id] || [],
       onOpenNote: (id) => {
         if (typeof window.showView !== "function") return;

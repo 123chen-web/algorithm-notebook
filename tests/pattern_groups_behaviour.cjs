@@ -38,3 +38,21 @@ test("模板代码默认收起在 details 里，卡片上显示“大类 · 细�
   assert.equal(Boolean(fold.open), false);
   assert.match(card.querySelector(".pattern-chip").textContent, /^图 · 最短路$/);
 });
+
+
+test("套路卡：有错因统计时写“你在这个套路上常错在：…”，点“看这些题”走错题入口；没有就不出现", () => {
+  const env = load(["pattern-render.js"]);
+  const R = env.window.PatternRender;
+  const pattern = PATTERNS.find((entry) => entry.id === "binary-search-basic");
+  const clicked = [];
+  const card = R.renderCard(pattern, {
+    causes: [{ tag: "boundary", count: 3 }, { tag: "misread", count: 1 }],
+    causeLabel: (code) => ({ boundary: "边界/特例", misread: "审题/漏条件" })[code],
+    onMistakeClick: (target) => clicked.push(target.id),
+  });
+  const line = card.querySelector(".pattern-causes");
+  assert.match(line.textContent, /你在这个套路上常错在：边界\/特例 ×3、审题\/漏条件 ×1/);
+  line.querySelector(".pattern-causes-open").click();
+  assert.deepEqual(clicked, ["binary-search-basic"]);
+  assert.equal(R.renderCard(pattern, {}).querySelector(".pattern-causes"), null, "套路库静态页没有统计：不出现");
+});

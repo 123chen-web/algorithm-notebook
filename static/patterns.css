@@ -65,3 +65,7 @@
 .pattern-template-fold > summary { cursor: pointer; color: var(--ink-2); font-size: var(--text-sm); min-height: 32px; }
 .pattern-template-fold[open] > summary { margin-bottom: var(--space-2); }
 @media (pointer: coarse) { .pattern-template-fold > summary { min-height: 44px; } }
+
+/* 学习路线：我在这个套路上最常错在哪（只在应用里有）。 */
+.pattern-causes { margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-left: 3px solid var(--danger-line); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--ink); font-size: var(--text-sm); }
+.pattern-causes-open { min-height: 28px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font-size: var(--text-xs); }

@@ -100,7 +100,7 @@ def test_requires_login(client):
 
 def test_new_account_has_an_empty_roadmap(client):
     register(client)
-    assert get_roadmap(client) == {"progress": {}, "examples_done": {}, "mistake_counts": {}, "notes": {}}
+    assert get_roadmap(client) == {"progress": {}, "examples_done": {}, "mistake_counts": {}, "notes": {}, "causes": {}}
 
 
 def test_progress_examples_and_mistake_counts_round_trip(client):
@@ -347,3 +347,27 @@ def test_normalize_pattern_ids_dedupes_and_caps(monkeypatch):
         pattern_match.normalize_pattern_ids(["nope"])
     with pytest.raises(ValueError):
         pattern_match.normalize_pattern_ids("nope")
+
+
+def test_roadmap_lists_my_most_common_causes_per_pattern(client):
+    register(client)
+
+    def record(title, tags, mistakes=1):
+        response = client.post("/api/problems", json={
+            "title": title, "zone": "算法", "language": "Python", "code": "pass", "thinking": "想当然",
+            "mistakes": ["没想清"] * mistakes, "pattern_ids": ["binary-search-basic"],
+        })
+        assert response.status_code == 201, response.text
+        for mistake_id, tag in zip(response.json()["mistake_ids"], tags):
+            assert client.put(f"/api/mistakes/{mistake_id}/tags", json={"tags": [tag]}).status_code == 200
+
+    record("一", ["boundary", "boundary"], mistakes=2)  # 同一道题两条同错因：按题算 1 次
+    record("二", ["boundary"])
+    record("三", ["misread"])
+    record("四", ["other"])
+    record("五", ["careless"])
+    record("六", ["concept"])
+    causes = client.get("/api/roadmap").json()["causes"]["binary-search-basic"]
+    assert causes[0] == {"tag": "boundary", "count": 2}
+    assert len(causes) == 3, "每个套路最多 3 个"
+    assert "other" not in [entry["tag"] for entry in causes], "“其他”太笼统不算"

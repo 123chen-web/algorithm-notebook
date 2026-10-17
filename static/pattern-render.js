@@ -262,6 +262,7 @@
     const {
       byId = new Map(), status = "none", doneKeys = new Set(), mistakeCount = 0,
       onStatus = null, onExample = null, onJumpRelated = null, onMistakeClick = null,
+      causes = [], causeLabel = (code) => code,
       notes = null, onOpenNote = null, onWriteNote = null,
       withStatus = Boolean(onStatus),
     } = options;
@@ -295,6 +296,19 @@
     details.append(summary);
 
     const body = node("div", "pattern-body");
+    // 串联：我在这个套路上最常错在哪（学习路线里才有；点一下看这些题）。
+    if (causes.length) {
+      const line = node("p", "pattern-causes");
+      line.append(document.createTextNode("你在这个套路上常错在："));
+      line.append(document.createTextNode(causes.map((entry) => `${causeLabel(entry.tag)} ×${entry.count}`).join("、")));
+      if (onMistakeClick) {
+        const view = node("button", "pattern-causes-open", "看这些题");
+        view.type = "button";
+        view.addEventListener("click", () => onMistakeClick(pattern));
+        line.append(document.createTextNode(" "), view);
+      }
+      body.append(line);
+    }
     body.append(node("p", "pattern-idea", pattern.idea));
     body.append(section("什么时候该想到它", bulletList(pattern.signals)));
     body.append(section("复杂度", node("p", "", pattern.complexity)));
