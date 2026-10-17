@@ -185,3 +185,24 @@ test("老毛病“汇成笔记”：取最多 20 道同错因的题，拼成草�
     "",
   ].join("\n"));
 });
+
+
+test("同套路：标过套路的题，标签下面列出同套路里还错过的题，点题名打开那条", async () => {
+  const env = setup();
+  const opened = [];
+  env.window.openMistake = (id) => { opened.push(id); return Promise.resolve(); };
+  const editor = await renderEditor(env, { id: 9, tags: [], pending_reason: true });
+  const call = env.calls.find((entry) => entry.url === "/api/mistakes/9/same-pattern");
+  assert.ok(call, "不管有没有选错因标签，都去取同套路的题");
+  env.respond(call, 200, { groups: [{ pattern_id: "binary-search-basic", title: "二分查找（左闭右闭）", total: 6, items: [
+    { id: 4, problem_id: 2, title: "搜索插入位置", description: "右边界" },
+    { id: 5, problem_id: 3, title: "<i>x 的平方根</i>", description: "" },
+  ] }] });
+  await settle();
+  const box = editor.querySelector(".tag-same-pattern");
+  assert.equal(box.hidden, false);
+  assert.match(box.textContent, /同套路「二分查找（左闭右闭）」：你还错过 《搜索插入位置》、《<i>x 的平方根<\/i>》 等 6 道题。/);
+  assert.equal(box.querySelector("i"), null);
+  box.querySelectorAll(".tag-recurrence-link")[1].click();
+  assert.deepEqual(opened, [5]);
+});

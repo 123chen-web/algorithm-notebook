@@ -187,6 +187,40 @@
     const recurrence = node("div", "tag-recurrence");
     recurrence.hidden = true;
     let recurrenceSeq = 0;
+    // 同套路：这道题标过的套路下，还错过哪些别的题（和“老毛病”同一处显示，一个按错因、一个按套路）。
+    const samePattern = node("div", "tag-recurrence tag-same-pattern");
+    samePattern.hidden = true;
+
+    async function showSamePattern() {
+      const startEpoch = epoch;
+      let data = null;
+      try {
+        const response = await fetch(`/api/mistakes/${item.id}/same-pattern`, {
+          credentials: "same-origin", headers: { "X-CSRF-Protection": "1" },
+        });
+        if (response.ok) data = await response.json();
+      } catch { data = null; }
+      if (startEpoch !== epoch || !section.isConnected) return;
+      samePattern.replaceChildren();
+      for (const group of Array.isArray(data?.groups) ? data.groups : []) {
+        const line = node("p", "tag-recurrence-line");
+        line.append(node("span", "tag-recurrence-badge", "同套路"), document.createTextNode(`「${group.title}」：你还错过 `));
+        group.items.forEach((entry, index) => {
+          if (index) line.append(document.createTextNode("、"));
+          const link = node("button", "tag-recurrence-link", `《${entry.title || "未命名"}》`);
+          link.type = "button";
+          if (entry.description) link.title = entry.description;
+          link.setAttribute("aria-label", `打开《${entry.title || "未命名"}》这条易错点`);
+          link.addEventListener("click", () => {
+            if (typeof window.openMistake === "function") void window.openMistake(entry.id);
+          });
+          line.append(link);
+        });
+        line.append(document.createTextNode(group.total > group.items.length ? ` 等 ${group.total} 道题。` : "。"));
+        samePattern.append(line);
+      }
+      samePattern.hidden = !samePattern.childNodes.length;
+    }
 
     /** 点“汇成笔记”：取这个错因下最多 20 道题，拼成草稿放进笔记的新建区。 */
     async function gatherNote(tag, button) {
@@ -348,9 +382,10 @@
       }
     }
 
-    section.append(title, hint, groupsWrap, status, recurrence);
+    section.append(title, hint, groupsWrap, status, recurrence, samePattern);
     draw();
     void showRecurrence();
+    void showSamePattern();
     // 词表取回来再画一次。
     loadTaxonomy().then(() => { if (section.isConnected) draw(); });
     load().then(() => { if (section.isConnected) draw(); });
