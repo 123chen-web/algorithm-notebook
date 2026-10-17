@@ -32,7 +32,7 @@
   <link rel="stylesheet" href="/static/touch.css?v=3">
   <link rel="stylesheet" href="/static/draw-host.css?v=202610125">
   <link rel="stylesheet" href="/static/shell.css?v=7">
-  <link rel="stylesheet" href="/static/overview.css?v=6">
+  <link rel="stylesheet" href="/static/overview.css?v=7">
   <link rel="stylesheet" href="/static/inkdot.css?v=1">
   <link rel="stylesheet" href="/static/onboarding.css?v=1">
   <link rel="stylesheet" href="/static/activity.css?v=3">
@@ -104,7 +104,7 @@
   <script defer src="/static/typical.js?v=1"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=6"></script>
-  <script defer src="/static/overview.js?v=7"></script>
+  <script defer src="/static/overview.js?v=8"></script>
   <script defer src="/static/inkdot.js?v=1"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
@@ -156,7 +156,7 @@
   <script defer src="/static/app/core-api.js?v=1"></script>
   <script defer src="/static/app/core-session.js?v=2"></script>
   <script defer src="/static/app/core-ui.js?v=7"></script>
-  <script defer src="/static/app/overview-growth.js?v=2"></script>
+  <script defer src="/static/app/overview-growth.js?v=3"></script>
   <script defer src="/static/app/overview-home.js?v=2"></script>
   <script defer src="/static/app/overview-insights.js?v=2"></script>
   <script defer src="/static/app/overview-revenge.js?v=1"></script>
@@ -645,8 +645,9 @@
           </section>
 
           <section id="tile-streak" class="ov-tile ov-tile-streak" aria-labelledby="tile-streak-title">
-            <h3 id="tile-streak-title" class="ov-eyebrow">连续打卡</h3>
-            <p class="ov-big"><span id="streak-days">0</span><small>天</small></p>
+            <h3 id="tile-streak-title" class="ov-eyebrow">本周复习</h3>
+            <p class="ov-big"><span id="week-days">0</span><small>/ 7 天</small></p>
+            <p class="ov-streak-line" title="连续打卡：中间歇一天不算断，连着两天没复习才断">连续 <span id="streak-days">0</span> 天</p>
             <div id="streak-ink" class="ov-inkdot" role="img" aria-label="连续打卡墨点"></div>
           </section>
 

@@ -12,10 +12,12 @@
 
 | metrics 字段 | 口径 | 徽章档位 |
 | --- | --- | --- |
-| `current_streak_days` | 全部评分的复习记录，按用户时区去重日期；复用原 `current_streak()`，今天未复习但昨天复习仍延续 | 3 / 7 / 30 / 100 天 |
+| `current_streak_days` | 全部评分的复习记录，按用户时区去重日期；`current_streak()` 宽松口径（10/17 起）：中间歇 1 天不算断、连着 2 天没复习才断，数的是有复习的天；今天还没过完不算断 | 3 / 7 / 30 / 100 天 |
 | `mistake_count` | 当前账号题目下仍存在的易错点数量 | 1 / 10 / 50 / 100 条 |
 | `recorded_zone_count` | 当前账号 `problems.zone` 去重数量，同分区多道题只计一次 | 3 / 5 个分区 |
-| `generated_practice_count` | 当前账号已成功保存的 `variants` 题目数量，与练习结果无关 | 2 / 20 / 100 道 |
+| `generated_practice_count` | 当前账号已成功保存的 `variants` 题目数量，与练习结果无关 | 10/17 起不再发徽章（只奖励质量，不奖励次数） |
+| `verified_pass_count` | 做题验证复习（`mode` 为 rewrite / redo / similar）且评分 ≥ 4 的次数 | 1 / 10 / 50 次 |
+| `revenge_count` | `mistakes.revenge_at` 不为空的易错点数（见[复仇成功](revenge.md)） | 1 / 10 条 |
 | `has_weakness_analysis` | 是否存在该账号的 `weakness_insights` 记录（布尔值），不检查分析质量 | 首次分析 |
 
 `ai_usage.attempts` 是按[AI 额度与计费](../../static/ai-billing.html)结算后的次数，包含识图和薄弱点分析，无法表示成功生成练习的

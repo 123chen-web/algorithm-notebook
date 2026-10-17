@@ -209,8 +209,8 @@ def test_streak_at_risk_line(client):
             "WHERE p.user_id = ? LIMIT 1",
             (uid,),
         ).fetchone()["id"]
-        # 连续三天打卡（9-18/19/20），今天（9-21）还没复习。
-        for day in ("2026-09-18", "2026-09-19", "2026-09-20"):
+        # 9-17/18/19 连续打卡，昨天（9-20）歇了一天，今天（9-21）再不复习就断（连续打卡中间只许歇一天）。
+        for day in ("2026-09-17", "2026-09-18", "2026-09-19"):
             conn.execute(
                 "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date) "
                 "VALUES (?, 4, ?, ?)",
@@ -237,7 +237,11 @@ def test_streak_at_risk_line(client):
     # deduplication: reviewing today eliminates the at-risk signal.
     from reminders import streak_at_risk
     stamps = [datetime.fromisoformat(f"{day}T01:00:00+00:00")
-              for day in ("2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21")]
+              for day in ("2026-09-17", "2026-09-18", "2026-09-19", "2026-09-21")]
+    assert streak_at_risk("Asia/Shanghai", now.date(), stamps) is None
+    # 只是今天还没复习、昨天复习过：歇一天也不会断，不提醒（少一点断签焦虑）。
+    stamps = [datetime.fromisoformat(f"{day}T01:00:00+00:00")
+              for day in ("2026-09-18", "2026-09-19", "2026-09-20")]
     assert streak_at_risk("Asia/Shanghai", now.date(), stamps) is None
 
 

@@ -175,24 +175,30 @@ def test_records_only_count_problems_that_have_a_mistake(client):
     assert day_map(activity(client)) == {"2026-09-19": (0, 2)}
 
 
-def test_streak_matches_the_weekly_recap_and_keeps_a_grace_day(client):
+def test_streak_matches_the_weekly_recap_and_forgives_a_single_rest_day(client):
     register(client)
     owner = user_id(client)
     mistake = seed_problem(owner, at(TODAY - timedelta(days=9)))[0]
-    seed_reviews(mistake, [at(TODAY - timedelta(days=n)) for n in (1, 2, 3, 5)])
+    seed_reviews(mistake, [at(TODAY - timedelta(days=n)) for n in (1, 2, 3, 5, 8)])
     data = activity(client)
-    assert data["streak_days"] == 3  # 今天还没复习，昨天起连续 3 天，不清零
-    assert client.get("/api/insights/weekly-recap").json()["current_streak_days"] == 3
+    # 今天还没复习不算断；4 天前歇了一天也不算断；6、7 天前连着两天没复习，所以 8 天前那次不接上。
+    assert data["streak_days"] == 4
+    assert client.get("/api/insights/weekly-recap").json()["current_streak_days"] == 4
     seed_reviews(mistake, [at(TODAY)])
-    assert activity(client)["streak_days"] == 4
+    assert activity(client)["streak_days"] == 5
 
 
-def test_a_gap_of_two_days_resets_the_streak(client):
+def test_two_missed_days_in_a_row_reset_the_streak(client):
     register(client)
     owner = user_id(client)
     mistake = seed_problem(owner, at(TODAY - timedelta(days=9)))[0]
     seed_reviews(mistake, [at(TODAY - timedelta(days=2)), at(TODAY - timedelta(days=3))])
-    assert activity(client)["streak_days"] == 0
+    assert activity(client)["streak_days"] == 2, "只歇了昨天，今天还没过完：没断"
+    other = seed_problem(owner, at(TODAY - timedelta(days=9)))[0]
+    with connect(write=True) as conn:
+        conn.execute("DELETE FROM reviews")
+    seed_reviews(other, [at(TODAY - timedelta(days=3)), at(TODAY - timedelta(days=4))])
+    assert activity(client)["streak_days"] == 0, "前天、昨天都没复习：断了"
 
 
 def test_other_users_activity_is_never_included(client):
@@ -230,6 +236,7 @@ EMPTY_OVERVIEW = {
     "overdue_count": 0,
     "total_mistakes": 0,
     "streak_days": 0,
+    "week_days": 0,
     "last7": [False] * 7,
     "zones": [],
     "week": {"reviews": 0, "prev_reviews": 0, "records": 0},

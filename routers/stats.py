@@ -26,7 +26,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Response
-from learning_stats import current_streak
+from learning_stats import current_streak, week_review_days
 from mastery import mastery_report
 from search import search_all
 import stats_summary
@@ -503,6 +503,7 @@ def get_overview(user=Depends(security.current_user)):
         "total_mistakes": counts["total"],
         "pending_reason_count": pending_reason_count,
         "streak_days": current_streak(set(review_days), today),
+        "week_days": week_review_days(set(review_days), today),
         "last7": [(today - timedelta(days=6 - offset)) in review_days for offset in range(7)],
         "zones": [dict(row) for row in zone_rows],
         # 与"本周战报"同一口径：含今天的最近 7 天 vs 紧邻的前 7 天；新增的是易错点条数。

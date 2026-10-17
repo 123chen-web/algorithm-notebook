@@ -2,6 +2,7 @@
 ## 连续打卡天数排行榜
 
 登录后可在“榜单”查看连续打卡榜，对应接口为 `GET /api/leaderboard`。
+连续天数是宽松口径（10/17 起，和总览、徽章、小组同一个 `current_streak()`）：中间歇 1 天不算断，连着 2 天没复习才断。
 “打卡”只指成功提交复习评分（`POST /api/mistakes/{id}/review`）并写入
 `reviews` 的记录，无论评分高低；新增题目、生成变体题或保存变体练习结果
 都不算打卡。每条 `reviewed_at` 按所属用户的 `users.timezone` 换算为

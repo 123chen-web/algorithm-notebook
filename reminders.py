@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import db
 import mailer as real_mailer
-from learning_stats import current_streak
+from learning_stats import current_streak, streak_breaks_today
 from legal import PRODUCT_NAME
 from scheduler import today_in_timezone
 
@@ -69,16 +69,15 @@ def _review_dates(conn, user_id):
 
 
 def streak_at_risk(timezone_name, today, review_datetimes):
-    """连续打卡 ≥3 天且今天还没复习 → 返回当前连续天数，否则返回 None。
+    """连续打卡 ≥3 天、而且今天再不复习就会断（今天和昨天都没复习）→ 返回当前连续天数，否则 None。
 
-    current_streak 的语义：今天没打卡但昨天打卡了，算"还没断"。用它就能判断
-    今天是否打卡：review_dates 里有没有今天。
+    连续打卡是宽松口径（中间歇 1 天不算断），所以只歇了一天时不提醒，少一点断签焦虑。
     """
     review_dates = {
         today_in_timezone(timezone_name, stamp) for stamp in review_datetimes
     }
     streak = current_streak(review_dates, today)
-    if streak >= STREAK_AT_RISK_DAYS and today not in review_dates:
+    if streak >= STREAK_AT_RISK_DAYS and streak_breaks_today(review_dates, today):
         return streak
     return None
 

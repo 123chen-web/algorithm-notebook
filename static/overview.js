@@ -91,8 +91,13 @@
 
   /* ---------- 连续打卡磁贴：墨点（static/inkdot.js 负责画，数字保留一眼可读） ---------- */
   function renderStreak(data, context) {
+    // 主数字是“本周复习了几天”（宽松口径，10/14 评估建议），连续打卡放在下面一行小字。
+    const week = $("#week-days");
+    if (week) {
+      week.textContent = String(Number.isInteger(data.week_days) ? data.week_days : 0);
+      window.Feel?.countUp(week);
+    }
     $("#streak-days").textContent = String(data.streak_days);
-    window.Feel?.countUp($("#streak-days"));
     if (window.InkDot) window.InkDot.render(data, context && context.username);
   }
 

@@ -60,6 +60,8 @@
 
 .ov-tile-streak { grid-column: span 1; }
 .ov-tile-streak .ov-eyebrow { color: var(--ink-2); }
+.ov-streak-line { margin: calc(-1 * var(--space-2)) 0 var(--space-2); color: var(--ink-2); font-size: var(--text-xs); }
+.ov-streak-line span { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ov-big { margin: var(--space-2) 0 var(--space-3); font-family: var(--serif); font-size: 52px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
 .ov-big small { margin-left: var(--space-1); font-family: inherit; font-size: var(--text-base); font-weight: 500; }
 .ov-tile-streak { grid-column: span 1; }

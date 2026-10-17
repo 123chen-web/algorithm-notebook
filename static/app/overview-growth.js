@@ -166,10 +166,11 @@ function resetAchievements() {
 function renderAchievements(achievements) {
   const emblems = new Map();
   const groups = [
-    ["streak", "连续打卡", "每天回来复习，让坚持形成习惯。"],
+    ["streak", "连续打卡", "常回来复习，让坚持形成习惯；中间歇一天不算断。"],
     ["mistakes", "易错点积累", "把具体错因记下来，让每一次做错都有收获。"],
     ["zones", "多分区探索", "到不同分区留下记录，拓宽自己的解题视野。"],
-    ["practice", "AI 深度使用", "围绕易错点生成新练习，换一道题检验理解。只统计成功生成的练习题。"],
+    ["verified", "做题验证", "用重做原题、做类似题或默写来复习，做对了才算——真会了，不只是眼熟。"],
+    ["revenge", "复仇成功", "以前错过的题，隔一段时间亲手做对。"],
     ["analysis", "薄弱点分析", "积累易错点后，完成一次分析，找到下一步练习方向。"],
   ];
   const unlockedCount = achievements.filter((badge) => badge.unlocked).length;

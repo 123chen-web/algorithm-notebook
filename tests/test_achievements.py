@@ -17,7 +17,8 @@ FAMILIES = {
     "streak": ("current_streak_days", [3, 7, 30, 100], "天"),
     "mistakes": ("mistake_count", [1, 10, 50, 100], "条"),
     "zones": ("recorded_zone_count", [3, 5], "个分区"),
-    "practice": ("generated_practice_count", [2, 20, 100], "道"),
+    "verified": ("verified_pass_count", [1, 10, 50], "次"),
+    "revenge": ("revenge_count", [1, 10], "条"),
     "analysis": ("has_weakness_analysis", [1], "次"),
 }
 EMPTY_METRICS = {
@@ -25,6 +26,8 @@ EMPTY_METRICS = {
     "mistake_count": 0,
     "recorded_zone_count": 0,
     "generated_practice_count": 0,
+    "verified_pass_count": 0,
+    "revenge_count": 0,
     "has_weakness_analysis": False,
 }
 
@@ -50,13 +53,15 @@ def badges_by_key(data):
 
 def locked_message(category, remaining, target):
     if category == "streak":
-        return f"再连续复习 {remaining} 天，达到 {target} 天打卡目标"
+        return f"再复习 {remaining} 天（中间可以歇一天），达到 {target} 天打卡目标"
     if category == "mistakes":
         return f"再记录 {remaining} 条易错点"
     if category == "zones":
         return f"再到 {remaining} 个不同分区记录题目"
-    if category == "practice":
-        return f"再成功生成 {remaining} 道练习题"
+    if category == "verified":
+        return f"再做题验证通过 {remaining} 次"
+    if category == "revenge":
+        return f"再复仇成功 {remaining} 条"
     return "前往薄弱点分析，完成首次分析"
 
 
@@ -129,6 +134,24 @@ def seed_practice(mistake_id, count):
             "INSERT INTO variants(mistake_id, description, model, created_at) "
             "VALUES (?, '练习题', 'mock-model', ?)",
             [(mistake_id, "2026-09-19T00:00:00+00:00")] * count,
+        )
+
+
+def seed_verified(mistake_id, count, quality=4, mode="redo"):
+    """做题验证复习 count 次（都记在 TODAY，不影响别的日子的连续打卡）。"""
+    seed = datetime.combine(TODAY, datetime.min.time(), timezone.utc).isoformat()
+    with connect(write=True) as conn:
+        conn.executemany(
+            "INSERT INTO reviews(mistake_id, quality, reviewed_at, next_due_date, mode) VALUES (?, ?, ?, ?, ?)",
+            [(mistake_id, quality, seed, TODAY.isoformat(), mode)] * count,
+        )
+
+
+def seed_revenge(mistake_ids):
+    with connect(write=True) as conn:
+        conn.executemany(
+            "UPDATE mistakes SET revenge_at = ? WHERE id = ?",
+            [("2026-09-19T00:00:00+00:00", mistake_id) for mistake_id in mistake_ids],
         )
 
 
@@ -208,16 +231,37 @@ def test_zone_thresholds_use_distinct_recorded_problem_zones(client, target, off
 
 
 @pytest.mark.parametrize("offset", [-1, 0, 1])
-@pytest.mark.parametrize("target", [2, 20, 100])
-def test_practice_thresholds_count_persisted_questions(client, target, offset):
+@pytest.mark.parametrize("target", [1, 10, 50])
+def test_verified_badges_count_passed_redo_similar_and_rewrite_reviews_only(client, target, offset):
     user_id = register(client)["id"]
     mistake_id = seed_problem(user_id)[0]
     count = target + offset
-    seed_practice(mistake_id, count)
+    seed_verified(mistake_id, count)
+    seed_verified(mistake_id, 3, quality=3)            # 做了但没过：不算
+    seed_verified(mistake_id, 3, quality=5, mode="recall")  # 只是自评：不算
 
     data = payload(client)
-    assert data["metrics"]["generated_practice_count"] == count
-    assert_family(data, "practice", count)
+    assert data["metrics"]["verified_pass_count"] == count
+    assert_family(data, "verified", count)
+
+
+@pytest.mark.parametrize("count", [0, 1, 9, 10])
+def test_revenge_badges_count_mistakes_marked_as_revenged(client, count):
+    user_id = register(client)["id"]
+    ids = seed_problem(user_id, mistake_count=12)
+    seed_revenge(ids[:count])
+
+    data = payload(client)
+    assert data["metrics"]["revenge_count"] == count
+    assert_family(data, "revenge", count)
+
+
+def test_generating_ai_practice_no_longer_earns_badges(client):
+    user_id = register(client)["id"]
+    seed_practice(seed_problem(user_id)[0], 100)
+    data = payload(client)
+    assert data["metrics"]["generated_practice_count"] == 100
+    assert not any(badge["unlocked"] for badge in data["achievements"] if badge["category"] != "mistakes")
 
 
 @pytest.mark.parametrize("content", [None, "{}", "不是 JSON，也不判断分析质量"])
@@ -236,6 +280,7 @@ def test_metrics_and_badges_are_isolated_between_users(client):
     alice_mistake = seed_problem(alice_id, mistake_count=2)[0]
     seed_streak(alice_mistake, 2)
     seed_practice(alice_mistake, 2)
+    seed_verified(alice_mistake, 2)
 
     bob_id = register(client, "bob")["id"]
     bob_mistake = seed_problem(bob_id, mistake_count=100)[0]
@@ -243,6 +288,8 @@ def test_metrics_and_badges_are_isolated_between_users(client):
         seed_problem(bob_id, mistake_count=0, zone=zone)
     seed_streak(bob_mistake, 100)
     seed_practice(bob_mistake, 100)
+    seed_verified(bob_mistake, 50)
+    seed_revenge(seed_problem(bob_id, mistake_count=10))
     seed_analysis(bob_id)
     assert all(badge["unlocked"] for badge in payload(client)["achievements"])
 
@@ -255,10 +302,12 @@ def test_metrics_and_badges_are_isolated_between_users(client):
         "mistake_count": 2,
         "recorded_zone_count": 1,
         "generated_practice_count": 2,
+        "verified_pass_count": 2,
+        "revenge_count": 0,
         "has_weakness_analysis": False,
     }
     for category, current in {
-        "streak": 2, "mistakes": 2, "zones": 1, "practice": 2, "analysis": 0,
+        "streak": 2, "mistakes": 2, "zones": 1, "verified": 2, "revenge": 0, "analysis": 0,
     }.items():
         assert_family(data, category, current)
 
@@ -277,13 +326,12 @@ def test_failed_ai_attempt_does_not_count_as_generated_practice(client, monkeypa
         assert conn.execute(
             "SELECT attempts FROM ai_usage WHERE user_id = ?", (user_id,)
         ).fetchone()[0] == 0
-    assert_family(payload(client), "practice", 0)
+    assert payload(client)["metrics"]["generated_practice_count"] == 0
 
     monkeypatch.setattr(ai, "generate", mock_generated_practice)
     assert client.post(f"/api/mistakes/{mistake_id}/variants").status_code == 201
     data = payload(client)
     assert data["metrics"]["generated_practice_count"] == 2
-    assert_family(data, "practice", 2)
 
 
 def test_successful_generations_in_same_second_are_not_deduplicated(client, monkeypatch):
@@ -297,7 +345,6 @@ def test_successful_generations_in_same_second_are_not_deduplicated(client, monk
         assert len(response.json()["variants"]) == 2
     data = payload(client)
     assert data["metrics"]["generated_practice_count"] == 4
-    assert_family(data, "practice", 4)
 
 
 @pytest.mark.parametrize("tz,timestamps", [
@@ -323,7 +370,7 @@ def test_streak_uses_local_dates_all_qualities_and_deduplicates_days(client, tz,
     assert_family(data, "streak", 3)
 
 
-def test_streak_keeps_yesterday_grace_then_relocks_after_a_gap(client, monkeypatch):
+def test_streak_survives_one_rest_day_then_relocks_after_two_missed_days(client, monkeypatch):
     user_id = register(client)["id"]
     mistake_id = seed_problem(user_id)[0]
     seed_streak(mistake_id, 7)
@@ -332,7 +379,12 @@ def test_streak_keeps_yesterday_grace_then_relocks_after_a_gap(client, monkeypat
     monkeypatch.setattr(time, "today_for", lambda user: TODAY + timedelta(days=1))
     assert_family(payload(client), "streak", 7)
 
+    # 歇了一天（TODAY+1 没复习），TODAY+2 当天还没过完：还没断。
     monkeypatch.setattr(time, "today_for", lambda user: TODAY + timedelta(days=2))
+    assert_family(payload(client), "streak", 7)
+
+    # 连着两天没复习：断了。
+    monkeypatch.setattr(time, "today_for", lambda user: TODAY + timedelta(days=3))
     data = payload(client)
     assert data["metrics"]["current_streak_days"] == 0
     assert_family(data, "streak", 0)
@@ -343,9 +395,10 @@ def test_achievements_recompute_after_source_data_is_deleted(client):
     mistake_id = seed_problem(user_id, mistake_count=10)[0]
     seed_streak(mistake_id, 7)
     seed_practice(mistake_id, 20)
+    seed_verified(mistake_id, 10)
     seed_analysis(user_id)
     before = payload(client)
-    for key in ("streak_7", "mistakes_10", "practice_20", "analysis_1"):
+    for key in ("streak_7", "mistakes_10", "verified_10", "analysis_1"):
         assert badges_by_key(before)[key]["unlocked"] is True
 
     with connect(write=True) as conn:
