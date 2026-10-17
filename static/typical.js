@@ -157,6 +157,11 @@
       section.append(examples);
       sheet.append(section);
     }
+    // 我在“我的老毛病”笔记里写过的对策：打开一页纸时再去取，取到了插在自查清单前面。
+    const counters = document.createElement("section");
+    counters.className = "typical-sheet-counters";
+    counters.hidden = true;
+    sheet.append(counters);
     const checklist = document.createElement("section");
     checklist.className = "typical-sheet-checklist";
     checklist.append(text("h3", "", "考前自查清单"));
@@ -168,10 +173,31 @@
     sheet.append(checklist);
   }
 
+  let counterSeq = 0;
+  async function fillCounters() {
+    const box = sheet.querySelector(".typical-sheet-counters");
+    if (!box || typeof hooks?.api !== "function") return;
+    const mine = ++counterSeq;
+    let data = null;
+    try { data = await hooks.api("/api/countermeasures"); } catch { return; }
+    if (mine !== counterSeq || !box.isConnected) return;
+    const items = Array.isArray(data?.items) ? data.items.filter((item) => item.lines?.length) : [];
+    if (!items.length) return;
+    box.replaceChildren(text("h3", "", "我给自己定的对策"));
+    for (const item of items) {
+      box.append(text("p", "typical-sheet-counter-label", `「${item.label}」`));
+      const ul = document.createElement("ul");
+      for (const line of item.lines) ul.append(text("li", "typical-sheet-counter", line));
+      box.append(ul);
+    }
+    box.hidden = false;
+  }
+
   function openSheet() {
     const items = Array.isArray(lastReport?.items) ? lastReport.items : [];
     if (!lastReport?.enough || !items.length) return;
     buildSheet(lastReport);
+    void fillCounters();
     sheetWrap.hidden = false;
     document.documentElement.classList.add("typical-sheet-open");
     sheetWrap.scrollIntoView({ block: "start" });

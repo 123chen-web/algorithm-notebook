@@ -70,6 +70,12 @@
 .typical-sheet-q { display: block; font-weight: 600; color: var(--ink); }
 .typical-sheet-why { display: block; color: var(--ink-2); font-size: var(--text-sm); }
 .typical-sheet-checklist { margin-top: var(--space-5); break-inside: avoid; }
+.typical-sheet-counters { margin-top: var(--space-5); break-inside: avoid; }
+.typical-sheet-counters[hidden] { display: none; }
+.typical-sheet-counters h3 { margin: 0 0 var(--space-2); font-size: var(--text-xl); color: var(--ink); }
+.typical-sheet-counter-label { margin: var(--space-2) 0 0; color: var(--ink); font-weight: 600; }
+.typical-sheet-counters ul { margin: var(--space-1) 0 0; padding-left: 1.2em; }
+.typical-sheet-counter { color: var(--ink); line-height: 1.6; }
 .typical-sheet-checklist h3 { margin: 0 0 var(--space-2); font-size: var(--text-xl); color: var(--ink); }
 .typical-sheet-checklist ul { list-style: none; margin: 0; padding: 0; }
 .typical-sheet-check { margin: 2px 0; color: var(--ink); }

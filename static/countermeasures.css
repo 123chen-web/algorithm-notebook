@@ -1,0 +1,8 @@
+/* “我给自己定的对策”（static/countermeasures.js）：复习时显示错因后出现；提示框“结论”同色系，只用主题令牌。 */
+.cm-host[hidden] { display: none; }
+.cm-box { display: grid; gap: var(--space-2); margin: var(--space-4) 0 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--success-line); border-left-width: 4px; border-radius: var(--radius-sm); background: var(--success-soft); color: var(--ink); }
+.cm-title { margin: 0; font-size: var(--text-sm); color: var(--success-ink); }
+.cm-block + .cm-block { margin-top: var(--space-1); }
+.cm-label { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-sm); font-weight: 600; }
+.cm-open { min-height: 28px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font-size: var(--text-xs); font-weight: 400; }
+.cm-lines { display: grid; gap: 2px; margin: var(--space-1) 0 0; padding-left: 1.2em; font-size: var(--text-sm); line-height: var(--lh-ui, 1.6); }

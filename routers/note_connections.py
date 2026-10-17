@@ -13,6 +13,7 @@ import re
 from fastapi import APIRouter
 from fastapi import Depends
 
+import countermeasures
 import db
 import pattern_match
 import problem_progress
@@ -237,4 +238,25 @@ def problem_related_notes(problem_id: int, user=Depends(security.current_user)):
         })
         if len(items) >= RELATED_NOTES_MAX:
             break
+    return {"items": items}
+
+
+@router.get("/api/countermeasures")
+def all_countermeasures(user=Depends(security.current_user)):
+    """所有写了“我的对策”的老毛病笔记（考前一页纸用）。"""
+    with db.connect() as conn:
+        return {"items": countermeasures.for_user(conn, user["id"])}
+
+
+@router.get("/api/mistakes/{mistake_id}/countermeasures")
+def mistake_countermeasures(mistake_id: int, user=Depends(security.current_user)):
+    """复习这条易错点时：它的错因标签对应的老毛病笔记里，自己写过的对策。"""
+    with db.connect() as conn:
+        problem_progress.owned_mistake(conn, mistake_id, user["id"])
+        codes = {
+            row["tag"] for row in conn.execute(
+                "SELECT tag FROM mistake_tags WHERE mistake_id = ? AND user_id = ?", (mistake_id, user["id"]),
+            )
+        }
+        items = [item for item in countermeasures.for_user(conn, user["id"]) if item["tag"] in codes]
     return {"items": items}

@@ -128,6 +128,22 @@ function renderDetail(item, options = {}) {
     if (!state.revealed && relatedNotes.childNodes?.length) relatedNotes.hidden = true;
   });
 
+  // 串联：这条的错因在“我的老毛病”笔记里写过对策的话，显示错因后一起出现。
+  const counterHost = element("div", "", "cm-host");
+  counterHost.hidden = true;
+  root.append(counterHost);
+  state.answers.push(counterHost);
+  void window.Countermeasures?.mount(counterHost, item, {
+    api,
+    isCurrent: () => state.isCurrent(),
+    openNote: (id) => run(async () => {
+      await showView("notes");
+      await window.Notes?.openNoteById(id);
+    }),
+  }).then(() => {
+    if (!state.revealed && counterHost.childNodes?.length) counterHost.hidden = true;
+  });
+
   const duckHost = element("div", "", "duck-panel-host");
   root.append(duckHost);
   window.DuckPanel?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });

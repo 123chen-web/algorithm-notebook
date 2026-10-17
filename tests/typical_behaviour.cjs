@@ -230,3 +230,33 @@ test("typical: remounting after data changed issues a fresh request and redraws"
   await settle();
   assert.equal(byPath(h.env, "/api/stats/typical").length, before + 1);
 });
+
+
+test("typical: one-pager adds my own countermeasures before the checklist when I have written any", async () => {
+  const h = setup();
+  await mountAndRespond(h, payload());
+  h.$("#typical-print-open").click();
+  await tick();
+  const request = latest(h.env, "/api/countermeasures");
+  assert.ok(request, "打开一页纸时去取自己写过的对策");
+  h.env.respond(request, 200, { items: [
+    { note_id: 3, label: "边界/特例", tag: "boundary", lines: ["先写清区间 <b>开闭</b>", "代入 n=0"] },
+  ] });
+  await settle();
+  const box = h.$("#typical-sheet .typical-sheet-counters");
+  assert.equal(box.hidden, false);
+  assert.match(box.textContent, /我给自己定的对策/);
+  assert.match(box.textContent, /「边界\/特例」/);
+  assert.deepEqual([...box.querySelectorAll(".typical-sheet-counter")].map((li) => li.textContent), ["先写清区间 <b>开闭</b>", "代入 n=0"]);
+  assert.equal(box.querySelector("b"), null, "用户写的内容只当文字");
+});
+
+test("typical: no countermeasures written keeps that block hidden", async () => {
+  const h = setup();
+  await mountAndRespond(h, payload());
+  h.$("#typical-print-open").click();
+  await tick();
+  h.env.respond(latest(h.env, "/api/countermeasures"), 200, { items: [] });
+  await settle();
+  assert.equal(h.$("#typical-sheet .typical-sheet-counters").hidden, true);
+});
