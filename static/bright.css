@@ -148,3 +148,23 @@ html[data-theme="bright"] .problem-progress-card:has(.selected) { border-color: 
 html[data-theme="bright"] .problem-progress-card .problem-progress-label::before { content: "掌握 "; }
 html[data-theme="bright"] .problem-progress-card h3 { font-weight: 650; }
 html[data-theme="bright"] .problem-chip { border-color: transparent; background: var(--soft); color: var(--ink-2); }
+
+/* ---------- 错因标签：印章（歪框）改成圆角胶囊 ---------- */
+html[data-theme="bright"] .tag-seal,
+html[data-theme="bright"] .tag-seal:nth-child(2n),
+html[data-theme="bright"] .tag-seal[aria-pressed="true"] { transform: none; }
+html[data-theme="bright"] .tag-seal { border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font-weight: 600; }
+html[data-theme="bright"] .tag-seal:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); transform: none; }
+html[data-theme="bright"] .tag-seal[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); box-shadow: none; }
+html[data-theme="bright"] .tag-seal-label { letter-spacing: 0; }
+
+/* ---------- 学习路线：总体进度排成三列小卡片，进度条渐变 ---------- */
+html[data-theme="bright"] .roadmap-cats { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: var(--space-3); }
+html[data-theme="bright"] .roadmap-cat-row { padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--paper-2); }
+html[data-theme="bright"] :is(.roadmap-progress, .roadmap-cat-bar) {
+  -webkit-appearance: none; appearance: none;
+  height: 8px; border: 0; border-radius: 999px; overflow: hidden; background: var(--tile-neutral);
+}
+html[data-theme="bright"] :is(.roadmap-progress, .roadmap-cat-bar)::-webkit-progress-bar { background: var(--tile-neutral); border-radius: 999px; }
+html[data-theme="bright"] :is(.roadmap-progress, .roadmap-cat-bar)::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), var(--brand-2)); border-radius: 999px; }
+html[data-theme="bright"] :is(.roadmap-progress, .roadmap-cat-bar)::-moz-progress-bar { background: linear-gradient(90deg, var(--accent), var(--brand-2)); border-radius: 999px; }
