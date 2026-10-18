@@ -131,3 +131,20 @@ html[data-theme="bright"] .ov-trend-value strong { font-family: inherit; font-we
 html[data-theme="bright"] .ov-tile-review .ov-review-body { margin-top: var(--space-4); }
 html[data-theme="bright"] .ov-tile-review .ov-zones { margin-top: auto; padding-top: var(--space-4); }
 html[data-theme="bright"] .ov-tile-review .ov-tile-actions { margin-top: 0; }
+
+/* ---------- 今日复习 / 全部记录：题目卡片 ---------- */
+/* 原来是“半张卡片涂浅色”表示完成度，看着像没加载完；这套主题改成卡片底部一条细进度条。 */
+html[data-theme="bright"] .problem-progress-card { border-color: transparent; border-radius: var(--radius); box-shadow: var(--card-shadow); }
+html[data-theme="bright"] .problem-progress-card::before {
+  inset: auto auto 0 0; height: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--brand-2));
+  border-radius: 0 4px 4px 0;
+}
+html[data-theme="bright"] .problem-progress-card::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 4px;
+  background: var(--tile-neutral); z-index: -2; pointer-events: none;
+}
+html[data-theme="bright"] .problem-progress-card:has(.selected) { border-color: transparent; box-shadow: 0 0 0 2px var(--accent), var(--card-shadow); }
+html[data-theme="bright"] .problem-progress-card .problem-progress-label::before { content: "掌握 "; }
+html[data-theme="bright"] .problem-progress-card h3 { font-weight: 650; }
+html[data-theme="bright"] .problem-chip { border-color: transparent; background: var(--soft); color: var(--ink-2); }
