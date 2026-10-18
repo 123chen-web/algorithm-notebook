@@ -456,9 +456,9 @@ def css_declarations(source):
     assert not blocks, "Unclosed CSS block"
 
 
-def test_default_fog_theme_is_restored_before_styles_and_session_rendering(document):
+def test_default_bright_theme_is_restored_before_styles_and_session_rendering(document):
     root = next(node for node in document.elements if node["tag"] == "html")
-    assert root["attrs"].get("data-theme") == "fog"
+    assert root["attrs"].get("data-theme") == "bright", "10/18 起默认“清爽”"
     assert root["attrs"].get("data-view") == "pending"
     heads = [(index, node) for index, node in enumerate(document.elements) if node["tag"] == "head"]
     assert len(heads) == 1
@@ -496,7 +496,7 @@ def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document)
             node["attrs"].get("value") for node in document.elements
             if index in node["ancestors"] and node["tag"] == "option"
         ]
-        assert options == ["fog", "ink", "qixi"]
+        assert options == ["bright", "fog", "ink", "qixi"]
         assert any(
             node["tag"] == "label" and node["attrs"].get("for") == select["attrs"]["id"]
             for node in document.elements
@@ -513,12 +513,13 @@ def test_theme_selectors_belong_to_the_welcome_header_and_account_menu(document)
 
 
 def test_theme_storage_reads_and_writes_are_guarded_and_validate_both_choices(theme_source):
-    assert re.search(r'\blet\s+theme\s*=\s*["\']fog["\']\s*;', theme_source)
+    assert re.search(r'\blet\s+theme\s*=\s*["\']bright["\']\s*;', theme_source)
     guards = re.findall(r"\btry\s*\{([\s\S]*?)\}\s*catch\s*\([^)]*\)\s*\{", theme_source)
     assert any("localStorage.getItem(STORAGE_KEY)" in body for body in guards)
     assert any("localStorage.setItem(STORAGE_KEY, theme)" in body for body in guards)
-    assert re.search(r'saved\s*===\s*["\']fog["\']\s*\|\|\s*saved\s*===\s*["\']ink["\']\s*\|\|\s*saved\s*===\s*["\']qixi["\']', theme_source)
-    assert re.search(r'select\.value\s*!==\s*["\']fog["\']\s*&&\s*select\.value\s*!==\s*["\']ink["\']\s*&&\s*select\.value\s*!==\s*["\']qixi["\']', theme_source)
+    assert 'const THEMES = ["bright", "fog", "ink", "qixi"];' in theme_source
+    assert "if (THEMES.includes(saved)) theme = saved;" in theme_source
+    assert "if (!THEMES.includes(select.value)) return;" in theme_source
     assert "root.dataset.theme = theme" in theme_source
     assert 'document.addEventListener("DOMContentLoaded"' in theme_source
     assert "syncControls()" in theme_source

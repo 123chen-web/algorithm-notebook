@@ -41,7 +41,7 @@
   let preloadSource = null;
   let preloadImage = null;
 
-  const noScenery = () => root.dataset.theme === "fog"; // 雾白没有风景，轮播和预加载都不要跑
+  const noScenery = () => root.dataset.theme === "fog" || root.dataset.theme === "bright"; // 雾白、清爽没有风景，轮播和预加载都不要跑
   const canPlay = () => pageActive && !document.hidden && !noScenery() && root.dataset.view === "welcome"
     && !reducedMotion.matches && !mobile.matches && !paused;
   const canTransition = () => pageActive && !document.hidden && !noScenery() && !reducedMotion.matches && !mobile.matches

@@ -98,6 +98,20 @@
       window.Feel?.countUp(week);
     }
     $("#streak-days").textContent = String(data.streak_days);
+    // 清爽主题：本周复习画成一个进度环（其他主题里这个元素是隐藏的）。
+    const ring = $("#week-ring");
+    if (ring) {
+      const days = Math.max(0, Math.min(7, Number(data.week_days) || 0));
+      ring.style.setProperty("--week", String(days / 7));
+    }
+    // 近 7 天复习次数，和上周比。
+    const recent = data.week || {};
+    const reviews = $("#week7-reviews");
+    if (reviews) {
+      reviews.textContent = String(Number(recent.reviews) || 0);
+      const diff = (Number(recent.reviews) || 0) - (Number(recent.prev_reviews) || 0);
+      $("#week7-compare").textContent = `比上周 ${diff > 0 ? "+" : ""}${diff} 次 · 新增 ${Number(recent.records) || 0} 条`;
+    }
     if (window.InkDot) window.InkDot.render(data, context && context.username);
   }
 

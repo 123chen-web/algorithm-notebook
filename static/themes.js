@@ -3,11 +3,13 @@
 (() => {
   const STORAGE_KEY = "algorithm-notebook-theme";
   const root = document.documentElement;
-  let theme = "fog";
+  // 10/18 起默认“清爽”；用户自己选过的（存在本机）照旧。
+  const THEMES = ["bright", "fog", "ink", "qixi"];
+  let theme = "bright";
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "fog" || saved === "ink" || saved === "qixi") theme = saved;
-  } catch (_) { /* Storage may be unavailable; fog remains the default. */ }
+    if (THEMES.includes(saved)) theme = saved;
+  } catch (_) { /* Storage may be unavailable; bright remains the default. */ }
   root.dataset.theme = theme;
 
   function syncControls() {
@@ -23,7 +25,7 @@
     syncControls();
     document.querySelectorAll("[data-theme-select]").forEach((select) => {
       select.addEventListener("change", () => {
-        if (select.value !== "fog" && select.value !== "ink" && select.value !== "qixi") return;
+        if (!THEMES.includes(select.value)) return;
         theme = select.value;
         root.dataset.theme = theme;
         try { localStorage.setItem(STORAGE_KEY, theme); } catch (_) { /* Keep the live selection. */ }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-view="pending" data-theme="fog">
+<html lang="zh-CN" data-view="pending" data-theme="bright">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,8 +10,8 @@
   <meta name="theme-color" content="#c23a2b">
   <!-- ?v= 是手动维护的静态资源版本号；改了 CSS/JS 内容后记得顺手加一，
        否则浏览器可能因为磁盘缓存看不到更新（没有构建步骤生成内容哈希）。 -->
-  <script src="/static/themes.js?v=2"></script>
-  <link rel="stylesheet" href="/static/style.css?v=57">
+  <script src="/static/themes.js?v=3"></script>
+  <link rel="stylesheet" href="/static/style.css?v=58">
   <link rel="stylesheet" href="/static/intro.css?v=19">
   <link rel="stylesheet" href="/static/intro-film.css?v=2">
   <link rel="stylesheet" href="/static/scenes.css?v=6">
@@ -78,11 +78,12 @@
   <link rel="stylesheet" href="/static/roadmap.css?v=2">
   <link rel="stylesheet" href="/static/inbox.css?v=2">
   <link rel="stylesheet" href="/static/feel.css?v=5">
-  <script defer src="/static/scenes.js?v=7"></script>
+  <link rel="stylesheet" href="/static/bright.css?v=2">
+  <script defer src="/static/scenes.js?v=8"></script>
   <script defer src="/static/intro.js?v=13"></script>
   <script defer src="/static/intro-glyphs.js?v=1"></script>
   <script defer src="/static/intro-film.js?v=2"></script>
-  <script defer src="/static/cursor-fx.js?v=19"></script>
+  <script defer src="/static/cursor-fx.js?v=20"></script>
   <script defer src="/static/feel.js?v=4"></script>
   <script defer src="/static/activity.js?v=2"></script>
   <script defer src="/static/emoji.js?v=2"></script>
@@ -106,7 +107,7 @@
   <script defer src="/static/typical.js?v=2"></script>
   <script defer src="/static/print.js?v=3"></script>
   <script defer src="/static/shell.js?v=6"></script>
-  <script defer src="/static/overview.js?v=9"></script>
+  <script defer src="/static/overview.js?v=11"></script>
   <script defer src="/static/inkdot.js?v=1"></script>
   <script defer src="/static/thread.js?v=1"></script>
   <script defer src="/static/board.js?v=3"></script>
@@ -249,6 +250,7 @@
         </div>
         <label for="welcome-theme">风格</label>
         <select id="welcome-theme" data-theme-select aria-label="介绍页风格">
+          <option value="bright">清爽</option>
           <option value="fog">雾白</option>
           <option value="ink">水墨红笔</option>
           <option value="qixi">栖间</option>
@@ -260,7 +262,8 @@
         <div class="topbar-look-panel">
           <label class="account-preference" for="topbar-theme">风格
             <select id="topbar-theme" data-theme-select aria-label="页面风格">
-              <option value="fog">雾白</option>
+              <option value="bright">清爽</option>
+          <option value="fog">雾白</option>
               <option value="ink">水墨红笔</option>
               <option value="qixi">栖间</option>
             </select>
@@ -330,7 +333,8 @@
               <div id="reminder-settings-host" class="reminder-settings-host"></div>
               <label class="account-preference" for="account-theme">风格
                 <select id="account-theme" data-theme-select aria-label="账号页面风格">
-                  <option value="fog">雾白</option>
+                  <option value="bright">清爽</option>
+          <option value="fog">雾白</option>
                   <option value="ink">水墨红笔</option>
                   <option value="qixi">栖间</option>
                 </select>
@@ -651,6 +655,13 @@
             <p class="ov-big"><span id="week-days">0</span><small>/ 7 天</small></p>
             <p class="ov-streak-line" title="连续打卡：中间歇一天不算断，连着两天没复习才断">连续 <span id="streak-days">0</span> 天</p>
             <div id="streak-ink" class="ov-inkdot" role="img" aria-label="连续打卡墨点"></div>
+            <div id="week-ring" class="ov-week-ring" aria-hidden="true"></div>
+          </section>
+
+          <section id="tile-week7" class="ov-tile ov-tile-week7" aria-labelledby="tile-week7-title">
+            <h3 id="tile-week7-title" class="ov-eyebrow">近 7 天复习</h3>
+            <p class="ov-big"><span id="week7-reviews">0</span><small>次</small></p>
+            <p id="week7-compare" class="ov-week7-compare"></p>
           </section>
 
           <section id="tile-heatmap" class="ov-tile ov-tile-heat" aria-labelledby="tile-heat-title">

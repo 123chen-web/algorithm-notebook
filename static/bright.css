@@ -1,0 +1,133 @@
+/* 清爽主题（html[data-theme="bright"]，10/18 起默认）：白色圆角卡片 + 柔和阴影 + 渐变主卡 + 大数字。
+   颜色全部来自 style.css 里这套主题的令牌；只在这套主题下生效，雾白 / 水墨 / 栖间不受影响。
+   去掉手绘圈、印章、墨点、山水这类装饰，总览排成一屏能看完的卡片网格。 */
+
+/* ---------- 全局：底色、卡片、按钮 ---------- */
+html[data-theme="bright"] { background: var(--paper); }
+html[data-theme="bright"] body { background:
+  radial-gradient(900px 420px at 70% -160px, rgba(var(--glow), .08), transparent 70%) no-repeat, var(--paper); }
+html[data-theme="bright"] :is(.scene-backdrop, .scene-capsule) { display: none; }
+
+html[data-theme="bright"] :is(.panel, .ov-tile, .ov-card, .ov-trend, .sign-card, .gc-card, .rc-card, .bf-card,
+  .revenge-card, .rank-mini-card, .ov-due) {
+  border-color: transparent;
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+html[data-theme="bright"] :is(.gc-card, .rc-card) { border-left-width: 1px; }
+/* 英文等宽小标题（GOAL / RECOMMEND…）在这套主题里不要：卡片自己的中文标题已经够了 */
+html[data-theme="bright"] :is(.gc-eyebrow, .rc-eyebrow) { display: none; }
+html[data-theme="bright"] button.primary { border-radius: var(--radius-pill); }
+
+/* ---------- 侧栏与顶栏 ---------- */
+@media (min-width: 1024px) {
+  html[data-theme="bright"][data-view="app"] .app-sidebar { background: var(--surface); border-right-color: var(--line); }
+}
+
+/* ---------- 总览：问候 ---------- */
+html[data-theme="bright"] .ov-greeting h2 { font-weight: 700; letter-spacing: -.01em; }
+
+/* ---------- 总览：磁贴网格 ---------- */
+html[data-theme="bright"] .ov-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(150px, auto);
+  gap: var(--space-4);
+}
+html[data-theme="bright"] .ov-tile { min-height: 0; padding: var(--space-5); }
+html[data-theme="bright"] .ov-eyebrow { color: var(--ink-2); font-size: var(--text-sm); font-weight: 600; letter-spacing: 0; }
+
+/* 主卡：今日复习，左边两格宽、两行高，蓝到青绿的渐变 */
+html[data-theme="bright"] .ov-tile-review {
+  grid-column: 1 / span 2; grid-row: span 2;
+  border: 0;
+  background: linear-gradient(150deg, var(--accent), #1d7d6c);
+  color: var(--on-accent);
+}
+html[data-theme="bright"] .ov-tile-review .ov-eyebrow { color: var(--on-accent); opacity: .9; }
+html[data-theme="bright"] :is(.ov-stamp, .review-pen) { display: none !important; }
+html[data-theme="bright"] .tile-count-wrap { padding: 0; }
+html[data-theme="bright"] .tile-count { font-family: inherit; font-size: 76px; font-weight: 750; letter-spacing: -.03em; }
+html[data-theme="bright"] .ov-review-caption { font-size: var(--text-md); }
+html[data-theme="bright"] .ov-zonebar span { opacity: .55; }
+html[data-theme="bright"] .ov-btn { border-radius: var(--radius-sm); }
+html[data-theme="bright"] .ov-btn-light { color: var(--accent); }
+
+/* 大数字统一：粗无衬线 */
+html[data-theme="bright"] .ov-big { font-family: inherit; font-size: 40px; font-weight: 750; letter-spacing: -.02em; }
+html[data-theme="bright"] .ov-big small { color: var(--ink-2); font-weight: 600; }
+
+/* 本周复习：进度环（墨点不要） */
+html[data-theme="bright"] .ov-tile-streak { grid-column: 3; grid-row: 1; position: relative; }
+html[data-theme="bright"] .ov-inkdot { display: none; }
+.ov-week-ring { display: none; }
+html[data-theme="bright"] .ov-week-ring {
+  --week: 0;
+  display: block;
+  position: absolute; right: var(--space-5); top: var(--space-5);
+  width: 52px; height: 52px; border-radius: 50%;
+  background: conic-gradient(var(--brand-2) calc(var(--week) * 1turn), var(--tile-neutral) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+}
+
+/* 近 7 天复习：只在这套主题里出现 */
+.ov-tile.ov-tile-week7 { display: none; }
+html[data-theme="bright"] .ov-tile.ov-tile-week7 { display: flex; grid-column: 4; grid-row: 1; }
+.ov-week7-compare { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+
+/* 热力图：右下两格宽 */
+html[data-theme="bright"] .ov-tile-heat { grid-column: 3 / span 2; grid-row: 2; }
+
+/* ---------- 总览：下面的卡片排成两列，空位自动补上 ---------- */
+html[data-theme="bright"] #home-page.overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row dense;
+  gap: var(--space-4);
+  align-items: start;
+}
+html[data-theme="bright"] #home-page.overview > * { min-width: 0; margin: 0; }
+html[data-theme="bright"] #home-page.overview > :is(.ov-greeting, .ov-error, .ov-tiles, #briefing-card, #home-trend, .ov-columns, #ov-yesterday-card) { grid-column: 1 / -1; }
+html[data-theme="bright"] #home-page.overview > :empty { display: none; }
+/* 生长山水是水墨风的装饰，这套主题不放 */
+html[data-theme="bright"] #landscape-card { display: none; }
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 1100px) {
+  html[data-theme="bright"] .ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-theme="bright"] .ov-tile-review { grid-column: 1 / -1; grid-row: auto; }
+  html[data-theme="bright"] .ov-tile-streak { grid-column: 1; grid-row: auto; }
+  html[data-theme="bright"] .ov-tile.ov-tile-week7 { grid-column: 2; grid-row: auto; }
+  html[data-theme="bright"] .ov-tile-heat { grid-column: 1 / -1; grid-row: auto; }
+}
+@media (max-width: 700px) {
+  html[data-theme="bright"] #home-page.overview { grid-template-columns: minmax(0, 1fr); }
+  html[data-theme="bright"] .tile-count { font-size: 60px; }
+  html[data-theme="bright"] .ov-big { font-size: 32px; }
+}
+
+/* ---------- 标志：渐变小方块里白字（不要水墨印章的歪框） ---------- */
+html[data-theme="bright"] .brand-mark {
+  border: 0;
+  border-radius: var(--radius-compact);
+  background: linear-gradient(135deg, var(--accent), #1d7d6c);
+  color: var(--on-accent);
+  font-family: inherit; font-weight: 700;
+  transform: none;
+}
+html[data-theme="bright"] .sidebar-brand .brand-mark { font-size: 19px; }
+
+/* ---------- 侧栏：复习日历和总览上的热力图重复，这套主题里收起来；分区/标签筛选留着 ---------- */
+html[data-theme="bright"] #sidebar-calendar-section { display: none; }
+
+/* ---------- 趋势卡里的四个指标格：浅底圆角，选中的用强调色边 ---------- */
+html[data-theme="bright"] .ov-trend-tab { border-color: transparent; background: var(--paper-2); }
+html[data-theme="bright"] .ov-trend-tab:hover:not(:disabled) { border-color: var(--line); background: var(--paper-2); }
+html[data-theme="bright"] .ov-trend-tab[aria-selected="true"] { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+html[data-theme="bright"] .ov-trend-label { font-family: inherit; letter-spacing: 0; }
+html[data-theme="bright"] .ov-trend-value strong { font-family: inherit; font-weight: 750; }
+
+/* ---------- 主卡：内容上下撑开，不在中间留一大块空白 ---------- */
+html[data-theme="bright"] .ov-tile-review .ov-review-body { margin-top: var(--space-4); }
+html[data-theme="bright"] .ov-tile-review .ov-zones { margin-top: auto; padding-top: var(--space-4); }
+html[data-theme="bright"] .ov-tile-review .ov-tile-actions { margin-top: 0; }
