@@ -132,7 +132,8 @@ def test_review_without_mode_defaults_to_recall(client):
 def test_redo_hint_detects_overconfident_recall(client):
     owner = register(client)["id"]
     mistake = seed(owner)
-    base = datetime(2026, 10, 5, 4, tzinfo=timezone.utc)
+    # 提示只看最近 14 天，所以日期必须相对“现在”算，不能写死（写死的日期会随时间“过期”）。
+    base = datetime.now(timezone.utc) - timedelta(days=6)
     # recall 打 4 紧接着评 2，出现两次 → 触发提示
     for day, quality in [(5, 4), (6, 2), (7, 4), (8, 2)]:
         insert_review(mistake, mode="recall", quality=quality,
