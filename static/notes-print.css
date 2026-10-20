@@ -1,0 +1,58 @@
+/* 打印一篇笔记（正文或导图）。点“打印”时 notes.js 给 <html> 加 data-print-note="text" 或 "map"，
+   打完（afterprint）再去掉；平时这份样式什么都不改。
+   打印只用黑白灰关键字（和 print.css、typical.css 一致），深色主题打出来也是白纸黑字。 */
+@page nm-note { margin: 14mm; }
+@page nm-map { size: A4 landscape; margin: 10mm; }
+
+@media print {
+  html[data-print-note][data-view="app"] #app > section#notes-page { display: block !important; }
+  html[data-print-note] #notes-page .notes-head,
+  html[data-print-note] #notes-page .notes-rail,
+  html[data-print-note] #notes-page .notes-col,
+  html[data-print-note] #notes-page .notes-pane-bar,
+  html[data-print-note] #notes-page .notes-pane-tools,
+  html[data-print-note] #notes-page .notes-pane-toc,
+  html[data-print-note] #notes-page .nm-tabs,
+  html[data-print-note] #notes-page .nm-bar,
+  html[data-print-note] #notes-page .nc-fold,
+  html[data-print-note] #notes-page .nl-related,
+  html[data-print-note] #notes-page .notes-graph-fold,
+  html[data-print-note] #notes-page .notes-composer { display: none !important; }
+
+  html[data-print-note] #notes-page .notes-wrap,
+  html[data-print-note] #notes-page .notes-layout,
+  html[data-print-note] #notes-page .notes-pane { display: block; width: auto; max-width: none; margin: 0; padding: 0; position: static; max-height: none; overflow: visible; border: 0; border-radius: 0; background: none; box-shadow: none; }
+
+  html[data-print-note] #notes-page .notes-reader { color: black; background: none; page: nm-note; }
+  html[data-print-note] #notes-page .notes-reader-title,
+  html[data-print-note] #notes-page .notes-pane-meta,
+  html[data-print-note] #notes-page .notes-pane-meta *,
+  html[data-print-note] #notes-page .notes-reader-body,
+  html[data-print-note] #notes-page .notes-reader-body * { color: black !important; background: none !important; border-color: gray !important; box-shadow: none !important; text-shadow: none !important; }
+  html[data-print-note] #notes-page .notes-reader-body { font-size: 11pt; line-height: 1.6; }
+  html[data-print-note] #notes-page .notes-reader-body pre,
+  html[data-print-note] #notes-page .notes-reader-body code { white-space: pre-wrap; word-break: break-word; overflow: visible; font-size: 9.5pt; }
+  html[data-print-note] #notes-page .notes-reader-body pre { border: 1px solid gray; break-inside: auto; }
+  html[data-print-note] #notes-page .notes-reader-body h1,
+  html[data-print-note] #notes-page .notes-reader-body h2,
+  html[data-print-note] #notes-page .notes-reader-body h3,
+  html[data-print-note] #notes-page .notes-reader-body h4 { break-after: avoid; }
+  html[data-print-note] #notes-page .notes-reader-body table,
+  html[data-print-note] #notes-page .notes-reader-body img,
+  html[data-print-note] #notes-page .notes-reader-body svg,
+  html[data-print-note] #notes-page .notes-reader-body blockquote { break-inside: avoid; max-width: 100%; }
+  html[data-print-note] #notes-page .notes-reader-body a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 85%; word-break: break-all; }
+
+  /* 打印导图：横向 A4，整张缩到一页宽，不要滚动条和卡片底色。 */
+  html[data-print-note="map"] #notes-page .notes-reader-body { display: none !important; }
+  html[data-print-note="map"] #notes-page .nm-host { display: block !important; page: nm-map; }
+  html[data-print-note="map"] #notes-page .nm-scroll { overflow: visible; max-height: none; padding: 0; border: 0; background: none; }
+  html[data-print-note="map"] #notes-page .nm-svg { width: 100%; height: auto; max-height: 175mm; }
+  html[data-print-note="map"] #notes-page .nm-edge { stroke: gray; stroke-opacity: 1; }
+  html[data-print-note="map"] #notes-page .nm-box { fill: white; stroke: black; stroke-width: 1.2; }
+  html[data-print-note="map"] #notes-page .nm-root .nm-box { fill: black; }
+  html[data-print-note="map"] #notes-page .nm-text { fill: black; }
+  html[data-print-note="map"] #notes-page .nm-root .nm-text { fill: white; }
+  html[data-print-note="map"] #notes-page .nm-fold { fill: black; }
+  html[data-print-note="map"] #notes-page .nm-jump { display: none; }
+}

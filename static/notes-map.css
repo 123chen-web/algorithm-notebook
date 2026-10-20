@@ -1,0 +1,50 @@
+/* 笔记思维导图（static/notes-map.js）：阅读页里“正文 / 导图”切换，导图本身是一张 SVG。
+   颜色只用主题令牌：每一枝用一个令牌色（--nm-c），节点底色是令牌色混进卡片底色。 */
+#notes-page .nm-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill, 999px); background: var(--paper-2); }
+#notes-page .nm-tab { min-height: 32px; padding: 0 var(--space-4); border: 0; border-radius: var(--radius-pill, 999px); background: transparent; color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+#notes-page .nm-tab[aria-pressed="true"] { background: var(--surface); color: var(--accent); font-weight: 650; box-shadow: 0 0 0 1px var(--line); }
+#notes-page .nm-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#notes-page .nm-host { display: grid; gap: var(--space-2); min-width: 0; }
+#notes-page .nm-host[hidden] { display: none; }
+#notes-page .nm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+#notes-page .nm-tool { min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+#notes-page .nm-tool:disabled { opacity: .45; cursor: not-allowed; }
+#notes-page .nm-hint { margin: 0; color: var(--ink-2); font-size: var(--text-xs); }
+#notes-page .nm-scroll { overflow: auto; max-height: 72vh; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+#notes-page .nm-empty { margin: var(--space-4) 0; color: var(--ink-2); font-size: var(--text-sm); }
+#notes-page .nm-svg { display: block; max-width: none; font-family: inherit; }
+#notes-page .nm-scroll.is-fit .nm-svg { width: 100%; height: auto; }
+
+#notes-page .nm-b0 { --nm-c: var(--accent); }
+#notes-page .nm-b1 { --nm-c: var(--gamboge-ink); }
+#notes-page .nm-b2 { --nm-c: var(--review-pen); }
+#notes-page .nm-b3 { --nm-c: var(--azurite); }
+#notes-page .nm-b4 { --nm-c: var(--ink-2); }
+#notes-page .nm-b5 { --nm-c: var(--line-strong); }
+#notes-page .nm-br { --nm-c: var(--ink); }
+
+#notes-page .nm-edge { fill: none; stroke: var(--nm-c); stroke-opacity: .5; stroke-width: 2; stroke-linecap: round; }
+#notes-page .nm-node { cursor: pointer; outline: none; }
+#notes-page .nm-box { fill: color-mix(in srgb, var(--nm-c) 10%, var(--surface)); stroke: color-mix(in srgb, var(--nm-c) 55%, var(--surface)); stroke-width: 1.5; }
+#notes-page .nm-text { fill: var(--ink); font-size: 13px; pointer-events: none; }
+#notes-page .nm-root .nm-box { fill: var(--ink); stroke: var(--ink); }
+#notes-page .nm-root .nm-text { fill: var(--surface); font-size: 16px; font-weight: 650; }
+#notes-page .nm-heading .nm-text { font-weight: 650; }
+#notes-page .nm-callout .nm-box, #notes-page .nm-assoc-item .nm-box { stroke-dasharray: 4 3; }
+#notes-page .nm-assoc .nm-box, #notes-page .nm-assoc-group .nm-box { fill: color-mix(in srgb, var(--nm-c) 16%, var(--surface)); }
+#notes-page .nm-fold { fill: var(--ink-2); font-size: 11px; font-weight: 650; pointer-events: none; }
+#notes-page .nm-jump { cursor: alias; outline: none; }
+#notes-page .nm-jump text { fill: var(--accent); font-size: 12px; pointer-events: none; }
+#notes-page .nm-jump-hit { fill: transparent; }
+#notes-page .nm-node:hover .nm-box { stroke: var(--nm-c); stroke-width: 2; }
+#notes-page .nm-node:focus-visible .nm-box, #notes-page .nm-jump:focus-visible .nm-jump-hit { stroke: var(--accent); stroke-width: 3; }
+#notes-page .nm-jump:focus-visible .nm-jump-hit { fill: var(--soft); }
+@media (prefers-reduced-motion: no-preference) {
+  #notes-page .nm-box { transition: stroke-width .12s ease; }
+}
+
+#notes-page .nc-fold { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); }
+#notes-page .nc-fold > summary { padding: var(--space-2) var(--space-3); color: var(--ink-2); font-size: var(--text-sm); cursor: pointer; }
+#notes-page .nc-fold[open] > summary { border-bottom: 1px solid var(--line); }
+#notes-page .nc-fold > .nc-panel { margin: 0; padding: var(--space-3); border: 0; }

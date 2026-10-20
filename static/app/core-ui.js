@@ -481,14 +481,8 @@ window.Notes?.configure({
   getDrawingIds: () => window.DrawHost?.ownedIds?.() ?? new Set(),
 });
 
-// 笔记“串联”（static/notes-connect.js）：正文里提到的笔记 / 套路加下划线，下面列出相关错题等。
-window.NotesConnect?.configure({
-  api,
-  tagLabel: (tag) => window.TagEditor?.label?.(tag) || tag,
-  today: () => user?.today || "",
-  noteTitle: (note) => window.Notes?.noteTitle(note) || "笔记",
-  previewText: (note, max) => window.NotesPane?.previewText(note, max) || "",
-  fetchPatterns: () => fetch("/static/data/patterns.json", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : [])),
+// 笔记里“跳到别处”的三个动作：串联和思维导图共用。
+const notesOpeners = {
   openNote: (id) => run(async () => {
     if (view !== "notes") await showView("notes");
     await window.Notes?.openNoteById(id);
@@ -498,7 +492,21 @@ window.NotesConnect?.configure({
     window.Roadmap?.focusPattern?.(pattern.id);
     await showView("roadmap");
   }),
+};
+
+// 笔记“串联”（static/notes-connect.js）：正文里提到的笔记 / 套路加下划线，下面列出相关错题等。
+window.NotesConnect?.configure({
+  api,
+  tagLabel: (tag) => window.TagEditor?.label?.(tag) || tag,
+  today: () => user?.today || "",
+  noteTitle: (note) => window.Notes?.noteTitle(note) || "笔记",
+  previewText: (note, max) => window.NotesPane?.previewText(note, max) || "",
+  fetchPatterns: () => fetch("/static/data/patterns.json", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : [])),
+  ...notesOpeners,
 });
+
+// 笔记思维导图（static/notes-map.js）：“关联”一枝里的点击跳转。
+window.NotesMap?.configure(notesOpeners);
 
 // 笔记的自动保存 / 本机草稿 / 历史版本 / 最近删除（static/notes-history.js）。
 window.NotesHistory?.configure({

@@ -1056,7 +1056,11 @@
     const moreList = h("div", null, "notes-more-list");
     moreList.append(pinButton, historyButton, exportButton, deleteButton);
     more.append(moreList);
-    tools.append(editButton, tidyButton, coverButton, more);
+    // 打印：在“正文”页打印正文，在“导图”页打印导图（横向 A4）。
+    const printButton = h("button", "打印", "notes-action");
+    printButton.type = "button";
+    printButton.title = "打印这一篇；在“导图”页就打印导图";
+    tools.append(editButton, tidyButton, coverButton, printButton, more);
     head.append(tools);
 
     const meta = h("div", null, "notes-pane-meta");
@@ -1077,15 +1081,30 @@
     }
     meta.append(h("time", `更新于 ${noteTime(note.updated_at || note.created_at)}`, "notes-time"));
     const toc = h("div", null, "notes-pane-toc");
+    // 正文 / 导图 切换：导图把标题、列表和“关联”（提到的笔记、相关错题、相关套路）画成一张图，第一次点开才画。
+    const tabs = h("div", null, "nm-tabs");
+    tabs.setAttribute("role", "group");
+    tabs.setAttribute("aria-label", "阅读方式");
+    tabs.hidden = !window.NotesMap;
+    const textTab = h("button", "正文", "nm-tab");
+    const mapTab = h("button", "导图", "nm-tab");
+    for (const tab of [textTab, mapTab]) tab.type = "button";
+    tabs.append(textTab, mapTab);
+    const mapHost = h("div", null, "nm-host");
+    mapHost.hidden = true;
     const body = h("div", null, "notes-body notes-rich notes-reader-body");
     const drawingIds = hooks?.getDrawingIds ? hooks.getDrawingIds() : null;
     body.append(renderNoteMarkdown(bodyWithoutDerivedTitle(note), { drawingIds }));
     body.title = "双击进入编辑";
     const connect = h("div", null, "nc-panel");
     connect.hidden = true;
+    // 关联列表默认收起成一行（图里已经有“关联”一枝），想看明细再点开。
+    const connectFold = h("details", null, "nc-fold");
+    connectFold.hidden = true;
+    connectFold.append(h("summary", "关联：提到的笔记、相关错题、相关套路（点开）"), connect);
     const related = h("div", null, "nl-related");
     related.setAttribute("data-nl-related", "");
-    view.append(head, meta, toc, body, connect, related);
+    view.append(head, meta, tabs, toc, body, mapHost, connectFold, related);
     host.replaceChildren(view);
     window.NotesPane?.renderToc(toc, note.content || "", body);
     window.NotesPane?.enhanceCode(body, hooks?.notify);
@@ -1118,8 +1137,60 @@
         if (paneState !== state || !data) return;
         window.NotesConnect.decorate(body, data);
         window.NotesConnect.renderPanel(connect, data);
+        connectFold.hidden = connect.hidden;
+        mapState.connections = data;
+        mapState.controller?.setConnections(data);
       });
     }
+
+    // 导图：第一次切过去才画；点标题旁的 ↗ 回到正文并滚到那一段。
+    const mapState = { controller: null, connections: null, active: false };
+    const jumpToHeading = (index) => {
+      showMode(false);
+      const target = body.querySelectorAll("h1, h2, h3, h4, h5, h6")[index];
+      if (!target) return;
+      target.setAttribute("tabindex", "-1");
+      target.scrollIntoView({ block: "start" });
+      target.focus({ preventScroll: true });
+    };
+    const showMode = (mapOn) => {
+      if (mapOn && !window.NotesMap) return;
+      mapState.active = mapOn;
+      textTab.setAttribute("aria-pressed", String(!mapOn));
+      mapTab.setAttribute("aria-pressed", String(mapOn));
+      body.hidden = mapOn;
+      toc.hidden = mapOn;
+      mapHost.hidden = !mapOn;
+      if (mapOn && !mapState.controller) {
+        mapState.controller = window.NotesMap.build(mapHost, {
+          markdown: bodyWithoutDerivedTitle(note),
+          title: noteTitle(note) || "笔记",
+          onJump: jumpToHeading,
+        });
+        if (mapState.connections) mapState.controller.setConnections(mapState.connections);
+      }
+    };
+    textTab.addEventListener("click", () => showMode(false));
+    mapTab.addEventListener("click", () => showMode(true));
+    showMode(false);
+
+    // 打印：给 <html> 打上标记，让 notes-print.css 只留这一篇；打完（afterprint）再还原。
+    printButton.addEventListener("click", () => {
+      if (typeof window.print !== "function") return;
+      const opened = [...body.querySelectorAll("details:not([open])")];
+      for (const detail of opened) detail.open = true; // 折叠的答案、提示也要打出来
+      const covered = body.classList.contains("is-covered");
+      if (covered) body.classList.remove("is-covered"); // “遮住看”不能让打印出来的纸是空的
+      const page = document.documentElement;
+      page.dataset.printNote = mapState.active ? "map" : "text";
+      const restore = () => {
+        delete page.dataset.printNote;
+        for (const detail of opened) detail.open = false;
+        if (covered) body.classList.add("is-covered");
+      };
+      window.addEventListener("afterprint", restore, { once: true });
+      window.print();
+    });
 
     editButton.addEventListener("click", () => void editNote(note));
     coverButton.addEventListener("click", () => {
