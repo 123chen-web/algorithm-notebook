@@ -331,17 +331,113 @@ test("detail opening: old account and page responses never repaint a cleared pan
   }
 });
 
-test("detail review: duplicate activation submits once and a 409 is spoken locally", async () => {
-  const env = environment();
+// 乐观评分：点下去先翻页，请求在后台跑。toasts/stamps/offline 用桩记录。
+function optimisticEnvironment() {
+  const env = environment(); seedList(env);
+  const toasts = [], stamps = [], queued = [];
+  env.window.Feel = { toast: (text) => toasts.push(text) };
+  env.context.stampSeal = (text) => stamps.push(text);
+  env.window.OfflineReview = {
+    isNetworkError: (error) => error?.message === "Failed to fetch",
+    grade: async (...args) => { queued.push(args); },
+  };
   env.render(); env.$("#review-reveal").click();
-  env.$('[data-quality="4"]').click(); env.$('[data-quality="4"]').click();
+  return { ...env, toasts, stamps, queued,
+    reviewCalls: () => env.calls.filter((call) => call.url.endsWith("/review") && call.options.method === "POST"),
+    listed: () => [...env.context.rvfListItems.keys()] };
+}
+
+test("detail review: the card advances before the request resolves; a double click sends one request", async () => {
+  const env = optimisticEnvironment();
+  const button = env.$('[data-quality="4"]');
+  button.click(); button.click(); // 双击/按键重复：第二下不能再发请求
+  assert.equal(env.reviewCalls().length, 1, "one submission per card");
+  assert.deepEqual(env.listed(), [2], "card is already off the list while the request is in flight");
+  assert.equal(env.$("#cards").querySelectorAll(".record-button").length, 1);
+  assert.match(env.$("#detail").textContent, /已更新复习安排/);
+  assert.equal(env.$("#detail").querySelectorAll(".review-grade").length, 0, "old detail is gone");
+  assert.deepEqual(env.stamps, ["记住"]);
+  assert.deepEqual(env.toasts, ["✅ 已记下"]);
+  assert.equal(env.document.documentElement.querySelector(".review-toast"), null, "no undo handle before the server answered");
+  assert.ok(!env.calls.some((call) => call.url === "/api/mistakes/1"), "no refresh of a record the server has not written yet");
+  assert.deepEqual(env.notifications, []);
+});
+
+test("detail review: when the request resolves the revenge line, undo handle and real interval appear", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="4"]').click();
+  env.answer(env.reviewCalls()[0], { version: 4, interval_days: 6, due_date: "2026-10-10", revenge: { days_gap: 9 } });
   await tick();
-  const requests = env.calls.filter((call) => call.url.endsWith("/review"));
-  assert.equal(requests.length, 1);
-  env.fail(requests[0], 409, "这条记录刚刚已被更新，请刷新后重试");
+  assert.deepEqual(env.stamps, ["记住", "雪耻"]);
+  assert.match(env.$("#detail .revenge-line").textContent, /复仇成功.*9 天前/);
+  assert.equal(env.toasts.at(-1), "✅ 复习完成，下次在 6 天后");
+  assert.match(env.document.documentElement.querySelector(".review-toast").textContent, /已评分「记得」.*下次 6 天后/);
+  assert.ok(env.$("#detail .similar-host"));
+  assert.deepEqual(env.listed(), [2]);
+  assert.deepEqual(env.notifications, ["review"]);
+});
+
+test("detail review: a result arriving after the learner opened the next card leaves that detail alone", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="4"]').click();
+  const opening = env.context.openMistake(2);
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/2"), CARD(2)); await opening;
+  env.answer(env.reviewCalls()[0], { version: 4, interval_days: 6, due_date: "2026-10-10", revenge: { days_gap: 9 } });
   await tick();
+  assert.match(env.$(".detail-heading").textContent, /题目2/);
+  assert.equal(env.$("#detail .revenge-line"), null);
+  assert.equal(env.$("#detail .similar-host"), null);
+  assert.ok(env.document.documentElement.querySelector(".review-toast"), "undo handle still offered");
+});
+
+test("detail review: a 409 puts the card back with the server's message and enabled buttons", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="4"]').click();
+  assert.deepEqual(env.listed(), [2]);
+  env.fail(env.reviewCalls()[0], 409, "这条记录刚刚已被更新，请刷新后重试");
+  await tick();
+  assert.deepEqual(env.listed().sort(), [1, 2], "card is back in the list");
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/1"), CARD(1, { version: 4 })); await tick(); await tick();
+  assert.match(env.$(".detail-heading").textContent, /题目1/);
   assert.match(env.$("#review-detail-status").textContent, /这条记录刚刚已被更新，请刷新后重试/);
   assert.equal(env.$('[data-quality="4"]').disabled, false);
+  env.$("#review-reveal").click();
+  env.$('[data-quality="4"]').click();
+  assert.equal(env.reviewCalls().length, 2, "a retry is possible and uses the fresh version");
+  assert.equal(JSON.parse(env.reviewCalls()[1].options.body).version, 4);
+});
+
+test("detail review: a 409 while another card is open restores only the list entry and says why", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="4"]').click();
+  const opening = env.context.openMistake(2);
+  env.answer(env.calls.find((call) => call.url === "/api/mistakes/2"), CARD(2)); await opening;
+  env.fail(env.reviewCalls()[0], 500, "服务器出错了");
+  await tick();
+  assert.deepEqual(env.listed().sort(), [1, 2]);
+  assert.match(env.$(".detail-heading").textContent, /题目2/, "the open detail is not hijacked");
+  assert.deepEqual(env.messages.at(-1), { text: "服务器出错了", error: true });
+});
+
+test("detail review: a network error hands the grade to the offline queue and the card stays advanced", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="4"]').click();
+  env.fail(env.reviewCalls()[0], 0, "Failed to fetch");
+  await tick(); await tick();
+  assert.equal(JSON.stringify(env.queued), JSON.stringify([[1, 4, { mode: "recall", evidence: "" }]]));
+  assert.deepEqual(env.listed(), [2]);
+  assert.match(env.$("#list-summary").textContent, /离线模式/);
+  assert.ok(!env.calls.some((call) => call.url === "/api/mistakes/1"), "no restore on a network error");
+  assert.equal(env.document.documentElement.querySelector(".review-toast"), null, "offline grades have no undo");
+});
+
+test("detail review: the unverified-cap and leech notices still surface after the server answers", async () => {
+  const env = optimisticEnvironment();
+  env.$('[data-quality="0"]').click();
+  env.answer(env.reviewCalls()[0], { version: 4, interval_days: 1, due_date: "2026-10-05", unverified_cap: true, leech_suspended: true });
+  await tick();
+  assert.ok(env.messages.some((entry) => /最多 14 天/.test(entry.text)));
+  assert.ok(env.messages.some((entry) => /连续失败 8 次/.test(entry.text)));
 });
 
 test("detail review: a result from a departed page cannot remove a new card or show its toast", async () => {
