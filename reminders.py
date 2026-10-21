@@ -207,7 +207,7 @@ def send_daily_reminders(mailer, now=None, base_url=None, *, record_sent=True):
             )
             try:
                 mailer.send_email(user["email"], subject, body)
-            except Exception as exc:
+            except Exception:
                 # 发信异常不能影响其他用户；调用方记日志即可。
                 logger.warning(
                     "复习提醒发信失败 user_id=%s", user["id"],

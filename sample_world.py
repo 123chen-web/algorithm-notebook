@@ -450,10 +450,10 @@ def build(password):
     world.group(MAIN, "金榜冲刺队", list(SPRINTERS), {"*": 20})
     for name in SPRINTERS:
         world.pump(name, 18, 12, 3)
-    full = world.group(CLUB[0], FULL_GROUP, [*CLUB[1:], MAIN], {"*": 40})
+    world.group(CLUB[0], FULL_GROUP, [*CLUB[1:], MAIN], {"*": 40})
     for name in CLUB:
         world.pump(name, 35, 12, 3)
-    spare = world.group(SPRINTERS[0], SPARE_GROUP, [SPRINTERS[1]], {"*": 5})
+    world.group(SPRINTERS[0], SPARE_GROUP, [SPRINTERS[1]], {"*": 5})
 
     # ---- forum: a lively thread (with quotes and a deleted floor), the main account's own post, an empty one ----
     thread = world.clients["周知远"].post("/api/posts", json={

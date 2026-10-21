@@ -23,7 +23,6 @@ import pattern_match
 import problem_progress
 from routers import note_connections, notes
 from models import InputModel
-import pattern_match
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field

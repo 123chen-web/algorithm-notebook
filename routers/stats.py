@@ -29,7 +29,6 @@ from fastapi import Response
 from learning_stats import current_streak, week_review_days
 from mastery import mastery_report
 from search import search_all
-import stats_summary
 from stats_summary import ALLOWED_DAYS as ALLOWED_SUMMARY_DAYS
 from typical import typical_report
 from typing import Annotated

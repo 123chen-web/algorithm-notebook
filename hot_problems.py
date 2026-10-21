@@ -86,11 +86,10 @@ def _identify(source, segments):
             return None
         return second, "牛客 · 题目", f"https://www.nowcoder.com/practice/{second}"
     if source == "codeforces":
-        kind = None
         if first == "problemset" and second == "problem":
-            contest, letter, kind = third, fourth, "problemset"
+            contest, letter = third, fourth
         elif first in ("contest", "gym") and third == "problem":
-            contest, letter, kind = second, fourth, first
+            contest, letter = second, fourth
         else:
             return None
         if not (contest and _DIGITS_1_7.fullmatch(contest)) or not (letter and _CF_LETTER.fullmatch(letter)):

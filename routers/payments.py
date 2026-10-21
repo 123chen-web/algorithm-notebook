@@ -21,7 +21,6 @@ from fastapi.responses import PlainTextResponse
 from typing import Literal
 import manual_claims
 import os
-import payments
 from fastapi import APIRouter
 
 

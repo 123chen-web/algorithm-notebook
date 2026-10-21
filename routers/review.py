@@ -35,7 +35,6 @@ from scheduler import preview_all
 from scheduler import today_in_timezone
 from tags import tags_for_mistakes
 from typing import Annotated, Literal
-import ai
 import json
 import os
 from fastapi import APIRouter
