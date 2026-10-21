@@ -68,7 +68,7 @@ def test_the_standalone_page_shares_the_same_render_file():
 
 
 def test_every_asset_the_pages_link_exists():
-    for path in re.findall(r'(?:href|src)="(/static/[^"?]+)', INDEX + PATTERNS_HTML):
+    for path in re.findall(r'(?:href|src)="(/static/[^"?#]+)', INDEX + PATTERNS_HTML):
         assert (ROOT / path.lstrip("/")).exists(), path
 
 

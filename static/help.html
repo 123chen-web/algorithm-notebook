@@ -9,9 +9,10 @@
   <!-- 主题选择与首页共用一份本地脚本和令牌，不依赖任何外部资源。 -->
   <script src="/static/themes.js?v=2"></script>
   <link rel="stylesheet" href="/static/style.css?v=51">
-  <link rel="stylesheet" href="/static/help.css?v=1">
+  <link rel="stylesheet" href="/static/help.css?v=2">
   <link rel="stylesheet" href="/static/feel.css?v=5">
   <script defer src="/static/help.js?v=1"></script>
+  <script defer src="/static/whatsnew.js?v=1"></script>
 </head>
 <body class="help-page">
   <div class="feel-progress" aria-hidden="true"></div>
@@ -42,6 +43,7 @@
           <li><a href="#community-privacy">小组、讨论区与榜单隐私</a></li>
           <li><a href="#faq">常见问题</a></li>
           <li><a href="#feedback">怎么反馈问题</a></li>
+          <li><a href="#whats-new">更新了什么</a></li>
         </ol>
       </nav>
     </header>
@@ -309,6 +311,14 @@
       <blockquote class="help-template">
         <p>我在【＿＿】页面，点了【＿＿】，结果看到【＿＿】；我用的是【手机型号 / 电脑 + 浏览器】，时间大约【＿＿】。</p>
       </blockquote>
+    </section>
+
+    <section id="whats-new" class="help-panel help-section" data-keywords="更新 更新了什么 新功能 改进 版本 日志 变化 最近">
+      <h2>八、更新了什么</h2>
+      <p class="field-hint">最近几次改进，最新的在最上面。</p>
+      <div id="whats-new-list" class="whatsnew-list">
+        <p class="field-hint whatsnew-note">正在加载更新记录……</p>
+      </div>
     </section>
 
     <footer class="help-footer">

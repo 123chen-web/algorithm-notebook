@@ -298,3 +298,9 @@
   }
   .help-page .skip-link:focus { color: var(--on-accent); }
 }
+
+/* 更新了什么 */
+.whatsnew-release { margin-top: var(--space-4); }
+.whatsnew-release h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.whatsnew-release ul { margin: var(--space-1) 0 0; padding-left: 1.4em; }
+.whatsnew-release li { margin-top: var(--space-1); }
