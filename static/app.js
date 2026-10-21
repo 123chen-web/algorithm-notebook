@@ -20,6 +20,7 @@
 "use strict";
 
 // ---- 启动（原文件尾部；依赖全部领域文件已求值，必须最后执行） ----
+window.ShareTarget?.intake(); // 手机“分享到欧叶”带来的 ?title&text&url，先收下并从地址栏去掉
 window.Capture?.intake();
 const emailToken = new URLSearchParams(location.search).get("email_token");
 if (emailToken) {

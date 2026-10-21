@@ -132,16 +132,41 @@
       // 隐私模式或存储被禁用：只保留内存里的那份。
     }
   }
+  /** 手机分享带来的任意 http(s) 链接（不限于已识别的刷题站）：只做安全校验，不抓取。 */
+  function parseGeneric(text) {
+    if (typeof text !== "string" || !text || text.length > MAX_URL || /\s/.test(text)) return null;
+    let url;
+    try {
+      url = new (urlCtor())(text);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
+    return { source: "share", host: url.hostname.toLowerCase(), id: "", title: "", zone: ZONE, url: cleanUrl(url) };
+  }
   function validRecord(record, now) {
     if (!record || typeof record.url !== "string" || typeof record.at !== "number") return null;
     if (now - record.at > PENDING_TTL || record.at > now + 60 * 1000) return null;
-    const parsed = parse(record.url);
+    const parsed = parse(record.url) || (record.shared === true ? parseGeneric(record.url) : null);
     if (!parsed) return null;
-    return { parsed, title: cleanTitle(typeof record.title === "string" ? record.title : "") };
+    return {
+      parsed,
+      title: cleanTitle(typeof record.title === "string" ? record.title : ""),
+      shared: record.shared === true,
+    };
   }
-  function stash(parsed, title, now = Date.now()) {
+  function stash(parsed, title, now = Date.now(), shared = false) {
     pending = { url: parsed.url, title: title || "", at: now };
+    if (shared) pending.shared = true;
     writeStorage(pending);
+  }
+  /** 手机“分享到欧叶”：已识别的刷题站按原规则，其他 http(s) 链接也收（只填来源链接和题名）。 */
+  function stashShared(url, title, now = Date.now()) {
+    const parsed = parse(url) || parseGeneric(url);
+    if (!parsed) return false;
+    stash(parsed, cleanTitle(title), now, true);
+    return true;
   }
   function hasPending(now = Date.now()) {
     return Boolean(validRecord(pending, now) || validRecord(readStorage(), now));
@@ -354,14 +379,14 @@
   let mounted = null;
   window.Capture = {
     parse, cleanTitle, bookmarkletCode, bookmarkletHref, parseHash,
-    intake, hasPending, take, reset, fillForm, renderThinking,
+    intake, stashShared, hasPending, take, reset, fillForm, renderThinking,
     mount(root) {
       mounted = mount(root);
       return mounted;
     },
     /** 书签带来的预填：切到新增记录页之后调用。 */
     applyIntake(record) {
-      mounted?.apply(record.parsed, { title: record.title, fromBookmark: true });
+      mounted?.apply(record.parsed, { title: record.title, fromBookmark: !record.shared });
     },
   };
   window.Capture.mount(document.querySelector("#new-page"));
