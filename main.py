@@ -301,6 +301,7 @@ import routers.plugin_api
 import routers.profile
 import routers.import_wizard
 import routers.roadmap
+import routers.client_errors
 
 app.include_router(routers.pages.router)
 app.include_router(routers.auth.router)
@@ -336,3 +337,4 @@ app.include_router(routers.import_wizard.router)
 import routers.code_run
 app.include_router(routers.code_run.router)
 app.include_router(routers.roadmap.router)
+app.include_router(routers.client_errors.router)
