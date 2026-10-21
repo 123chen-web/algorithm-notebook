@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from db import ROOT, init_db
 
-from core import config
+from core import config, security
 
 logger = logging.getLogger("algorithm_notebook")
 
@@ -218,6 +218,19 @@ async def request_protection(request, call_next):
         or request.url.path in ("/", "/static/index.html")
     ):
         response.headers["Cache-Control"] = "no-store"
+    # 带版本号的静态文件（/static/x.js?v=NN）内容只随版本号变，让浏览器缓存一年，回访不再逐个重新验证；
+    # 改了文件就必须同步提升 index.html 里的 ?v=（项目规矩，Service Worker 也是按完整 URL 缓存）。
+    # 不带 ?v= 的、/sw.js（必须每次重新检查）和 .html 页面保持原样。
+    if (
+        request.method in ("GET", "HEAD") and response.status_code == 200
+        and request.url.path.startswith("/static/") and request.query_params.get("v")
+        and not request.url.path.endswith(("/sw.js", ".html"))
+    ):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    # HSTS：告诉浏览器以后这个域名只走 https。只在确实是 https 来的请求上发（本地 http 开发不受影响）；
+    # 先不加 includeSubDomains / preload，这两个一旦加了很难撤回。
+    if security.is_https_request(request):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
     return response
 
 

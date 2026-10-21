@@ -106,16 +106,21 @@ def configured_admin_username():
     return sec_username_key(value)
 
 
-def cookie_secure(request):
-    """COOKIE_SECURE 显式设置时按显式值；未设置时按请求是否为 https 自动决定。"""
-    explicit = os.getenv("COOKIE_SECURE")
-    if explicit is not None and explicit.strip() != "":
-        return explicit.strip() == "1"
+def is_https_request(request):
+    """这个请求是不是走 https 来的：部署在反向代理后面（TRUST_PROXY=1）时看代理传来的 X-Forwarded-Proto。"""
     if os.getenv("TRUST_PROXY") == "1":
         proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
         if proto:
             return proto == "https"
     return request.url.scheme == "https"
+
+
+def cookie_secure(request):
+    """COOKIE_SECURE 显式设置时按显式值；未设置时按请求是否为 https 自动决定。"""
+    explicit = os.getenv("COOKIE_SECURE")
+    if explicit is not None and explicit.strip() != "":
+        return explicit.strip() == "1"
+    return is_https_request(request)
 
 
 def set_session(conn, user_id, response, request, *, sec_cleanup_expired=True):
