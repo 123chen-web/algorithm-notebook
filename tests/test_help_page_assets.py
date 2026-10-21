@@ -65,6 +65,9 @@ class _HelpMarkup(HTMLParser):
             url = attrs.get(attr)
             if not url:
                 continue
+            # canonical 只是告诉搜索引擎本页的规范网址，不会加载任何外部资源。
+            if tag == "link" and attrs.get("rel") == "canonical":
+                continue
             if url.startswith(("http://", "https://", "//")):
                 self.external_urls.append(f"<{tag} {attr}={url}>")
                 continue

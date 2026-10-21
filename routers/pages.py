@@ -4,6 +4,9 @@ Names living in main's namespace are referenced as ``main.<name>``
 (attribute access at call time) so monkeypatch.setattr(main, ...)
 in tests keeps affecting the moved code.
 """
+import os
+from xml.sax.saxutils import escape
+
 import db
 
 from db import ROOT
@@ -13,6 +16,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from legal import render_legal_page
 from fastapi import APIRouter
+from fastapi import Request
+from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 
 
 router = APIRouter()
@@ -75,4 +81,49 @@ def terms():
 def privacy():
     return HTMLResponse(
         render_legal_page("privacy"), headers={"Cache-Control": "public, max-age=300"}
+    )
+
+
+# 公开、可被搜索引擎收录的页面（登录后的应用视图、计费说明、管理页不在此列）。
+# 新增公开页面时在这里加一行，并见 docs/operations/seo.md。
+SITEMAP_PATHS = (
+    "/",
+    "/static/patterns.html",
+    "/static/help.html",
+    "/static/extension.html",
+    "/terms",
+    "/privacy",
+)
+
+
+def _site_base_url(request: Request) -> str:
+    configured = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    return str(request.base_url).rstrip("/")
+
+
+@router.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+def robots_txt(request: Request):
+    base = _site_base_url(request)
+    lines = ["User-agent: *", "Allow: /"]
+    lines += [f"Allow: {path}" for path in SITEMAP_PATHS if path != "/"]
+    lines += ["Disallow: /api/", "", f"Sitemap: {base}/sitemap.xml", ""]
+    return PlainTextResponse("\n".join(lines), headers={"Cache-Control": "public, max-age=3600"})
+
+
+@router.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(request: Request):
+    base = _site_base_url(request)
+    urls = "".join(
+        f"  <url><loc>{escape(base + path)}</loc></url>\n" for path in SITEMAP_PATHS
+    )
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}</urlset>\n"
+    )
+    return Response(
+        body, media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
     )

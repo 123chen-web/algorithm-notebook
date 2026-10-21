@@ -31,7 +31,11 @@ def test_data_has_the_agreed_shape_and_unique_ids():
 def test_page_is_csp_safe_and_self_contained():
     assert not re.search(r"\bstyle\s*=", HTML)
     assert not re.search(r"<script\b(?![^>]*\bsrc=)[^>]*>", HTML)
-    assert "http://" not in HTML and "https://" not in HTML
+    # 分享预览用的 canonical / og / twitter 标签允许写绝对网址，它们不加载任何资源。
+    html_without_share_meta = re.sub(
+        r'<(?:link rel="canonical"|meta (?:property="og:|name="twitter:))[^>]*>', "", HTML
+    )
+    assert "http://" not in html_without_share_meta and "https://" not in html_without_share_meta
     for source in (JS, CSS):
         assert "innerHTML" not in source and "outerHTML" not in source and "insertAdjacentHTML" not in source
         assert "eval(" not in source and "document.write" not in source
