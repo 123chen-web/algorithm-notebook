@@ -334,6 +334,5 @@ app.include_router(routers.import_wizard.router)
 
 # Optional isolated code execution is registered outside the generated block.
 import routers.code_run
-from core import config
 app.include_router(routers.code_run.router)
 app.include_router(routers.roadmap.router)
