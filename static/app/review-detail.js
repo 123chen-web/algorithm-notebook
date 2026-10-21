@@ -397,6 +397,8 @@ function rvfReviewDoneText(result) {
 // 三种复习方式共用的评分提交：mode 默认为 recall（旧行为），rewrite/redo
 // 会带上 evidence（建议分/最终分/相似度/用时）。离线时同样把 mode/evidence
 // 写进离线队列，联网后一起补交。
+// 在线时“先翻页、后保存”：点下去立刻盖章、翻到下一张，请求在后台跑；回来后补上
+// 复仇/撤销/下次间隔，失败（409 等）就把这张放回来并说明原因，断网则转入离线队列。
 async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, status, offline, pageGuard, root, due, mode = "recall", evidence = "", gradeButtons = null }) {
   if (!state.isCurrent() || !due || state.submitting) return;
   // 只回忆要先看错因再自评；做题验证（默写、重做、类似题）不需要先看答案。
@@ -410,50 +412,18 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
   const payload = { quality, version: item.version };
   if (mode !== "recall") payload.mode = mode;
   if (evidence) payload.evidence = evidence;
+  if (!offline) {
+    return rvfGradeOptimistic(state, item, { quality, anchor, sealText, payload, pageGuard, root, mode, evidence });
+  }
   try {
-    let result = null;
-    if (offline) {
-      await window.OfflineReview?.grade(item.id, quality, { mode, evidence }); // 内部已提示「已记下，联网后同步」
-    } else {
-      try {
-        result = await api(`/api/mistakes/${item.id}/review`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      } catch (error) {
-        // 在线详情打开后突然断网：POST 直接网络失败时转入离线队列，不让评分丢失。
-        if (window.OfflineReview?.isNetworkError(error)) {
-          await window.OfflineReview?.grade(item.id, quality, { mode, evidence });
-          window.OfflineReview?.restrictDetail(root);
-        } else {
-          throw error;
-        }
-      }
-    }
+    await window.OfflineReview?.grade(item.id, quality, { mode, evidence }); // 内部已提示「已记下，联网后同步」
     if (!state.isCurrent()) return;
     stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
-    if (result && result.revenge) {
-      // 复仇成功：在现有盖章流程上加一枚特别印章 + 一句文案，不另起一套。
-      stampSeal("雪耻", { anchor, tone: "cinnabar" });
-      rvfShowRevengeLine(root, result.revenge);
-    }
-    window.Feel?.toast(rvfReviewDoneText(result)); // 手感层：盖章后提示下次复习时间
-    if (result?.unverified_cap) message("连续两次只自评，下次间隔最多 14 天。做一次题验证，间隔就能拉长。");
+    window.Feel?.toast(rvfReviewDoneText(null)); // 手感层：盖章后提示下次复习时间
     window.ReviewFeel?.buzz();
-    if (result) {
-      rvfRemoveItem({ ...item, ...result });
-      window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
-        onUndo: (restored) => rvfRestoreItem(item, restored) });
-      // F6 趁热打铁：复习完成后推荐 3 道同类题
-      const similarHost = element("div", "", "similar-host");
-      $("#detail").append(similarHost);
-      window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
-      window.Similar?.mount(similarHost, item.id);
-    } else {
-      // 离线评分没有撤销入口（没发到服务器，无从撤销）。
-      rvfRemoveItem({ ...item }, { offline: true });
-    }
-    // 评分已提交（在线成功或离线入队）：停掉可能还在跑的重做计时器。
+    // 离线评分没有撤销入口（没发到服务器，无从撤销）。
+    rvfRemoveItem({ ...item }, { offline: true });
+    // 评分已入队：停掉可能还在跑的重做计时器。
     if (state.redo?.timer) { state.redo.timer.cancel(); state.redo.timer = null; }
   } catch (error) {
     if (state.isCurrent()) status.textContent = error.message;
@@ -464,6 +434,79 @@ async function rvfSubmitGrade(state, item, { quality, button, reviewButtons, sta
       reviewButtons.removeAttribute("aria-busy");
     }
   }
+}
+
+async function rvfGradeOptimistic(state, item, { quality, anchor, sealText, payload, pageGuard, root, mode, evidence }) {
+  // —— 先翻页：盖章、提示、移走这张卡，不等服务器 ——
+  stampSeal(sealText, { anchor, tone: quality <= 2 ? "ink" : undefined });
+  window.Feel?.toast("✅ 已记下");
+  window.ReviewFeel?.buzz();
+  if (state.redo?.timer) { state.redo.timer.cancel(); state.redo.timer = null; }
+  rvfRemoveItem({ ...item }, { optimistic: true });
+  const detailGeneration = rvfDetailGeneration; // 之后用户若打开了别的详情，就不再往详情区补内容
+  // —— 后保存 ——
+  try {
+    const result = await api(`/api/mistakes/${item.id}/review`, { method: "POST", body: JSON.stringify(payload) });
+    if (!pageGuard()) return;
+    const untouched = rvfDetailGeneration === detailGeneration;
+    if (result.revenge) {
+      // 复仇成功：在现有盖章流程上加一枚特别印章 + 一句文案，不另起一套。
+      stampSeal("雪耻", { anchor, tone: "cinnabar" });
+      if (untouched) rvfShowRevengeLine(root, result.revenge);
+    }
+    window.Feel?.toast(rvfReviewDoneText(result)); // 手感层：盖章后提示下次复习时间
+    if (result.unverified_cap) message("连续两次只自评，下次间隔最多 14 天。做一次题验证，间隔就能拉长。");
+    if (result.leech_suspended) message("这道题连续失败 8 次，已自动暂停，建议换种方式学习，可随时恢复。");
+    rvfRemoveItem({ ...item, ...result }, { settled: true });
+    window.ReviewExtras?.rememberReview({ item, result, quality, isCurrent: pageGuard,
+      onUndo: (restored) => rvfRestoreItem(item, restored) });
+    if (untouched) {
+      // F6 趁热打铁：复习完成后推荐 3 道同类题
+      const similarHost = element("div", "", "similar-host");
+      $("#detail").append(similarHost);
+      window.Similar?.configure({ api, getUser: () => user, getEpoch: () => sessionEpoch });
+      window.Similar?.mount(similarHost, item.id);
+    }
+  } catch (error) {
+    if (!pageGuard()) return;
+    if (window.OfflineReview?.isNetworkError(error)) {
+      // 评分时突然断网：转入离线队列，卡片保持已翻走。
+      try {
+        await window.OfflineReview?.grade(item.id, quality, { mode, evidence });
+        if (pageGuard()) rvfRemoveItem({ ...item }, { offline: true, settled: true });
+        return;
+      } catch (queueError) {
+        error = queueError;
+      }
+    }
+    await rvfRestoreFailedGrade(item, error, pageGuard);
+  } finally {
+    state.submitting = false;
+  }
+}
+
+// 评分没存上：把这张放回列表并说明原因，按钮随新详情恢复可点。
+async function rvfRestoreFailedGrade(item, error, pageGuard) {
+  const text = error?.message || "评分没有保存，请再评一次";
+  if (rvfDetailState) {
+    // 用户已经打开了别的题：只把这张放回列表，不抢走眼前的详情。
+    rvfListGeneration += 1;
+    rvfListItems = new Map([[item.id, item], ...[...rvfListItems].filter(([id]) => id !== item.id)]);
+    rvfRenderCards(user.today, rvfDetailState.item.id);
+    $("#list-summary").textContent = rvfListSummary(user.today);
+    message(text, true);
+    return;
+  }
+  try {
+    await rvfRestoreItem(item, {});
+  } catch (_) {
+    if (pageGuard()) message(text, true);
+    return;
+  }
+  if (!pageGuard()) return;
+  const status = rvfDetailState?.item.id === item.id ? $("#review-detail-status") : null;
+  if (status) status.textContent = text;
+  else message(text, true);
 }
 
 function rvfShowRevengeLine(root, revenge) {
