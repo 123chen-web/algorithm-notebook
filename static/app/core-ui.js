@@ -306,6 +306,7 @@ async function applyCapturePending() {
   await showView("new");
   if (epoch !== sessionEpoch || !user) return;
   window.Capture.applyIntake(pending);
+  if (pending.shared) message("已带入分享的题目链接。");
 }
 
 // 侧栏、底栏、"更多"抽屉和页面里的入口都带 data-view；用事件委托，总览里动态渲染的入口也生效。
